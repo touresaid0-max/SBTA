@@ -220,7 +220,15 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
     .select('*')
     .single();
   if (error) throw error;
-  return data as Booking;
+
+  const created = data as Booking;
+
+  await supabase
+    .rpc('sbta_confirm_pending_mobile_booking', { p_booking_id: created.id })
+    .then(() => undefined, () => undefined);
+
+  const refreshed = await fetchBooking(created.id);
+  return refreshed ?? created;
 }
 
 export async function fetchMyBookings(userId: string): Promise<Booking[]> {
