@@ -1,5 +1,5 @@
 import { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
-import { ChevronLeft, Home, Ticket, CalendarClock, User } from 'lucide-react';
+import { ChevronLeft, Home, Ticket, PackageSearch, User } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SBTA } from './theme';
 
@@ -138,7 +138,7 @@ export function Logo({ width = 240, className = '' }: { width?: number; classNam
 const NAV_ITEMS = [
   { to: '/sbtamobile/search', icon: Home, label: 'Accueil' },
   { to: '/sbtamobile/tickets', icon: Ticket, label: 'Mes Billets' },
-  { to: '/sbtamobile/reservations', icon: CalendarClock, label: 'Réservations' },
+  { to: '/sbtamobile/track-courrier', icon: PackageSearch, label: 'Suivi Courrier' },
   { to: '/sbtamobile/profile', icon: User, label: 'Profil' },
 ];
 

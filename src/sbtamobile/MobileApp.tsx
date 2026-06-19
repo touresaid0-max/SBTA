@@ -21,6 +21,7 @@ import TicketScreen from './screens/TicketScreen';
 import MyTicketsScreen from './screens/MyTicketsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import HelpScreen from './screens/HelpScreen';
+import TrackCourrierScreen from './screens/TrackCourrierScreen';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useMobileAuth();
@@ -83,6 +84,8 @@ export default function MobileApp() {
             <Route path="payment" element={<RequireAuth><PaymentScreen /></RequireAuth>} />
             <Route path="tickets" element={<RequireAuth><MyTicketsScreen /></RequireAuth>} />
             <Route path="reservations" element={<RequireAuth><MyTicketsScreen /></RequireAuth>} />
+            <Route path="track-courrier" element={<RequireAuth><TrackCourrierScreen /></RequireAuth>} />
+            <Route path="track-courrier/:code" element={<RequireAuth><TrackCourrierScreen /></RequireAuth>} />
             <Route path="profile" element={<RequireAuth><ProfileScreen /></RequireAuth>} />
             <Route path="help" element={<RequireAuth><HelpScreen /></RequireAuth>} />
             <Route path="ticket/:id" element={<RequireAuth><TicketScreen /></RequireAuth>} />
