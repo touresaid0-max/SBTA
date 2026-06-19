@@ -91,7 +91,7 @@ export default function SearchScreen() {
     const slot = TIME_SLOTS.find((s) => s.id === slotId)!;
     setLoading(true);
     try {
-      const trips = await searchTrips(origin, dest, slot);
+      const trips = await searchTrips(origin, dest, slot, date, originStation || undefined, destStation || undefined);
       const originName = cities.find((c) => c.id === origin)?.name ?? '';
       const destName = cities.find((c) => c.id === dest)?.name ?? '';
       const originStationName = originStations.find((s) => s.id === originStation)?.name ?? '';

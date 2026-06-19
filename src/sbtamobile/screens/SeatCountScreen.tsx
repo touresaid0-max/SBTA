@@ -19,6 +19,9 @@ export default function SeatCountScreen() {
   const fee = draft.serviceFee * count;
   const subtotal = unit * count;
   const total = subtotal + fee;
+  const maxSeats = trip.isPlanned
+    ? Math.max(1, Math.min(10, trip.seatsAvailable ?? 10))
+    : 10;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -39,22 +42,38 @@ export default function SeatCountScreen() {
               <Minus size={24} color={SBTA.ink} />
             </button>
             <div className="w-16 text-5xl font-extrabold" style={{ color: SBTA.ink }}>{count}</div>
-            <button onClick={() => setSeatsCount(Math.min(10, count + 1))} disabled={count >= 10}
+            <button onClick={() => setSeatsCount(Math.min(maxSeats, count + 1))} disabled={count >= maxSeats}
               className="flex h-14 w-14 items-center justify-center rounded-full transition active:scale-90 disabled:opacity-40"
               style={{ background: SBTA.green }}>
               <Plus size={24} color={SBTA.white} />
             </button>
           </div>
-          <p className="mt-4 text-xs" style={{ color: SBTA.gray400 }}>De 1 à 10 places par réservation</p>
+          <p className="mt-4 text-xs" style={{ color: SBTA.gray400 }}>
+            {trip.isPlanned
+              ? `De 1 à ${maxSeats} place${maxSeats > 1 ? 's' : ''} disponible${maxSeats > 1 ? 's' : ''}`
+              : 'De 1 à 10 places par réservation'}
+          </p>
         </Card>
 
-        <Card style={{ background: '#FFF8E6', border: 'none' }}>
+        <Card style={{ background: trip.isPlanned ? SBTA.greenLight : '#FFF8E6', border: 'none' }}>
           <div className="flex gap-2">
-            <Info size={18} color="#B8860B" className="shrink-0" />
-            <p className="text-[13px] leading-relaxed" style={{ color: '#7A5C00' }}>
-              Vous choisissez le nombre de places. Les sièges seront attribués automatiquement
-              (côte à côte ou regroupés) lors de la planification du voyage.
-            </p>
+            {trip.isPlanned ? (
+              <>
+                <Info size={18} color={SBTA.green} className="shrink-0" />
+                <p className="text-[13px] leading-relaxed" style={{ color: SBTA.greenDark }}>
+                  Voyage planifié. Vos sièges (côte à côte si possible) sont attribués
+                  automatiquement dès le paiement et votre billet définitif est généré.
+                </p>
+              </>
+            ) : (
+              <>
+                <Info size={18} color="#B8860B" className="shrink-0" />
+                <p className="text-[13px] leading-relaxed" style={{ color: '#7A5C00' }}>
+                  Vous choisissez le nombre de places. Les sièges seront attribués automatiquement
+                  (côte à côte ou regroupés) lors de la planification du voyage.
+                </p>
+              </>
+            )}
           </div>
         </Card>
 

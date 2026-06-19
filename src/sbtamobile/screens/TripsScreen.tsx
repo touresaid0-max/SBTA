@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Wifi, Snowflake, Usb, ArrowRight, Bus } from 'lucide-react';
+import { Wifi, Snowflake, Usb, ArrowRight, Bus, CheckCircle2, Clock } from 'lucide-react';
 import { SBTA, formatXOF, minutesToDuration } from '../theme';
 import { TopBar } from '../components';
 import { TripOption } from '../api';
@@ -54,6 +54,25 @@ export default function TripsScreen() {
                   {formatXOF(t.price)}
                 </span>
               </div>
+
+              {t.isPlanned ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
+                    style={{ background: SBTA.green, color: SBTA.white }}>
+                    <CheckCircle2 size={12} /> Voyage planifié
+                  </span>
+                  <span className="text-[11px] font-semibold" style={{ color: SBTA.gray600 }}>
+                    {t.seatsAvailable ?? 0} place{(t.seatsAvailable ?? 0) > 1 ? 's' : ''} disponible{(t.seatsAvailable ?? 0) > 1 ? 's' : ''}
+                  </span>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
+                    style={{ background: '#FFF8E6', color: '#7A5C00' }}>
+                    <Clock size={12} /> Billet provisoire
+                  </span>
+                </div>
+              )}
 
               <div className="mt-3 flex items-center gap-3">
                 <div className="text-center">

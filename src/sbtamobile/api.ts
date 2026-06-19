@@ -29,6 +29,9 @@ export type TripOption = {
   price: number;
   amenities: { ac: boolean; wifi: boolean; usb: boolean };
   busType: string;
+  scheduleId?: string;
+  isPlanned?: boolean;
+  seatsAvailable?: number;
 };
 
 export type Passenger = {
@@ -114,10 +117,66 @@ const AMENITY_PRESETS = [
   { ac: true, wifi: true, usb: false, busType: 'Standard climatisé' },
 ];
 
+type BusRel = { registration_number: string | null; total_seats: number | null; capacity: number | null };
+
+type ScheduleRow = {
+  id: string;
+  route_id: string;
+  departure_datetime: string;
+  arrival_datetime: string | null;
+  departure_station_id: string | null;
+  arrival_station_id: string | null;
+  status: string | null;
+  seats_available: number | null;
+  price: number | null;
+  buses: BusRel | BusRel[] | null;
+};
+
+const CANCELLED_STATUSES = ['annule', 'annulee', 'cancelled', 'termine'];
+
+async function fetchPlannedSchedules(
+  routeId: string,
+  date: string,
+  originStationId?: string,
+  destStationId?: string
+): Promise<ScheduleRow[]> {
+  const dayStart = `${date}T00:00:00`;
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const dayEnd = next.toISOString();
+
+  let q = supabase
+    .from('schedules')
+    .select(
+      'id, route_id, departure_datetime, arrival_datetime, departure_station_id, arrival_station_id, status, seats_available, price, buses(registration_number, total_seats, capacity)'
+    )
+    .eq('route_id', routeId)
+    .gte('departure_datetime', dayStart)
+    .lt('departure_datetime', dayEnd);
+  if (originStationId) q = q.eq('departure_station_id', originStationId);
+  if (destStationId) q = q.eq('arrival_station_id', destStationId);
+
+  const { data, error } = await q.order('departure_datetime');
+  if (error) throw error;
+  return ((data ?? []) as unknown as ScheduleRow[]).filter(
+    (s) => !CANCELLED_STATUSES.includes((s.status ?? '').toLowerCase())
+  );
+}
+
+function utcHourMinute(iso: string): { hour: number; label: string } {
+  const d = new Date(iso);
+  const hour = d.getUTCHours();
+  const minute = d.getUTCMinutes();
+  return { hour, label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` };
+}
+
 export async function searchTrips(
   originCityId: string,
   destCityId: string,
-  slot: TimeSlot
+  slot: TimeSlot,
+  date: string,
+  originStationId?: string,
+  destStationId?: string
 ): Promise<TripOption[]> {
   const { data, error } = await supabase
     .from('routes')
@@ -132,6 +191,7 @@ export async function searchTrips(
 
   const companies = await fetchOperatingCompanies();
   if (companies.length === 0) return [];
+  const company = companies[0];
 
   const options: TripOption[] = [];
   for (const raw of data) {
@@ -150,24 +210,62 @@ export async function searchTrips(
       estimated_duration_minutes: Number(raw.estimated_duration_minutes ?? 0),
       base_price: Number(raw.base_price ?? 0),
     };
+
+    // Cas 1 : un voyage planifie par le chef de gare existe pour cette date/creneau.
+    const schedules = await fetchPlannedSchedules(route.id, date, originStationId, destStationId);
+    const planned = schedules.filter((s) => {
+      const { hour } = utcHourMinute(s.departure_datetime);
+      return hour >= slot.startHour && hour <= slot.endHour;
+    });
+
+    if (planned.length > 0) {
+      for (const s of planned) {
+        const dep = utcHourMinute(s.departure_datetime);
+        const arrivalTime = s.arrival_datetime
+          ? utcHourMinute(s.arrival_datetime).label
+          : addMinutesToTime(dep.label, route.estimated_duration_minutes);
+        const bus = Array.isArray(s.buses) ? s.buses[0] ?? null : s.buses;
+        const capacity = bus?.total_seats ?? bus?.capacity ?? 45;
+        const seatsAvailable = s.seats_available ?? capacity;
+        const busType = bus?.registration_number ?? 'Bus planifié';
+        options.push({
+          key: `sched-${s.id}`,
+          route,
+          company,
+          departureTime: dep.label,
+          arrivalTime,
+          durationMinutes: route.estimated_duration_minutes,
+          price: Number(s.price ?? route.base_price),
+          amenities: { ac: true, wifi: true, usb: true },
+          busType,
+          scheduleId: s.id,
+          isPlanned: true,
+          seatsAvailable,
+        });
+      }
+      continue;
+    }
+
+    // Cas 2 : aucun voyage planifie -> trajets provisoires.
     const span = slot.endHour - slot.startHour;
     const departures = [slot.startHour, slot.startHour + Math.max(1, Math.round(span / 2))];
     departures.forEach((hour, idx) => {
       if (hour > slot.endHour) return;
-      const company = companies[(idx + options.length) % companies.length];
+      const c = companies[(idx + options.length) % companies.length];
       const preset = AMENITY_PRESETS[idx % AMENITY_PRESETS.length];
       const departureTime = `${String(hour).padStart(2, '0')}:00`;
       const arrivalTime = addMinutesToTime(departureTime, route.estimated_duration_minutes);
       options.push({
-        key: `${route.id}-${company.id}-${departureTime}`,
+        key: `${route.id}-${c.id}-${departureTime}`,
         route,
-        company,
+        company: c,
         departureTime,
         arrivalTime,
         durationMinutes: route.estimated_duration_minutes,
         price: route.base_price,
         amenities: { ac: preset.ac, wifi: preset.wifi, usb: preset.usb },
         busType: preset.busType,
+        isPlanned: false,
       });
     });
   }
@@ -223,9 +321,18 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
 
   const created = data as Booking;
 
-  await supabase
-    .rpc('sbta_confirm_pending_mobile_booking', { p_booking_id: created.id })
-    .then(() => undefined, () => undefined);
+  if (input.trip.scheduleId) {
+    await supabase
+      .rpc('sbta_assign_and_confirm_mobile_booking', {
+        p_booking_id: created.id,
+        p_schedule_id: input.trip.scheduleId,
+      })
+      .then(() => undefined, () => undefined);
+  } else {
+    await supabase
+      .rpc('sbta_confirm_pending_mobile_booking', { p_booking_id: created.id })
+      .then(() => undefined, () => undefined);
+  }
 
   const refreshed = await fetchBooking(created.id);
   return refreshed ?? created;

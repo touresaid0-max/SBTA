@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Clock, Route as RouteIcon, Bus, Wifi, Snowflake, Usb, Check } from 'lucide-react';
+import { MapPin, Clock, Route as RouteIcon, Bus, Wifi, Snowflake, Usb, Check, CheckCircle2 } from 'lucide-react';
 import { SBTA, formatXOF, minutesToDuration } from '../theme';
 import { Button, TopBar, Card } from '../components';
 import { useBooking } from '../BookingContext';
@@ -32,6 +32,22 @@ export default function TripDetailScreen() {
             </span>
             <span className="text-xl font-extrabold" style={{ color: SBTA.green }}>{formatXOF(trip.price)}</span>
           </div>
+
+          {trip.isPlanned ? (
+            <div className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: SBTA.greenLight }}>
+              <CheckCircle2 size={16} color={SBTA.green} />
+              <span className="text-[13px] font-semibold" style={{ color: SBTA.greenDark }}>
+                Voyage planifié · {trip.seatsAvailable ?? 0} place(s) · billet définitif après paiement
+              </span>
+            </div>
+          ) : (
+            <div className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: '#FFF8E6' }}>
+              <Clock size={16} color="#B8860B" />
+              <span className="text-[13px] font-semibold" style={{ color: '#7A5C00' }}>
+                Billet provisoire · sièges attribués dès la planification du voyage
+              </span>
+            </div>
+          )}
 
           <div className="mt-4 space-y-4">
             <div className="flex gap-3">
