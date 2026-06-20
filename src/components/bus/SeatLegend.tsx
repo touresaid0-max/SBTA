@@ -16,6 +16,12 @@ const LEGEND_ITEMS = [
     icon: '×',
   },
   {
+    label: 'Réservé en ligne',
+    boxClass: 'bg-[#FCD34D] border-[#D97706]',
+    textClass: 'text-[#78350F]',
+    icon: '@',
+  },
+  {
     label: 'VIP',
     boxClass: 'bg-[#FFFBEB] border-[#FCD34D]',
     textClass: 'text-amber-700',

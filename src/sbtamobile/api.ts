@@ -111,12 +111,6 @@ async function fetchOperatingCompanies(): Promise<Company[]> {
   return (data ?? []).slice(0, 4);
 }
 
-const AMENITY_PRESETS = [
-  { ac: true, wifi: true, usb: true, busType: 'VIP 2x2 climatisé' },
-  { ac: true, wifi: false, usb: true, busType: 'Confort climatisé' },
-  { ac: true, wifi: true, usb: false, busType: 'Standard climatisé' },
-];
-
 type BusRel = { registration_number: string | null; total_seats: number | null; capacity: number | null };
 
 type ScheduleRow = {

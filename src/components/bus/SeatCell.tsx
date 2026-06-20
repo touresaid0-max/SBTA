@@ -16,6 +16,8 @@ function getSeatStyle(seat: EnrichedSeat, isSelected: boolean): string {
   switch (seat.status) {
     case 'occupied':
       return 'bg-red-500 border-red-600 text-white cursor-not-allowed'
+    case 'online_reserved':
+      return 'bg-[#FCD34D] border-[#D97706] text-[#78350F] cursor-not-allowed'
     case 'out_of_service':
       return 'bg-[#FFF0F0] border-[#FECACA] text-[#EF4444] cursor-not-allowed'
     case 'boarding':
@@ -57,6 +59,12 @@ function getSeatTooltip(seat: EnrichedSeat, isSelected: boolean): string {
     case 'available':
       return `Siège ${seat.label} — ${seat.price.toLocaleString('fr-CI')} FCFA${seat.type === 'vip' ? ' (VIP)' : seat.type === 'handicape' ? ' (PMR)' : ''}`
     case 'occupied': return `Siège ${seat.label} — Occupé`
+    case 'online_reserved': {
+      const o = seat.online_reservation
+      return o
+        ? `Siège ${seat.label} — Réservé en ligne (/sbtamobile)\n${o.customer_name}${o.customer_phone ? ' · ' + o.customer_phone : ''}\nBillet ${o.booking_ref} · ${o.amount.toLocaleString('fr-CI')} FCFA · ${o.status === 'confirmed' ? 'Confirmé' : o.status}`
+        : `Siège ${seat.label} — Réservé en ligne`
+    }
     case 'out_of_service': return `Siège ${seat.label} — Hors service`
     case 'boarding': return `Siège ${seat.label} — En embarquement`
     case 'my_reservation': return `Siège ${seat.label} — Votre réservation`

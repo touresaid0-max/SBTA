@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { ScheduleSeatMap, EnrichedSeat, SeatStatus, EnrichedRow, SeatRow } from '../types/seatMap.types'
+import type { ScheduleSeatMap, EnrichedSeat, SeatStatus, EnrichedRow, SeatRow, OnlineReservationInfo } from '../types/seatMap.types'
 import { normalizeLegacyLayout, generateSeatLayout, generateDefaultLayoutFromTotalSeats } from '../utils/generateSeatLayout'
 
 const SEAT_CONFIG_COLUMNS = 'id, name, total_seats, rows, left_columns, right_columns, back_row, back_row_seats, aisle_position, seat_layout, seat_layout_v2'
@@ -102,6 +102,7 @@ export async function fetchScheduleSeatMap(
     ])
 
     const lockMap = await fetchActiveSeatLocksForSchedules(siblingIds)
+    const onlineMap = await fetchOnlineReservedSeats(siblingIds)
 
     const occupiedMap: Record<string, { reservation_id: string; passenger_name: string; status: string; client_id: string }> = {}
     for (const res of reservations ?? []) {
@@ -115,6 +116,7 @@ export async function fetchScheduleSeatMap(
       row: row.row,
       seats: row.seats.map((seat): EnrichedSeat => {
         const occupied = occupiedMap[seat.id]
+        const online = onlineMap[seat.id]
         const lock = lockMap[seat.id]
         let status: SeatStatus = 'available'
         let lock_expires_at: string | undefined
@@ -122,11 +124,13 @@ export async function fetchScheduleSeatMap(
         if (occupied) {
           status = currentUser && occupied.client_id === currentUser.id ? 'my_reservation'
             : occupied.status === 'embarque' ? 'boarding' : 'occupied'
+        } else if (online) {
+          status = 'online_reserved'
         } else if (lock) {
           lock_expires_at = lock.expires_at
           status = currentUser && lock.locked_by === currentUser.id ? 'locked_by_me' : 'locked'
         }
-        return { ...seat, status, reservation_id: occupied?.reservation_id, passenger_name: occupied?.passenger_name, price: schedulePrice, lock_expires_at }
+        return { ...seat, status, reservation_id: occupied?.reservation_id, passenger_name: occupied?.passenger_name, price: schedulePrice, lock_expires_at, online_reservation: online }
       }),
     }))
     const allSeatsList = enrichedLayout.flatMap(r => r.seats)
@@ -140,7 +144,7 @@ export async function fetchScheduleSeatMap(
       enriched_layout: enrichedLayout,
       total_seats: totalSeats,
       available_count: allSeatsList.filter(s => s.status === 'available').length,
-      occupied_count: allSeatsList.filter(s => ['occupied', 'boarding', 'my_reservation'].includes(s.status)).length,
+      occupied_count: allSeatsList.filter(s => ['occupied', 'boarding', 'my_reservation', 'online_reserved'].includes(s.status)).length,
       out_of_service_count: 0,
       base_price: schedulePrice,
       vip_price: vipPrice,
@@ -218,6 +222,7 @@ export async function fetchScheduleSeatMap(
   if (resError) throw new Error(`Erreur chargement réservations : ${resError.message}`)
 
   const lockMap = await fetchActiveSeatLocksForSchedules(siblingIds)
+  const onlineMap = await fetchOnlineReservedSeats(siblingIds)
 
   const occupiedMap: Record<string, { reservation_id: string; passenger_name: string; status: string; client_id: string }> = {}
   for (const res of reservations ?? []) {
@@ -231,6 +236,7 @@ export async function fetchScheduleSeatMap(
     row: row.row,
     seats: row.seats.map((seat): EnrichedSeat => {
       const occupied = occupiedMap[seat.id]
+      const online = onlineMap[seat.id]
       const lock = lockMap[seat.id]
       let status: SeatStatus = 'available'
       let lock_expires_at: string | undefined
@@ -240,6 +246,8 @@ export async function fetchScheduleSeatMap(
       } else if (occupied) {
         status = currentUser && occupied.client_id === currentUser.id ? 'my_reservation'
           : occupied.status === 'embarque' ? 'boarding' : 'occupied'
+      } else if (online) {
+        status = 'online_reserved'
       } else if (lock) {
         lock_expires_at = lock.expires_at
         status = currentUser && lock.locked_by === currentUser.id ? 'locked_by_me' : 'locked'
@@ -247,13 +255,13 @@ export async function fetchScheduleSeatMap(
 
       const price = seat.type === 'vip' ? vipPrice : schedulePrice
 
-      return { ...seat, status, reservation_id: occupied?.reservation_id, passenger_name: occupied?.passenger_name, price, lock_expires_at }
+      return { ...seat, status, reservation_id: occupied?.reservation_id, passenger_name: occupied?.passenger_name, price, lock_expires_at, online_reservation: online }
     }),
   }))
 
   const allSeats = enrichedLayout.flatMap(r => r.seats)
   const available_count = allSeats.filter(s => s.status === 'available').length
-  const occupied_count = allSeats.filter(s => ['occupied', 'boarding', 'my_reservation'].includes(s.status)).length
+  const occupied_count = allSeats.filter(s => ['occupied', 'boarding', 'my_reservation', 'online_reserved'].includes(s.status)).length
   const out_of_service_count = allSeats.filter(s => s.status === 'out_of_service').length
 
   return {
@@ -286,6 +294,7 @@ export function subscribeToSeatChanges(
     channel
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations', filter: `schedule_id=eq.${sid}` }, () => onUpdate())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'seat_locks', filter: `schedule_id=eq.${sid}` }, () => onUpdate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings', filter: `schedule_id=eq.${sid}` }, () => onUpdate())
   }
 
   channel.subscribe()
@@ -307,7 +316,21 @@ export async function isSeatStillAvailable(
     .maybeSingle()
 
   if (error) throw error
-  return data === null
+  if (data !== null) return false
+
+  const seatInt = parseInt(seatNumber, 10)
+  if (!Number.isNaN(seatInt)) {
+    const { data: online } = await supabase
+      .from('mobile_bookings')
+      .select('id')
+      .in('schedule_id', siblingIds)
+      .eq('status', 'confirmed')
+      .contains('assigned_seats', [seatInt])
+      .maybeSingle()
+    if (online !== null) return false
+  }
+
+  return true
 }
 
 // ── Seat lock helpers ─────────────────────────────────────────────────────────
@@ -360,6 +383,42 @@ async function fetchActiveSeatLocksForSchedules(
   const map: Record<string, { locked_by: string; expires_at: string }> = {}
   for (const row of data ?? []) {
     map[row.seat_number] = { locked_by: row.locked_by, expires_at: row.expires_at }
+  }
+  return map
+}
+
+type PassengerJson = { firstName?: string; lastName?: string; phone?: string }
+
+// Sieges reserves via l'application mobile /sbtamobile (affiches en jaune).
+async function fetchOnlineReservedSeats(
+  scheduleIds: string[]
+): Promise<Record<string, OnlineReservationInfo>> {
+  const { data } = await supabase
+    .from('mobile_bookings')
+    .select('booking_ref, passengers, total, service_fee, payment_method, status, assigned_seats')
+    .in('schedule_id', scheduleIds)
+    .eq('status', 'confirmed')
+
+  const map: Record<string, OnlineReservationInfo> = {}
+  for (const row of data ?? []) {
+    const seats: number[] = Array.isArray(row.assigned_seats) ? row.assigned_seats : []
+    if (seats.length === 0) continue
+    const first = (Array.isArray(row.passengers) ? row.passengers[0] : null) as PassengerJson | null
+    const customer_name = first
+      ? `${first.firstName ?? ''} ${first.lastName ?? ''}`.trim() || 'Client en ligne'
+      : 'Client en ligne'
+    const info: OnlineReservationInfo = {
+      booking_ref: row.booking_ref ?? '',
+      customer_name,
+      customer_phone: first?.phone ?? '',
+      amount: Number(row.total ?? 0),
+      service_fee: Number(row.service_fee ?? 0),
+      payment_method: row.payment_method ?? '',
+      status: row.status ?? '',
+    }
+    for (const seat of seats) {
+      map[String(seat)] = info
+    }
   }
   return map
 }

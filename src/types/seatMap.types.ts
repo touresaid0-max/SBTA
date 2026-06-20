@@ -7,8 +7,19 @@ export type SeatStatus =
   | 'out_of_service'
   | 'boarding'
   | 'my_reservation'
+  | 'online_reserved' // reserved via the /sbtamobile app (yellow)
   | 'locked'       // locked by another user (3-min temp hold)
   | 'locked_by_me' // locked by current user (countdown visible)
+
+export interface OnlineReservationInfo {
+  booking_ref: string
+  customer_name: string
+  customer_phone: string
+  amount: number
+  service_fee: number
+  payment_method: string
+  status: string
+}
 
 export interface SeatDefinition {
   id: string
@@ -45,6 +56,7 @@ export interface EnrichedSeat extends SeatDefinition {
   passenger_name?: string
   price: number
   lock_expires_at?: string  // ISO string, present when locked or locked_by_me
+  online_reservation?: OnlineReservationInfo
 }
 
 export interface EnrichedRow {
