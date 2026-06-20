@@ -99,6 +99,11 @@ export default function GuichetierDashboard() {
 
   useEffect(() => { loadDashboardData() }, [loadDashboardData])
 
+  // Recharge les stats du jour une fois le nom de la station connu (inclut les ventes en ligne)
+  useEffect(() => {
+    if (stationName) loadDailyStats()
+  }, [stationName])
+
   // Recharge les départs quand la date change (le chargement initial est géré dans loadCounterInfo)
   useEffect(() => {
     if (!myStationId || !myCounterId) return
@@ -231,11 +236,29 @@ export default function GuichetierDashboard() {
       convoyTotal = (convoys ?? []).reduce((s, c) => s + Number(c.amount || 0), 0)
     }
 
+    // Réservations en ligne confirmées de la station (recette du jour)
+    let onlineTickets = 0
+    let onlineAmount = 0
+    let onlineCount = 0
+    if (stationName) {
+      const todayStr = format(new Date(), 'yyyy-MM-dd')
+      const { data: online } = await supabase
+        .from('mobile_bookings')
+        .select('seats_count, unit_price, assigned_seats')
+        .eq('status', 'confirmed')
+        .eq('travel_date', todayStr)
+        .eq('origin_station', stationName)
+      const onlineRows = online ?? []
+      onlineCount = onlineRows.length
+      onlineTickets = onlineRows.reduce((s, m: any) => s + (m.seats_count || m.assigned_seats?.length || 0), 0)
+      onlineAmount = onlineRows.reduce((s, m: any) => s + Number(m.unit_price || 0) * Number(m.seats_count || 0), 0)
+    }
+
     setStats({
-      ticketsSold,
-      totalReservations: rows.length,
-      totalAmount: totalAmount + convoyTotal,
-      paidAmount: paidAmount + convoyTotal,
+      ticketsSold: ticketsSold + onlineTickets,
+      totalReservations: rows.length + onlineCount,
+      totalAmount: totalAmount + convoyTotal + onlineAmount,
+      paidAmount: paidAmount + convoyTotal + onlineAmount,
       pendingAmount,
     })
   }

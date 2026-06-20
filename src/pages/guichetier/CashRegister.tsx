@@ -24,6 +24,7 @@ interface Transaction {
   payment_status: string;
   status: string;
   created_at: string;
+  is_online?: boolean;
   schedule: {
     departure_datetime: string;
     price: number;
@@ -100,7 +101,7 @@ export default function CashRegister() {
 
   useEffect(() => {
     if (user?.id) loadData();
-  }, [selectedDate, user?.id]);
+  }, [selectedDate, user?.id, myStationName]);
 
   const loadData = async () => {
     setLoading(true);
@@ -152,20 +153,25 @@ export default function CashRegister() {
       if (error) throw error;
 
       const rows = (data ?? []) as unknown as Transaction[];
-      setTransactions(rows);
 
-      const totalAmount = rows.reduce((sum, t) => sum + Number(t.total_price), 0);
-      const paidAmount = rows
+      const onlineRows = await loadOnlineBookings();
+      const allRows = [...rows, ...onlineRows].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setTransactions(allRows);
+
+      const totalAmount = allRows.reduce((sum, t) => sum + Number(t.total_price), 0);
+      const paidAmount = allRows
         .filter(t => t.payment_status === 'payee')
         .reduce((sum, t) => sum + Number(t.total_price), 0);
-      const pendingAmount = rows
+      const pendingAmount = allRows
         .filter(t => t.payment_status === 'en_attente')
         .reduce((sum, t) => sum + Number(t.total_price), 0);
-      const totalTickets = rows.reduce((sum, t) => sum + (t.total_seats || 1), 0);
+      const totalTickets = allRows.reduce((sum, t) => sum + (t.total_seats || 1), 0);
 
       setStats({
         total_tickets: totalTickets,
-        total_reservations: rows.length,
+        total_reservations: allRows.length,
         total_amount: totalAmount,
         paid_amount: paidAmount,
         pending_amount: pendingAmount,
@@ -173,6 +179,62 @@ export default function CashRegister() {
     } catch (error: any) {
       toast.error('Erreur de chargement des transactions');
       console.error(error);
+    }
+  };
+
+  const loadOnlineBookings = async (): Promise<Transaction[]> => {
+    try {
+      let query = supabase
+        .from('mobile_bookings')
+        .select(`
+          id, booking_ref, passengers, payment_phone, seats_count, unit_price,
+          assigned_seats, status, created_at, travel_date, departure_time,
+          origin_city, destination_city, origin_station, destination_station,
+          schedule:schedule_id ( departure_datetime, price )
+        `)
+        .eq('status', 'confirmed')
+        .eq('travel_date', selectedDate);
+
+      // Guichetiers see online sales for their own station; other roles see all
+      if (user?.role === 'guichetier' && myStationName && myStationName !== 'SBTA') {
+        query = query.eq('origin_station', myStationName);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      return (data ?? []).map((mb: any): Transaction => {
+        const pax = Array.isArray(mb.passengers) && mb.passengers.length > 0 ? mb.passengers[0] : null;
+        const ticketAmount = Number(mb.unit_price || 0) * Number(mb.seats_count || 0);
+        const depDatetime =
+          mb.schedule?.departure_datetime ??
+          (mb.travel_date && mb.departure_time ? `${mb.travel_date}T${mb.departure_time}` : mb.travel_date);
+        return {
+          id: mb.id,
+          booking_reference: mb.booking_ref,
+          passenger_name: pax?.name || pax?.full_name || pax?.firstName || 'Client en ligne',
+          passenger_phone: mb.payment_phone || pax?.phone || null,
+          total_price: ticketAmount,
+          total_seats: mb.seats_count || (mb.assigned_seats?.length ?? 1),
+          seat_numbers: (mb.assigned_seats || []).map((n: number) => String(n)),
+          payment_status: 'payee',
+          status: 'confirme',
+          created_at: mb.created_at,
+          is_online: true,
+          schedule: {
+            departure_datetime: depDatetime,
+            price: Number(mb.unit_price || 0),
+            route_name:
+              mb.origin_city && mb.destination_city
+                ? `${mb.origin_city} \u2192 ${mb.destination_city}`
+                : null,
+            route: null,
+          },
+        };
+      });
+    } catch (error: any) {
+      console.error('Erreur chargement reservations en ligne:', error);
+      return [];
     }
   };
 
@@ -536,6 +598,14 @@ export default function CashRegister() {
                         <span className="font-mono text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--neutral-100)', color: 'var(--text-primary)' }}>
                           {t.booking_reference}
                         </span>
+                        {t.is_online && (
+                          <span
+                            className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                            style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}
+                          >
+                            <Smartphone className="w-2.5 h-2.5" /> En ligne
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
