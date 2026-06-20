@@ -170,6 +170,11 @@ function utcHourMinute(iso: string): { hour: number; label: string } {
   return { hour, label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` };
 }
 
+export type SearchResult = {
+  planned: TripOption[];
+  provisional: TripOption | null;
+};
+
 export async function searchTrips(
   originCityId: string,
   destCityId: string,
@@ -177,7 +182,7 @@ export async function searchTrips(
   date: string,
   originStationId?: string,
   destStationId?: string
-): Promise<TripOption[]> {
+): Promise<SearchResult> {
   const { data, error } = await supabase
     .from('routes')
     .select(
@@ -187,13 +192,15 @@ export async function searchTrips(
     .eq('origin_city_id', originCityId)
     .eq('destination_city_id', destCityId);
   if (error) throw error;
-  if (!data || data.length === 0) return [];
+  if (!data || data.length === 0) return { planned: [], provisional: null };
 
   const companies = await fetchOperatingCompanies();
-  if (companies.length === 0) return [];
+  if (companies.length === 0) return { planned: [], provisional: null };
   const company = companies[0];
 
-  const options: TripOption[] = [];
+  const planned: TripOption[] = [];
+  let firstRoute: RouteRow | null = null;
+
   for (const raw of data) {
     const originRel = raw.origin as { name: string } | { name: string }[] | null;
     const destRel = raw.destination as { name: string } | { name: string }[] | null;
@@ -210,66 +217,64 @@ export async function searchTrips(
       estimated_duration_minutes: Number(raw.estimated_duration_minutes ?? 0),
       base_price: Number(raw.base_price ?? 0),
     };
+    if (!firstRoute) firstRoute = route;
 
     // Cas 1 : un voyage planifie par le chef de gare existe pour cette date/creneau.
     const schedules = await fetchPlannedSchedules(route.id, date, originStationId, destStationId);
-    const planned = schedules.filter((s) => {
+    const matched = schedules.filter((s) => {
       const { hour } = utcHourMinute(s.departure_datetime);
       return hour >= slot.startHour && hour <= slot.endHour;
     });
 
-    if (planned.length > 0) {
-      for (const s of planned) {
-        const dep = utcHourMinute(s.departure_datetime);
-        const arrivalTime = s.arrival_datetime
-          ? utcHourMinute(s.arrival_datetime).label
-          : addMinutesToTime(dep.label, route.estimated_duration_minutes);
-        const bus = Array.isArray(s.buses) ? s.buses[0] ?? null : s.buses;
-        const capacity = bus?.total_seats ?? bus?.capacity ?? 45;
-        const seatsAvailable = s.seats_available ?? capacity;
-        const busType = bus?.registration_number ?? 'Bus planifié';
-        options.push({
-          key: `sched-${s.id}`,
-          route,
-          company,
-          departureTime: dep.label,
-          arrivalTime,
-          durationMinutes: route.estimated_duration_minutes,
-          price: Number(s.price ?? route.base_price),
-          amenities: { ac: true, wifi: true, usb: true },
-          busType,
-          scheduleId: s.id,
-          isPlanned: true,
-          seatsAvailable,
-        });
-      }
-      continue;
-    }
-
-    // Cas 2 : aucun voyage planifie -> trajets provisoires.
-    const span = slot.endHour - slot.startHour;
-    const departures = [slot.startHour, slot.startHour + Math.max(1, Math.round(span / 2))];
-    departures.forEach((hour, idx) => {
-      if (hour > slot.endHour) return;
-      const c = companies[(idx + options.length) % companies.length];
-      const preset = AMENITY_PRESETS[idx % AMENITY_PRESETS.length];
-      const departureTime = `${String(hour).padStart(2, '0')}:00`;
-      const arrivalTime = addMinutesToTime(departureTime, route.estimated_duration_minutes);
-      options.push({
-        key: `${route.id}-${c.id}-${departureTime}`,
+    for (const s of matched) {
+      const dep = utcHourMinute(s.departure_datetime);
+      const arrivalTime = s.arrival_datetime
+        ? utcHourMinute(s.arrival_datetime).label
+        : addMinutesToTime(dep.label, route.estimated_duration_minutes);
+      const bus = Array.isArray(s.buses) ? s.buses[0] ?? null : s.buses;
+      const capacity = bus?.total_seats ?? bus?.capacity ?? 45;
+      const seatsAvailable = s.seats_available ?? capacity;
+      const busType = bus?.registration_number ?? 'Bus planifié';
+      planned.push({
+        key: `sched-${s.id}`,
         route,
-        company: c,
-        departureTime,
+        company,
+        departureTime: dep.label,
         arrivalTime,
         durationMinutes: route.estimated_duration_minutes,
-        price: route.base_price,
-        amenities: { ac: preset.ac, wifi: preset.wifi, usb: preset.usb },
-        busType: preset.busType,
-        isPlanned: false,
+        price: Number(s.price ?? route.base_price),
+        amenities: { ac: true, wifi: true, usb: true },
+        busType,
+        scheduleId: s.id,
+        isPlanned: true,
+        seatsAvailable,
       });
-    });
+    }
   }
-  return options.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+
+  if (planned.length > 0) {
+    return {
+      planned: planned.sort((a, b) => a.departureTime.localeCompare(b.departureTime)),
+      provisional: null,
+    };
+  }
+
+  // Cas 2 : aucun voyage planifie -> billet provisoire (pas de liste de trajets).
+  if (!firstRoute) return { planned: [], provisional: null };
+  const departureTime = `${String(slot.startHour).padStart(2, '0')}:00`;
+  const provisional: TripOption = {
+    key: `prov-${firstRoute.id}`,
+    route: firstRoute,
+    company,
+    departureTime,
+    arrivalTime: addMinutesToTime(departureTime, firstRoute.estimated_duration_minutes),
+    durationMinutes: firstRoute.estimated_duration_minutes,
+    price: firstRoute.base_price,
+    amenities: { ac: true, wifi: true, usb: true },
+    busType: 'À planifier',
+    isPlanned: false,
+  };
+  return { planned: [], provisional };
 }
 
 type CreateBookingInput = {

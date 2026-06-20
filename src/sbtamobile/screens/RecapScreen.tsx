@@ -33,7 +33,7 @@ export default function RecapScreen() {
         <Card>
           <div className="flex items-center gap-3">
             <div className="text-center">
-              <div className="text-xl font-extrabold" style={{ color: SBTA.ink }}>{trip.departureTime}</div>
+              {trip.isPlanned && <div className="text-xl font-extrabold" style={{ color: SBTA.ink }}>{trip.departureTime}</div>}
               <div className="text-xs" style={{ color: SBTA.gray400 }}>{search.originName}</div>
               {search.originStationName && <div className="text-[11px] font-semibold" style={{ color: SBTA.green }}>{search.originStationName}</div>}
             </div>
@@ -43,7 +43,7 @@ export default function RecapScreen() {
               <ArrowRight size={14} color={SBTA.gray400} />
             </div>
             <div className="text-center">
-              <div className="text-xl font-extrabold" style={{ color: SBTA.ink }}>{trip.arrivalTime}</div>
+              {trip.isPlanned && <div className="text-xl font-extrabold" style={{ color: SBTA.ink }}>{trip.arrivalTime}</div>}
               <div className="text-xs" style={{ color: SBTA.gray400 }}>{search.destName}</div>
               {search.destStationName && <div className="text-[11px] font-semibold" style={{ color: SBTA.red }}>{search.destStationName}</div>}
             </div>

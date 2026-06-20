@@ -58,19 +58,31 @@ export default function TripDetailScreen() {
               </div>
               <div className="flex-1 space-y-3">
                 <div>
-                  <div className="text-lg font-extrabold" style={{ color: SBTA.ink }}>{trip.departureTime} · {search.originName}</div>
+                  <div className="text-lg font-extrabold" style={{ color: SBTA.ink }}>
+                    {trip.isPlanned ? `${trip.departureTime} · ${search.originName}` : search.originName}
+                  </div>
                   <div className="flex items-center gap-1 text-xs" style={{ color: SBTA.gray600 }}>
                     <MapPin size={12} /> {search.originStationName || `Gare ${search.originName}`}
                   </div>
                 </div>
                 <div>
-                  <div className="text-lg font-extrabold" style={{ color: SBTA.ink }}>{trip.arrivalTime} · {search.destName}</div>
+                  <div className="text-lg font-extrabold" style={{ color: SBTA.ink }}>
+                    {trip.isPlanned ? `${trip.arrivalTime} · ${search.destName}` : search.destName}
+                  </div>
                   <div className="flex items-center gap-1 text-xs" style={{ color: SBTA.gray600 }}>
                     <MapPin size={12} /> {search.destStationName || `Gare ${search.destName}`}
                   </div>
                 </div>
               </div>
             </div>
+            {!trip.isPlanned && (
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: SBTA.gray100 }}>
+                <Clock size={15} color={SBTA.gray600} />
+                <span className="text-[13px] font-semibold" style={{ color: SBTA.gray600 }}>
+                  Créneau : {search.slot.label}
+                </span>
+              </div>
+            )}
           </div>
         </Card>
 

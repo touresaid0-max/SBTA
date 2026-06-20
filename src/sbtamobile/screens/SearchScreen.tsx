@@ -10,7 +10,7 @@ import heroImg from './hero-banner.jpg';
 
 export default function SearchScreen() {
   const navigate = useNavigate();
-  const { setSearch, setServiceFee } = useBooking();
+  const { setSearch, setServiceFee, setTrip } = useBooking();
   const { logout } = useMobileAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [cities, setCities] = useState<City[]>([]);
@@ -91,7 +91,7 @@ export default function SearchScreen() {
     const slot = TIME_SLOTS.find((s) => s.id === slotId)!;
     setLoading(true);
     try {
-      const trips = await searchTrips(origin, dest, slot, date, originStation || undefined, destStation || undefined);
+      const result = await searchTrips(origin, dest, slot, date, originStation || undefined, destStation || undefined);
       const originName = cities.find((c) => c.id === origin)?.name ?? '';
       const destName = cities.find((c) => c.id === dest)?.name ?? '';
       const originStationName = originStations.find((s) => s.id === originStation)?.name ?? '';
@@ -108,7 +108,14 @@ export default function SearchScreen() {
         date,
         slot,
       });
-      navigate('/sbtamobile/trips', { state: { trips } });
+      if (result.planned.length > 0) {
+        navigate('/sbtamobile/trips', { state: { trips: result.planned } });
+      } else if (result.provisional) {
+        setTrip(result.provisional);
+        navigate('/sbtamobile/trip');
+      } else {
+        setError('Aucun trajet disponible pour cette sélection.');
+      }
     } catch {
       setError('La recherche a échoué. Réessayez.');
     } finally {
