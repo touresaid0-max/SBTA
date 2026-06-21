@@ -355,6 +355,25 @@ export default function TicketSale() {
     const startOfDay = `${search.date}T00:00:00+00:00`;
     const endOfDay = `${search.date}T23:59:59+00:00`;
 
+    // A guichetier must be bound to a counter AND a station. Without both, no line is visible.
+    if (!myCounterId || !myStationId) {
+      setSchedules([]);
+      setStep('select');
+      return;
+    }
+
+    // Only routes explicitly assigned to this counter by the Chef de gare are visible.
+    const { data: assignedRoutes } = await supabase
+      .from('counter_routes')
+      .select('route_id')
+      .eq('counter_id', myCounterId);
+    const assignedRouteIds = new Set((assignedRoutes || []).map((r: any) => r.route_id));
+    if (assignedRouteIds.size === 0) {
+      setSchedules([]);
+      setStep('select');
+      return;
+    }
+
     const { data: routeData, error: routeError } = await supabase
       .from('routes')
       .select('id, name, origin_city_id, destination_city_id, distance_km, base_price')
@@ -369,36 +388,35 @@ export default function TicketSale() {
       return;
     }
 
-    const routeIds = routeData.map(r => r.id);
+    // Restrict to assigned routes only.
+    const routeIds = routeData.map(r => r.id).filter(id => assignedRouteIds.has(id));
+    if (routeIds.length === 0) {
+      setSchedules([]);
+      setStep('select');
+      return;
+    }
 
     const { data, error } = await supabase
       .from('schedules')
       .select(`
         id, route_name, departure_datetime, arrival_datetime,
         price, seats_available, seats_reserved, estimated_duration_minutes, notes,
-        route_id, bus_id,
+        route_id, bus_id, departure_station_id,
         buses:bus_id(registration_number, total_seats, class, model, brand, seat_config_id)
       `)
       .in('route_id', routeIds)
-      .in('status', ['planifie', 'en_cours'])
+      .eq('departure_station_id', myStationId)
+      .in('status', ['planifie', 'en_cours', 'embarquement'])
       .gte('departure_datetime', startOfDay)
       .lte('departure_datetime', endOfDay)
       .order('departure_datetime');
 
     if (error) throw error;
 
-    // Filter to only schedules on routes assigned to this guichetier's counter
-    let filteredData = data || [];
-    if (myCounterId && filteredData.length > 0) {
-      const { data: assignedRoutes } = await supabase
-        .from('counter_routes')
-        .select('route_id')
-        .eq('counter_id', myCounterId);
-      const assignedRouteIds = new Set((assignedRoutes || []).map((r: any) => r.route_id));
-      filteredData = filteredData.filter((s: any) => assignedRouteIds.has(s.route_id));
-    } else if (!myCounterId) {
-      filteredData = [];
-    }
+    // Server already scoped by station + assigned routes; enforce the same client-side as a safety net.
+    const filteredData = (data || []).filter(
+      (s: any) => s.departure_station_id === myStationId && assignedRouteIds.has(s.route_id)
+    );
 
     const routeMap = Object.fromEntries(routeData.map(r => [r.id, r]));
     const originCityName = cities.find(c => c.id === search.origin_city_id)?.name || '';
@@ -1567,7 +1585,7 @@ export default function TicketSale() {
               <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
                 {!isOnline
                   ? 'Aucun voyage en cache. Connectez-vous pour actualiser les données.'
-                  : `Aucun départ planifié sur l'itinéraire ${originCity?.name} → ${destCity?.name} le ${format(new Date(search.date + 'T12:00:00'), 'dd/MM/yyyy')}`
+                  : 'Aucune ligne ne vous a été assignée pour cette date. Veuillez contacter le Chef de gare.'
                 }
               </p>
               <button onClick={() => setStep('search')} className="mt-4 px-4 py-2 rounded-lg text-sm font-medium border">
