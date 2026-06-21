@@ -285,6 +285,9 @@ type CreateBookingInput = {
   total: number;
   paymentMethod: string;
   paymentPhone: string;
+  // When true, the booking is created with payment pending (e.g. awaiting Wave confirmation)
+  // and is NOT confirmed yet. The webhook confirms it once the payment is settled.
+  pending?: boolean;
 };
 
 export async function createBooking(input: CreateBookingInput): Promise<Booking> {
@@ -312,13 +315,16 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
       status: 'provisional',
       payment_method: input.paymentMethod,
       payment_phone: input.paymentPhone,
-      payment_status: 'paid',
+      payment_status: input.pending ? 'pending' : 'paid',
     })
     .select('*')
     .single();
   if (error) throw error;
 
   const created = data as Booking;
+
+  // Pending bookings (Wave) stay provisional until the payment webhook confirms them.
+  if (input.pending) return created;
 
   if (input.trip.scheduleId) {
     await supabase
@@ -355,6 +361,33 @@ export async function fetchBooking(id: string): Promise<Booking | null> {
     .maybeSingle();
   if (error) throw error;
   return (data as Booking) ?? null;
+}
+
+// ── Paiement Wave ───────────────────────────────────────────────
+export async function getWaveStatus(): Promise<{ isActive: boolean; mode: string }> {
+  const { data, error } = await supabase.rpc('get_wave_public_status');
+  if (error) return { isActive: false, mode: 'test' };
+  const row = Array.isArray(data) ? data[0] : data;
+  return { isActive: !!row?.is_active, mode: row?.mode ?? 'test' };
+}
+
+export async function startWaveCheckout(bookingId: string): Promise<string> {
+  const { data: sess } = await supabase.auth.getSession();
+  const token = sess.session?.access_token;
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wave-create-checkout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ bookingId, origin: window.location.origin }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.launchUrl) {
+    throw new Error(data?.error || 'Le paiement Wave est indisponible.');
+  }
+  return data.launchUrl as string;
 }
 
 export type Faq = {

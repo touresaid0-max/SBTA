@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Eye, XCircle, Ticket, X, MapPin, User, Phone, CreditCard } from 'lucide-react';
+import { Search, Eye, XCircle, Ticket, X, MapPin, User, Phone, CreditCard, Waves } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/utils/formatCurrency';
 import { fetchBookings, cancelBooking, type MobileBooking } from '@/services/agentReservation.service';
@@ -176,8 +176,19 @@ export default function Tickets() {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm text-[#4A6B55]"><User className="w-4 h-4 text-[#8AA898]" /> {selected.customer_name ?? '—'}</div>
                 <div className="flex items-center gap-2 text-sm text-[#4A6B55]"><Phone className="w-4 h-4 text-[#8AA898]" /> {selected.customer_phone ?? '—'}</div>
-                <div className="flex items-center gap-2 text-sm text-[#4A6B55]"><CreditCard className="w-4 h-4 text-[#8AA898]" /> {selected.payment_method ?? '—'}</div>
+                <div className="flex items-center gap-2 text-sm text-[#4A6B55]"><CreditCard className="w-4 h-4 text-[#8AA898]" /> {selected.payment_method === 'wave' ? 'Wave' : (selected.payment_method ?? '—')}</div>
               </div>
+
+              {selected.payment_method === 'wave' && (
+                <div className="rounded-xl border p-4 space-y-1.5 text-sm" style={{ background: '#E6F8FF', borderColor: '#BEE9FB' }}>
+                  <div className="flex items-center gap-2 font-semibold" style={{ color: '#0B6B92' }}>
+                    <Waves className="w-4 h-4" /> Paiement Wave
+                  </div>
+                  <div className="flex justify-between"><span className="text-[#0B6B92]">Référence transaction</span><span className="font-medium text-[#0B6B92]">{selected.wave_transaction_ref ?? '—'}</span></div>
+                  <div className="flex justify-between"><span className="text-[#0B6B92]">Statut Wave</span><span className="font-medium text-[#0B6B92]">{selected.wave_checkout_status ?? '—'}</span></div>
+                  <div className="flex justify-between"><span className="text-[#0B6B92]">Date paiement</span><span className="font-medium text-[#0B6B92]">{selected.payment_date ? new Date(selected.payment_date).toLocaleString('fr-FR') : '—'}</span></div>
+                </div>
+              )}
 
               <div>
                 <h3 className="text-sm font-semibold text-[#1A2E22] mb-2">Passagers ({selected.passengers.length})</h3>

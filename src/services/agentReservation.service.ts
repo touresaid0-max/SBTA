@@ -37,6 +37,9 @@ export interface MobileBooking {
   customer_name: string | null;
   customer_email: string | null;
   customer_phone: string | null;
+  wave_transaction_ref: string | null;
+  wave_checkout_status: string | null;
+  payment_date: string | null;
 }
 
 export interface MobileUser {
@@ -104,6 +107,9 @@ function mapBooking(row: any, user?: { full_name: string | null; email: string |
     customer_name: u?.full_name ?? (paxName || null),
     customer_email: u?.email ?? null,
     customer_phone: u?.phone ?? row.payment_phone ?? (pax?.phone ?? null),
+    wave_transaction_ref: row.wave_transaction_ref ?? null,
+    wave_checkout_status: row.wave_checkout_status ?? null,
+    payment_date: row.payment_date ?? null,
   };
 }
 
@@ -231,5 +237,54 @@ export async function savePolicy(p: Partial<CancellationPolicy> & { id?: string 
 
 export async function deletePolicy(id: string): Promise<void> {
   const { error } = await supabase.from('cancellation_policies').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Paramètres Wave ─────────────────────────────────────────────
+export interface WaveSettings {
+  api_key: string;
+  signing_secret: string;
+  webhook_url: string;
+  mode: 'test' | 'production';
+  is_active: boolean;
+  checkout_enabled: boolean;
+  balance_enabled: boolean;
+  payout_enabled: boolean;
+}
+
+export async function fetchWaveSettings(): Promise<WaveSettings> {
+  const { data, error } = await supabase
+    .from('wave_settings')
+    .select('api_key, signing_secret, webhook_url, mode, is_active, checkout_enabled, balance_enabled, payout_enabled')
+    .eq('id', 1)
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    api_key: data?.api_key ?? '',
+    signing_secret: data?.signing_secret ?? '',
+    webhook_url: data?.webhook_url ?? '',
+    mode: (data?.mode as 'test' | 'production') ?? 'test',
+    is_active: data?.is_active ?? false,
+    checkout_enabled: data?.checkout_enabled ?? true,
+    balance_enabled: data?.balance_enabled ?? false,
+    payout_enabled: data?.payout_enabled ?? false,
+  };
+}
+
+export async function updateWaveSettings(s: WaveSettings): Promise<void> {
+  const { error } = await supabase
+    .from('wave_settings')
+    .update({
+      api_key: s.api_key.trim() || null,
+      signing_secret: s.signing_secret.trim() || null,
+      webhook_url: s.webhook_url.trim() || null,
+      mode: s.mode,
+      is_active: s.is_active,
+      checkout_enabled: s.checkout_enabled,
+      balance_enabled: s.balance_enabled,
+      payout_enabled: s.payout_enabled,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', 1);
   if (error) throw error;
 }

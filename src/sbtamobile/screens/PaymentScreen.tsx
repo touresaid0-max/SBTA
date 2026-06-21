@@ -1,19 +1,26 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Phone, ShieldCheck, Loader2, ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Phone, ShieldCheck, Loader2, ArrowRight, Waves } from 'lucide-react';
 import { SBTA, PAYMENT_METHODS, formatXOF } from '../theme';
 import { Button, TopBar, Card } from '../components';
-import { createBooking } from '../api';
+import { createBooking, startWaveCheckout } from '../api';
 import { useBooking } from '../BookingContext';
 import { useMobileAuth } from '../MobileAuthContext';
 
 export default function PaymentScreen() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { draft, setPayment } = useBooking();
   const { user } = useMobileAuth();
   const [phone, setPhone] = useState(draft.paymentPhone || user?.phone || '');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (searchParams.get('wave') === 'error') {
+      setError('Paiement échoué. Veuillez réessayer.');
+    }
+  }, [searchParams]);
 
   if (!draft.trip || !user) {
     navigate('/sbtamobile/search', { replace: true });
@@ -25,29 +32,46 @@ export default function PaymentScreen() {
   const feeTotal = draft.serviceFee * draft.seatsCount;
   const total = unit * draft.seatsCount + feeTotal;
   const isCard = draft.paymentMethod === 'card';
+  const isWave = draft.paymentMethod === 'wave';
 
   async function pay() {
     setError('');
     if (!isCard && !phone.trim()) return setError('Saisissez le numéro de téléphone à débiter.');
     setProcessing(true);
     setPayment(draft.paymentMethod, phone.trim());
+
+    const bookingInput = {
+      userId: user!.id,
+      trip: draft.trip!,
+      travelDate: draft.search!.date,
+      slotId: draft.search!.slot.id,
+      originStation: draft.search!.originStationName || null,
+      destStation: draft.search!.destStationName || null,
+      seatsCount: draft.seatsCount,
+      passengers: draft.passengers,
+      unitPrice: unit,
+      serviceFee: feeTotal,
+      total,
+      paymentMethod: draft.paymentMethod,
+      paymentPhone: phone.trim(),
+    };
+
+    // Wave: create a pending booking then redirect to the secure Wave checkout page.
+    if (isWave) {
+      try {
+        const booking = await createBooking({ ...bookingInput, pending: true });
+        const url = await startWaveCheckout(booking.id);
+        window.location.href = url;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Le paiement Wave a échoué. Réessayez.');
+        setProcessing(false);
+      }
+      return;
+    }
+
     try {
       await new Promise((r) => setTimeout(r, 1800));
-      const booking = await createBooking({
-        userId: user!.id,
-        trip: draft.trip!,
-        travelDate: draft.search!.date,
-        slotId: draft.search!.slot.id,
-        originStation: draft.search!.originStationName || null,
-        destStation: draft.search!.destStationName || null,
-        seatsCount: draft.seatsCount,
-        passengers: draft.passengers,
-        unitPrice: unit,
-        serviceFee: feeTotal,
-        total,
-        paymentMethod: draft.paymentMethod,
-        paymentPhone: phone.trim(),
-      });
+      const booking = await createBooking(bookingInput);
       navigate(`/sbtamobile/ticket/${booking.id}`, { replace: true, state: { justPaid: true } });
     } catch {
       setError('Le paiement a échoué. Réessayez.');
@@ -104,7 +128,9 @@ export default function PaymentScreen() {
           <div className="flex gap-2">
             <ShieldCheck size={18} color={SBTA.green} className="shrink-0" />
             <p className="text-[13px] leading-relaxed" style={{ color: SBTA.greenDark }}>
-              Paiement sécurisé. Une validation vous sera demandée sur votre téléphone (simulation de démonstration).
+              {isWave
+                ? 'Vous allez être redirigé vers la page sécurisée Wave pour confirmer le paiement. Votre billet est validé automatiquement après confirmation.'
+                : 'Paiement sécurisé. Une validation vous sera demandée sur votre téléphone (simulation de démonstration).'}
             </p>
           </div>
         </Card>
@@ -116,7 +142,11 @@ export default function PaymentScreen() {
         <Button full onClick={pay} disabled={processing}>
           {processing ? (
             <span className="flex items-center justify-center gap-2">
-              <Loader2 size={18} className="animate-spin" /> Traitement...
+              <Loader2 size={18} className="animate-spin" /> {isWave ? 'Redirection vers Wave...' : 'Traitement...'}
+            </span>
+          ) : isWave ? (
+            <span className="flex items-center justify-center gap-2">
+              <Waves size={18} /> Payer avec Wave · {formatXOF(total)}
             </span>
           ) : (
             `Payer ${formatXOF(total)}`

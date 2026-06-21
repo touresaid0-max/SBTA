@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import {
@@ -21,22 +21,54 @@ export default function TicketScreen() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const waveReturn = searchParams.get('wave') === 'success';
   const justPaid = (location.state as { justPaid?: boolean } | null)?.justPaid ?? false;
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const qrRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!id) return;
-    fetchBooking(id)
-      .then((b) => {
-        if (!b) setError('Billet introuvable.');
-        setBooking(b);
-      })
-      .catch(() => setError('Impossible de charger le billet.'))
-      .finally(() => setLoading(false));
-  }, [id]);
+    let cancelled = false;
+    let attempts = 0;
+
+    async function loadOnce(): Promise<Booking | null> {
+      const b = await fetchBooking(id!);
+      if (cancelled) return null;
+      if (!b) { setError('Billet introuvable.'); return null; }
+      setBooking(b);
+      return b;
+    }
+
+    // When returning from Wave, the webhook may still be settling the payment:
+    // poll a few times until it is marked paid before giving up.
+    async function run() {
+      try {
+        const first = await loadOnce();
+        setLoading(false);
+        if (!first) return;
+        if (waveReturn && first.payment_status !== 'paid') {
+          setVerifying(true);
+          const poll = async () => {
+            if (cancelled || attempts >= 10) { setVerifying(false); return; }
+            attempts += 1;
+            const b = await loadOnce();
+            if (b && b.payment_status === 'paid') { setVerifying(false); return; }
+            setTimeout(poll, 2500);
+          };
+          setTimeout(poll, 2500);
+        }
+      } catch {
+        if (!cancelled) { setError('Impossible de charger le billet.'); setLoading(false); }
+      }
+    }
+
+    run();
+    return () => { cancelled = true; };
+  }, [id, waveReturn]);
 
   if (loading) {
     return (
@@ -61,6 +93,7 @@ export default function TicketScreen() {
   }
 
   const confirmed = booking.status === 'confirmed';
+  const paid = booking.payment_status === 'paid';
   const qrValue = booking.booking_ref;
 
   function downloadPdf() {
@@ -125,7 +158,25 @@ export default function TicketScreen() {
     <div className="flex flex-1 flex-col">
       <TopBar title={confirmed ? 'Billet définitif' : 'Billet provisoire'} onBack />
       <div className="flex-1 space-y-4 px-6 pb-6 pt-2">
-        {justPaid && (
+        {verifying && (
+          <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: '#E6F8FF' }}>
+            <Loader2 size={18} className="animate-spin" color="#0B86B8" />
+            <span className="text-sm font-semibold" style={{ color: '#0B6B92' }}>
+              Vérification du paiement Wave en cours...
+            </span>
+          </div>
+        )}
+
+        {!verifying && waveReturn && !paid && (
+          <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: '#FFF8E6' }}>
+            <Clock size={18} color="#B8860B" />
+            <span className="text-sm font-semibold" style={{ color: '#7A5C00' }}>
+              Paiement non confirmé pour l'instant. Il sera mis à jour automatiquement.
+            </span>
+          </div>
+        )}
+
+        {(justPaid || (waveReturn && paid)) && (
           <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: SBTA.greenLight }}>
             <CheckCircle2 size={20} color={SBTA.green} />
             <span className="text-sm font-semibold" style={{ color: SBTA.greenDark }}>
