@@ -73,8 +73,10 @@ function num(v: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
-function mapBooking(row: any): MobileBooking {
-  const u = row.user ?? null;
+function mapBooking(row: any, user?: { full_name: string | null; email: string | null; phone: string | null } | null): MobileBooking {
+  const u = user ?? null;
+  const pax = Array.isArray(row.passengers) && row.passengers.length > 0 ? row.passengers[0] : null;
+  const paxName = pax ? `${pax.firstName ?? ''} ${pax.lastName ?? ''}`.trim() : '';
   return {
     id: row.id,
     user_id: row.user_id,
@@ -99,19 +101,34 @@ function mapBooking(row: any): MobileBooking {
     assigned_seats: row.assigned_seats,
     bus_label: row.bus_label,
     created_at: row.created_at,
-    customer_name: u?.full_name ?? null,
+    customer_name: u?.full_name ?? (paxName || null),
     customer_email: u?.email ?? null,
-    customer_phone: u?.phone ?? row.payment_phone ?? null,
+    customer_phone: u?.phone ?? row.payment_phone ?? (pax?.phone ?? null),
   };
 }
 
 export async function fetchBookings(): Promise<MobileBooking[]> {
   const { data, error } = await supabase
     .from('mobile_bookings')
-    .select('*, user:users(full_name,email,phone)')
+    .select('*')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map(mapBooking);
+  const rows = data ?? [];
+
+  const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean))) as string[];
+  const usersById: Record<string, { full_name: string | null; email: string | null; phone: string | null }> = {};
+  if (userIds.length > 0) {
+    const { data: usersData, error: usersError } = await supabase
+      .from('users')
+      .select('id, full_name, email, phone')
+      .in('id', userIds);
+    if (usersError) throw usersError;
+    for (const u of usersData ?? []) {
+      usersById[u.id] = { full_name: u.full_name, email: u.email, phone: u.phone };
+    }
+  }
+
+  return rows.map((row) => mapBooking(row, row.user_id ? usersById[row.user_id] : null));
 }
 
 export async function cancelBooking(id: string): Promise<void> {
