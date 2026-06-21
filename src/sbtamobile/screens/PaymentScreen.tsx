@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Phone, ShieldCheck, Loader2, ArrowRight, Waves } from 'lucide-react';
+import { Phone, ShieldCheck, Loader2, ArrowRight } from 'lucide-react';
 import { SBTA, PAYMENT_METHODS, formatXOF } from '../theme';
 import { Button, TopBar, Card } from '../components';
 import { createBooking, startWaveCheckout } from '../api';
@@ -84,11 +84,15 @@ export default function PaymentScreen() {
       <TopBar title="Paiement" onBack />
       <div className="flex-1 space-y-4 px-6 pb-6 pt-2">
         <Card style={{ textAlign: 'center', padding: '24px 20px' }}>
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
-            style={{ background: `${method?.color ?? SBTA.green}1A` }}>
-            <span className="text-lg font-extrabold" style={{ color: method?.color ?? SBTA.green }}>
-              {method?.label.charAt(0) ?? 'P'}
-            </span>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl"
+            style={{ background: isWave ? SBTA.white : `${method?.color ?? SBTA.green}1A` }}>
+            {isWave ? (
+              <img src="/sbtamobile/wave.JPG" alt="Wave" className="h-full w-full object-contain" />
+            ) : (
+              <span className="text-lg font-extrabold" style={{ color: method?.color ?? SBTA.green }}>
+                {method?.label.charAt(0) ?? 'P'}
+              </span>
+            )}
           </div>
           <p className="mt-3 font-bold" style={{ color: SBTA.ink }}>{method?.label ?? 'Paiement'}</p>
           <p className="mt-1 text-sm" style={{ color: SBTA.gray600 }}>Montant à régler</p>
@@ -146,7 +150,7 @@ export default function PaymentScreen() {
             </span>
           ) : isWave ? (
             <span className="flex items-center justify-center gap-2">
-              <Waves size={18} /> Payer avec Wave · {formatXOF(total)}
+              <img src="/sbtamobile/wave.JPG" alt="Wave" className="h-5 w-5 rounded object-contain bg-white" /> Payer avec Wave · {formatXOF(total)}
             </span>
           ) : (
             `Payer ${formatXOF(total)}`

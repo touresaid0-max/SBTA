@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Smartphone, CreditCard, Waves } from 'lucide-react';
+import { Check, Smartphone, CreditCard } from 'lucide-react';
 import { SBTA, PAYMENT_METHODS, formatXOF } from '../theme';
 import { Button, TopBar, Card } from '../components';
 import { useBooking } from '../BookingContext';
@@ -38,12 +38,12 @@ export default function PaymentMethodScreen() {
             <button key={m.id} onClick={() => setSelected(m.id)} className="w-full text-left">
               <Card style={{ border: `2px solid ${active ? SBTA.green : SBTA.gray200}` }}>
                 <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl"
-                    style={{ background: `${m.color}1A` }}>
+                  <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl"
+                    style={{ background: isWave ? SBTA.white : `${m.color}1A` }}>
                     {isCard
                       ? <CreditCard size={20} color={m.color} />
                       : isWave
-                        ? <Waves size={20} color={m.color} />
+                        ? <img src="/sbtamobile/wave.JPG" alt="Wave" className="h-full w-full object-contain" />
                         : <Smartphone size={20} color={m.color} />}
                   </div>
                   <span className="flex-1 text-[15px] font-bold" style={{ color: SBTA.ink }}>{m.label}</span>
