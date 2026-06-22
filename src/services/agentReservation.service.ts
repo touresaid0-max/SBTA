@@ -243,6 +243,7 @@ export async function deletePolicy(id: string): Promise<void> {
 // ── Paramètres Wave ─────────────────────────────────────────────
 export interface WaveSettings {
   api_key: string;
+  api_secret: string;
   signing_secret: string;
   webhook_url: string;
   mode: 'test' | 'production';
@@ -255,12 +256,13 @@ export interface WaveSettings {
 export async function fetchWaveSettings(): Promise<WaveSettings> {
   const { data, error } = await supabase
     .from('wave_settings')
-    .select('api_key, signing_secret, webhook_url, mode, is_active, checkout_enabled, balance_enabled, payout_enabled')
+    .select('api_key, api_secret, signing_secret, webhook_url, mode, is_active, checkout_enabled, balance_enabled, payout_enabled')
     .eq('id', 1)
     .maybeSingle();
   if (error) throw error;
   return {
     api_key: data?.api_key ?? '',
+    api_secret: data?.api_secret ?? '',
     signing_secret: data?.signing_secret ?? '',
     webhook_url: data?.webhook_url ?? '',
     mode: (data?.mode as 'test' | 'production') ?? 'test',
@@ -276,6 +278,7 @@ export async function updateWaveSettings(s: WaveSettings): Promise<void> {
     .from('wave_settings')
     .update({
       api_key: s.api_key.trim() || null,
+      api_secret: s.api_secret.trim(),
       signing_secret: s.signing_secret.trim() || null,
       webhook_url: s.webhook_url.trim() || null,
       mode: s.mode,

@@ -176,6 +176,15 @@ export default function Settings() {
         </div>
 
         <div>
+          <label className="block text-sm font-medium text-[#1A2E22] mb-1.5">Secret de signature API (requête)</label>
+          <input type={showSecrets ? 'text' : 'password'} value={wave.api_secret} autoComplete="off"
+            onChange={(e) => setW({ api_secret: e.target.value })} placeholder="wave_ci_AKS_..." className={inputCls} />
+          <p className="text-xs text-[#6B7280] mt-1.5">
+            Requis si la signature de requête est activée sur la clé API (préfixe AKS). Utilisé pour signer les appels de paiement.
+          </p>
+        </div>
+
+        <div>
           <label className="block text-sm font-medium text-[#1A2E22] mb-1.5">Secret de signature (webhook)</label>
           <input type={showSecrets ? 'text' : 'password'} value={wave.signing_secret} autoComplete="off"
             onChange={(e) => setW({ signing_secret: e.target.value })} placeholder="wave_sn_..." className={inputCls} />
