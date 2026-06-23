@@ -6,6 +6,7 @@ import { supabase } from '@/services/supabase'
 import { uploadAvatar } from '@/services/hr.service'
 import type { ContractType, Gender, MaritalStatus } from '@/types/hr.types'
 import type { SBTARole } from '@/store/authStore'
+import { computeAge, monthsUntilRetirement, RETIREMENT_AGE, RETIREMENT_ALERT_MONTHS } from '@/utils/retirement'
 
 const EDGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rh-create-employee`
 
@@ -71,6 +72,7 @@ interface FormData {
   phone:                string
   gender:               Gender | ''
   nationality:          string
+  date_naissance:       string
   role:                 SBTARole | ''
   company_id:           string
   station_id:           string
@@ -92,7 +94,7 @@ interface FormData {
 
 const EMPTY_FORM: FormData = {
   first_name: '', last_name: '', personal_email: '', professional_email: '',
-  phone: '', gender: '', nationality: '', role: '', company_id: '', station_id: '',
+  phone: '', gender: '', nationality: '', date_naissance: '', role: '', company_id: '', station_id: '',
   contract_type: '', hire_date: '', salary: '', employee_id: '',
   cnps_number: '', children_count: '0', marital_status: '', bus_id: '',
   license_number: '', license_expiry: '', license_category: '',
@@ -176,6 +178,7 @@ export default function EmployeeForm() {
           phone:              data.phone ?? '',
           gender:             data.gender ?? '',
           nationality:        data.nationality ?? '',
+          date_naissance:     data.date_naissance ?? '',
           role:               data.role ?? '',
           company_id:         data.company_id ?? '',
           station_id:         data.station_id ?? '',
@@ -251,6 +254,7 @@ export default function EmployeeForm() {
     phone:             form.phone.trim() || null,
     gender:            form.gender     || null,
     nationality:       form.nationality.trim() || null,
+    date_naissance:    form.date_naissance || null,
     role:              form.role,
     company_id:        form.company_id  || null,
     station_id:        form.station_id  || null,
@@ -405,6 +409,19 @@ export default function EmployeeForm() {
           </FieldGroup>
           <FieldGroup label="Nationalité">
             <input value={form.nationality} onChange={set('nationality')} className={inputCls} placeholder="Ivoirienne" />
+          </FieldGroup>
+          <FieldGroup
+            label="Date de naissance"
+            hint={(() => {
+              const age = computeAge(form.date_naissance)
+              if (age === null) return `Sert au calcul du départ à la retraite (${RETIREMENT_AGE} ans)`
+              const months = monthsUntilRetirement(form.date_naissance)
+              if (months !== null && months <= 0) return `${age} ans — âge de la retraite (${RETIREMENT_AGE} ans) atteint`
+              if (months !== null && months <= RETIREMENT_ALERT_MONTHS) return `${age} ans — retraite dans ${months} mois`
+              return `${age} ans`
+            })()}
+          >
+            <input type="date" value={form.date_naissance} onChange={set('date_naissance')} className={inputCls} />
           </FieldGroup>
           <FieldGroup label="Situation matrimoniale">
             <SelectWrap>

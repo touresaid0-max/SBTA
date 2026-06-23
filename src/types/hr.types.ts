@@ -19,6 +19,7 @@ export interface Employee {
   source_table?:            'employees' | 'users'
   gender:                   Gender | null
   nationality:              string | null
+  date_naissance:           string | null
   role:                     SBTARole
   employee_id:              string | null
   avatar_url:               string | null

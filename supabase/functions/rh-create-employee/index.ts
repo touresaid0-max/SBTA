@@ -84,7 +84,7 @@ Deno.serve(async (req: Request) => {
 
     // 4. CREATE — extraire et valider les champs
     const {
-      first_name, last_name, gender, nationality, phone,
+      first_name, last_name, gender, nationality, date_naissance, phone,
       personal_email, professional_email,
       role, company_id, station_id,
       hire_date, contract_type, salary, daily_rate,
@@ -138,6 +138,7 @@ Deno.serve(async (req: Request) => {
         last_name:          last_name.trim(),
         gender:             gender || null,
         nationality:        nationality?.trim() || null,
+        date_naissance:     date_naissance || null,
         phone:              phone?.trim() || null,
         personal_email:     personal_email?.trim() || null,
         professional_email: professional_email?.trim() || null,

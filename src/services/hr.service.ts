@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { isNearRetirement, retirementDate } from '@/utils/retirement'
 import type {
   Employee, EmployeeExtended, CompanyPayroll,
   EmployeeFilters, DriverDailyLog,
@@ -7,7 +8,7 @@ import type {
 // ── Chargement des employés (users + employees en parallèle) ──────
 export async function fetchEmployees(filters: EmployeeFilters): Promise<Employee[]> {
   const SELECT_FIELDS = `
-    id, first_name, last_name, phone, gender, nationality, role,
+    id, first_name, last_name, phone, gender, nationality, date_naissance, role,
     employee_id, avatar_url, hire_date, salary,
     contract_type, cnps_number, children_count, marital_status,
     contract_url, bus_id, station_id, license_number, license_expiry,
@@ -109,7 +110,7 @@ export async function fetchEmployeeById(id: string): Promise<Employee | null> {
     .from('employees')
     .select(`
       id, auth_user_id, first_name, last_name, professional_email, personal_email,
-      phone, gender, nationality, role, employee_id, avatar_url, account_status, hire_date, salary,
+      phone, gender, nationality, date_naissance, role, employee_id, avatar_url, account_status, hire_date, salary,
       contract_type, cnps_number, children_count, marital_status, contract_url,
       bus_id, station_id, license_number, license_expiry, license_category,
       driver_average_rating, driver_performance_level, driver_total_reviews,
@@ -131,7 +132,7 @@ export async function fetchEmployeeById(id: string): Promise<Employee | null> {
   const { data: userData } = await supabase
     .from('users')
     .select(`
-      id, first_name, last_name, email, phone, gender, nationality, role,
+      id, first_name, last_name, email, phone, gender, nationality, date_naissance, role,
       employee_id, avatar_url, status, hire_date, salary,
       contract_type, cnps_number, children_count, marital_status,
       contract_url, bus_id, station_id, license_number, license_expiry,
@@ -383,6 +384,39 @@ export async function fetchSeniorityAlerts(): Promise<EmployeeExtended[]> {
   ]
 
   return combined.map(e => ({ ...e, assigned_route_name: null } as EmployeeExtended))
+}
+
+// ── Employés proches de la retraite (≤ 1 an avant 60 ans) ────────
+export async function fetchRetirementAlerts(): Promise<EmployeeExtended[]> {
+  const { data: empData } = await supabase
+    .from('employees')
+    .select('*, companies ( name, code ), stations ( name )')
+    .not('date_naissance', 'is', null)
+    .eq('account_status', 'active')
+
+  const { data: usersData } = await supabase
+    .from('users')
+    .select('*, companies ( name, code ), stations ( name )')
+    .not('date_naissance', 'is', null)
+    .neq('role', 'client')
+    .eq('status', 'active')
+
+  const empAuthIds = new Set((empData ?? []).map(e => e.auth_user_id).filter(Boolean))
+  const filteredUsers = (usersData ?? []).filter(u => !empAuthIds.has(u.id))
+
+  const combined = [
+    ...(empData ?? []).map(u => mapEmployeeRow({ ...u, email: u.professional_email ?? u.personal_email ?? '' }, 'employees')),
+    ...filteredUsers.map(u => mapEmployeeRow(u, 'users')),
+  ]
+
+  return combined
+    .filter(e => isNearRetirement(e.date_naissance))
+    .map(e => ({ ...e, assigned_route_name: null } as EmployeeExtended))
+    .sort((a, b) => {
+      const da = retirementDate(a.date_naissance)?.getTime() ?? 0
+      const db = retirementDate(b.date_naissance)?.getTime() ?? 0
+      return da - db
+    })
 }
 
 // ── Valider le passage contractuel → salarié ─────────────────────

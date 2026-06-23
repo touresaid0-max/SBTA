@@ -3,13 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Pencil, Ban, User, Building2,
   MapPin, FileText, Star, Upload, Download,
-  AlertTriangle, ShieldCheck, DollarSign, TrendingUp, Calendar, Camera,
+  AlertTriangle, ShieldCheck, DollarSign, TrendingUp, Calendar, Camera, CalendarClock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { uploadContract, uploadAvatar, deactivateEmployee, convertToSalaried, fetchEmployeeById } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
 import type { Employee } from '@/types/hr.types'
+import { computeAge, monthsUntilRetirement, isNearRetirement, isRetirementReached, RETIREMENT_AGE } from '@/utils/retirement'
 
 const ROLE_LABELS: Record<string, string> = {
   chauffeur: 'Chauffeur', guichetier: 'Guichetier', agent_reservation: 'Agent Réservation', mecanicien: 'Mécanicien',
@@ -258,6 +259,22 @@ export default function EmployeeDetail() {
                 <strong>Motif de désactivation :</strong> {employee.deactivation_reason}
               </div>
             )}
+            {isNearRetirement(employee.date_naissance) && (
+              <div className="mt-3 p-3 bg-[#FEF2F2] border border-[#DC2626] rounded-xl flex items-start gap-2">
+                <CalendarClock className="w-4 h-4 text-[#DC2626] flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-[#991B1B]">
+                  {(() => {
+                    const months = monthsUntilRetirement(employee.date_naissance)
+                    const rd = employee.date_naissance ? new Date(employee.date_naissance) : null
+                    const retYear = rd ? rd.getFullYear() + RETIREMENT_AGE : null
+                    if (isRetirementReached(employee.date_naissance)) {
+                      return <span><strong>Âge de la retraite atteint</strong> — l'âge légal de départ ({RETIREMENT_AGE} ans) est atteint ou dépassé.</span>
+                    }
+                    return <span><strong>Départ à la retraite proche</strong> — atteindra {RETIREMENT_AGE} ans dans {months} mois{retYear ? ` (en ${retYear})` : ''}.</span>
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -273,6 +290,10 @@ export default function EmployeeDetail() {
               value={(employee as any).personal_email} />
           )}
           <InfoRow label="Sexe"      value={employee.gender ? GENDER_LABELS[employee.gender] : null} />
+          <InfoRow label="Date naiss."
+            value={employee.date_naissance
+              ? `${new Date(employee.date_naissance).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${computeAge(employee.date_naissance) !== null ? ` — ${computeAge(employee.date_naissance)} ans` : ''}`
+              : null} />
           <InfoRow label="Sit. matr." value={employee.marital_status ? MARITAL_LABELS[employee.marital_status] : null} />
           <InfoRow label="Nb enfants" value={employee.children_count} />
           <InfoRow label="N° CNPS"   value={employee.cnps_number} />

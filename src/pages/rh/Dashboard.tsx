@@ -1,14 +1,15 @@
 import { useEffect, useState, Fragment } from 'react'
-import { Users, Bus, Banknote, UserCheck, TrendingUp, AlertTriangle, ArrowRight, FileText, Wallet, MinusCircle, UserX, MessageSquareWarning, ChevronRight } from 'lucide-react'
+import { Users, Bus, Banknote, UserCheck, TrendingUp, AlertTriangle, ArrowRight, FileText, Wallet, MinusCircle, UserX, MessageSquareWarning, ChevronRight, CalendarClock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   PieChart, Pie, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Cell, Legend,
 } from 'recharts'
-import { fetchPayrollByCompany, fetchSeniorityAlerts, convertToSalaried } from '@/services/hr.service'
+import { fetchPayrollByCompany, fetchSeniorityAlerts, fetchRetirementAlerts, convertToSalaried } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { CompanyPayroll, EmployeeExtended } from '@/types/hr.types'
+import { computeAge, monthsUntilRetirement, isRetirementReached, RETIREMENT_AGE } from '@/utils/retirement'
 import toast from 'react-hot-toast'
 
 const COMPANY_COLORS = ['#0B7439', '#1D6FA4', '#D97706', '#475569', '#AF3029']
@@ -48,6 +49,7 @@ export default function RHDashboard() {
   const { user } = useAuthStore()
   const [payroll,  setPayroll]  = useState<CompanyPayroll[]>([])
   const [alerts,   setAlerts]   = useState<EmployeeExtended[]>([])
+  const [retirementAlerts, setRetirementAlerts] = useState<EmployeeExtended[]>([])
   const [loading,  setLoading]  = useState(true)
   const [showConversionModal, setShowConversionModal] = useState(false)
   const [selectedDriver, setSelectedDriver] = useState<EmployeeExtended | null>(null)
@@ -72,13 +74,14 @@ export default function RHDashboard() {
     Promise.all([
       fetchPayrollByCompany(),
       fetchSeniorityAlerts(),
+      fetchRetirementAlerts(),
       supabase.from('pay_slips').select('id', { count: 'exact', head: true }).eq('period_year', curYear).eq('period_month', curMonth),
       supabase.from('employee_loans').select('id', { count: 'exact', head: true }).eq('status', 'en_cours'),
       supabase.from('salary_deductions').select('id', { count: 'exact', head: true }).eq('period_year', curYear).eq('period_month', curMonth).eq('status', 'active'),
       supabase.from('employee_suspensions').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('explanation_requests').select('employee_id').in('status', ['en_attente', 'repondu']),
-    ]).then(([p, a, bRes, lRes, dRes, sRes, eRes]) => {
-      setPayroll(p); setAlerts(a)
+    ]).then(([p, a, ra, bRes, lRes, dRes, sRes, eRes]) => {
+      setPayroll(p); setAlerts(a); setRetirementAlerts(ra)
       const explData = eRes.data ?? []
       const counts: Record<string, number> = {}
       for (const e of explData) counts[e.employee_id] = (counts[e.employee_id] ?? 0) + 1
@@ -215,6 +218,50 @@ export default function RHDashboard() {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Retirement alerts — employés proches de 60 ans */}
+      {retirementAlerts.length > 0 && (
+        <div className="bg-[#FEF2F2] border border-[#DC2626] rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <CalendarClock className="w-5 h-5 text-[#DC2626]" />
+            <h3 className="font-bold text-[#991B1B]">
+              {retirementAlerts.length} employé{retirementAlerts.length > 1 ? 's' : ''} proche{retirementAlerts.length > 1 ? 's' : ''} de la retraite
+              <span className="font-normal text-[#B91C1C]"> — âge légal : {RETIREMENT_AGE} ans</span>
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {retirementAlerts.map(emp => {
+              const age = computeAge(emp.date_naissance)
+              const months = monthsUntilRetirement(emp.date_naissance)
+              const reached = isRetirementReached(emp.date_naissance)
+              return (
+                <div key={emp.id}
+                  className="flex items-center justify-between bg-white rounded-xl p-3 border border-[#FECACA]">
+                  <div className="min-w-0">
+                    <div className="font-medium text-[#1A2E22] text-sm">{emp.full_name}</div>
+                    <div className="text-xs text-[#8AA898]">
+                      {emp.company_name ?? 'HOLDING'}{age !== null && ` · ${age} ans`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                      reached ? 'bg-[#FEE2E2] text-[#991B1B]' : 'bg-[#FEF3C7] text-[#92400E]'
+                    }`}>
+                      {reached
+                        ? 'Retraite atteinte'
+                        : `Dans ${months} mois`}
+                    </span>
+                    <button onClick={() => navigate(`/rh/employees/${emp.id}`)}
+                      className="text-xs font-bold bg-[#DC2626] hover:bg-[#991B1B] text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                      Voir <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
