@@ -814,6 +814,9 @@ export default function GroupedPlanning() {
         <div className="space-y-4">
           {trips.map((trip, i) => {
             const selectedDriver = drivers.find(d => d.id === trip.driver_id);
+            const driverUsedByOthers = new Set(
+              trips.filter(t => t.uid !== trip.uid && t.driver_id).map(t => t.driver_id)
+            );
             return (
               <div key={trip.uid} className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2 mb-3">
@@ -849,22 +852,26 @@ export default function GroupedPlanning() {
                     {filteredDrivers.map(driver => {
                       const hasConflict = !driver.isAvailable && !!driver.availabilityMessage?.includes('creneau');
                       const isHoursBlocked = !driver.isAvailable && !hasConflict;
+                      const alreadySelected = driverUsedByOthers.has(driver.id);
                       return (
                         <div key={driver.id}
-                          onClick={() => !isHoursBlocked && updateTrip(trip.uid, { driver_id: driver.id })}
+                          onClick={() => {
+                            if (alreadySelected) { toast.error('Déjà sélectionné'); return; }
+                            if (!isHoursBlocked) updateTrip(trip.uid, { driver_id: driver.id });
+                          }}
                           className="flex items-center gap-3 p-2.5 border rounded-lg transition-colors"
                           style={{
-                            borderColor: hasConflict ? '#FBBF24' : isHoursBlocked ? '#E5E7EB' : 'var(--border)',
-                            backgroundColor: hasConflict ? '#FFFBEB' : isHoursBlocked ? '#F9FAFB' : 'transparent',
-                            opacity: isHoursBlocked ? 0.5 : 1,
-                            cursor: isHoursBlocked ? 'not-allowed' : 'pointer',
+                            borderColor: alreadySelected ? '#FBBF24' : hasConflict ? '#FBBF24' : isHoursBlocked ? '#E5E7EB' : 'var(--border)',
+                            backgroundColor: alreadySelected ? '#FFFBEB' : hasConflict ? '#FFFBEB' : isHoursBlocked ? '#F9FAFB' : 'transparent',
+                            opacity: alreadySelected ? 0.6 : isHoursBlocked ? 0.5 : 1,
+                            cursor: alreadySelected || isHoursBlocked ? 'not-allowed' : 'pointer',
                           }}>
-                          <User className="w-4 h-4 flex-shrink-0" style={{ color: hasConflict ? '#D97706' : isHoursBlocked ? '#9CA3AF' : 'var(--primary)' }} />
+                          <User className="w-4 h-4 flex-shrink-0" style={{ color: alreadySelected ? '#D97706' : hasConflict ? '#D97706' : isHoursBlocked ? '#9CA3AF' : 'var(--primary)' }} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-xs" style={{ color: 'var(--text-primary)' }}>{driver.full_name}</span>
-                              <span className="text-[10px] font-semibold" style={{ color: driver.isAvailable ? '#16A34A' : '#DC2626' }}>
-                                {driver.isAvailable ? 'Disponible' : hasConflict ? 'Deja affecte' : (driver.availabilityMessage || 'Non disponible')}
+                              <span className="text-[10px] font-semibold" style={{ color: alreadySelected ? '#D97706' : driver.isAvailable ? '#16A34A' : '#DC2626' }}>
+                                {alreadySelected ? 'Déjà sélectionné' : driver.isAvailable ? 'Disponible' : hasConflict ? 'Deja affecte' : (driver.availabilityMessage || 'Non disponible')}
                               </span>
                             </div>
                             <div className="mt-1 w-full h-1 rounded-full bg-gray-200 overflow-hidden">
