@@ -710,6 +710,9 @@ export default function GroupedPlanning() {
         <div className="space-y-4">
           {trips.map((trip, i) => {
             const selectedBus = buses.find(b => b.id === trip.bus_id);
+            const usedByOthers = new Set(
+              trips.filter(t => t.uid !== trip.uid && t.bus_id).map(t => t.bus_id)
+            );
             return (
               <div key={trip.uid} className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2 mb-3">
@@ -739,19 +742,24 @@ export default function GroupedPlanning() {
                   <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
                     {filteredBuses.map(bus => {
                       const hasConflict = !bus.isAvailable;
+                      const alreadySelected = usedByOthers.has(bus.id);
                       return (
-                        <div key={bus.id} onClick={() => updateTrip(trip.uid, { bus_id: bus.id })}
-                          className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                          style={{ borderColor: hasConflict ? '#FBBF24' : 'var(--border)', backgroundColor: hasConflict ? '#FFFBEB' : 'transparent' }}>
-                          <Bus className="w-4 h-4 flex-shrink-0" style={{ color: hasConflict ? '#D97706' : 'var(--primary)' }} />
+                        <div key={bus.id}
+                          onClick={() => {
+                            if (alreadySelected) { toast.error('Déjà sélectionné'); return; }
+                            updateTrip(trip.uid, { bus_id: bus.id });
+                          }}
+                          className={`flex items-center gap-3 p-2.5 border rounded-lg transition-colors ${alreadySelected ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-gray-50'}`}
+                          style={{ borderColor: alreadySelected ? '#FBBF24' : hasConflict ? '#FBBF24' : 'var(--border)', backgroundColor: alreadySelected ? '#FFFBEB' : hasConflict ? '#FFFBEB' : 'transparent' }}>
+                          <Bus className="w-4 h-4 flex-shrink-0" style={{ color: alreadySelected ? '#D97706' : hasConflict ? '#D97706' : 'var(--primary)' }} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-xs" style={{ color: 'var(--text-primary)' }}>{bus.license_plate}</span>
                               {bus.companies?.name && <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>{bus.companies.name}</span>}
                               {bus.capacity > 0 && <span className="text-[10px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{bus.capacity} pl.</span>}
                             </div>
-                            <span className="text-[10px] font-semibold" style={{ color: hasConflict ? '#DC2626' : '#16A34A' }}>
-                              {hasConflict ? 'Deja affecte' : 'Disponible'}
+                            <span className="text-[10px] font-semibold" style={{ color: alreadySelected ? '#D97706' : hasConflict ? '#DC2626' : '#16A34A' }}>
+                              {alreadySelected ? 'Déjà sélectionné' : hasConflict ? 'Deja affecte' : 'Disponible'}
                             </span>
                           </div>
                         </div>
