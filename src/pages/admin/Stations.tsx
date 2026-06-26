@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, CreditCard as Edit2, Trash2, Eye, Monitor, UserCheck, X, Package } from 'lucide-react';
+import { Building2, Plus, CreditCard as Edit2, Trash2, Eye, Monitor, UserCheck, X, Package, MapPin } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -73,6 +73,7 @@ export default function Stations() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [primaryAgentId, setPrimaryAgentId] = useState<string | null>(null);
+  const [destCodes, setDestCodes] = useState<{ id?: string; destination_station_id: string; agency_code: string }[]>([]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -197,6 +198,28 @@ export default function Stations() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate per-destination agency codes before saving
+    const filledRows = destCodes.filter(r => r.destination_station_id || r.agency_code.trim());
+    if (filledRows.some(r => !r.destination_station_id || !r.agency_code.trim())) {
+      toast.error('Chaque ligne de code agence doit avoir une destination ET un code');
+      return;
+    }
+    const destSet = new Set<string>();
+    const codeSet = new Set<string>();
+    for (const r of filledRows) {
+      if (destSet.has(r.destination_station_id)) {
+        toast.error('Une même destination ne peut avoir deux codes agence');
+        return;
+      }
+      const code = r.agency_code.trim();
+      if (codeSet.has(code)) {
+        toast.error(`Le code agence "${code}" est utilisé pour deux destinations`);
+        return;
+      }
+      destSet.add(r.destination_station_id);
+      codeSet.add(code);
+    }
+
     try {
       const dataToSubmit = {
         name: formData.name,
@@ -237,6 +260,7 @@ export default function Stations() {
 
       if (savedStationId) {
         await syncStationAgents(savedStationId, selectedAgentIds, primaryAgentId);
+        await syncDestCodes(savedStationId, filledRows);
       }
 
       setShowForm(false);
@@ -293,10 +317,44 @@ export default function Stations() {
     }
   };
 
+  const syncDestCodes = async (
+    stationId: string,
+    rows: { destination_station_id: string; agency_code: string }[],
+  ) => {
+    await supabase
+      .from('station_destination_agency_codes')
+      .delete()
+      .eq('origin_station_id', stationId);
+
+    if (rows.length > 0) {
+      const { error } = await supabase
+        .from('station_destination_agency_codes')
+        .insert(rows.map(r => ({
+          origin_station_id: stationId,
+          destination_station_id: r.destination_station_id,
+          agency_code: r.agency_code.trim(),
+        })));
+      if (error) throw error;
+    }
+  };
+
+  const loadDestCodes = async (stationId: string) => {
+    const { data } = await supabase
+      .from('station_destination_agency_codes')
+      .select('id, destination_station_id, agency_code')
+      .eq('origin_station_id', stationId);
+    setDestCodes((data ?? []).map(d => ({
+      id: d.id,
+      destination_station_id: d.destination_station_id,
+      agency_code: d.agency_code,
+    })));
+  };
+
   const handleEdit = (station: Station) => {
     const agents = stationAgentsMap[station.id] ?? [];
     const ids = agents.map(a => a.agent_id);
     const primary = agents.find(a => a.is_primary);
+    loadDestCodes(station.id);
 
     setFormData({
       name: station.name,
@@ -364,6 +422,7 @@ export default function Stations() {
     });
     setSelectedAgentIds([]);
     setPrimaryAgentId(null);
+    setDestCodes([]);
   };
 
   const handleFacilityChange = (key: string, checked: boolean) => {
@@ -410,6 +469,11 @@ export default function Stations() {
   };
 
   const availableAgents = agentsColis.filter(a => !selectedAgentIds.includes(a.id));
+
+  const addDestCode = () => setDestCodes(prev => [...prev, { destination_station_id: '', agency_code: '' }]);
+  const updateDestCode = (idx: number, patch: Partial<{ destination_station_id: string; agency_code: string }>) =>
+    setDestCodes(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const removeDestCode = (idx: number) => setDestCodes(prev => prev.filter((_, i) => i !== idx));
 
   if (loading) {
     return <div className="p-8">Chargement...</div>;
@@ -679,6 +743,72 @@ export default function Stations() {
                   <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
                     Identifiant unique de l'agence, utilise comme prefixe dans les codes courrier
                   </p>
+                </div>
+
+                {/* ── Codes agence par destination ── */}
+                <div className="p-4 rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--neutral-50)' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="font-medium flex items-center gap-2">
+                      <MapPin className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                      Codes agence par destination
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addDestCode}
+                      className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 text-white font-medium"
+                      style={{ backgroundColor: 'var(--primary)' }}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Ajouter
+                    </button>
+                  </div>
+                  <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                    Associez un code agence a chaque destination. Lors de l'enregistrement d'un courrier,
+                    le code de la destination choisie est integre automatiquement dans le code du ticket.
+                  </p>
+
+                  {destCodes.length === 0 ? (
+                    <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>
+                      Aucune destination configuree. Le code agence general de la gare sera utilise.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {destCodes.map((row, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <select
+                            value={row.destination_station_id}
+                            onChange={(e) => updateDestCode(idx, { destination_station_id: e.target.value })}
+                            className="flex-1 p-2 border rounded-lg text-sm"
+                          >
+                            <option value="">Destination...</option>
+                            {stations
+                              .filter(s => s.id !== editingId)
+                              .map(s => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}{s.cities ? ` (${s.cities.name})` : ''}
+                                </option>
+                              ))}
+                          </select>
+                          <input
+                            type="text"
+                            value={row.agency_code}
+                            onChange={(e) => updateDestCode(idx, { agency_code: e.target.value })}
+                            className="w-28 p-2 border rounded-lg text-sm"
+                            placeholder="Code (01)"
+                            maxLength={10}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeDestCode(idx)}
+                            className="p-2 rounded-lg hover:bg-red-50 transition-colors"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="w-4 h-4" style={{ color: 'var(--danger)' }} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>

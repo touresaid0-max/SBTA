@@ -181,6 +181,18 @@ export default function NewParcelForm() {
 
     setLoading(true)
     try {
+      // Vérifier qu'un code agence est configuré pour cette destination
+      const { data: destCode } = await supabase
+        .from('station_destination_agency_codes')
+        .select('agency_code')
+        .eq('origin_station_id', myStation.id)
+        .eq('destination_station_id', form.destination_station_id)
+        .maybeSingle()
+
+      if (!destCode?.agency_code) {
+        toast('Aucun code agence configuré pour cette destination — le code agence général de la gare sera utilisé.', { icon: '⚠️' })
+      }
+
       const parcel = await createParcel({
         sender_name:            form.sender_name,
         sender_phone:           form.sender_phone,
