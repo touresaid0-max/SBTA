@@ -558,7 +558,6 @@ export default function TicketSale() {
         return false;
       }
     }
-    if (!passenger.phone.trim()) { toast.error('Le téléphone du passager est requis'); return false; }
     if (!payment.method) { toast.error('Sélectionnez un mode de paiement'); return false; }
     if (payment.method === 'especes' && payment.amount_received < totalAmount) {
       toast.error('Montant insuffisant'); return false;
@@ -2104,7 +2103,7 @@ export default function TicketSale() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    <Phone className="w-3 h-3 inline mr-1" />Téléphone *
+                    <Phone className="w-3 h-3 inline mr-1" />Téléphone (optionnel)
                   </label>
                   <input
                     type="tel"
@@ -2215,10 +2214,9 @@ export default function TicketSale() {
           {/* Confirm button — full width below both columns */}
           {(() => {
             const noSeats = hasSeatMap ? enrichedSelectedSeats.length === 0 : seatCount < 1;
-            const noPhone = !passenger.phone.trim();
             const noPayment = !payment.method;
             const insufficientCash = payment.method === 'especes' && payment.amount_received < totalAmount;
-            const disabled = processing || noSeats || noPhone || noPayment || insufficientCash;
+            const disabled = processing || noSeats || noPayment || insufficientCash;
 
             return (
               <button
@@ -2232,8 +2230,6 @@ export default function TicketSale() {
                   <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
                 ) : noSeats ? (
                   <><CheckCircle className="w-5 h-5 opacity-60" />Sélectionnez un siège</>
-                ) : noPhone ? (
-                  <><CheckCircle className="w-5 h-5 opacity-60" />Renseignez le téléphone</>
                 ) : noPayment ? (
                   <><CheckCircle className="w-5 h-5 opacity-60" />Choisissez le paiement</>
                 ) : insufficientCash ? (
