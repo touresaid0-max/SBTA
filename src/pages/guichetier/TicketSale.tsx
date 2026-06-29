@@ -134,6 +134,7 @@ export default function TicketSale() {
   const [loadingSchedules, setLoadingSchedules] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [confirmedTicket, setConfirmedTicket] = useState<ConfirmedTicket | null>(null);
+  const autoPrintAndResetRef = useRef(false);
   const printRef = useRef<HTMLDivElement>(null);
   const [myCounterId, setMyCounterId] = useState<string | null>(null);
   const [myStationId, setMyStationId] = useState<string | null>(null);
@@ -577,7 +578,8 @@ export default function TicketSale() {
   const boardingStationName = boardingStations.find(s => s.id === boardingStationId)?.name;
   const alightingStationName = alightingStations.find(s => s.id === alightingStationId)?.name;
 
-  const handleConfirmSale = async () => {
+  const handleConfirmSale = async (printAndReset = false) => {
+    autoPrintAndResetRef.current = printAndReset;
     if (!validateSaleInputs()) return;
     if (!selectedSchedule) return;
 
@@ -654,10 +656,10 @@ export default function TicketSale() {
     const seatNumbers = buildSeatNumbers();
     const count = seatNumbers.length;
     try {
-      await confirmOnline(reference, seatNumbers, count);
+      await confirmOnline(reference, seatNumbers, count, printAndReset);
     } catch (_) {
       try {
-        await confirmOffline(reference, seatNumbers, count);
+        await confirmOffline(reference, seatNumbers, count, printAndReset);
       } catch (offlineErr: any) {
         toast.error('Impossible de sauvegarder le billet');
         setProcessing(false);
@@ -668,7 +670,7 @@ export default function TicketSale() {
     }
   };
 
-  const confirmOnline = async (reference: string, seatNumbers: string[], count: number) => {
+  const confirmOnline = async (reference: string, seatNumbers: string[], count: number, printAndReset = false) => {
     if (!selectedSchedule) return;
 
     const { data: reservation, error: resError } = await supabase
@@ -737,11 +739,15 @@ export default function TicketSale() {
       departure_number: departureNumber,
     });
 
-    setStep('confirm');
-    toast.success('Billet vendu avec succès !');
+    if (printAndReset) {
+      toast.success('Vente confirmée — impression en cours');
+    } else {
+      setStep('confirm');
+      toast.success('Billet vendu avec succès !');
+    }
   };
 
-  const confirmOffline = async (reference: string, seatNumbers: string[], count: number) => {
+  const confirmOffline = async (reference: string, seatNumbers: string[], count: number, printAndReset = false) => {
     if (!selectedSchedule || !user) return;
 
     await offlineStore.saveTicket({
@@ -809,8 +815,12 @@ export default function TicketSale() {
     });
 
     await reloadOfflineTickets();
-    setStep('confirm');
-    toast.success('Billet sauvegardé hors-ligne ! Il sera synchronisé au retour du réseau.');
+    if (printAndReset) {
+      toast.success('Vente confirmée — impression en cours');
+    } else {
+      setStep('confirm');
+      toast.success('Billet sauvegardé hors-ligne ! Il sera synchronisé au retour du réseau.');
+    }
   };
 
   const generatePDF = async () => {
@@ -1400,6 +1410,15 @@ export default function TicketSale() {
       owner_name: '', owner_phone: '',
     });
   };
+
+  useEffect(() => {
+    if (!confirmedTicket || !autoPrintAndResetRef.current) return;
+    autoPrintAndResetRef.current = false;
+    (async () => {
+      await generatePDF();
+      resetSale();
+    })();
+  }, [confirmedTicket]);
 
   useEffect(() => {
     if ((baggageForm.mode === 'avec_ticket' || baggageForm.mode === 'avec_ticket_reporte') && selectedSchedule) {
@@ -2227,6 +2246,21 @@ export default function TicketSale() {
                         </span>
                       </div>
                     )}
+                    {payment.amount_received > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmSale(true)}
+                        disabled={processing || (hasSeatMap ? enrichedSelectedSeats.length === 0 : seatCount < 1) || payment.amount_received < totalAmount}
+                        className="w-full py-3 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        style={{ backgroundColor: 'var(--primary)' }}
+                      >
+                        {processing ? (
+                          <><div className="w-4.5 h-4.5 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
+                        ) : (
+                          <><Printer className="w-4.5 h-4.5" />Confirmer et imprimer la vente — {formatCurrency(totalAmount)}</>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -2287,7 +2321,7 @@ export default function TicketSale() {
             return (
               <button
                 type="button"
-                onClick={handleConfirmSale}
+                onClick={() => handleConfirmSale()}
                 disabled={disabled}
                 className="w-full py-4 rounded-2xl font-bold text-base text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm mt-3"
                 style={{ backgroundColor: isOnline ? 'var(--success)' : '#D97706' }}
