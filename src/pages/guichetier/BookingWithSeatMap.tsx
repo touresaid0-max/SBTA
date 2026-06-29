@@ -241,7 +241,7 @@ export function BookingWithSeatMap({ scheduleId, onBookingComplete }: BookingWit
               </span>
             </div>
             <input
-              placeholder="Nom complet *"
+              placeholder="Nom complet (optionnel)"
               value={form.passenger_name}
               onChange={e => {
                 const updated = [...passengerForms]
@@ -251,7 +251,7 @@ export function BookingWithSeatMap({ scheduleId, onBookingComplete }: BookingWit
               className="w-full border border-[#E2EAE5] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]"
             />
             <input
-              placeholder="Téléphone *"
+              placeholder="Téléphone (optionnel)"
               value={form.passenger_phone}
               onChange={e => {
                 const updated = [...passengerForms]
@@ -288,7 +288,7 @@ export function BookingWithSeatMap({ scheduleId, onBookingComplete }: BookingWit
             )}
             <button
               onClick={handleSubmitReservations}
-              disabled={isSubmitting || passengerForms.some(f => !f.passenger_name || !f.passenger_phone)}
+              disabled={isSubmitting}
               className="w-full bg-[#0B7439] hover:bg-[#085c2d] disabled:opacity-50 text-white font-bold rounded-xl h-12 text-sm transition-colors"
             >
               {isSubmitting
