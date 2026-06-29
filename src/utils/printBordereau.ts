@@ -288,7 +288,7 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.text('SOLDE',        col.solde,   hY, { align: 'center' })
   doc.text('BAGAGE',       col.bag,     hY, { align: 'center' })
   doc.setTextColor(0, 0, 0)
-  y += ROW_H + 3
+  y += ROW_H + 7
 
   // Lignes de données
   data.rows.forEach((row, idx) => {
