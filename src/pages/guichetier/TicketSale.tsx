@@ -535,10 +535,6 @@ export default function TicketSale() {
     setStep('seats');
   };
 
-  const handleSeatsConfirm = () => {
-    // no-op: confirmation is done inline via handleConfirmSale
-  };
-
   const effectiveSeatCount = hasSeatMap ? enrichedSelectedSeats.length : seatCount;
   const totalAmount = hasSeatMap
     ? (totalSelectedPrice > 0 ? totalSelectedPrice : (selectedSchedule ? selectedSchedule.price * Math.max(1, effectiveSeatCount) : 0))
@@ -1852,7 +1848,6 @@ export default function TicketSale() {
                   seatMap={seatMap}
                   selectedSeats={enrichedSelectedSeats}
                   onSeatToggle={toggleSeat}
-                  onConfirm={handleSeatsConfirm}
                   showPassengerNames={true}
                   lockCountdowns={lockCountdowns}
                 />
@@ -2245,21 +2240,6 @@ export default function TicketSale() {
                           {formatCurrency(Math.max(0, changeAmount))}
                         </span>
                       </div>
-                    )}
-                    {payment.amount_received > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleConfirmSale(true)}
-                        disabled={processing || (hasSeatMap ? enrichedSelectedSeats.length === 0 : seatCount < 1) || payment.amount_received < totalAmount}
-                        className="w-full py-3 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                        style={{ backgroundColor: 'var(--primary)' }}
-                      >
-                        {processing ? (
-                          <><div className="w-4.5 h-4.5 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
-                        ) : (
-                          <><Printer className="w-4.5 h-4.5" />Confirmer et imprimer la vente — {formatCurrency(totalAmount)}</>
-                        )}
-                      </button>
                     )}
                   </div>
                 )}

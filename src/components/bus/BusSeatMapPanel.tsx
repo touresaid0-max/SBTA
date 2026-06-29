@@ -13,7 +13,6 @@ interface BusSeatMapPanelProps {
   seatMap: ScheduleSeatMap
   selectedSeats: EnrichedSeat[]
   onSeatToggle: (seat: EnrichedSeat) => void
-  onConfirm: () => void
   showPassengerNames?: boolean
   lockCountdowns?: Record<string, number>
 }
@@ -28,7 +27,6 @@ export function BusSeatMapPanel({
   seatMap,
   selectedSeats,
   onSeatToggle,
-  onConfirm,
   showPassengerNames = false,
   lockCountdowns = {},
 }: BusSeatMapPanelProps) {
@@ -57,7 +55,6 @@ export function BusSeatMapPanel({
   const leftW = leftCols * SEAT_W + Math.max(0, leftCols - 1) * SEAT_GAP
 
   const totalPrice = selectedSeats.reduce((sum, s) => sum + s.price, 0)
-  const canConfirm = selectedSeats.length > 0
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -191,23 +188,13 @@ export function BusSeatMapPanel({
               Cliquez sur un siège disponible pour le sélectionner
             </p>
           ) : (
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-xs text-slate-500">
-                  {selectedSeats.length} place{selectedSeats.length > 1 ? 's' : ''} sélectionnée{selectedSeats.length > 1 ? 's' : ''} — {selectedSeats.map(s => s.label).join(', ')}
-                </p>
-                <p className="text-xl font-black text-[#0B7439] leading-none mt-0.5">
-                  {formatCurrency(totalPrice)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={onConfirm}
-                disabled={!canConfirm}
-                className="px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#0B7439] hover:bg-[#085c2d] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                Continuer &rarr; Passager
-              </button>
+            <div>
+              <p className="text-xs text-slate-500">
+                {selectedSeats.length} place{selectedSeats.length > 1 ? 's' : ''} sélectionnée{selectedSeats.length > 1 ? 's' : ''} — {selectedSeats.map(s => s.label).join(', ')}
+              </p>
+              <p className="text-xl font-black text-[#0B7439] leading-none mt-0.5">
+                {formatCurrency(totalPrice)}
+              </p>
             </div>
           )}
         </div>
