@@ -261,14 +261,15 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
 
   // ── TABLEAU ────────────────────────────────────────────────────
   // Bords GAUCHES pour les colonnes texte, bords DROITS pour les colonnes numériques
+  // MATRICULE / TOTAUX alignés à gauche ; colonnes numériques centrées
   const col = {
-    matL:    margin,          // MATRICULE  (gauche)
-    numL:    margin + 38,     // N°         (gauche)
-    siegR:   margin + 62,     // SIEGES     (droite)
-    ticketR: margin + 100,    // MT TICKET  (droite)
-    depR:    margin + 134,    // DEPENSES   (droite)
-    soldeR:  margin + 163,    // SOLDE      (droite)
-    bagR:    W - margin,      // BAGAGE     (droite)
+    matL:   margin + 3,   // MATRICULE / TOTAUX (gauche)
+    num:    60,           // N°       (centré)
+    sieg:   85,           // SIEGES   (centré)
+    ticket: 110,          // MT TICKET(centré)
+    dep:    135,          // DEPENSES (centré)
+    solde:  160,          // SOLDE    (centré)
+    bag:    184,          // BAGAGE   (centré)
   }
   const ROW_H = 8
 
@@ -280,12 +281,12 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setFont('helvetica', 'bold')
   const hY = y + ROW_H - 1
   doc.text('MATRICULE',    col.matL,    hY)
-  doc.text('N°',           col.numL,    hY)
-  doc.text('SIEGES',       col.siegR,   hY, { align: 'right' })
-  doc.text('MT TICKET',    col.ticketR, hY, { align: 'right' })
-  doc.text('DEPENSES',     col.depR,    hY, { align: 'right' })
-  doc.text('SOLDE',        col.soldeR,  hY, { align: 'right' })
-  doc.text('BAGAGE',       col.bagR,    hY, { align: 'right' })
+  doc.text('N°',           col.num,     hY, { align: 'center' })
+  doc.text('SIEGES',       col.sieg,    hY, { align: 'center' })
+  doc.text('MT TICKET',    col.ticket,  hY, { align: 'center' })
+  doc.text('DEPENSES',     col.dep,     hY, { align: 'center' })
+  doc.text('SOLDE',        col.solde,   hY, { align: 'center' })
+  doc.text('BAGAGE',       col.bag,     hY, { align: 'center' })
   doc.setTextColor(0, 0, 0)
   y += ROW_H + 3
 
@@ -298,12 +299,12 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.text(row.registration_number,         col.matL,    y)
-    doc.text(String(row.departure_number),    col.numL,    y)
-    doc.text(fmtNum(row.seats_sold),          col.siegR,   y, { align: 'right' })
-    doc.text(fmt(row.total_ticket),           col.ticketR, y, { align: 'right' })
-    doc.text(fmt(row.total_charges),          col.depR,    y, { align: 'right' })
-    doc.text(fmt(row.solde_ticket),           col.soldeR,  y, { align: 'right' })
-    doc.text(fmt(row.total_baggage),          col.bagR,    y, { align: 'right' })
+    doc.text(String(row.departure_number),    col.num,     y, { align: 'center' })
+    doc.text(fmtNum(row.seats_sold),          col.sieg,    y, { align: 'center' })
+    doc.text(fmt(row.total_ticket),           col.ticket,  y, { align: 'center' })
+    doc.text(fmt(row.total_charges),          col.dep,     y, { align: 'center' })
+    doc.text(fmt(row.solde_ticket),           col.solde,   y, { align: 'center' })
+    doc.text(fmt(row.total_baggage),          col.bag,     y, { align: 'center' })
     // séparateur léger
     doc.setDrawColor(226, 234, 229)
     doc.setLineWidth(0.1)
@@ -319,12 +320,12 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.text('TOTAUX',                              col.matL,    y)
-  doc.text(String(data.totals.departures),        col.numL,    y)
-  doc.text(fmtNum(data.totals.seats_sold),        col.siegR,   y, { align: 'right' })
-  doc.text(fmt(data.totals.total_ticket),         col.ticketR, y, { align: 'right' })
-  doc.text(fmt(data.totals.total_charges),        col.depR,    y, { align: 'right' })
-  doc.text(fmt(data.totals.solde_ticket),         col.soldeR,  y, { align: 'right' })
-  doc.text(fmt(data.totals.total_baggage),        col.bagR,    y, { align: 'right' })
+  doc.text(String(data.totals.departures),        col.num,     y, { align: 'center' })
+  doc.text(fmtNum(data.totals.seats_sold),        col.sieg,    y, { align: 'center' })
+  doc.text(fmt(data.totals.total_ticket),         col.ticket,  y, { align: 'center' })
+  doc.text(fmt(data.totals.total_charges),        col.dep,     y, { align: 'center' })
+  doc.text(fmt(data.totals.solde_ticket),         col.solde,   y, { align: 'center' })
+  doc.text(fmt(data.totals.total_baggage),        col.bag,     y, { align: 'center' })
   doc.setTextColor(0, 0, 0)
   y += ROW_H + 8
 
