@@ -166,6 +166,7 @@ export default function TicketSale() {
   });
 
   const [showBaggage, setShowBaggage] = useState(false);
+  const [showPassengerInfo, setShowPassengerInfo] = useState(false);
   type BaggageMode = 'none' | 'avec_ticket' | 'avec_ticket_reporte' | 'sans_ticket';
   const [baggageForm, setBaggageForm] = useState<{
     mode: BaggageMode;
@@ -2085,35 +2086,54 @@ export default function TicketSale() {
               </div>
 
               {/* Passenger info */}
-              <div className="rounded-2xl border p-4 space-y-3" style={{ backgroundColor: 'var(--surface)' }}>
-                <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Informations passager</h3>
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    <User className="w-3 h-3 inline mr-1" />Nom complet
-                    <span className="ml-1 text-xs italic" style={{ color: 'var(--text-muted)' }}>(facultatif)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={passenger.name}
-                    onChange={e => setPassenger({ ...passenger, name: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 rounded-lg border text-sm transition-colors"
-                    style={{ borderColor: 'var(--border)' }}
-                    placeholder="Ex: KOUASSI Jean"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    <Phone className="w-3 h-3 inline mr-1" />Téléphone (optionnel)
-                  </label>
-                  <input
-                    type="tel"
-                    value={passenger.phone}
-                    onChange={e => setPassenger({ ...passenger, phone: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border text-sm transition-colors"
-                    style={{ borderColor: 'var(--border)' }}
-                    placeholder="+225 07 XX XX XX XX"
-                  />
-                </div>
+              <div className="rounded-2xl border overflow-hidden" style={{ backgroundColor: 'var(--surface)' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPassengerInfo(!showPassengerInfo)}
+                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <User className="w-4.5 h-4.5" style={{ color: 'var(--primary)' }} />
+                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Informations passager</span>
+                    <span className="text-xs italic" style={{ color: 'var(--text-muted)' }}>(facultatif)</span>
+                  </div>
+                  {showPassengerInfo
+                    ? <ChevronUp className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                    : <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                  }
+                </button>
+
+                {showPassengerInfo && (
+                  <div className="px-4 pb-4 space-y-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <div className="pt-3">
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        <User className="w-3 h-3 inline mr-1" />Nom complet
+                        <span className="ml-1 text-xs italic" style={{ color: 'var(--text-muted)' }}>(facultatif)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={passenger.name}
+                        onChange={e => setPassenger({ ...passenger, name: e.target.value.toUpperCase() })}
+                        className="w-full px-3 py-2 rounded-lg border text-sm transition-colors"
+                        style={{ borderColor: 'var(--border)' }}
+                        placeholder="Ex: KOUASSI Jean"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        <Phone className="w-3 h-3 inline mr-1" />Téléphone (optionnel)
+                      </label>
+                      <input
+                        type="tel"
+                        value={passenger.phone}
+                        onChange={e => setPassenger({ ...passenger, phone: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border text-sm transition-colors"
+                        style={{ borderColor: 'var(--border)' }}
+                        placeholder="+225 07 XX XX XX XX"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Payment method */}
