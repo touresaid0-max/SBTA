@@ -45,17 +45,17 @@ function drawLogoSbta(doc: jsPDF, cx: number, cy: number, r: number) {
 // ═══════════════════════════════════════════════════════════════════
 export function printBorderauDepart(data: BordereauDepartData) {
   const W   = 80
-  const H   = 240
+  const H   = 280
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [W, H] })
-  let y = 5
+  let y = 6
 
-  // helpers
+  // helpers — espacements augmentés ~15 % pour une meilleure lisibilité
   const centerText = (text: string, fontSize: number, bold = false) => {
     doc.setFontSize(fontSize)
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     const w = doc.getTextWidth(text)
     doc.text(text, (W - w) / 2, y)
-    y += fontSize * 0.42 + 1
+    y += fontSize * 0.42 + 1.15
   }
 
   const labelValue = (label: string, value: string, fs = 7, bold = false) => {
@@ -64,42 +64,46 @@ export function printBorderauDepart(data: BordereauDepartData) {
     doc.text(label, 3, y)
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.text(value, W - 3, y, { align: 'right' })
-    y += fs * 0.42 + 1.8
+    y += fs * 0.42 + 2.6
   }
 
+  // Trait horizontal avec marge avant/après pour aérer le texte
   const line = (thick = false) => {
+    y += 1.5
     doc.setLineWidth(thick ? 0.5 : 0.2)
     doc.setDrawColor(0, 0, 0)
     doc.line(3, y, W - 3, y)
-    y += 2
+    y += 3
   }
 
   // ── EN-TÊTE ────────────────────────────────────────────────────
   centerText('S.B.T.A', 10, true)
   centerText('Soc. Bonkoungou Transport de l\'Agneby', 5.5)
-  y += 1
+  y += 1.5
   centerText('BORDEREAU DE DEPART', 8, true)
-  y += 1
+  y += 1.5
   line(true)
 
   // ── GUICHET & TRAJET ───────────────────────────────────────────
+  y += 1.5
   labelValue('GUICHET :', data.station_name)
   labelValue('DEP N° :', String(data.departure_number), 8)
   labelValue('LIGNE :', data.route_name)
   labelValue('DATE :', data.departure_date)
   labelValue('HEURE :', data.departure_time)
-  y += 0.5
+  y += 1.5
   line()
 
   // ── BUS & CHAUFFEUR ────────────────────────────────────────────
+  y += 1.5
   labelValue('CAR :', data.registration_number)
   labelValue('CHAUFFEUR :', data.driver_name)
-  y += 0.5
+  y += 1.5
   line()
 
   // ── CONVOI ──────────────────────────────────────────────────
   if (data.is_convoy) {
-    y += 1
+    y += 2
     doc.setFillColor(255, 247, 237)
     doc.rect(3, y - 3.5, W - 6, 8, 'F')
     doc.setDrawColor(251, 146, 60)
@@ -108,18 +112,20 @@ export function printBorderauDepart(data: BordereauDepartData) {
     doc.setDrawColor(0, 0, 0)
     doc.setLineWidth(0.2)
     centerText('** DEPART EN CONVOI **', 8, true)
-    y += 2
+    y += 3
   }
 
   // ── CAPACITÉ ──────────────────────────────────────────────────
+  y += 1.5
   labelValue('NBRE PLACE', fmtNum(data.total_seats))
   labelValue('VENDU(S)', fmtNum(data.seats_sold))
   labelValue('RESTANT(S)', fmtNum(data.seats_remaining))
-  y += 0.5
+  y += 1.5
   line()
 
   if (data.is_convoy) {
     // Convoy: simplified financial section
+    y += 1.5
     labelValue('MONTANT CONVOI :', fmt(data.convoy_amount), 8, true)
     if (data.total_rations > 0)     labelValue('RATIONS :', fmt(data.total_rations))
     if (data.total_carburant > 0)   labelValue('CARBURANT COMPL. :', fmt(data.total_carburant))
@@ -131,6 +137,7 @@ export function printBorderauDepart(data: BordereauDepartData) {
   } else {
     // Normal: full sales table
     // ── TABLEAU VENTES ─────────────────────────────────────────────
+    y += 2
     const C = { dest: 3, sieges: 31, tarifR: 52, montantR: W - 3 }
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'bold')
@@ -138,7 +145,7 @@ export function printBorderauDepart(data: BordereauDepartData) {
     doc.text('SIEG.',       C.sieges,  y)
     doc.text('TARIF',       C.tarifR,  y, { align: 'right' })
     doc.text('MONTANT',     C.montantR, y, { align: 'right' })
-    y += 1.5
+    y += 2
     line()
 
     doc.setFont('helvetica', 'normal')
@@ -147,13 +154,13 @@ export function printBorderauDepart(data: BordereauDepartData) {
     doc.text(fmtNum(data.seats_sold),          C.sieges,   y)
     doc.text(fmt(data.unit_price),             C.tarifR,   y, { align: 'right' })
     doc.text(fmt(data.total_ticket_amount),    C.montantR, y, { align: 'right' })
-    y += 5
+    y += 7
 
     // ── SIÈGES OCCUPÉS ─────────────────────────────────────────────
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'bold')
     doc.text('SIEGES OCCUPES :', 3, y)
-    y += 4
+    y += 4.5
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6)
@@ -161,12 +168,13 @@ export function printBorderauDepart(data: BordereauDepartData) {
     for (let i = 0; i < data.sold_seat_numbers.length; i += perRow) {
       const chunk = data.sold_seat_numbers.slice(i, i + perRow).join('-')
       doc.text(chunk, 3, y)
-      y += 3.5
+      y += 4
     }
-    y += 1
+    y += 2.5
     line()
 
     // ── RÉCAPITULATIF FINANCIER ────────────────────────────────────
+    y += 1.5
     labelValue('MT TOTAL TICKET :', fmt(data.total_ticket_amount), 7)
     if (data.total_rations > 0)     labelValue('RATIONS :', fmt(data.total_rations))
     if (data.total_carburant > 0)   labelValue('CARBURANT COMPL. :', fmt(data.total_carburant))
@@ -177,13 +185,13 @@ export function printBorderauDepart(data: BordereauDepartData) {
     labelValue('MT TOTAL BAGAGE :', fmt(data.total_baggage), 7)
   }
 
-  y += 1
+  y += 3
   // double ligne
   doc.setLineWidth(0.5)
   doc.line(3, y, W - 3, y)
-  y += 1.2
+  y += 1.4
   doc.line(3, y, W - 3, y)
-  y += 3
+  y += 5
 
   // ── PIED ───────────────────────────────────────────────────────
   doc.setFontSize(5.5)
