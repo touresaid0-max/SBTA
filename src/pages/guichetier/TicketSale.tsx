@@ -2263,7 +2263,6 @@ export default function TicketSale() {
                     )}
                   </div>
                 )}
-
                 {payment.method === 'mobile_money' && (
                   <div className="space-y-2 pt-1">
                     <select
