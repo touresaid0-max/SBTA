@@ -11,6 +11,13 @@ interface StationAgent {
   agent?: { full_name: string; phone: string | null };
 }
 
+interface StationManager {
+  id: string;
+  manager_id: string;
+  is_primary: boolean;
+  manager?: { full_name: string };
+}
+
 interface Station {
   id: string;
   name: string;
@@ -65,6 +72,7 @@ export default function Stations() {
   const navigate = useNavigate();
   const [stations, setStations] = useState<Station[]>([]);
   const [stationAgentsMap, setStationAgentsMap] = useState<Record<string, StationAgent[]>>({});
+  const [stationManagersMap, setStationManagersMap] = useState<Record<string, StationManager[]>>({});
   const [cities, setCities] = useState<City[]>([]);
   const [managers, setManagers] = useState<Manager[]>([]);
   const [agentsColis, setAgentsColis] = useState<AgentColis[]>([]);
@@ -73,6 +81,8 @@ export default function Stations() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [primaryAgentId, setPrimaryAgentId] = useState<string | null>(null);
+  const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>([]);
+  const [primaryManagerId, setPrimaryManagerId] = useState<string | null>(null);
   const [destCodes, setDestCodes] = useState<{ id?: string; destination_station_id: string; agency_code: string }[]>([]);
 
   const [formData, setFormData] = useState({
@@ -166,7 +176,7 @@ export default function Stations() {
 
   const loadData = async () => {
     try {
-      const [stationsRes, agentsRes] = await Promise.all([
+      const [stationsRes, agentsRes, managersRes] = await Promise.all([
         supabase
           .from('stations')
           .select('*, cities(name, region), manager:station_manager_id(id, full_name)')
@@ -174,6 +184,11 @@ export default function Stations() {
         supabase
           .from('station_agents')
           .select('id, station_id, agent_id, is_primary, agent:agent_id(full_name, phone)')
+          .order('is_primary', { ascending: false })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('station_managers')
+          .select('id, station_id, manager_id, is_primary, manager:manager_id(full_name)')
           .order('is_primary', { ascending: false })
           .order('created_at', { ascending: true }),
       ]);
@@ -188,6 +203,14 @@ export default function Stations() {
         map[sid].push(row as any);
       }
       setStationAgentsMap(map);
+
+      const mgrMap: Record<string, StationManager[]> = {};
+      for (const row of managersRes.data ?? []) {
+        const sid = (row as any).station_id;
+        if (!mgrMap[sid]) mgrMap[sid] = [];
+        mgrMap[sid].push(row as any);
+      }
+      setStationManagersMap(mgrMap);
     } catch (error: any) {
       toast.error('Erreur de chargement');
     } finally {
@@ -232,7 +255,7 @@ export default function Stations() {
         facilities: formData.facilities,
         display_screen_enabled: formData.display_screen_enabled,
         is_active: formData.is_active,
-        station_manager_id: formData.station_manager_id || null,
+        station_manager_id: primaryManagerId || null,
         agency_code: formData.agency_code || null,
       };
 
@@ -260,6 +283,7 @@ export default function Stations() {
 
       if (savedStationId) {
         await syncStationAgents(savedStationId, selectedAgentIds, primaryAgentId);
+        await syncStationManagers(savedStationId, selectedManagerIds, primaryManagerId);
         await syncDestCodes(savedStationId, filledRows);
       }
 
@@ -317,6 +341,50 @@ export default function Stations() {
     }
   };
 
+  const syncStationManagers = async (stationId: string, managerIds: string[], primaryId: string | null) => {
+    const { data: existing } = await supabase
+      .from('station_managers')
+      .select('id, manager_id')
+      .eq('station_id', stationId);
+
+    const existingIds = new Set((existing ?? []).map(r => r.manager_id));
+    const targetIds = new Set(managerIds);
+
+    const toRemove = (existing ?? []).filter(r => !targetIds.has(r.manager_id));
+    const toAdd = managerIds.filter(id => !existingIds.has(id));
+
+    if (toRemove.length > 0) {
+      await supabase
+        .from('station_managers')
+        .delete()
+        .in('id', toRemove.map(r => r.id));
+    }
+
+    if (toAdd.length > 0) {
+      await supabase
+        .from('station_managers')
+        .insert(toAdd.map(managerId => ({
+          station_id: stationId,
+          manager_id: managerId,
+          is_primary: managerId === primaryId,
+        })));
+    }
+
+    if (primaryId) {
+      await supabase
+        .from('station_managers')
+        .update({ is_primary: false })
+        .eq('station_id', stationId)
+        .neq('manager_id', primaryId);
+
+      await supabase
+        .from('station_managers')
+        .update({ is_primary: true })
+        .eq('station_id', stationId)
+        .eq('manager_id', primaryId);
+    }
+  };
+
   const syncDestCodes = async (
     stationId: string,
     rows: { destination_station_id: string; agency_code: string }[],
@@ -354,6 +422,9 @@ export default function Stations() {
     const agents = stationAgentsMap[station.id] ?? [];
     const ids = agents.map(a => a.agent_id);
     const primary = agents.find(a => a.is_primary);
+    const stationMgrs = stationManagersMap[station.id] ?? [];
+    const mgrIds = stationMgrs.map(m => m.manager_id);
+    const primaryMgr = stationMgrs.find(m => m.is_primary);
     loadDestCodes(station.id);
 
     setFormData({
@@ -378,6 +449,8 @@ export default function Stations() {
     });
     setSelectedAgentIds(ids);
     setPrimaryAgentId(primary?.agent_id ?? (ids[0] || null));
+    setSelectedManagerIds(mgrIds);
+    setPrimaryManagerId(primaryMgr?.manager_id ?? (mgrIds[0] || null));
     setEditingId(station.id);
     setShowForm(true);
   };
@@ -422,6 +495,8 @@ export default function Stations() {
     });
     setSelectedAgentIds([]);
     setPrimaryAgentId(null);
+    setSelectedManagerIds([]);
+    setPrimaryManagerId(null);
     setDestCodes([]);
   };
 
@@ -469,6 +544,21 @@ export default function Stations() {
   };
 
   const availableAgents = agentsColis.filter(a => !selectedAgentIds.includes(a.id));
+
+  const toggleManager = (managerId: string) => {
+    setSelectedManagerIds(prev => {
+      const next = prev.includes(managerId)
+        ? prev.filter(id => id !== managerId)
+        : [...prev, managerId];
+
+      if (!next.includes(primaryManagerId ?? '')) {
+        setPrimaryManagerId(next[0] || null);
+      }
+      return next;
+    });
+  };
+
+  const availableManagers = managers.filter(m => !selectedManagerIds.includes(m.id));
 
   const addDestCode = () => setDestCodes(prev => [...prev, { destination_station_id: '', agency_code: '' }]);
   const updateDestCode = (idx: number, patch: Partial<{ destination_station_id: string; agency_code: string }>) =>
@@ -812,19 +902,78 @@ export default function Stations() {
                 </div>
 
                 <div>
-                  <label className="block mb-2 font-medium">Chef de gare responsable</label>
+                  <label className="block mb-2 font-medium">Chefs de gare affectés</label>
+
+                  {selectedManagerIds.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      {selectedManagerIds.map(managerId => {
+                        const m = managers.find(mm => mm.id === managerId);
+                        if (!m) return null;
+                        const isPrimary = primaryManagerId === managerId;
+                        return (
+                          <div
+                            key={managerId}
+                            className="flex items-center justify-between p-3 rounded-lg border"
+                            style={{
+                              backgroundColor: isPrimary ? 'var(--success-light)' : 'var(--neutral-50)',
+                              borderColor: isPrimary ? 'var(--success)' : 'var(--neutral-200)',
+                            }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <UserCheck className="w-4 h-4" style={{ color: isPrimary ? 'var(--success)' : 'var(--neutral-400)' }} />
+                              <span className="text-sm font-medium">{m.full_name}</span>
+                              {isPrimary && (
+                                <span
+                                  className="px-2 py-0.5 rounded text-xs font-semibold"
+                                  style={{ backgroundColor: 'var(--success)', color: 'white' }}
+                                >
+                                  Principal
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {!isPrimary && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPrimaryManagerId(managerId)}
+                                  className="text-xs px-2 py-1 rounded border hover:bg-gray-100 transition-colors"
+                                  style={{ color: 'var(--primary)', borderColor: 'var(--primary)' }}
+                                >
+                                  Rendre principal
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => toggleManager(managerId)}
+                                className="p-1 rounded hover:bg-red-50 transition-colors"
+                              >
+                                <X className="w-4 h-4" style={{ color: 'var(--danger)' }} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {managers.length === 0 ? (
                     <div className="w-full p-3 border rounded-lg text-sm" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--neutral-50)' }}>
                       Aucun chef de gare disponible — créez d'abord un utilisateur avec le rôle "chef_gare"
                     </div>
-                  ) : (
+                  ) : availableManagers.length > 0 ? (
                     <select
-                      value={formData.station_manager_id}
-                      onChange={(e) => setFormData({ ...formData, station_manager_id: e.target.value })}
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const wasEmpty = selectedManagerIds.length === 0;
+                          toggleManager(e.target.value);
+                          if (wasEmpty) setPrimaryManagerId(e.target.value);
+                        }
+                      }}
                       className="w-full p-3 border rounded-lg"
                     >
-                      <option value="">Aucun responsable assigné</option>
-                      {managers.map(m => {
+                      <option value="">+ Ajouter un chef de gare...</option>
+                      {availableManagers.map(m => {
                         const alreadyAssigned = m.station_id && m.station_id !== editingId;
                         return (
                           <option key={m.id} value={m.id}>
@@ -833,7 +982,15 @@ export default function Stations() {
                         );
                       })}
                     </select>
+                  ) : (
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Tous les chefs de gare sont déjà affectés
+                    </p>
                   )}
+
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Une gare peut avoir plusieurs chefs de gare. Le chef principal reste utilisé pour la logique des rôles et permissions existante.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 p-4 border rounded-lg" style={{ backgroundColor: 'var(--neutral-50)' }}>
@@ -929,10 +1086,22 @@ export default function Stations() {
                     )}
                   </td>
                   <td className="p-4">
-                    {station.manager ? (
-                      <div className="flex items-center gap-2">
-                        <UserCheck className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                        <span className="text-sm font-medium">{(station.manager as any).full_name}</span>
+                    {(stationManagersMap[station.id] ?? []).length > 0 ? (
+                      <div className="space-y-1">
+                        {(stationManagersMap[station.id] ?? []).map(sm => (
+                          <div key={sm.id} className="flex items-center gap-1.5">
+                            <UserCheck className="w-3.5 h-3.5" style={{ color: sm.is_primary ? 'var(--success)' : 'var(--primary)' }} />
+                            <span className="text-sm font-medium">{(sm.manager as any)?.full_name}</span>
+                            {sm.is_primary && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none"
+                                style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}
+                              >
+                                P
+                              </span>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Non assigné</span>

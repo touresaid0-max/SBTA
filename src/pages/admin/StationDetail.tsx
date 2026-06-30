@@ -45,6 +45,13 @@ interface User {
   email: string;
 }
 
+interface StationManagerRow {
+  id: string;
+  manager_id: string;
+  is_primary: boolean;
+  manager?: { full_name: string | null; first_name: string | null; last_name: string | null; email: string | null };
+}
+
 const FACILITIES = [
   { key: 'parking', label: 'Parking' },
   { key: 'wifi', label: 'WiFi' },
@@ -59,6 +66,7 @@ export default function StationDetail() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'infos' | 'guichets' | 'stats'>('infos');
   const [station, setStation] = useState<Station | null>(null);
+  const [stationManagers, setStationManagers] = useState<StationManagerRow[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
   const [guichetiers, setGuichetiers] = useState<User[]>([]);
   const [showCounterForm, setShowCounterForm] = useState(false);
@@ -73,6 +81,7 @@ export default function StationDetail() {
   useEffect(() => {
     if (id) {
       loadStationData();
+      loadStationManagers();
       loadCounters();
       loadGuichetiers();
     }
@@ -103,6 +112,22 @@ export default function StationDetail() {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadStationManagers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('station_managers')
+        .select('id, manager_id, is_primary, manager:manager_id(full_name, first_name, last_name, email)')
+        .eq('station_id', id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setStationManagers((data as any) || []);
+    } catch (error: any) {
+      console.error('Erreur chargement chefs de gare:', error);
     }
   };
 
@@ -341,16 +366,36 @@ export default function StationDetail() {
 
               <div className="flex items-start gap-3">
                 <UserCheck className="w-5 h-5 mt-1" style={{ color: 'var(--primary)' }} />
-                <div>
-                  <p className="font-medium">Chef de gare responsable</p>
-                  {station.manager ? (
-                    <div className="mt-1">
-                      <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {(station.manager as any).full_name}
-                      </p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {(station.manager as any).email}
-                      </p>
+                <div className="flex-1">
+                  <p className="font-medium">Chefs de gare affectés</p>
+                  {stationManagers.length > 0 ? (
+                    <div className="mt-1 space-y-2">
+                      {stationManagers.map(sm => {
+                        const m = sm.manager as any;
+                        const name = m?.full_name || `${m?.first_name ?? ''} ${m?.last_name ?? ''}`.trim() || m?.email || '—';
+                        return (
+                          <div key={sm.id} className="flex items-center gap-2">
+                            <div>
+                              <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                                {name}
+                              </p>
+                              {m?.email && (
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  {m.email}
+                                </p>
+                              )}
+                            </div>
+                            {sm.is_primary && (
+                              <span
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                                style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}
+                              >
+                                Principal
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <span
