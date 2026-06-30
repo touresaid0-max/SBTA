@@ -129,6 +129,9 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Rapport convois',     path: '/chef-gare/convoys',      icon: <Truck className="w-5 h-5" /> },
     { label: 'Rapport journalier',  path: '/chef-gare/daily-report', icon: <FileText className="w-5 h-5" /> },
   ],
+  bagagiste: [
+    { label: 'Vente bagages', path: '/bagagiste/baggage', icon: <Luggage className="w-5 h-5" /> },
+  ],
   rh: [
     { label: 'Dashboard', path: '/rh/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     {

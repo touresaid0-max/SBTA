@@ -377,7 +377,7 @@ export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   mecanicien: '/mecanicien/dashboard',
   pompiste: '/pompiste/dashboard',
   chef_gare: '/chef-gare/dashboard',
-  bagagiste: '/profile',
+  bagagiste: '/bagagiste/baggage',
   superviseur_colis: '/superviseur-colis/dashboard',
   agent_colis: '/agent-colis/dashboard',
   agent_reservation: '/agent-reservation/dashboard',

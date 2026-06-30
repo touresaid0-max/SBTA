@@ -10,6 +10,7 @@ export type UserRole =
   | 'guichetier'
   | 'chef_garage'
   | 'chef_gare'
+  | 'bagagiste'
   | 'mecanicien'
   | 'pompiste'
   | 'superviseur_colis'
