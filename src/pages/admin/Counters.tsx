@@ -16,7 +16,7 @@ interface Counter {
       name: string;
     };
   };
-  users?: {
+  assigned_user?: {
     full_name: string;
     email: string;
   };
@@ -131,7 +131,7 @@ export default function Counters() {
     try {
       const { data, error } = await supabase
         .from('counters')
-        .select('*, stations(name, cities(name)), users(full_name, email), manager:manager_id(full_name)')
+        .select('*, stations(name, cities(name)), assigned_user:assigned_user_id(full_name, email), manager:manager_id(full_name)')
         .order('station_id')
         .order('counter_number');
 
@@ -395,11 +395,11 @@ export default function Counters() {
                   )}
                 </td>
                 <td className="p-4">
-                  {counter.users ? (
+                  {counter.assigned_user ? (
                     <div>
-                      <div className="font-medium">{counter.users.full_name}</div>
+                      <div className="font-medium">{counter.assigned_user.full_name}</div>
                       <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {counter.users.email}
+                        {counter.assigned_user.email}
                       </div>
                     </div>
                   ) : (
