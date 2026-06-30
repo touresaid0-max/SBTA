@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { Monitor, TrendingUp, TicketCheck, Banknote, RefreshCw, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 import { format } from 'date-fns';
@@ -33,6 +34,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
 };
 
 export default function ChefGareSalesTracking() {
+  const { user } = useAuthStore();
   const [rows, setRows] = useState<SaleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -46,12 +48,31 @@ export default function ChefGareSalesTracking() {
       const { data: stationId } = await supabase.rpc('get_my_station_id');
       if (!stationId) { toast.error('Impossible de récupérer votre gare'); return; }
 
-      const { data, error } = await supabase
+      const { count: chefCount } = await supabase
+        .from('station_managers')
+        .select('id', { count: 'exact', head: true })
+        .eq('station_id', stationId);
+      const restrictManagerId = (chefCount ?? 0) > 1 ? user?.id ?? null : null;
+
+      let summaryQuery = supabase
         .from('schedule_receipt_summary')
         .select('*')
         .eq('station_id', stationId)
         .eq('departure_date', dateFilter)
         .order('departure_datetime', { ascending: true });
+
+      if (restrictManagerId) {
+        const { data: ownCounters } = await supabase
+          .from('counters')
+          .select('id')
+          .eq('station_id', stationId)
+          .eq('manager_id', restrictManagerId);
+        const visibleIds = (ownCounters || []).map((c: any) => c.id);
+        if (visibleIds.length === 0) { setRows([]); return; }
+        summaryQuery = summaryQuery.in('counter_id', visibleIds);
+      }
+
+      const { data, error } = await summaryQuery;
 
       if (error) throw error;
       setRows(data || []);

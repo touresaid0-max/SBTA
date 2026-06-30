@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../services/supabase';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -44,6 +45,7 @@ function formatDuration(ms: number): string {
 }
 
 export default function ChefGareCounters() {
+  const { user } = useAuthStore();
   const [counters, setCounters] = useState<Counter[]>([]);
   const [loading, setLoading] = useState(true);
   const [stationId, setStationId] = useState<string | null>(null);
@@ -65,14 +67,23 @@ export default function ChefGareCounters() {
       if (!sid) { toast.error('Impossible de recuperer votre gare'); return; }
       setStationId(sid);
 
+      const { count: chefCount } = await supabase
+        .from('station_managers')
+        .select('id', { count: 'exact', head: true })
+        .eq('station_id', sid);
+      const restrictManagerId = (chefCount ?? 0) > 1 ? user?.id ?? null : null;
+
       const today = new Date().toISOString().split('T')[0];
 
+      let countersQuery = supabase
+        .from('counters')
+        .select('id, counter_number, is_active, assigned_user_id, station_id, user:assigned_user_id(full_name, email)')
+        .eq('station_id', sid)
+        .order('counter_number');
+      if (restrictManagerId) countersQuery = countersQuery.eq('manager_id', restrictManagerId);
+
       const [countersRes, routesRes, crRes, shiftsRes, sessionsRes] = await Promise.all([
-        supabase
-          .from('counters')
-          .select('id, counter_number, is_active, assigned_user_id, station_id, user:assigned_user_id(full_name, email)')
-          .eq('station_id', sid)
-          .order('counter_number'),
+        countersQuery,
         supabase
           .from('routes')
           .select('id, name')

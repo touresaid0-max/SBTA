@@ -8,6 +8,7 @@ interface Counter {
   counter_number: string;
   station_id: string;
   assigned_user_id: string | null;
+  manager_id: string | null;
   is_active: boolean;
   stations?: {
     name: string;
@@ -19,6 +20,14 @@ interface Counter {
     full_name: string;
     email: string;
   };
+  manager?: {
+    full_name: string;
+  } | null;
+}
+
+interface StationChef {
+  manager_id: string;
+  full_name: string;
 }
 
 interface Station {
@@ -39,6 +48,7 @@ export default function Counters() {
   const [counters, setCounters] = useState<Counter[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
   const [guichetiers, setGuichetiers] = useState<User[]>([]);
+  const [stationChefs, setStationChefs] = useState<StationChef[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -47,6 +57,7 @@ export default function Counters() {
     counter_number: '',
     station_id: '',
     assigned_user_id: '',
+    manager_id: '',
     is_active: true
   });
 
@@ -87,11 +98,40 @@ export default function Counters() {
     }
   };
 
+  const loadStationChefs = async (stationId: string) => {
+    if (!stationId) {
+      setStationChefs([]);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('station_managers')
+        .select('manager_id, manager:manager_id(full_name)')
+        .eq('station_id', stationId)
+        .order('is_primary', { ascending: false });
+
+      if (error) throw error;
+      setStationChefs(
+        (data || []).map((row: any) => ({
+          manager_id: row.manager_id,
+          full_name: row.manager?.full_name || '—',
+        }))
+      );
+    } catch (error: any) {
+      setStationChefs([]);
+    }
+  };
+
+  const handleStationChange = (stationId: string) => {
+    setFormData((prev) => ({ ...prev, station_id: stationId, manager_id: '' }));
+    loadStationChefs(stationId);
+  };
+
   const loadData = async () => {
     try {
       const { data, error } = await supabase
         .from('counters')
-        .select('*, stations(name, cities(name)), users(full_name, email)')
+        .select('*, stations(name, cities(name)), users(full_name, email), manager:manager_id(full_name)')
         .order('station_id')
         .order('counter_number');
 
@@ -110,7 +150,8 @@ export default function Counters() {
     try {
       const dataToSubmit = {
         ...formData,
-        assigned_user_id: formData.assigned_user_id || null
+        assigned_user_id: formData.assigned_user_id || null,
+        manager_id: stationChefs.length > 1 ? (formData.manager_id || null) : null
       };
 
       if (editingId) {
@@ -144,8 +185,10 @@ export default function Counters() {
       counter_number: counter.counter_number,
       station_id: counter.station_id,
       assigned_user_id: counter.assigned_user_id || '',
+      manager_id: counter.manager_id || '',
       is_active: counter.is_active
     });
+    loadStationChefs(counter.station_id);
     setEditingId(counter.id);
     setShowForm(true);
   };
@@ -172,8 +215,10 @@ export default function Counters() {
       counter_number: '',
       station_id: '',
       assigned_user_id: '',
+      manager_id: '',
       is_active: true
     });
+    setStationChefs([]);
   };
 
   if (loading) {
@@ -216,7 +261,7 @@ export default function Counters() {
                   <label className="block mb-2 font-medium">Gare *</label>
                   <select
                     value={formData.station_id}
-                    onChange={(e) => setFormData({ ...formData, station_id: e.target.value })}
+                    onChange={(e) => handleStationChange(e.target.value)}
                     className="w-full p-3 border rounded-lg"
                     required
                   >
@@ -256,6 +301,27 @@ export default function Counters() {
                     ))}
                   </select>
                 </div>
+
+                {stationChefs.length > 1 && (
+                  <div>
+                    <label className="block mb-2 font-medium">Chef de gare responsable</label>
+                    <select
+                      value={formData.manager_id}
+                      onChange={(e) => setFormData({ ...formData, manager_id: e.target.value })}
+                      className="w-full p-3 border rounded-lg"
+                    >
+                      <option value="">Aucun (visible par tous les chefs)</option>
+                      {stationChefs.map((chef) => (
+                        <option key={chef.manager_id} value={chef.manager_id}>
+                          {chef.full_name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Cette gare a plusieurs chefs de gare. Le chef sélectionné sera le seul à voir et gérer ce guichet et son guichetier.
+                    </p>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2">
                   <input
@@ -297,6 +363,7 @@ export default function Counters() {
               <th className="text-left p-4 font-semibold">Numéro</th>
               <th className="text-left p-4 font-semibold">Gare</th>
               <th className="text-left p-4 font-semibold">Guichetier assigné</th>
+              <th className="text-left p-4 font-semibold">Chef responsable</th>
               <th className="text-left p-4 font-semibold">Statut</th>
               <th className="text-left p-4 font-semibold">Actions</th>
             </tr>
@@ -338,6 +405,15 @@ export default function Counters() {
                   ) : (
                     <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
                       Non assigné
+                    </span>
+                  )}
+                </td>
+                <td className="p-4">
+                  {counter.manager ? (
+                    <span className="font-medium">{counter.manager.full_name}</span>
+                  ) : (
+                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      —
                     </span>
                   )}
                 </td>

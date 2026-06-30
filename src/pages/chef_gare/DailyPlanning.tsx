@@ -266,11 +266,20 @@ export default function DailyPlanning() {
   };
 
   const loadCounters = async (stationId: string) => {
-    const { data } = await supabase
+    const { count: chefCount } = await supabase
+      .from('station_managers')
+      .select('id', { count: 'exact', head: true })
+      .eq('station_id', stationId);
+    const restrictManagerId = (chefCount ?? 0) > 1 ? user?.id ?? null : null;
+
+    let query = supabase
       .from('counters')
       .select('id, counter_number, is_active, assigned_user:assigned_user_id(full_name)')
       .eq('station_id', stationId)
       .order('counter_number');
+    if (restrictManagerId) query = query.eq('manager_id', restrictManagerId);
+
+    const { data } = await query;
     setCounters(
       (data || []).map((c: any) => ({
         id: c.id,
@@ -299,10 +308,18 @@ export default function DailyPlanning() {
   };
 
   const loadCounterRoutes = async (stationId: string) => {
-    const { data: cList } = await supabase
+    const { count: chefCount } = await supabase
+      .from('station_managers')
+      .select('id', { count: 'exact', head: true })
+      .eq('station_id', stationId);
+    const restrictManagerId = (chefCount ?? 0) > 1 ? user?.id ?? null : null;
+
+    let cQuery = supabase
       .from('counters')
       .select('id')
       .eq('station_id', stationId);
+    if (restrictManagerId) cQuery = cQuery.eq('manager_id', restrictManagerId);
+    const { data: cList } = await cQuery;
     if (!cList || cList.length === 0) return;
 
     const counterIds = cList.map(c => c.id);

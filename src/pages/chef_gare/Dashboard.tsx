@@ -99,18 +99,36 @@ export default function ChefGareDashboard() {
   };
 
   const loadCounterStats = async (stationId: string) => {
-    const [{ data: summaryRows }, { data: countersData }] = await Promise.all([
-      supabase
-        .from('schedule_receipt_summary')
-        .select('counter_id, counter_number, bus_id, seats_sold, seats_remaining, total_ticket_amount, total_charges, solde_ticket')
-        .eq('station_id', stationId)
-        .eq('departure_date', today),
-      supabase
-        .from('counters')
-        .select('id, counter_number, is_active, assigned_user:assigned_user_id(full_name)')
-        .eq('station_id', stationId)
-        .order('counter_number'),
-    ]);
+    const { count: chefCount } = await supabase
+      .from('station_managers')
+      .select('id', { count: 'exact', head: true })
+      .eq('station_id', stationId);
+    const restrictManagerId = (chefCount ?? 0) > 1 ? user?.id ?? null : null;
+
+    let countersQuery = supabase
+      .from('counters')
+      .select('id, counter_number, is_active, assigned_user_id, assigned_user:assigned_user_id(full_name)')
+      .eq('station_id', stationId)
+      .order('counter_number');
+    if (restrictManagerId) countersQuery = countersQuery.eq('manager_id', restrictManagerId);
+
+    const { data: countersData } = await countersQuery;
+
+    let summaryQuery = supabase
+      .from('schedule_receipt_summary')
+      .select('counter_id, counter_number, bus_id, seats_sold, seats_remaining, total_ticket_amount, total_charges, solde_ticket')
+      .eq('station_id', stationId)
+      .eq('departure_date', today);
+    if (restrictManagerId) {
+      const visibleIds = (countersData || []).map((c: any) => c.id);
+      if (visibleIds.length === 0) {
+        setCounterRows([]);
+        setTotalSeatsRemaining(0);
+        return;
+      }
+      summaryQuery = summaryQuery.in('counter_id', visibleIds);
+    }
+    const { data: summaryRows } = await summaryQuery;
 
     const counterMap: Record<string, CounterRow> = {};
 
