@@ -114,6 +114,7 @@ import ChefGareStationDisplay from './pages/chef_gare/StationDisplayWrapper';
 import ChefGareGroupedPlanning from './pages/chef_gare/GroupedPlanning';
 import ChefGareConvoyReport from './pages/chef_gare/ConvoyReport';
 import BagagisteBaggageSale from './pages/bagagiste/BaggageSale';
+import BagagisteBaggageReport from './pages/bagagiste/BaggageReport';
 import Review from './pages/client/Review';
 import DriverPerformanceReport from './pages/admin/DriverPerformanceReport';
 import Loyalty from './pages/client/Loyalty';
@@ -379,6 +380,7 @@ function App() {
             <Route path="chef-gare/display" element={<ProtectedRoute roles={['chef_gare']}><ChefGareStationDisplay /></ProtectedRoute>} />
 
             <Route path="bagagiste/baggage" element={<ProtectedRoute roles={['bagagiste']}><BagagisteBaggageSale /></ProtectedRoute>} />
+            <Route path="bagagiste/report" element={<ProtectedRoute roles={['bagagiste']}><BagagisteBaggageReport /></ProtectedRoute>} />
 
             <Route path="client/search" element={<SearchTrips />} />
             <Route path="client/booking/:scheduleId" element={<Booking />} />

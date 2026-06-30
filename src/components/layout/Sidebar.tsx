@@ -131,6 +131,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   ],
   bagagiste: [
     { label: 'Vente bagages', path: '/bagagiste/baggage', icon: <Luggage className="w-5 h-5" /> },
+    { label: 'Rapport bagages', path: '/bagagiste/report', icon: <FileText className="w-5 h-5" /> },
   ],
   rh: [
     { label: 'Dashboard', path: '/rh/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
