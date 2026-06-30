@@ -10,7 +10,7 @@ import type { Employee, EmployeeFilters, ContractType } from '@/types/hr.types'
 
 const ROLE_LABELS: Record<string, string> = {
   chauffeur: 'Chauffeur', guichetier: 'Guichetier', agent_reservation: 'Agent Réservation', mecanicien: 'Mécanicien',
-  pompiste: 'Pompiste', chef_garage: 'Chef Garage', chef_gare: 'Chef Gare',
+  pompiste: 'Pompiste', chef_garage: 'Chef Garage', chef_gare: 'Chef Gare', bagagiste: 'Bagagiste',
   gestionnaire: 'Gestionnaire', planificateur: 'Planificateur',
   comptable: 'Comptable', daf: 'DAF', rh: 'RH', admin: 'Admin',
   charge_achat: "Chargé d'Achat",
@@ -28,6 +28,7 @@ const TABS = [
   { key: 'pompiste',    label: 'Pompistes' },
   { key: 'chef_garage', label: 'Chefs Garage' },
   { key: 'chef_gare',   label: 'Chefs Gare' },
+  { key: 'bagagiste',   label: 'Bagagistes' },
 ]
 
 interface Company { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }

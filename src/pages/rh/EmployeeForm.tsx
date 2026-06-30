@@ -26,7 +26,7 @@ async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): 
 
 const OPERATIONAL_ROLES: SBTARole[] = [
   'chauffeur', 'guichetier', 'chef_garage', 'mecanicien', 'pompiste', 'chef_gare', 'gestionnaire',
-  'agent_colis', 'agent_reservation', 'comptable', 'carburant',
+  'agent_colis', 'agent_reservation', 'comptable', 'carburant', 'bagagiste',
 ]
 
 // Rôles nécessitant une gare d'affectation obligatoire
@@ -52,6 +52,7 @@ const ROLE_OPTIONS: { value: SBTARole; label: string; group: string }[] = [
   { value: 'mecanicien',        label: 'Mécanicien',          group: 'Opérationnel' },
   { value: 'pompiste',          label: 'Pompiste',            group: 'Opérationnel' },
   { value: 'chef_gare',         label: 'Chef Gare',           group: 'Opérationnel' },
+  { value: 'bagagiste',         label: 'Bagagiste',           group: 'Opérationnel' },
   { value: 'agent_colis',       label: 'Agent Courrier',         group: 'Courrier' },
   { value: 'superviseur_colis', label: 'Superviseur Courrier',   group: 'Courrier' },
   { value: 'carburant',         label: 'Carburant',           group: 'Opérationnel' },

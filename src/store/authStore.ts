@@ -7,6 +7,7 @@ export type SBTARole =
   | 'gestionnaire' | 'planificateur' | 'charge_achat'
   | 'chauffeur' | 'guichetier' | 'chef_garage'
   | 'mecanicien' | 'pompiste' | 'chef_gare'
+  | 'bagagiste'
   | 'superviseur_colis' | 'agent_colis'
   | 'agent_reservation'
   | 'carburant' | 'gerant_principal'
@@ -376,6 +377,7 @@ export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   mecanicien: '/mecanicien/dashboard',
   pompiste: '/pompiste/dashboard',
   chef_gare: '/chef-gare/dashboard',
+  bagagiste: '/profile',
   superviseur_colis: '/superviseur-colis/dashboard',
   agent_colis: '/agent-colis/dashboard',
   agent_reservation: '/agent-reservation/dashboard',
