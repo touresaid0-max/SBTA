@@ -162,10 +162,11 @@ export default function DailyPlanning() {
 
   const init = async () => {
     setLoading(true);
+    const { data: sid } = await supabase.rpc('get_my_station_id');
     const { data, error } = await supabase
       .from('stations')
       .select('*, cities:city_id(name)')
-      .eq('station_manager_id', user!.id)
+      .eq('id', sid)
       .maybeSingle();
 
     if (error || !data) {

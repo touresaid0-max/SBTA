@@ -13,15 +13,12 @@ export default function StationDisplayWrapper() {
   useEffect(() => {
     if (!user) return;
     supabase
-      .from('stations')
-      .select('id')
-      .eq('station_manager_id', user.id)
-      .maybeSingle()
+      .rpc('get_my_station_id')
       .then(({ data, error: err }) => {
         if (err || !data) {
           setError("Aucune gare n'est associée à votre compte.");
         } else {
-          setStationId(data.id);
+          setStationId(data as string);
         }
         setLoading(false);
       });

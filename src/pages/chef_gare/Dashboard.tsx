@@ -71,10 +71,13 @@ export default function ChefGareDashboard() {
   const loadAll = async () => {
     setLoading(true);
     try {
+      const { data: sid } = await supabase.rpc('get_my_station_id');
+      if (!sid) return;
+
       const { data: stationData, error: stationError } = await supabase
         .from('stations')
         .select('*, cities:city_id(name)')
-        .eq('station_manager_id', user!.id)
+        .eq('id', sid)
         .maybeSingle();
 
       if (stationError) { toast.error('Erreur chargement gare'); return; }
