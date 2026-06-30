@@ -212,7 +212,7 @@ export default function EmployeeForm() {
     : buses
 
   const isHoldingRole = form.role ? HOLDING_ROLES.includes(form.role as SBTARole) : false
-  const needsCompany  = form.role ? OPERATIONAL_ROLES.includes(form.role as SBTARole) : false
+  const needsCompany  = form.role ? OPERATIONAL_ROLES.includes(form.role as SBTARole) && form.role !== 'bagagiste' : false
   const needsStation  = form.role ? REQUIRES_STATION.includes(form.role as SBTARole) : false
 
   // Auto-assign holding company when role is a holding role
