@@ -107,6 +107,7 @@ import ChefGareBreakdowns from './pages/chef_gare/Breakdowns';
 import ChefGareDailyPlanning from './pages/chef_gare/DailyPlanning';
 import ChefGareNewSchedule from './pages/chef_gare/NewSchedule';
 import ChefGareCounters from './pages/chef_gare/Counters';
+import ChefGareBaggageHandlers from './pages/chef_gare/BaggageHandlers';
 import ChefGareSalesTracking from './pages/chef_gare/SalesTracking';
 import ChefGareDailyReport from './pages/chef_gare/DailyReport';
 import ChefGareStationDisplay from './pages/chef_gare/StationDisplayWrapper';
@@ -369,6 +370,7 @@ function App() {
             <Route path="chef-gare/schedules/new" element={<ProtectedRoute roles={['chef_gare']}><ChefGareNewSchedule /></ProtectedRoute>} />
             <Route path="chef-gare/schedules/grouped" element={<ProtectedRoute roles={['chef_gare']}><ChefGareGroupedPlanning /></ProtectedRoute>} />
             <Route path="chef-gare/counters" element={<ProtectedRoute roles={['chef_gare']}><ChefGareCounters /></ProtectedRoute>} />
+            <Route path="chef-gare/baggage-handlers" element={<ProtectedRoute roles={['chef_gare']}><ChefGareBaggageHandlers /></ProtectedRoute>} />
             <Route path="chef-gare/sales" element={<ProtectedRoute roles={['chef_gare']}><ChefGareSalesTracking /></ProtectedRoute>} />
             <Route path="chef-gare/convoys" element={<ProtectedRoute roles={['chef_gare']}><ChefGareConvoyReport /></ProtectedRoute>} />
             <Route path="chef-gare/daily-report" element={<ProtectedRoute roles={['chef_gare']}><ChefGareDailyReport /></ProtectedRoute>} />

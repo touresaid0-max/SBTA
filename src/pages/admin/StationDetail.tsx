@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { Building2, ArrowLeft, MapPin, Phone, Mail, Monitor, Users, BarChart3, Plus, CreditCard as Edit2, Trash2, UserCheck } from 'lucide-react';
+import { Building2, ArrowLeft, MapPin, Phone, Mail, Monitor, Users, BarChart3, Plus, CreditCard as Edit2, Trash2, UserCheck, Luggage } from 'lucide-react';
 
 interface Station {
   id: string;
@@ -52,6 +52,12 @@ interface StationManagerRow {
   manager?: { full_name: string | null; first_name: string | null; last_name: string | null; email: string | null };
 }
 
+interface StationBaggageRow {
+  id: string;
+  handler_id: string;
+  handler?: { full_name: string | null; first_name: string | null; last_name: string | null; email: string | null };
+}
+
 const FACILITIES = [
   { key: 'parking', label: 'Parking' },
   { key: 'wifi', label: 'WiFi' },
@@ -67,6 +73,7 @@ export default function StationDetail() {
   const [activeTab, setActiveTab] = useState<'infos' | 'guichets' | 'stats'>('infos');
   const [station, setStation] = useState<Station | null>(null);
   const [stationManagers, setStationManagers] = useState<StationManagerRow[]>([]);
+  const [stationBaggage, setStationBaggage] = useState<StationBaggageRow[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
   const [guichetiers, setGuichetiers] = useState<User[]>([]);
   const [showCounterForm, setShowCounterForm] = useState(false);
@@ -82,6 +89,7 @@ export default function StationDetail() {
     if (id) {
       loadStationData();
       loadStationManagers();
+      loadStationBaggageHandlers();
       loadCounters();
       loadGuichetiers();
     }
@@ -128,6 +136,21 @@ export default function StationDetail() {
       setStationManagers((data as any) || []);
     } catch (error: any) {
       console.error('Erreur chargement chefs de gare:', error);
+    }
+  };
+
+  const loadStationBaggageHandlers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('station_baggage_handlers')
+        .select('id, handler_id, handler:handler_id(full_name, first_name, last_name, email)')
+        .eq('station_id', id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setStationBaggage((data as any) || []);
+    } catch (error: any) {
+      console.error('Erreur chargement bagagistes:', error);
     }
   };
 
@@ -393,6 +416,42 @@ export default function StationDetail() {
                                 Principal
                               </span>
                             )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <span
+                      className="inline-block px-3 py-1 rounded-full text-xs font-medium mt-1"
+                      style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}
+                    >
+                      Non assigné
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <Luggage className="w-5 h-5 mt-1" style={{ color: 'var(--primary)' }} />
+                <div className="flex-1">
+                  <p className="font-medium">Bagagistes affectés</p>
+                  {stationBaggage.length > 0 ? (
+                    <div className="mt-1 space-y-2">
+                      {stationBaggage.map(sb => {
+                        const h = sb.handler as any;
+                        const name = h?.full_name || `${h?.first_name ?? ''} ${h?.last_name ?? ''}`.trim() || h?.email || '—';
+                        return (
+                          <div key={sb.id} className="flex items-center gap-2">
+                            <div>
+                              <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                                {name}
+                              </p>
+                              {h?.email && (
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  {h.email}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         );
                       })}

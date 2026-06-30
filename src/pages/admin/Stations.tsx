@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, CreditCard as Edit2, Trash2, Eye, Monitor, UserCheck, X, Package, MapPin } from 'lucide-react';
+import { Building2, Plus, CreditCard as Edit2, Trash2, Eye, Monitor, UserCheck, X, Package, MapPin, Luggage } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -16,6 +16,12 @@ interface StationManager {
   manager_id: string;
   is_primary: boolean;
   manager?: { full_name: string };
+}
+
+interface StationBaggageHandler {
+  id: string;
+  handler_id: string;
+  handler?: { full_name: string; phone: string | null };
 }
 
 interface Station {
@@ -54,6 +60,12 @@ interface AgentColis {
   phone: string | null;
 }
 
+interface BaggageHandler {
+  id: string;
+  full_name: string;
+  phone: string | null;
+}
+
 interface City {
   id: string;
   name: string;
@@ -73,9 +85,11 @@ export default function Stations() {
   const [stations, setStations] = useState<Station[]>([]);
   const [stationAgentsMap, setStationAgentsMap] = useState<Record<string, StationAgent[]>>({});
   const [stationManagersMap, setStationManagersMap] = useState<Record<string, StationManager[]>>({});
+  const [stationBaggageMap, setStationBaggageMap] = useState<Record<string, StationBaggageHandler[]>>({});
   const [cities, setCities] = useState<City[]>([]);
   const [managers, setManagers] = useState<Manager[]>([]);
   const [agentsColis, setAgentsColis] = useState<AgentColis[]>([]);
+  const [baggageHandlers, setBaggageHandlers] = useState<BaggageHandler[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -83,6 +97,7 @@ export default function Stations() {
   const [primaryAgentId, setPrimaryAgentId] = useState<string | null>(null);
   const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>([]);
   const [primaryManagerId, setPrimaryManagerId] = useState<string | null>(null);
+  const [selectedBaggageIds, setSelectedBaggageIds] = useState<string[]>([]);
   const [destCodes, setDestCodes] = useState<{ id?: string; destination_station_id: string; agency_code: string }[]>([]);
 
   const [formData, setFormData] = useState({
@@ -111,6 +126,7 @@ export default function Stations() {
     loadCities();
     loadManagers();
     loadAgentsColis();
+    loadBaggageHandlers();
   }, []);
 
   const loadManagers = async () => {
@@ -159,6 +175,29 @@ export default function Stations() {
     }
   };
 
+  const loadBaggageHandlers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, full_name, phone')
+        .eq('role', 'bagagiste')
+        .eq('is_active', true)
+        .order('first_name');
+
+      if (error) throw error;
+
+      const list: BaggageHandler[] = (data ?? []).map(u => ({
+        id: u.id,
+        full_name: u.full_name || `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.id,
+        phone: u.phone,
+      }));
+
+      setBaggageHandlers(list);
+    } catch (err) {
+      console.error('Erreur chargement bagagistes:', err);
+    }
+  };
+
   const loadCities = async () => {
     try {
       const { data, error } = await supabase
@@ -176,7 +215,7 @@ export default function Stations() {
 
   const loadData = async () => {
     try {
-      const [stationsRes, agentsRes, managersRes] = await Promise.all([
+      const [stationsRes, agentsRes, managersRes, baggageRes] = await Promise.all([
         supabase
           .from('stations')
           .select('*, cities(name, region), manager:station_manager_id(id, full_name)')
@@ -190,6 +229,10 @@ export default function Stations() {
           .from('station_managers')
           .select('id, station_id, manager_id, is_primary, manager:manager_id(full_name)')
           .order('is_primary', { ascending: false })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('station_baggage_handlers')
+          .select('id, station_id, handler_id, handler:handler_id(full_name, phone)')
           .order('created_at', { ascending: true }),
       ]);
 
@@ -211,6 +254,14 @@ export default function Stations() {
         mgrMap[sid].push(row as any);
       }
       setStationManagersMap(mgrMap);
+
+      const bagMap: Record<string, StationBaggageHandler[]> = {};
+      for (const row of baggageRes.data ?? []) {
+        const sid = (row as any).station_id;
+        if (!bagMap[sid]) bagMap[sid] = [];
+        bagMap[sid].push(row as any);
+      }
+      setStationBaggageMap(bagMap);
     } catch (error: any) {
       toast.error('Erreur de chargement');
     } finally {
@@ -284,6 +335,7 @@ export default function Stations() {
       if (savedStationId) {
         await syncStationAgents(savedStationId, selectedAgentIds, primaryAgentId);
         await syncStationManagers(savedStationId, selectedManagerIds, primaryManagerId);
+        await syncStationBaggage(savedStationId, selectedBaggageIds);
         await syncDestCodes(savedStationId, filledRows);
       }
 
@@ -385,6 +437,35 @@ export default function Stations() {
     }
   };
 
+  const syncStationBaggage = async (stationId: string, handlerIds: string[]) => {
+    const { data: existing } = await supabase
+      .from('station_baggage_handlers')
+      .select('id, handler_id')
+      .eq('station_id', stationId);
+
+    const existingIds = new Set((existing ?? []).map(r => r.handler_id));
+    const targetIds = new Set(handlerIds);
+
+    const toRemove = (existing ?? []).filter(r => !targetIds.has(r.handler_id));
+    const toAdd = handlerIds.filter(id => !existingIds.has(id));
+
+    if (toRemove.length > 0) {
+      await supabase
+        .from('station_baggage_handlers')
+        .delete()
+        .in('id', toRemove.map(r => r.id));
+    }
+
+    if (toAdd.length > 0) {
+      await supabase
+        .from('station_baggage_handlers')
+        .insert(toAdd.map(handlerId => ({
+          station_id: stationId,
+          handler_id: handlerId,
+        })));
+    }
+  };
+
   const syncDestCodes = async (
     stationId: string,
     rows: { destination_station_id: string; agency_code: string }[],
@@ -425,6 +506,8 @@ export default function Stations() {
     const stationMgrs = stationManagersMap[station.id] ?? [];
     const mgrIds = stationMgrs.map(m => m.manager_id);
     const primaryMgr = stationMgrs.find(m => m.is_primary);
+    const bagHandlers = stationBaggageMap[station.id] ?? [];
+    const bagIds = bagHandlers.map(b => b.handler_id);
     loadDestCodes(station.id);
 
     setFormData({
@@ -451,6 +534,7 @@ export default function Stations() {
     setPrimaryAgentId(primary?.agent_id ?? (ids[0] || null));
     setSelectedManagerIds(mgrIds);
     setPrimaryManagerId(primaryMgr?.manager_id ?? (mgrIds[0] || null));
+    setSelectedBaggageIds(bagIds);
     setEditingId(station.id);
     setShowForm(true);
   };
@@ -497,6 +581,7 @@ export default function Stations() {
     setPrimaryAgentId(null);
     setSelectedManagerIds([]);
     setPrimaryManagerId(null);
+    setSelectedBaggageIds([]);
     setDestCodes([]);
   };
 
@@ -559,6 +644,16 @@ export default function Stations() {
   };
 
   const availableManagers = managers.filter(m => !selectedManagerIds.includes(m.id));
+
+  const toggleBaggage = (handlerId: string) => {
+    setSelectedBaggageIds(prev =>
+      prev.includes(handlerId)
+        ? prev.filter(id => id !== handlerId)
+        : [...prev, handlerId]
+    );
+  };
+
+  const availableBaggage = baggageHandlers.filter(b => !selectedBaggageIds.includes(b.id));
 
   const addDestCode = () => setDestCodes(prev => [...prev, { destination_station_id: '', agency_code: '' }]);
   const updateDestCode = (idx: number, patch: Partial<{ destination_station_id: string; agency_code: string }>) =>
@@ -993,6 +1088,73 @@ export default function Stations() {
                   </p>
                 </div>
 
+                {/* ── Bagagistes (multi-select) ── */}
+                <div>
+                  <label className="block mb-2 font-medium">Bagagistes affectés</label>
+
+                  {selectedBaggageIds.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      {selectedBaggageIds.map(handlerId => {
+                        const handler = baggageHandlers.find(b => b.id === handlerId);
+                        if (!handler) return null;
+                        return (
+                          <div
+                            key={handlerId}
+                            className="flex items-center justify-between p-3 rounded-lg border"
+                            style={{ backgroundColor: 'var(--neutral-50)', borderColor: 'var(--neutral-200)' }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Luggage className="w-4 h-4" style={{ color: 'var(--neutral-400)' }} />
+                              <div>
+                                <span className="text-sm font-medium">{handler.full_name}</span>
+                                {handler.phone && (
+                                  <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                                    {handler.phone}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleBaggage(handlerId)}
+                              className="p-1 rounded hover:bg-red-50 transition-colors"
+                            >
+                              <X className="w-4 h-4" style={{ color: 'var(--danger)' }} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {baggageHandlers.length === 0 ? (
+                    <div className="w-full p-3 border rounded-lg text-sm" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--neutral-50)' }}>
+                      Aucun bagagiste disponible — créez d'abord un employé avec le poste "Bagagiste"
+                    </div>
+                  ) : availableBaggage.length > 0 ? (
+                    <select
+                      value=""
+                      onChange={(e) => { if (e.target.value) toggleBaggage(e.target.value); }}
+                      className="w-full p-3 border rounded-lg"
+                    >
+                      <option value="">+ Ajouter un bagagiste...</option>
+                      {availableBaggage.map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.full_name}{b.phone ? ` (${b.phone})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Tous les bagagistes sont déjà affectés
+                    </p>
+                  )}
+
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Une gare peut avoir un ou plusieurs bagagistes affectés.
+                  </p>
+                </div>
+
                 <div className="flex items-center gap-2 p-4 border rounded-lg" style={{ backgroundColor: 'var(--neutral-50)' }}>
                   <input
                     type="checkbox"
@@ -1047,6 +1209,7 @@ export default function Stations() {
               <th className="text-left p-4 font-semibold">Ville</th>
               <th className="text-left p-4 font-semibold">Chef de gare</th>
               <th className="text-left p-4 font-semibold">Agents courrier</th>
+              <th className="text-left p-4 font-semibold">Bagagistes</th>
               <th className="text-left p-4 font-semibold">Code agence</th>
               <th className="text-left p-4 font-semibold">Contact</th>
               <th className="text-left p-4 font-semibold">Équipements</th>
@@ -1127,6 +1290,20 @@ export default function Stations() {
                       </div>
                     ) : (
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Aucun agent</span>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    {(stationBaggageMap[station.id] ?? []).length > 0 ? (
+                      <div className="space-y-1">
+                        {(stationBaggageMap[station.id] ?? []).map(sb => (
+                          <div key={sb.id} className="flex items-center gap-1.5">
+                            <Luggage className="w-3.5 h-3.5" style={{ color: 'var(--neutral-400)' }} />
+                            <span className="text-sm font-medium">{(sb.handler as any)?.full_name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Aucun</span>
                     )}
                   </td>
                   <td className="p-4">
