@@ -106,7 +106,7 @@ Deno.serve(async (req: Request) => {
       throw new Error("Le taux journalier est obligatoire pour un chauffeur contractuel");
     }
 
-    const REQUIRES_COMPANY = ["chauffeur","guichetier","agent_reservation","chef_garage","mecanicien","pompiste","chef_gare","gestionnaire","agent_colis","bagagiste"];
+    const REQUIRES_COMPANY = ["chauffeur","guichetier","agent_reservation","chef_garage","mecanicien","pompiste","chef_gare","gestionnaire","agent_colis"];
     if (REQUIRES_COMPANY.includes(role) && !company_id) {
       throw new Error("La société est obligatoire pour ce poste");
     }
