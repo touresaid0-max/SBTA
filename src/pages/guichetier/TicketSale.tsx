@@ -73,6 +73,7 @@ interface ConfirmedTicket {
   boarding_station?: string;
   alighting_station?: string;
   departure_number?: number | null;
+  baggage?: BaggageTicketData;
 }
 
 type Step = 'search' | 'select' | 'seats' | 'confirm';
@@ -579,6 +580,17 @@ export default function TicketSale() {
     if (!validateSaleInputs()) return;
     if (!selectedSchedule) return;
 
+    if (baggageForm.mode === 'avec_ticket') {
+      if (!isOnline) {
+        toast.error('Le bagage avec ticket nécessite une connexion pour être associé au billet');
+        return;
+      }
+      if (baggageForm.price <= 0) {
+        toast.error('Indiquez le prix du bagage avant de confirmer la vente');
+        return;
+      }
+    }
+
     setProcessing(true);
 
     // Server-side timestamp & fraud validation (online only)
@@ -719,6 +731,50 @@ export default function TicketSale() {
       }
     } catch (_) {}
 
+    // Bagage avec ticket — associé au même billet, aux mêmes sièges et au même passager
+    let baggageData: BaggageTicketData | null = null;
+    if (baggageForm.mode === 'avec_ticket') {
+      const baggageNumber = generateBaggageNumber();
+      const baggageDestination = (baggageForm.destination.trim() || selectedSchedule.destination_city_name || '').toUpperCase();
+      const busReg = selectedSchedule.buses?.registration_number || null;
+      const seatStr = seatNumbers.join(', ');
+
+      const { error: bagError } = await supabase
+        .from('baggage_tickets')
+        .insert({
+          baggage_number: baggageNumber,
+          schedule_id: selectedSchedule.id,
+          reservation_id: reservation.id,
+          destination: baggageDestination,
+          price: baggageForm.price,
+          seat_number: seatStr,
+          departure_number: departureNumber,
+          bus_registration: busReg,
+          description: baggageForm.description.trim() || null,
+          owner_name: passenger.name.trim(),
+          owner_phone: passenger.phone.trim(),
+          has_ticket: true,
+          counter_id: myCounterId,
+          station_id: myStationId,
+          sold_by: user!.id,
+        });
+      if (bagError) throw bagError;
+
+      baggageData = {
+        baggage_number: baggageNumber,
+        destination: baggageDestination,
+        price: baggageForm.price,
+        seat_number: seatStr,
+        departure_number: departureNumber,
+        bus_registration: busReg,
+        description: baggageForm.description || null,
+        owner_name: passenger.name,
+        owner_phone: passenger.phone,
+        station_name: myStationName || 'SBTA',
+        mode_label: 'Avec ticket',
+      };
+    }
+
     setConfirmedTicket({
       booking_reference: reference,
       passenger_name: passenger.name,
@@ -733,6 +789,7 @@ export default function TicketSale() {
       boarding_station: boardingStationName,
       alighting_station: alightingStationName,
       departure_number: departureNumber,
+      baggage: baggageData ?? undefined,
     });
 
     if (printAndReset) {
@@ -1182,6 +1239,11 @@ export default function TicketSale() {
       printWin.addEventListener('afterprint', () => printWin.close());
     }
     toast.success('Impression du billet lancee');
+
+    // Bagage avec ticket — imprimé pour le même siège juste après le billet de voyage
+    if (confirmedTicket.baggage) {
+      printBaggageTicket(confirmedTicket.baggage);
+    }
   };
 
   const [baggageProcessing, setBaggageProcessing] = useState(false);
@@ -1200,87 +1262,8 @@ export default function TicketSale() {
 
     try {
       const baggageNumber = generateBaggageNumber();
-      let reservationId: string | null = null;
-      let departureNumber: number | null = baggageForm.departure_number ? parseInt(baggageForm.departure_number) : null;
-
-      if (baggageForm.mode === 'avec_ticket' && selectedSchedule) {
-        if (!baggageForm.seat_number.trim()) {
-          toast.error('Selectionnez un siege sur le plan avant d\'imprimer le ticket bagage avec ticket');
-          setBaggageProcessing(false);
-          return;
-        }
-
-        const seatNumbers = baggageForm.seat_number.split(',').map(s => s.trim()).filter(Boolean);
-
-        if (isOnline && hasSeatMap) {
-          for (const sn of seatNumbers) {
-            const available = await isSeatStillAvailable(selectedSchedule.id, sn);
-            if (!available) {
-              toast.error(`Le siege ${sn} vient d'etre reserve. Choisissez un autre siege.`);
-              await refresh();
-              setBaggageProcessing(false);
-              return;
-            }
-          }
-        }
-
-        const serverNow = getServerNow();
-        const reference = `SBTA-${serverNow.getFullYear()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
-
-        const { data: reservation, error: resError } = await supabase
-          .from('reservations')
-          .insert({
-            schedule_id: selectedSchedule.id,
-            passenger_name: baggageForm.owner_name.trim(),
-            passenger_phone: baggageForm.owner_phone.trim(),
-            seat_numbers: seatNumbers,
-            total_seats: seatNumbers.length,
-            total_price: baggageForm.price,
-            booking_reference: reference,
-            qr_code: reference,
-            status: 'confirmee',
-            payment_status: 'payee',
-            booked_by: user?.id,
-          })
-          .select('id')
-          .single();
-
-        if (resError) throw resError;
-        reservationId = reservation.id;
-
-        await supabase
-          .from('schedules')
-          .update({
-            seats_available: Math.max(0, selectedSchedule.seats_available - seatNumbers.length),
-            seats_reserved: (selectedSchedule.seats_reserved || 0) + seatNumbers.length,
-          })
-          .eq('id', selectedSchedule.id);
-
-        setSelectedSchedule(prev => prev ? {
-          ...prev,
-          seats_available: Math.max(0, prev.seats_available - seatNumbers.length),
-          seats_reserved: (prev.seats_reserved || 0) + seatNumbers.length,
-        } : prev);
-
-        try {
-          const { data: depSeq } = await supabase
-            .from('departure_sequence')
-            .select('departure_order, departure_number')
-            .eq('schedule_id', selectedSchedule.id)
-            .maybeSingle();
-          if (depSeq) {
-            departureNumber = depSeq.departure_order ?? depSeq.departure_number ?? null;
-          }
-        } catch (_) {}
-
-        if (hasSeatMap) {
-          for (const sn of seatNumbers) {
-            const seat = enrichedSelectedSeats.find(s => s.label === sn);
-            if (seat) toggleSeat(seat);
-          }
-          await refresh();
-        }
-      }
+      const reservationId: string | null = null;
+      const departureNumber: number | null = baggageForm.departure_number ? parseInt(baggageForm.departure_number) : null;
 
       const modeLabel = baggageForm.mode === 'avec_ticket' ? 'Avec ticket'
         : baggageForm.mode === 'avec_ticket_reporte' ? 'Avec ticket reporte'
@@ -2120,27 +2103,27 @@ export default function TicketSale() {
                       </div>
                     </div>
 
-                    {baggageForm.mode === 'avec_ticket' && !baggageForm.seat_number.trim() && (
+                    {baggageForm.mode === 'avec_ticket' ? (
                       <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
-                        style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}>
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                        Selectionnez un siege sur le plan pour vendre un ticket bagage avec ticket
+                        style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
+                        <Luggage className="w-3.5 h-3.5 flex-shrink-0" />
+                        Le ticket bagage sera associé au billet (mêmes sièges) puis validé et imprimé à la confirmation de la vente.
                       </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSaveBaggage}
+                        disabled={baggageProcessing}
+                        className="w-full py-2.5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ backgroundColor: 'var(--primary)' }}
+                      >
+                        {baggageProcessing ? (
+                          <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
+                        ) : (
+                          <><Printer className="w-4 h-4" />Imprimer ticket bagage</>
+                        )}
+                      </button>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={handleSaveBaggage}
-                      disabled={baggageProcessing || (baggageForm.mode === 'avec_ticket' && !baggageForm.seat_number.trim())}
-                      className="w-full py-2.5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: 'var(--primary)' }}
-                    >
-                      {baggageProcessing ? (
-                        <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
-                      ) : (
-                        <><Printer className="w-4 h-4" />Imprimer ticket bagage</>
-                      )}
-                    </button>
                   </div>
                 )}
               </div>
