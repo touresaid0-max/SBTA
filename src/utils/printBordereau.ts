@@ -44,159 +44,161 @@ function drawLogoSbta(doc: jsPDF, cx: number, cy: number, r: number) {
 //  BORDEREAU DE DÉPART  (80 mm × hauteur variable)
 // ═══════════════════════════════════════════════════════════════════
 export function printBorderauDepart(data: BordereauDepartData) {
-  const W   = 80
-  const H   = 280
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [W, H] })
-  let y = 6
+  const W = 80
 
-  // helpers — espacements augmentés ~15 % pour une meilleure lisibilité
-  const centerText = (text: string, fontSize: number, bold = false) => {
-    doc.setFontSize(fontSize)
-    doc.setFont('helvetica', bold ? 'bold' : 'normal')
-    const w = doc.getTextWidth(text)
-    doc.text(text, (W - w) / 2, y)
-    y += fontSize * 0.42 + 1.15
-  }
+  // Rendu du contenu sur un document donné ; renvoie le y final (hauteur utile).
+  // Utilisé en 2 passes : mesure (hauteur) puis rendu réel sur page ajustée.
+  const render = (doc: jsPDF): number => {
+    let y = 4
 
-  const labelValue = (label: string, value: string, fs = 7, bold = false) => {
-    doc.setFontSize(fs)
-    doc.setFont('helvetica', 'bold')
-    doc.text(label, 3, y)
-    doc.setFont('helvetica', bold ? 'bold' : 'normal')
-    doc.text(value, W - 3, y, { align: 'right' })
-    y += fs * 0.42 + 2.6
-  }
+    const centerText = (text: string, fontSize: number, bold = false) => {
+      doc.setFontSize(fontSize)
+      doc.setFont('helvetica', bold ? 'bold' : 'normal')
+      const w = doc.getTextWidth(text)
+      doc.text(text, (W - w) / 2, y)
+      y += fontSize * 0.42 + 0.6
+    }
 
-  // Trait horizontal avec marge avant/après pour aérer le texte
-  const line = (thick = false) => {
+    const labelValue = (label: string, value: string, fs = 7, bold = false) => {
+      doc.setFontSize(fs)
+      doc.setFont('helvetica', 'bold')
+      doc.text(label, 3, y)
+      doc.setFont('helvetica', bold ? 'bold' : 'normal')
+      doc.text(value, W - 3, y, { align: 'right' })
+      y += fs * 0.42 + 1.35
+    }
+
+    // Trait horizontal compact
+    const line = (thick = false) => {
+      y += 0.8
+      doc.setLineWidth(thick ? 0.5 : 0.2)
+      doc.setDrawColor(0, 0, 0)
+      doc.line(3, y, W - 3, y)
+      y += 1.8
+    }
+
+    // ── EN-TÊTE ────────────────────────────────────────────────────
+    centerText('S.B.T.A', 10, true)
+    centerText('Soc. Bonkoungou Transport de l\'Agneby', 5.5)
+    centerText('BORDEREAU DE DEPART', 8, true)
+    line(true)
+
+    // ── GUICHET & TRAJET ───────────────────────────────────────────
+    labelValue('GUICHET :', data.station_name)
+    labelValue('DEP N° :', String(data.departure_number), 8)
+    labelValue('LIGNE :', data.route_name)
+    labelValue('DATE :', data.departure_date)
+    labelValue('HEURE :', data.departure_time)
+    line()
+
+    // ── BUS & CHAUFFEUR ────────────────────────────────────────────
+    labelValue('CAR :', data.registration_number)
+    labelValue('CHAUFFEUR :', data.driver_name)
+    line()
+
+    // ── CONVOI ──────────────────────────────────────────────────
+    if (data.is_convoy) {
+      doc.setFillColor(255, 247, 237)
+      doc.rect(3, y - 3, W - 6, 6.5, 'F')
+      doc.setDrawColor(251, 146, 60)
+      doc.setLineWidth(0.4)
+      doc.rect(3, y - 3, W - 6, 6.5, 'D')
+      doc.setDrawColor(0, 0, 0)
+      doc.setLineWidth(0.2)
+      centerText('** DEPART EN CONVOI **', 8, true)
+      y += 1.5
+    }
+
+    // ── CAPACITÉ ──────────────────────────────────────────────────
+    labelValue('NBRE PLACE', fmtNum(data.total_seats))
+    labelValue('VENDU(S)', fmtNum(data.seats_sold))
+    labelValue('RESTANT(S)', fmtNum(data.seats_remaining))
+    line()
+
+    if (data.is_convoy) {
+      // Convoy: simplified financial section
+      labelValue('MONTANT CONVOI :', fmt(data.convoy_amount), 8, true)
+      if (data.total_rations > 0)     labelValue('RATIONS :', fmt(data.total_rations))
+      if (data.total_carburant > 0)   labelValue('CARBURANT COMPL. :', fmt(data.total_carburant))
+      if (data.total_peages > 0)      labelValue('PEAGES :', fmt(data.total_peages))
+      if (data.total_autres > 0)      labelValue('AUTRES :', fmt(data.total_autres))
+      labelValue('MT TOTAL DEPENSES(R/P.) :', fmt(data.total_charges), 7)
+      labelValue('SOLDE CONVOI :', fmt(data.convoy_amount - data.total_charges), 7, true)
+      labelValue('MT TOTAL BAGAGE :', fmt(data.total_baggage), 7)
+    } else {
+      // Normal: full sales table
+      // ── TABLEAU VENTES ─────────────────────────────────────────────
+      const C = { dest: 3, sieges: 31, tarifR: 52, montantR: W - 3 }
+      doc.setFontSize(6.5)
+      doc.setFont('helvetica', 'bold')
+      doc.text('DESTINATION', C.dest,    y)
+      doc.text('SIEG.',       C.sieges,  y)
+      doc.text('TARIF',       C.tarifR,  y, { align: 'right' })
+      doc.text('MONTANT',     C.montantR, y, { align: 'right' })
+      y += 1.5
+      line()
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(6.5)
+      doc.text(data.destination,                 C.dest,     y)
+      doc.text(fmtNum(data.seats_sold),          C.sieges,   y)
+      doc.text(fmt(data.unit_price),             C.tarifR,   y, { align: 'right' })
+      doc.text(fmt(data.total_ticket_amount),    C.montantR, y, { align: 'right' })
+      y += 4
+
+      // ── SIÈGES OCCUPÉS ── (masqué si aucun siège) ──────────────────
+      if (data.sold_seat_numbers.length > 0) {
+        doc.setFontSize(6.5)
+        doc.setFont('helvetica', 'bold')
+        doc.text('SIEGES OCCUPES :', 3, y)
+        y += 3.3
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(6)
+        const perRow = 12
+        for (let i = 0; i < data.sold_seat_numbers.length; i += perRow) {
+          const chunk = data.sold_seat_numbers.slice(i, i + perRow).join('-')
+          doc.text(chunk, 3, y)
+          y += 3.2
+        }
+      }
+      line()
+
+      // ── RÉCAPITULATIF FINANCIER ────────────────────────────────────
+      labelValue('MT TOTAL TICKET :', fmt(data.total_ticket_amount), 7)
+      if (data.total_rations > 0)     labelValue('RATIONS :', fmt(data.total_rations))
+      if (data.total_carburant > 0)   labelValue('CARBURANT COMPL. :', fmt(data.total_carburant))
+      if (data.total_peages > 0)      labelValue('PEAGES :', fmt(data.total_peages))
+      if (data.total_autres > 0)      labelValue('AUTRES :', fmt(data.total_autres))
+      labelValue('MT TOTAL DEPENSES(R/P.) :', fmt(data.total_charges), 7)
+      labelValue('SOLDE TICKETS :', fmt(data.solde_ticket), 7, true)
+      labelValue('MT TOTAL BAGAGE :', fmt(data.total_baggage), 7)
+    }
+
     y += 1.5
-    doc.setLineWidth(thick ? 0.5 : 0.2)
-    doc.setDrawColor(0, 0, 0)
+    // double ligne
+    doc.setLineWidth(0.5)
+    doc.line(3, y, W - 3, y)
+    y += 1.2
     doc.line(3, y, W - 3, y)
     y += 3
-  }
 
-  // ── EN-TÊTE ────────────────────────────────────────────────────
-  centerText('S.B.T.A', 10, true)
-  centerText('Soc. Bonkoungou Transport de l\'Agneby', 5.5)
-  y += 1.5
-  centerText('BORDEREAU DE DEPART', 8, true)
-  y += 1.5
-  line(true)
-
-  // ── GUICHET & TRAJET ───────────────────────────────────────────
-  y += 1.5
-  labelValue('GUICHET :', data.station_name)
-  labelValue('DEP N° :', String(data.departure_number), 8)
-  labelValue('LIGNE :', data.route_name)
-  labelValue('DATE :', data.departure_date)
-  labelValue('HEURE :', data.departure_time)
-  y += 1.5
-  line()
-
-  // ── BUS & CHAUFFEUR ────────────────────────────────────────────
-  y += 1.5
-  labelValue('CAR :', data.registration_number)
-  labelValue('CHAUFFEUR :', data.driver_name)
-  y += 1.5
-  line()
-
-  // ── CONVOI ──────────────────────────────────────────────────
-  if (data.is_convoy) {
-    y += 2
-    doc.setFillColor(255, 247, 237)
-    doc.rect(3, y - 3.5, W - 6, 8, 'F')
-    doc.setDrawColor(251, 146, 60)
-    doc.setLineWidth(0.4)
-    doc.rect(3, y - 3.5, W - 6, 8, 'D')
-    doc.setDrawColor(0, 0, 0)
-    doc.setLineWidth(0.2)
-    centerText('** DEPART EN CONVOI **', 8, true)
-    y += 3
-  }
-
-  // ── CAPACITÉ ──────────────────────────────────────────────────
-  y += 1.5
-  labelValue('NBRE PLACE', fmtNum(data.total_seats))
-  labelValue('VENDU(S)', fmtNum(data.seats_sold))
-  labelValue('RESTANT(S)', fmtNum(data.seats_remaining))
-  y += 1.5
-  line()
-
-  if (data.is_convoy) {
-    // Convoy: simplified financial section
-    y += 1.5
-    labelValue('MONTANT CONVOI :', fmt(data.convoy_amount), 8, true)
-    if (data.total_rations > 0)     labelValue('RATIONS :', fmt(data.total_rations))
-    if (data.total_carburant > 0)   labelValue('CARBURANT COMPL. :', fmt(data.total_carburant))
-    if (data.total_peages > 0)      labelValue('PEAGES :', fmt(data.total_peages))
-    if (data.total_autres > 0)      labelValue('AUTRES :', fmt(data.total_autres))
-    labelValue('MT TOTAL DEPENSES(R/P.) :', fmt(data.total_charges), 7)
-    labelValue('SOLDE CONVOI :', fmt(data.convoy_amount - data.total_charges), 7, true)
-    labelValue('MT TOTAL BAGAGE :', fmt(data.total_baggage), 7)
-  } else {
-    // Normal: full sales table
-    // ── TABLEAU VENTES ─────────────────────────────────────────────
-    y += 2
-    const C = { dest: 3, sieges: 31, tarifR: 52, montantR: W - 3 }
-    doc.setFontSize(6.5)
-    doc.setFont('helvetica', 'bold')
-    doc.text('DESTINATION', C.dest,    y)
-    doc.text('SIEG.',       C.sieges,  y)
-    doc.text('TARIF',       C.tarifR,  y, { align: 'right' })
-    doc.text('MONTANT',     C.montantR, y, { align: 'right' })
-    y += 2
-    line()
-
+    // ── PIED ───────────────────────────────────────────────────────
+    doc.setFontSize(5.5)
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.text(data.destination,                 C.dest,     y)
-    doc.text(fmtNum(data.seats_sold),          C.sieges,   y)
-    doc.text(fmt(data.unit_price),             C.tarifR,   y, { align: 'right' })
-    doc.text(fmt(data.total_ticket_amount),    C.montantR, y, { align: 'right' })
-    y += 7
+    doc.text(`Imprimé le : ${data.print_date} à ${data.print_time}`, 3, y)
 
-    // ── SIÈGES OCCUPÉS ─────────────────────────────────────────────
-    doc.setFontSize(6.5)
-    doc.setFont('helvetica', 'bold')
-    doc.text('SIEGES OCCUPES :', 3, y)
-    y += 4.5
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6)
-    const perRow = 12
-    for (let i = 0; i < data.sold_seat_numbers.length; i += perRow) {
-      const chunk = data.sold_seat_numbers.slice(i, i + perRow).join('-')
-      doc.text(chunk, 3, y)
-      y += 4
-    }
-    y += 2.5
-    line()
-
-    // ── RÉCAPITULATIF FINANCIER ────────────────────────────────────
-    y += 1.5
-    labelValue('MT TOTAL TICKET :', fmt(data.total_ticket_amount), 7)
-    if (data.total_rations > 0)     labelValue('RATIONS :', fmt(data.total_rations))
-    if (data.total_carburant > 0)   labelValue('CARBURANT COMPL. :', fmt(data.total_carburant))
-    if (data.total_peages > 0)      labelValue('PEAGES :', fmt(data.total_peages))
-    if (data.total_autres > 0)      labelValue('AUTRES :', fmt(data.total_autres))
-    labelValue('MT TOTAL DEPENSES(R/P.) :', fmt(data.total_charges), 7)
-    labelValue('SOLDE TICKETS :', fmt(data.solde_ticket), 7, true)
-    labelValue('MT TOTAL BAGAGE :', fmt(data.total_baggage), 7)
+    return y
   }
 
-  y += 3
-  // double ligne
-  doc.setLineWidth(0.5)
-  doc.line(3, y, W - 3, y)
-  y += 1.4
-  doc.line(3, y, W - 3, y)
-  y += 5
+  // Passe 1 : mesure de la hauteur réelle du contenu
+  const measure = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [W, 400] })
+  const finalY  = render(measure)
 
-  // ── PIED ───────────────────────────────────────────────────────
-  doc.setFontSize(5.5)
-  doc.setFont('helvetica', 'normal')
-  doc.text(`Imprimé le : ${data.print_date} à ${data.print_time}`, 3, y)
+  // Passe 2 : rendu sur une page ajustée au contenu (+ marge basse)
+  const H   = Math.ceil(finalY + 4)
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [W, H] })
+  render(doc)
 
   const filename = `bordereau_depart_N${data.departure_number}_${data.departure_date.replace(/\//g, '-')}.pdf`
   doc.save(filename)
