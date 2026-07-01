@@ -65,6 +65,7 @@ export default function ChefGareNewSchedule() {
   const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [busSearch, setBusSearch] = useState('');
   const [driverSearch, setDriverSearch] = useState('');
+  const [routeSearch, setRouteSearch] = useState('');
 
   const formDataRef = useRef(formData);
   useEffect(() => { formDataRef.current = formData; }, [formData]);
@@ -299,7 +300,16 @@ export default function ChefGareNewSchedule() {
 
   const STEPS = ['Itinéraire', 'Gares', 'Transits', 'Horaire', 'Bus', 'Chauffeur'];
 
-  const renderStep1 = () => (
+  const renderStep1 = () => {
+    const rq = routeSearch.trim().toLowerCase();
+    const filteredRoutes = rq
+      ? routes.filter(r =>
+          (r.origin_city?.name || '').toLowerCase().includes(rq) ||
+          (r.destination_city?.name || '').toLowerCase().includes(rq) ||
+          (r.name || '').toLowerCase().includes(rq)
+        )
+      : routes;
+    return (
     <div>
       <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
         Étape 1 : Sélection de l'itinéraire
@@ -307,8 +317,29 @@ export default function ChefGareNewSchedule() {
       <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
         Choisissez l'itinéraire — la gare de départ sera pré-sélectionnée sur votre gare.
       </p>
+      {/* Search field */}
+      <div className="relative mb-5">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+        <input
+          type="text"
+          value={routeSearch}
+          onChange={e => setRouteSearch(e.target.value)}
+          placeholder="Rechercher un itinéraire (ville de départ, arrivée, nom)…"
+          className="w-full pl-9 pr-9 py-3 border rounded-xl text-sm outline-none focus:ring-2"
+          style={{
+            borderColor: 'var(--border)',
+            backgroundColor: 'var(--surface)',
+            color: 'var(--text-primary)',
+          }}
+        />
+        {routeSearch && (
+          <button onClick={() => setRouteSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100">
+            <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+          </button>
+        )}
+      </div>
       <div className="space-y-3">
-        {routes.map(route => (
+        {filteredRoutes.map(route => (
           <div key={route.id} onClick={() => setFormData(prev => ({ ...prev, route_id: route.id }))}
             className="p-4 border-2 rounded-xl cursor-pointer transition-all"
             style={{
@@ -360,6 +391,11 @@ export default function ChefGareNewSchedule() {
             <p style={{ color: 'var(--text-secondary)' }}>Aucun itinéraire actif disponible</p>
           </div>
         )}
+        {routes.length > 0 && filteredRoutes.length === 0 && (
+          <div className="text-center py-10 rounded-xl border-2 border-dashed" style={{ borderColor: 'var(--border)' }}>
+            <p style={{ color: 'var(--text-secondary)' }}>Aucun itinéraire ne correspond à « {routeSearch} »</p>
+          </div>
+        )}
       </div>
       <div className="flex justify-end mt-6">
         <button onClick={() => setStep(2)} disabled={!formData.route_id}
@@ -369,7 +405,8 @@ export default function ChefGareNewSchedule() {
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderStep2 = () => (
     <div>
