@@ -626,23 +626,21 @@ export default function BusWizard({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-[#1A2E22] mb-1.5">Marque *</label>
+                  <label className="block text-sm font-semibold text-[#1A2E22] mb-1.5">Marque</label>
                   <input
                     type="text"
                     value={generalData.brand}
                     onChange={e => setGeneralData({ ...generalData, brand: e.target.value })}
                     className="w-full px-4 py-2.5 border-2 border-[#E2EAE5] rounded-xl text-sm focus:outline-none focus:border-[#0B7439]"
-                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-[#1A2E22] mb-1.5">Modèle *</label>
+                  <label className="block text-sm font-semibold text-[#1A2E22] mb-1.5">Modèle</label>
                   <input
                     type="text"
                     value={generalData.model}
                     onChange={e => setGeneralData({ ...generalData, model: e.target.value })}
                     className="w-full px-4 py-2.5 border-2 border-[#E2EAE5] rounded-xl text-sm focus:outline-none focus:border-[#0B7439]"
-                    required
                   />
                 </div>
                 <div>
