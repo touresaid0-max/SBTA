@@ -68,13 +68,13 @@ export function printBorderauDepart(data: BordereauDepartData) {
       y += fs * 0.42 + 1.35
     }
 
-    // Trait horizontal compact
+    // Trait horizontal compact — léger espace avant/après pour ne pas coller le texte
     const line = (thick = false) => {
-      y += 0.8
+      y += 1.9
       doc.setLineWidth(thick ? 0.5 : 0.2)
       doc.setDrawColor(0, 0, 0)
       doc.line(3, y, W - 3, y)
-      y += 1.8
+      y += 2.8
     }
 
     // ── EN-TÊTE ────────────────────────────────────────────────────
@@ -175,13 +175,13 @@ export function printBorderauDepart(data: BordereauDepartData) {
       labelValue('MT TOTAL BAGAGE :', fmt(data.total_baggage), 7)
     }
 
-    y += 1.5
+    y += 2.8
     // double ligne
     doc.setLineWidth(0.5)
     doc.line(3, y, W - 3, y)
     y += 1.2
     doc.line(3, y, W - 3, y)
-    y += 3
+    y += 3.6
 
     // ── PIED ───────────────────────────────────────────────────────
     doc.setFontSize(5.5)
