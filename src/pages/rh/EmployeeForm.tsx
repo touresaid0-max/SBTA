@@ -32,6 +32,9 @@ const OPERATIONAL_ROLES: SBTARole[] = [
 // Rôles nécessitant une gare d'affectation obligatoire
 const REQUIRES_STATION: SBTARole[] = ['agent_colis', 'chef_gare']
 
+// Rôles opérationnels pour lesquels la société est facultative
+const COMPANY_OPTIONAL_ROLES: SBTARole[] = ['agent_colis', 'chef_gare', 'guichetier']
+
 // Rôles rattachés automatiquement à la holding SBTA (pas de sélection société)
 const HOLDING_ROLES: SBTARole[] = ['charge_achat', 'rh', 'planificateur', 'daf', 'gerant_principal']
 const SBTA_HOLDING_ID = '11111111-1111-1111-1111-111111111111'
@@ -212,7 +215,7 @@ export default function EmployeeForm() {
     : buses
 
   const isHoldingRole = form.role ? HOLDING_ROLES.includes(form.role as SBTARole) : false
-  const needsCompany  = form.role ? OPERATIONAL_ROLES.includes(form.role as SBTARole) && form.role !== 'bagagiste' : false
+  const needsCompany  = form.role ? OPERATIONAL_ROLES.includes(form.role as SBTARole) && form.role !== 'bagagiste' && !COMPANY_OPTIONAL_ROLES.includes(form.role as SBTARole) : false
   const needsStation  = form.role ? REQUIRES_STATION.includes(form.role as SBTARole) : false
 
   // Auto-assign holding company when role is a holding role
