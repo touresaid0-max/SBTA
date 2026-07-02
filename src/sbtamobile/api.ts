@@ -374,6 +374,11 @@ export async function getWaveStatus(): Promise<{ isActive: boolean; mode: string
 // ── Contexte application Android (WebToNative) ──────────────────
 // Détecte si l'app tourne dans la WebView Android et récupère le nom
 // de package Android, pour que le retour Wave rouvre la WebView.
+
+// Package de l'app SBTA Android (WebToNative). Sert de repli garanti
+// pour que le lien de retour Wave rouvre la WebView et non Chrome.
+const DEFAULT_SBTA_ANDROID_PACKAGE = 'com.wnapp.id1782822513160';
+
 function isAndroidWebView(): boolean {
   const w = window as any;
   const ua = navigator.userAgent || '';
@@ -409,10 +414,10 @@ async function resolveAndroidPackage(): Promise<string | null> {
         finish(null);
       }
     });
-    return (cachedAndroidPackage = pkg);
+    if (pkg) return (cachedAndroidPackage = pkg);
   }
 
-  return (cachedAndroidPackage = null);
+  return (cachedAndroidPackage = DEFAULT_SBTA_ANDROID_PACKAGE);
 }
 
 export async function startWaveCheckout(bookingId: string): Promise<string> {
