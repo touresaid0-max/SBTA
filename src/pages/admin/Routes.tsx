@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Route, Plus, CreditCard as Edit2, Trash2, MapPin } from 'lucide-react';
+import { Route, Plus, CreditCard as Edit2, Trash2, MapPin, Search, X } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 
@@ -27,6 +27,7 @@ export default function Routes() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -200,6 +201,15 @@ export default function Routes() {
     return <div className="p-8">Chargement...</div>;
   }
 
+  const query = search.trim().toLowerCase();
+  const filteredRoutes = query
+    ? routes.filter((route) =>
+        [route.name, route.origin_city?.name, route.destination_city?.name]
+          .filter(Boolean)
+          .some((field) => field!.toLowerCase().includes(query))
+      )
+    : routes;
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
@@ -208,7 +218,7 @@ export default function Routes() {
             Itinéraires
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            {routes.length} itinéraires au total
+            {query ? `${filteredRoutes.length} / ${routes.length} itinéraires` : `${routes.length} itinéraires au total`}
           </p>
         </div>
         <button
@@ -219,6 +229,26 @@ export default function Routes() {
           <Plus className="w-5 h-5" />
           Nouvel itinéraire
         </button>
+      </div>
+
+      <div className="mb-6 relative max-w-md">
+        <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--neutral-400)' }} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Rechercher par nom, origine ou destination..."
+          className="w-full pl-10 pr-10 py-3 border rounded-lg"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+            title="Effacer"
+          >
+            <X className="w-4 h-4" style={{ color: 'var(--neutral-500)' }} />
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -379,7 +409,7 @@ export default function Routes() {
             </tr>
           </thead>
           <tbody>
-            {routes.map((route) => (
+            {filteredRoutes.map((route) => (
               <tr key={route.id} className="border-t hover:bg-gray-50">
                 <td className="p-4">
                   <span className="font-bold">{route.name}</span>
@@ -433,10 +463,12 @@ export default function Routes() {
           </tbody>
         </table>
 
-        {routes.length === 0 && (
+        {filteredRoutes.length === 0 && (
           <div className="text-center py-12">
             <Route className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--neutral-400)' }} />
-            <p style={{ color: 'var(--text-secondary)' }}>Aucun itinéraire trouvé</p>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              {query ? 'Aucun itinéraire ne correspond à votre recherche' : 'Aucun itinéraire trouvé'}
+            </p>
           </div>
         )}
       </div>
