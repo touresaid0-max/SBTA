@@ -61,7 +61,21 @@ export default function PaymentScreen() {
       try {
         const booking = await createBooking({ ...bookingInput, pending: true });
         const url = await startWaveCheckout(booking.id);
-        window.location.href = url;
+
+        const isAdvancedWebView = navigator.userAgent.includes('wv') || !!(window as any).WebToNative;
+
+        if (isAdvancedWebView && url.startsWith('https://')) {
+          try {
+            const wavePath = url.replace('https://', '');
+            const androidIntentUrl = `intent://${wavePath}#Intent;scheme=https;package=com.wave.personal;end`;
+            window.location.href = androidIntentUrl;
+          } catch (error) {
+            console.error('Erreur lors de la conversion du lien Wave Intent', error);
+            window.location.href = url;
+          }
+        } else {
+          window.location.href = url;
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Le paiement Wave a échoué. Réessayez.');
         setProcessing(false);
