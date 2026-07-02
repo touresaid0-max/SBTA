@@ -7,15 +7,28 @@ import {
   Clock,
   Download,
   Share2,
-  MapPin,
+  MessageCircle,
+  CalendarDays,
   Armchair,
   Bus,
+  FileText,
   Loader2,
   Home,
 } from 'lucide-react';
-import { SBTA, formatXOF } from '../theme';
-import { Button, TopBar, Card, Logo } from '../components';
+import { SBTA, formatXOF, PAYMENT_METHODS } from '../theme';
+import { Button, TopBar, Card, LOGO_SRC, LOGO_ALT } from '../components';
 import { Booking, fetchBooking } from '../api';
+
+const IMPORTANT_NOTES = [
+  'Présentez ce e-ticket (QR code) au contrôleur lors de l\u2019embarquement.',
+  'Ce billet est personnel, non cessible et non remboursable.',
+  'En cas de perte, contactez le service client SBTA.',
+  'Conservez votre e-ticket jusqu\u2019à la fin du voyage.',
+];
+
+function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
 
 export default function TicketScreen() {
   const { id } = useParams();
@@ -96,6 +109,28 @@ export default function TicketScreen() {
   const paid = booking.payment_status === 'paid';
   const qrValue = booking.booking_ref;
 
+  const count = booking.seats_count;
+  const subtotal = booking.unit_price * count;
+  const fee = booking.service_fee * count;
+
+  const travel = new Date(booking.travel_date);
+  const dateShort = travel.toLocaleDateString('fr-FR');
+  const weekday = capitalize(travel.toLocaleDateString('fr-FR', { weekday: 'long' }));
+  const seatsLabel = (booking.assigned_seats ?? []).join(', ') || (confirmed ? '-' : 'À attribuer');
+  const busLabel = booking.bus_label ?? (confirmed ? '-' : 'À planifier');
+  const payLabel =
+    PAYMENT_METHODS.find((m) => m.id === booking.payment_method)?.label ??
+    (booking.payment_method ? booking.payment_method.toUpperCase() : '-');
+  const paymentDate = paid
+    ? new Date(booking.created_at).toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
+
   function downloadPdf() {
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const b = booking!;
@@ -109,7 +144,7 @@ export default function TicketScreen() {
 
     doc.setTextColor(20, 30, 25);
     doc.setFontSize(14);
-    doc.text(confirmed ? 'Billet définitif' : 'Billet provisoire', 14, 44);
+    doc.text(confirmed ? 'E-TICKET - Billet définitif' : 'E-TICKET - Billet provisoire', 14, 44);
     doc.setFontSize(11);
     let y = 56;
     const line = (k: string, v: string) => {
@@ -123,14 +158,16 @@ export default function TicketScreen() {
     line('Trajet', `${b.origin_city} -> ${b.destination_city}`);
     if (b.origin_station) line('Gare départ', b.origin_station);
     if (b.destination_station) line('Gare arrivée', b.destination_station);
-    line('Date', new Date(b.travel_date).toLocaleDateString('fr-FR'));
+    line('Date', dateShort);
     line('Départ', b.departure_time ?? '-');
     line('Places', String(b.seats_count));
     if (confirmed) {
-      line('Bus', b.bus_label ?? '-');
-      line('Sièges', (b.assigned_seats ?? []).join(', ') || '-');
+      line('Bus', busLabel);
+      line('Sièges', seatsLabel);
     }
     line('Statut', confirmed ? 'CONFIRME' : 'EN ATTENTE DE PLANIFICATION');
+    line('Prix unitaire x ' + count, formatXOF(subtotal));
+    line('Frais de service x ' + count, formatXOF(fee));
     line('Total payé', formatXOF(b.total));
 
     const canvas = qrRef.current?.querySelector('canvas');
@@ -140,12 +177,24 @@ export default function TicketScreen() {
     doc.save(`${b.booking_ref}.pdf`);
   }
 
-  async function share() {
+  function shareText(): string {
     const b = booking!;
-    const text = `Billet SBTA ${b.booking_ref} - ${b.origin_city} vers ${b.destination_city} le ${new Date(b.travel_date).toLocaleDateString('fr-FR')}.`;
+    return [
+      `E-TICKET SBTA`,
+      `Réf : ${b.booking_ref}`,
+      `${b.origin_city} → ${b.destination_city}`,
+      `Date : ${dateShort} · Départ : ${b.departure_time ?? '--:--'}`,
+      `Places : ${count}${confirmed ? ` · Sièges : ${seatsLabel}` : ''}`,
+      `Total payé : ${formatXOF(b.total)}`,
+      `Statut : ${confirmed ? 'CONFIRMÉ' : 'EN ATTENTE'}`,
+    ].join('\n');
+  }
+
+  async function share() {
+    const text = shareText();
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Billet SBTA', text });
+        await navigator.share({ title: 'E-Ticket SBTA', text });
         return;
       } catch {
         /* cancelled */
@@ -154,10 +203,15 @@ export default function TicketScreen() {
     await navigator.clipboard?.writeText(text).catch(() => undefined);
   }
 
+  function shareWhatsApp() {
+    const url = `https://wa.me/?text=${encodeURIComponent(shareText())}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   return (
     <div className="flex flex-1 flex-col">
-      <TopBar title={confirmed ? 'Billet définitif' : 'Billet provisoire'} onBack />
-      <div className="flex-1 space-y-4 px-6 pb-6 pt-2">
+      <TopBar title={confirmed ? 'E-Ticket' : 'Billet provisoire'} onBack />
+      <div className="flex-1 space-y-4 px-4 pb-6 pt-2">
         {verifying && (
           <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: '#E6F8FF' }}>
             <Loader2 size={18} className="animate-spin" color="#0B86B8" />
@@ -185,117 +239,225 @@ export default function TicketScreen() {
           </div>
         )}
 
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="flex items-center justify-between px-5 py-4"
-            style={{ background: confirmed ? SBTA.green : '#FFF8E6' }}>
-            <div className="flex items-center gap-2">
-              {confirmed
-                ? <CheckCircle2 size={18} color={SBTA.white} />
-                : <Clock size={18} color="#B8860B" />}
-              <span className="text-sm font-bold"
-                style={{ color: confirmed ? SBTA.white : '#7A5C00' }}>
-                {confirmed ? 'CONFIRMÉ' : 'EN ATTENTE DE PLANIFICATION'}
-              </span>
-            </div>
-            <span className="rounded-full px-2.5 py-1 text-[11px] font-bold"
-              style={{
-                background: confirmed ? 'rgba(255,255,255,0.25)' : '#B8860B',
-                color: SBTA.white,
-              }}>
-              {confirmed ? 'Billet définitif' : 'Billet provisoire'}
-            </span>
+        {/* ── E-TICKET ─────────────────────────────────────────── */}
+        <div
+          className="overflow-hidden rounded-[22px]"
+          style={{ background: SBTA.white, border: `1px solid ${SBTA.gray200}`, boxShadow: '0 10px 30px rgba(0,0,0,0.06)' }}
+        >
+          {/* Logo header */}
+          <div className="flex justify-center px-5 pt-6 pb-4">
+            <img
+              src={LOGO_SRC}
+              alt={LOGO_ALT}
+              draggable={false}
+              className="h-auto w-[150px] select-none object-contain"
+            />
           </div>
 
-          <div className="px-5 py-5">
-            <div className="flex justify-center pb-3">
-              <Logo width={140} />
-            </div>
-            <div className="text-center">
-              <div className="text-xs" style={{ color: SBTA.gray400 }}>Référence de réservation</div>
-              <div className="text-lg font-extrabold tracking-wide" style={{ color: SBTA.ink }}>
-                {booking.booking_ref}
-              </div>
-            </div>
+          <div className="mx-5 border-t border-dashed" style={{ borderColor: SBTA.gray200 }} />
 
-            <div ref={qrRef} className="mt-4 flex justify-center">
-              <div className="rounded-2xl p-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
-                <QRCodeCanvas value={qrValue} size={150} fgColor={SBTA.ink} level="M" />
-              </div>
+          {/* Title */}
+          <div className="px-5 pt-4 text-center">
+            <div className="text-[30px] font-extrabold leading-none tracking-tight" style={{ color: SBTA.ink }}>
+              E-TICKET
             </div>
+            <div className="mt-1 text-sm font-bold tracking-wide" style={{ color: SBTA.red }}>
+              BILLET ÉLECTRONIQUE
+            </div>
+            <div className="mt-1.5 text-[12px]" style={{ color: SBTA.gray600 }}>
+              Merci d'arriver à l'embarquement 30 minutes avant le départ
+            </div>
+          </div>
 
-            <div className="mt-5 flex items-center gap-3">
-              <div className="flex flex-col items-center pt-1">
-                <div className="h-3 w-3 rounded-full" style={{ background: SBTA.green }} />
-                <div className="my-1 w-px flex-1" style={{ background: SBTA.gray200, minHeight: 24 }} />
-                <div className="h-3 w-3 rounded-full" style={{ background: SBTA.red }} />
-              </div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <div className="font-extrabold" style={{ color: SBTA.ink }}>
-                    {booking.departure_time ?? '--:--'} · {booking.origin_city}
+          {/* Départ / Arrivée */}
+          <div className="px-5 pt-4">
+            <div className="rounded-2xl px-4 py-4" style={{ border: `1px solid ${SBTA.gray200}` }}>
+              <div className="flex items-stretch gap-2">
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="text-[11px] font-bold tracking-wide" style={{ color: SBTA.green }}>DEPART</div>
+                  <div className="truncate text-lg font-extrabold uppercase" style={{ color: SBTA.ink }}>
+                    {booking.origin_city}
                   </div>
-                  <div className="flex items-center gap-1 text-xs" style={{ color: SBTA.gray600 }}>
-                    <MapPin size={12} /> {booking.origin_station ? `Départ · ${booking.origin_station}` : 'Départ'}
-                  </div>
+                  {booking.origin_station && (
+                    <div className="truncate text-[12px]" style={{ color: SBTA.gray600 }}>{booking.origin_station}</div>
+                  )}
                 </div>
-                <div>
-                  <div className="font-extrabold" style={{ color: SBTA.ink }}>
-                    {booking.arrival_time ?? '--:--'} · {booking.destination_city}
+                <div className="flex items-center gap-1 px-1 pt-4" style={{ color: SBTA.gray400 }}>
+                  <Bus size={16} />
+                  <span className="tracking-[3px]">·····</span>
+                  <Bus size={16} />
+                </div>
+                <div className="min-w-0 flex-1 text-right">
+                  <div className="text-[11px] font-bold tracking-wide" style={{ color: SBTA.green }}>ARRIVÉE</div>
+                  <div className="truncate text-lg font-extrabold uppercase" style={{ color: SBTA.ink }}>
+                    {booking.destination_city}
                   </div>
-                  <div className="flex items-center gap-1 text-xs" style={{ color: SBTA.gray600 }}>
-                    <MapPin size={12} /> {booking.destination_station ? `Arrivée · ${booking.destination_station}` : 'Arrivée'}
-                  </div>
+                  {booking.destination_station && (
+                    <div className="truncate text-[12px]" style={{ color: SBTA.gray600 }}>{booking.destination_station}</div>
+                  )}
                 </div>
               </div>
             </div>
+          </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3 border-t pt-4" style={{ borderColor: SBTA.gray100 }}>
-              <Detail label="Date" value={new Date(booking.travel_date).toLocaleDateString('fr-FR')} />
-              <Detail label="Places" value={String(booking.seats_count)} />
-              {confirmed && (
-                <>
-                  <Detail
-                    label="Bus"
-                    value={booking.bus_label ?? '-'}
-                    icon={<Bus size={13} color={SBTA.green} />}
-                  />
-                  <Detail
-                    label="Sièges"
-                    value={(booking.assigned_seats ?? []).join(', ') || '-'}
-                    icon={<Armchair size={13} color={SBTA.green} />}
-                  />
-                </>
-              )}
-              <Detail label="Total payé" value={formatXOF(booking.total)} />
+          {/* Info grid */}
+          <div className="px-5 pt-3">
+            <div className="grid grid-cols-5 rounded-2xl" style={{ border: `1px solid ${SBTA.gray200}` }}>
+              <InfoCell
+                icon={<CalendarDays size={17} color={SBTA.ink} />}
+                label="DATE DU VOYAGE"
+                value={dateShort}
+                sub={weekday}
+              />
+              <InfoCell
+                icon={<Clock size={17} color={SBTA.ink} />}
+                label="HEURE DE DÉPART"
+                value={booking.departure_time ?? '--:--'}
+                divider
+              />
+              <InfoCell
+                icon={<Bus size={17} color={SBTA.ink} />}
+                label="BUS"
+                value={busLabel}
+                divider
+              />
+              <InfoCell
+                icon={<Armchair size={17} color={SBTA.ink} />}
+                label="SIÈGE(S)"
+                value={seatsLabel}
+                divider
+              />
+              <InfoCell
+                icon={<FileText size={17} color={SBTA.ink} />}
+                label="RÉFÉRENCE"
+                value={booking.booking_ref}
+                divider
+                small
+              />
             </div>
           </div>
-        </Card>
 
-        {!confirmed && (
-          <Card style={{ background: '#FFF8E6', border: 'none' }}>
-            <p className="text-[13px] leading-relaxed" style={{ color: '#7A5C00' }}>
-              Votre paiement est validé. Les sièges seront attribués automatiquement lorsque le chef
-              de gare planifiera le voyage. Vous recevrez alors votre billet définitif par
-              notification, SMS et email.
-            </p>
-          </Card>
-        )}
+          {/* Passagers */}
+          <div className="px-5 pt-4">
+            <div className="rounded-2xl" style={{ border: `1px solid ${SBTA.gray200}`, overflow: 'hidden' }}>
+              <div className="px-4 py-2.5 text-[13px] font-bold" style={{ background: SBTA.gray100, color: SBTA.ink }}>
+                PASSAGER(S)
+              </div>
+              <div className="divide-y" style={{ borderColor: SBTA.gray100 }}>
+                {(booking.passengers ?? []).length === 0 ? (
+                  <div className="px-4 py-3 text-[13px]" style={{ color: SBTA.gray600 }}>
+                    {count} {count > 1 ? 'places' : 'place'}
+                  </div>
+                ) : (
+                  booking.passengers.map((p, i) => (
+                    <div
+                      key={`${p.phone}-${i}`}
+                      className="flex items-center justify-between px-4 py-2.5"
+                      style={{ borderColor: SBTA.gray100 }}
+                    >
+                      <span className="truncate pr-2 text-[14px] font-bold uppercase" style={{ color: SBTA.ink }}>
+                        {i + 1}. {p.lastName} {p.firstName}
+                      </span>
+                      <span className="shrink-0 text-[13px] font-semibold" style={{ color: SBTA.gray600 }}>
+                        {p.phone}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="ghost" onClick={downloadPdf}>
-            <span className="flex items-center justify-center gap-2">
-              <Download size={17} /> PDF
+          {/* Pricing */}
+          <div className="px-5 pt-4">
+            <div className="rounded-2xl px-4 py-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
+              <PriceRow label={`Prix unitaire × ${count}`} value={formatXOF(subtotal)} />
+              <div className="mt-2" />
+              <PriceRow label={`Frais de service × ${count}`} value={formatXOF(fee)} />
+              <div className="mt-3 border-t pt-3" style={{ borderColor: SBTA.gray200 }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-lg font-extrabold" style={{ color: SBTA.ink }}>TOTAL PAYÉ</span>
+                  <span className="text-xl font-extrabold" style={{ color: SBTA.ink }}>{formatXOF(booking.total)}</span>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 text-[11px] font-bold"
+                style={{ borderColor: SBTA.gray100, color: SBTA.green }}>
+                <span>PAIEMENT : {payLabel.toUpperCase()}</span>
+                <span>STATUT : {confirmed ? 'CONFIRMÉ' : 'EN ATTENTE'}</span>
+                {paymentDate && <span>DATE DE PAIEMENT : {paymentDate}</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Provisional note */}
+          {!confirmed && (
+            <div className="px-5 pt-4">
+              <div className="rounded-2xl px-4 py-3" style={{ background: '#FFF8E6' }}>
+                <p className="text-[12px] leading-relaxed" style={{ color: '#7A5C00' }}>
+                  Votre paiement est validé. Les sièges seront attribués automatiquement lorsque le chef
+                  de gare planifiera le voyage. Vous recevrez votre billet définitif par notification, SMS et email.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Informations importantes */}
+          <div className="px-5 pt-4">
+            <div className="rounded-2xl px-4 py-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
+              <div className="text-[13px] font-bold" style={{ color: SBTA.red }}>INFORMATIONS IMPORTANTES</div>
+              <ul className="mt-2 space-y-1.5">
+                {IMPORTANT_NOTES.map((note) => (
+                  <li key={note} className="flex gap-2 text-[12px] leading-snug" style={{ color: SBTA.gray900 }}>
+                    <span style={{ color: SBTA.ink }}>•</span>
+                    <span>{note}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* QR code */}
+          <div ref={qrRef} className="flex justify-center px-5 pt-5">
+            <div className="rounded-2xl p-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
+              <QRCodeCanvas value={qrValue} size={170} fgColor={SBTA.ink} level="M" />
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 pb-6 pt-4 text-center">
+            <div className="text-[15px] font-extrabold italic" style={{ color: SBTA.green }}>
+              Merci de voyager avec SBTA
+            </div>
+            <div className="text-[13px] italic" style={{ color: SBTA.gray600 }}>
+              Le trajet en toute sécurité
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="grid grid-cols-3 gap-2">
+          <Button variant="ghost" onClick={downloadPdf} style={{ padding: '12px 8px', fontSize: 14 }}>
+            <span className="flex items-center justify-center gap-1.5">
+              <Download size={16} /> PDF
             </span>
           </Button>
-          <Button variant="ghost" onClick={share}>
-            <span className="flex items-center justify-center gap-2">
-              <Share2 size={17} /> Partager
+          <Button variant="ghost" onClick={share} style={{ padding: '12px 8px', fontSize: 14 }}>
+            <span className="flex items-center justify-center gap-1.5">
+              <Share2 size={16} /> Partager
+            </span>
+          </Button>
+          <Button
+            onClick={shareWhatsApp}
+            style={{ padding: '12px 8px', fontSize: 14, background: '#25D366', color: SBTA.white }}
+          >
+            <span className="flex items-center justify-center gap-1.5">
+              <MessageCircle size={16} /> WhatsApp
             </span>
           </Button>
         </div>
       </div>
 
-      <div className="p-6">
+      <div className="p-6 pt-0">
         <Button full variant="outline" onClick={() => navigate('/sbtamobile/search')}>
           <span className="flex items-center justify-center gap-2">
             <Home size={17} /> Accueil
@@ -306,14 +468,46 @@ export default function TicketScreen() {
   );
 }
 
-function Detail({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+function InfoCell({
+  icon,
+  label,
+  value,
+  sub,
+  divider,
+  small,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+  divider?: boolean;
+  small?: boolean;
+}) {
   return (
-    <div>
-      <div className="flex items-center gap-1 text-xs" style={{ color: SBTA.gray400 }}>
-        {icon}
+    <div
+      className="flex flex-col items-center px-1 py-3 text-center"
+      style={divider ? { borderLeft: `1px solid ${SBTA.gray200}` } : undefined}
+    >
+      <div className="text-[8px] font-bold leading-tight tracking-wide" style={{ color: SBTA.gray600 }}>
         {label}
       </div>
-      <div className="text-[15px] font-bold" style={{ color: SBTA.ink }}>{value}</div>
+      <div className="my-1.5">{icon}</div>
+      <div
+        className={`${small ? 'text-[9px]' : 'text-[11px]'} font-extrabold leading-tight`}
+        style={{ color: SBTA.ink, wordBreak: 'break-word' }}
+      >
+        {value}
+      </div>
+      {sub && <div className="text-[9px]" style={{ color: SBTA.gray600 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function PriceRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-[14px]" style={{ color: SBTA.gray900 }}>{label}</span>
+      <span className="text-[14px] font-semibold" style={{ color: SBTA.ink }}>{value}</span>
     </div>
   );
 }
