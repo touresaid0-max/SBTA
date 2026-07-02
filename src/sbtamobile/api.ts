@@ -372,60 +372,10 @@ export async function getWaveStatus(): Promise<{ isActive: boolean; mode: string
 }
 
 // ── Contexte application Android (WebToNative) ──────────────────
-// Détecte si l'app tourne dans la WebView Android et récupère le nom
-// de package Android, pour que le retour Wave rouvre la WebView.
-
-// Package de l'app SBTA Android (WebToNative). Sert de repli garanti
-// pour que le lien de retour Wave rouvre la WebView et non Chrome.
-const DEFAULT_SBTA_ANDROID_PACKAGE = 'com.wnapp.id1782822513160';
-
-function isAndroidWebView(): boolean {
-  const w = window as any;
-  const ua = navigator.userAgent || '';
-  return ua.includes('wv') || !!w.WTN || !!w.WebToNative || !!w.SBTA_ANDROID_PACKAGE;
-}
-
-let cachedAndroidPackage: string | null | undefined;
-
-async function resolveAndroidPackage(): Promise<string | null> {
-  if (cachedAndroidPackage !== undefined) return cachedAndroidPackage;
-  const w = window as any;
-
-  const configured = w.SBTA_ANDROID_PACKAGE || (import.meta.env.VITE_SBTA_ANDROID_PACKAGE as string | undefined);
-  if (configured) return (cachedAndroidPackage = String(configured));
-
-  const wtn = w.WTN;
-  const getInfo = wtn && (wtn.getDeviceInfo || wtn.deviceInfo);
-  if (typeof getInfo === 'function') {
-    const pkg = await new Promise<string | null>((resolve) => {
-      let done = false;
-      const finish = (v: string | null) => { if (!done) { done = true; resolve(v); } };
-      const timer = setTimeout(() => finish(null), 1500);
-      try {
-        getInfo.call(wtn, {
-          callback: (info: any) => {
-            clearTimeout(timer);
-            const p = info?.packageName || info?.package || info?.applicationId || info?.bundleId;
-            finish(typeof p === 'string' && p ? p : null);
-          },
-        });
-      } catch {
-        clearTimeout(timer);
-        finish(null);
-      }
-    });
-    if (pkg) return (cachedAndroidPackage = pkg);
-  }
-
-  return (cachedAndroidPackage = DEFAULT_SBTA_ANDROID_PACKAGE);
-}
 
 export async function startWaveCheckout(bookingId: string): Promise<string> {
   const { data: sess } = await supabase.auth.getSession();
   const token = sess.session?.access_token;
-
-  const androidApp = isAndroidWebView();
-  const androidPackage = androidApp ? await resolveAndroidPackage() : null;
 
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wave-create-checkout`, {
     method: 'POST',
@@ -434,7 +384,7 @@ export async function startWaveCheckout(bookingId: string): Promise<string> {
       Authorization: `Bearer ${token}`,
       apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ bookingId, origin: window.location.origin, androidApp, androidPackage }),
+    body: JSON.stringify({ bookingId, origin: window.location.origin }),
   });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data?.launchUrl) {

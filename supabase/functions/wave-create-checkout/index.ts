@@ -33,7 +33,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
   try {
-    const { bookingId, origin, androidApp, androidPackage } = await req.json().catch(() => ({}));
+    const { bookingId, origin } = await req.json().catch(() => ({}));
     if (!bookingId || !origin) return json({ error: "Paramètres manquants." }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -71,26 +71,18 @@ Deno.serve(async (req: Request) => {
     const amount = Math.round(Number(booking.total));
     if (!amount || amount <= 0) return json({ error: "Montant invalide." }, 400);
 
+    // Wave n'accepte que des URL https valides pour success_url / error_url.
+    // Le retour dans l'app WebView est géré côté app (intent:// au lancement),
+    // pas via ces URL — y mettre un intent:// provoque « Request invalid » (400).
     const base = String(origin).replace(/\/+$/, "");
     const successHttps = `${base}/sbtamobile/ticket/${booking.id}?wave=success`;
     const errorHttps = `${base}/sbtamobile/payment?wave=error`;
 
-    // Depuis l'app Android WebView (WebToNative), on renvoie via un lien intent://
-    // ciblant le package de l'app SBTA pour que le retour Wave rouvre la WebView
-    // au lieu de Chrome. browser_fallback_url garantit un repli HTTPS si besoin.
-    const pkg = typeof androidPackage === "string" ? androidPackage.trim() : "";
-    const useIntent = androidApp === true && pkg.length > 0;
-    const toIntent = (httpsUrl: string) => {
-      const noScheme = httpsUrl.replace(/^https?:\/\//, "");
-      const fallback = encodeURIComponent(httpsUrl);
-      return `intent://${noScheme}#Intent;scheme=https;package=${pkg};S.browser_fallback_url=${fallback};end`;
-    };
-
     const payload = {
       amount: String(amount),
       currency: "XOF",
-      success_url: useIntent ? toIntent(successHttps) : successHttps,
-      error_url: useIntent ? toIntent(errorHttps) : errorHttps,
+      success_url: successHttps,
+      error_url: errorHttps,
       client_reference: booking.booking_ref,
     };
     const bodyStr = JSON.stringify(payload);
