@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Phone, ShieldCheck, Loader2, ArrowRight } from 'lucide-react';
 import { SBTA, PAYMENT_METHODS, formatXOF } from '../theme';
 import { Button, TopBar, Card } from '../components';
@@ -9,18 +9,11 @@ import { useMobileAuth } from '../MobileAuthContext';
 
 export default function PaymentScreen() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { draft, setPayment } = useBooking();
   const { user } = useMobileAuth();
   const [phone, setPhone] = useState(draft.paymentPhone || user?.phone || '');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (searchParams.get('wave') === 'error') {
-      setError('Paiement échoué. Veuillez réessayer.');
-    }
-  }, [searchParams]);
 
   if (!draft.trip || !user) {
     navigate('/sbtamobile/search', { replace: true });

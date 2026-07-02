@@ -14,10 +14,12 @@ import {
   FileText,
   Loader2,
   Home,
+  XCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { SBTA, formatXOF, PAYMENT_METHODS } from '../theme';
-import { Button, TopBar, Card, LOGO_SRC, LOGO_ALT } from '../components';
-import { Booking, fetchBooking } from '../api';
+import { Button, TopBar, LOGO_SRC, LOGO_ALT } from '../components';
+import { Booking, fetchBooking, verifyWavePayment, startWaveCheckout } from '../api';
 
 const IMPORTANT_NOTES = [
   'Présentez ce e-ticket (QR code) au contrôleur lors de l\u2019embarquement.',
@@ -35,11 +37,15 @@ export default function TicketScreen() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const waveReturn = searchParams.get('wave') === 'success';
+  const waveReturn = searchParams.has('wave');
   const justPaid = (location.state as { justPaid?: boolean } | null)?.justPaid ?? false;
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
-  const [verifying, setVerifying] = useState(false);
+  const [waveState, setWaveState] = useState<'idle' | 'verifying' | 'paid' | 'failed' | 'pending'>(
+    waveReturn ? 'verifying' : 'idle'
+  );
+  const [waveReason, setWaveReason] = useState('');
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const qrRef = useRef<HTMLDivElement>(null);
 
@@ -56,24 +62,35 @@ export default function TicketScreen() {
       return b;
     }
 
-    // When returning from Wave, the webhook may still be settling the payment:
-    // poll a few times until it is marked paid before giving up.
+    // Au retour de Wave, on interroge l'API Wave (via l'edge function) pour connaître
+    // le vrai statut du paiement : confirmation + billet si succès, message d'échec sinon.
     async function run() {
       try {
         const first = await loadOnce();
         setLoading(false);
         if (!first) return;
-        if (waveReturn && first.payment_status !== 'paid') {
-          setVerifying(true);
-          const poll = async () => {
-            if (cancelled || attempts >= 10) { setVerifying(false); return; }
-            attempts += 1;
-            const b = await loadOnce();
-            if (b && b.payment_status === 'paid') { setVerifying(false); return; }
-            setTimeout(poll, 2500);
-          };
-          setTimeout(poll, 2500);
-        }
+        if (!waveReturn) return;
+        if (first.payment_status === 'paid') { setWaveState('paid'); return; }
+
+        const verifyLoop = async () => {
+          if (cancelled) return;
+          attempts += 1;
+          const result = await verifyWavePayment(id!);
+          if (cancelled) return;
+          if (result.status === 'paid') {
+            await loadOnce();
+            if (!cancelled) setWaveState('paid');
+            return;
+          }
+          if (result.status === 'failed') {
+            setWaveReason(result.reason || 'Le paiement Wave a échoué.');
+            setWaveState('failed');
+            return;
+          }
+          if (attempts >= 6) { setWaveState('pending'); return; }
+          setTimeout(verifyLoop, 2500);
+        };
+        verifyLoop();
       } catch {
         if (!cancelled) { setError('Impossible de charger le billet.'); setLoading(false); }
       }
@@ -208,28 +225,42 @@ export default function TicketScreen() {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  async function retryWave() {
+    if (!booking) return;
+    setRetrying(true);
+    try {
+      const url = await startWaveCheckout(booking.id);
+      const isAdvancedWebView = navigator.userAgent.includes('wv') || !!(window as any).WebToNative;
+      if (isAdvancedWebView && url.startsWith('https://')) {
+        const wavePath = url.replace('https://', '');
+        window.location.href = `intent://${wavePath}#Intent;scheme=https;package=com.wave.personal;end`;
+      } else {
+        window.location.href = url;
+      }
+    } catch (e) {
+      setWaveReason(e instanceof Error ? e.message : 'Le paiement Wave est indisponible.');
+      setRetrying(false);
+    }
+  }
+
+  // Retour Wave : tant que le paiement n'est pas confirmé, on n'affiche PAS le e-ticket.
+  if (waveReturn && !paid && waveState !== 'paid') {
+    return (
+      <WaveReturnScreen
+        state={waveState}
+        reason={waveReason}
+        retrying={retrying}
+        onRetry={retryWave}
+        onHome={() => navigate('/sbtamobile/search')}
+        onTickets={() => navigate('/sbtamobile/tickets')}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col">
       <TopBar title={confirmed ? 'E-Ticket' : 'Billet provisoire'} onBack />
       <div className="flex-1 space-y-4 px-4 pb-6 pt-2">
-        {verifying && (
-          <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: '#E6F8FF' }}>
-            <Loader2 size={18} className="animate-spin" color="#0B86B8" />
-            <span className="text-sm font-semibold" style={{ color: '#0B6B92' }}>
-              Vérification du paiement Wave en cours...
-            </span>
-          </div>
-        )}
-
-        {!verifying && waveReturn && !paid && (
-          <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: '#FFF8E6' }}>
-            <Clock size={18} color="#B8860B" />
-            <span className="text-sm font-semibold" style={{ color: '#7A5C00' }}>
-              Paiement non confirmé pour l'instant. Il sera mis à jour automatiquement.
-            </span>
-          </div>
-        )}
-
         {(justPaid || (waveReturn && paid)) && (
           <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: SBTA.greenLight }}>
             <CheckCircle2 size={20} color={SBTA.green} />
@@ -508,6 +539,99 @@ function PriceRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between">
       <span className="text-[14px]" style={{ color: SBTA.gray900 }}>{label}</span>
       <span className="text-[14px] font-semibold" style={{ color: SBTA.ink }}>{value}</span>
+    </div>
+  );
+}
+
+function WaveReturnScreen({
+  state,
+  reason,
+  retrying,
+  onRetry,
+  onHome,
+  onTickets,
+}: {
+  state: 'verifying' | 'paid' | 'failed' | 'pending' | 'idle';
+  reason: string;
+  retrying: boolean;
+  onRetry: () => void;
+  onHome: () => void;
+  onTickets: () => void;
+}) {
+  const failed = state === 'failed';
+  const pending = state === 'pending';
+
+  return (
+    <div className="flex flex-1 flex-col">
+      <TopBar title="Paiement Wave" onBack />
+      <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10 text-center">
+        {state === 'verifying' && (
+          <>
+            <Loader2 size={44} className="animate-spin" color={SBTA.green} />
+            <p className="mt-5 text-lg font-extrabold" style={{ color: SBTA.ink }}>
+              Vérification du paiement...
+            </p>
+            <p className="mt-1 text-sm" style={{ color: SBTA.gray600 }}>
+              Nous confirmons votre paiement Wave. Merci de patienter.
+            </p>
+          </>
+        )}
+
+        {failed && (
+          <>
+            <div className="flex h-16 w-16 items-center justify-center rounded-full"
+              style={{ background: '#FDECEC' }}>
+              <XCircle size={38} color={SBTA.red} />
+            </div>
+            <p className="mt-5 text-lg font-extrabold" style={{ color: SBTA.ink }}>
+              Paiement non abouti
+            </p>
+            <p className="mt-2 max-w-[300px] text-sm leading-relaxed" style={{ color: SBTA.gray600 }}>
+              {reason || 'Le paiement Wave a échoué. Aucun billet n\u2019a été généré.'}
+            </p>
+          </>
+        )}
+
+        {pending && (
+          <>
+            <div className="flex h-16 w-16 items-center justify-center rounded-full"
+              style={{ background: '#FFF8E6' }}>
+              <Clock size={36} color="#B8860B" />
+            </div>
+            <p className="mt-5 text-lg font-extrabold" style={{ color: SBTA.ink }}>
+              Paiement en attente
+            </p>
+            <p className="mt-2 max-w-[300px] text-sm leading-relaxed" style={{ color: SBTA.gray600 }}>
+              Votre paiement Wave n'est pas encore confirmé. Vous pouvez relancer le paiement
+              ou réessayer dans un instant.
+            </p>
+          </>
+        )}
+      </div>
+
+      {(failed || pending) && (
+        <div className="space-y-2 p-6 pt-0">
+          <Button full onClick={onRetry} disabled={retrying}>
+            {retrying ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 size={18} className="animate-spin" /> Redirection vers Wave...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <RefreshCw size={17} /> Relancer le paiement
+              </span>
+            )}
+          </Button>
+          <Button full variant="outline" onClick={onTickets} disabled={retrying}>
+            Mes billets
+          </Button>
+          <Button full variant="ghost" onClick={onHome} disabled={retrying}>
+            <span className="flex items-center justify-center gap-2">
+              <Home size={17} /> Accueil
+            </span>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

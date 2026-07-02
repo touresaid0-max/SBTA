@@ -393,6 +393,31 @@ export async function startWaveCheckout(bookingId: string): Promise<string> {
   return data.launchUrl as string;
 }
 
+export type WaveVerifyResult = {
+  status: 'paid' | 'failed' | 'pending';
+  reason?: string;
+};
+
+// Vérifie côté serveur le vrai statut de la session Wave, puis confirme ou marque
+// la réservation en échec selon le retour de l'API Wave.
+export async function verifyWavePayment(bookingId: string): Promise<WaveVerifyResult> {
+  const { data: sess } = await supabase.auth.getSession();
+  const token = sess.session?.access_token;
+
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wave-verify-payment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ bookingId }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.status) return { status: 'pending' };
+  return { status: data.status, reason: data.reason };
+}
+
 export type Faq = {
   id: string;
   question: string;

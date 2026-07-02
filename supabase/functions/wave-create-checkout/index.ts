@@ -76,7 +76,7 @@ Deno.serve(async (req: Request) => {
     // pas via ces URL — y mettre un intent:// provoque « Request invalid » (400).
     const base = String(origin).replace(/\/+$/, "");
     const successHttps = `${base}/sbtamobile/ticket/${booking.id}?wave=success`;
-    const errorHttps = `${base}/sbtamobile/payment?wave=error`;
+    const errorHttps = `${base}/sbtamobile/ticket/${booking.id}?wave=error`;
 
     const payload = {
       amount: String(amount),
