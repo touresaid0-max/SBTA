@@ -374,6 +374,14 @@ export async function getWaveStatus(): Promise<{ isActive: boolean; mode: string
 export async function startWaveCheckout(bookingId: string): Promise<string> {
   const { data: sess } = await supabase.auth.getSession();
   const token = sess.session?.access_token;
+
+  // Contexte app Android (WebToNative) : permet au retour Wave de rouvrir la WebView.
+  const w = window as any;
+  const androidApp =
+    navigator.userAgent.includes('wv') || !!w.WebToNative || !!w.SBTA_ANDROID_PACKAGE;
+  const androidPackage: string | null =
+    w.SBTA_ANDROID_PACKAGE || import.meta.env.VITE_SBTA_ANDROID_PACKAGE || null;
+
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wave-create-checkout`, {
     method: 'POST',
     headers: {
@@ -381,7 +389,7 @@ export async function startWaveCheckout(bookingId: string): Promise<string> {
       Authorization: `Bearer ${token}`,
       apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ bookingId, origin: window.location.origin }),
+    body: JSON.stringify({ bookingId, origin: window.location.origin, androidApp, androidPackage }),
   });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data?.launchUrl) {
