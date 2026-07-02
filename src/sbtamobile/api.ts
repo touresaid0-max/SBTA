@@ -371,16 +371,56 @@ export async function getWaveStatus(): Promise<{ isActive: boolean; mode: string
   return { isActive: !!row?.is_active, mode: row?.mode ?? 'test' };
 }
 
+// ── Contexte application Android (WebToNative) ──────────────────
+// Détecte si l'app tourne dans la WebView Android et récupère le nom
+// de package Android, pour que le retour Wave rouvre la WebView.
+function isAndroidWebView(): boolean {
+  const w = window as any;
+  const ua = navigator.userAgent || '';
+  return ua.includes('wv') || !!w.WTN || !!w.WebToNative || !!w.SBTA_ANDROID_PACKAGE;
+}
+
+let cachedAndroidPackage: string | null | undefined;
+
+async function resolveAndroidPackage(): Promise<string | null> {
+  if (cachedAndroidPackage !== undefined) return cachedAndroidPackage;
+  const w = window as any;
+
+  const configured = w.SBTA_ANDROID_PACKAGE || (import.meta.env.VITE_SBTA_ANDROID_PACKAGE as string | undefined);
+  if (configured) return (cachedAndroidPackage = String(configured));
+
+  const wtn = w.WTN;
+  const getInfo = wtn && (wtn.getDeviceInfo || wtn.deviceInfo);
+  if (typeof getInfo === 'function') {
+    const pkg = await new Promise<string | null>((resolve) => {
+      let done = false;
+      const finish = (v: string | null) => { if (!done) { done = true; resolve(v); } };
+      const timer = setTimeout(() => finish(null), 1500);
+      try {
+        getInfo.call(wtn, {
+          callback: (info: any) => {
+            clearTimeout(timer);
+            const p = info?.packageName || info?.package || info?.applicationId || info?.bundleId;
+            finish(typeof p === 'string' && p ? p : null);
+          },
+        });
+      } catch {
+        clearTimeout(timer);
+        finish(null);
+      }
+    });
+    return (cachedAndroidPackage = pkg);
+  }
+
+  return (cachedAndroidPackage = null);
+}
+
 export async function startWaveCheckout(bookingId: string): Promise<string> {
   const { data: sess } = await supabase.auth.getSession();
   const token = sess.session?.access_token;
 
-  // Contexte app Android (WebToNative) : permet au retour Wave de rouvrir la WebView.
-  const w = window as any;
-  const androidApp =
-    navigator.userAgent.includes('wv') || !!w.WebToNative || !!w.SBTA_ANDROID_PACKAGE;
-  const androidPackage: string | null =
-    w.SBTA_ANDROID_PACKAGE || import.meta.env.VITE_SBTA_ANDROID_PACKAGE || null;
+  const androidApp = isAndroidWebView();
+  const androidPackage = androidApp ? await resolveAndroidPackage() : null;
 
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wave-create-checkout`, {
     method: 'POST',
