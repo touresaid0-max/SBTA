@@ -58,6 +58,9 @@ export default function PaymentScreen() {
         const isAdvancedWebView = navigator.userAgent.includes('wv') || !!(window as any).WebToNative;
 
         if (isAdvancedWebView && url.startsWith('https://')) {
+          // L'app Wave s'ouvre comme une app séparée : la WebView ne navigue pas.
+          // On place donc l'app sur le ticket (qui vérifie le paiement au retour au
+          // premier plan) au lieu de rester bloqué sur ce bouton.
           try {
             const wavePath = url.replace('https://', '');
             const androidIntentUrl = `intent://${wavePath}#Intent;scheme=https;package=com.wave.personal;end`;
@@ -66,6 +69,9 @@ export default function PaymentScreen() {
             console.error('Erreur lors de la conversion du lien Wave Intent', error);
             window.location.href = url;
           }
+          setTimeout(() => {
+            navigate(`/sbtamobile/ticket/${booking.id}?wave=success`, { replace: true });
+          }, 1200);
         } else {
           window.location.href = url;
         }

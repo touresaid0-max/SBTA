@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import jsPDF from 'jspdf';
@@ -48,57 +48,81 @@ export default function TicketScreen() {
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const qrRef = useRef<HTMLDivElement>(null);
+  const verifyTokenRef = useRef(0);
+  const waveStateRef = useRef(waveState);
+  waveStateRef.current = waveState;
+
+  const reloadBooking = useCallback(async (): Promise<Booking | null> => {
+    const b = await fetchBooking(id!);
+    if (!b) { setError('Billet introuvable.'); return null; }
+    setBooking(b);
+    return b;
+  }, [id]);
+
+  // Interroge l'API Wave (via l'edge function) pour connaître le vrai statut du paiement.
+  // Réutilisable : appelé au chargement, au retour au premier plan, et via « Vérifier ».
+  const runVerification = useCallback((maxAttempts: number) => {
+    if (!id) return;
+    const token = ++verifyTokenRef.current;
+    setWaveState('verifying');
+    let attempts = 0;
+    const loop = async () => {
+      if (token !== verifyTokenRef.current) return;
+      attempts += 1;
+      const result = await verifyWavePayment(id);
+      if (token !== verifyTokenRef.current) return;
+      if (result.status === 'paid') {
+        await reloadBooking();
+        if (token === verifyTokenRef.current) setWaveState('paid');
+        return;
+      }
+      if (result.status === 'failed') {
+        setWaveReason(result.reason || 'Le paiement Wave a échoué.');
+        setWaveState('failed');
+        return;
+      }
+      if (attempts >= maxAttempts) { setWaveState('pending'); return; }
+      setTimeout(loop, 2500);
+    };
+    loop();
+  }, [id, reloadBooking]);
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    let attempts = 0;
-
-    async function loadOnce(): Promise<Booking | null> {
-      const b = await fetchBooking(id!);
-      if (cancelled) return null;
-      if (!b) { setError('Billet introuvable.'); return null; }
-      setBooking(b);
-      return b;
-    }
-
-    // Au retour de Wave, on interroge l'API Wave (via l'edge function) pour connaître
-    // le vrai statut du paiement : confirmation + billet si succès, message d'échec sinon.
-    async function run() {
+    (async () => {
       try {
-        const first = await loadOnce();
+        const b = await fetchBooking(id);
+        if (cancelled) return;
+        if (!b) { setError('Billet introuvable.'); setLoading(false); return; }
+        setBooking(b);
         setLoading(false);
-        if (!first) return;
         if (!waveReturn) return;
-        if (first.payment_status === 'paid') { setWaveState('paid'); return; }
-
-        const verifyLoop = async () => {
-          if (cancelled) return;
-          attempts += 1;
-          const result = await verifyWavePayment(id!);
-          if (cancelled) return;
-          if (result.status === 'paid') {
-            await loadOnce();
-            if (!cancelled) setWaveState('paid');
-            return;
-          }
-          if (result.status === 'failed') {
-            setWaveReason(result.reason || 'Le paiement Wave a échoué.');
-            setWaveState('failed');
-            return;
-          }
-          if (attempts >= 6) { setWaveState('pending'); return; }
-          setTimeout(verifyLoop, 2500);
-        };
-        verifyLoop();
+        if (b.payment_status === 'paid') { setWaveState('paid'); return; }
+        runVerification(6);
       } catch {
         if (!cancelled) { setError('Impossible de charger le billet.'); setLoading(false); }
       }
-    }
+    })();
+    return () => { cancelled = true; verifyTokenRef.current += 1; };
+  }, [id, waveReturn, runVerification]);
 
-    run();
-    return () => { cancelled = true; };
-  }, [id, waveReturn]);
+  // Au retour de Wave, l'app revient au premier plan (l'app Wave était une app séparée) :
+  // on relance la vérification pour confirmer le paiement sans action de l'utilisateur.
+  useEffect(() => {
+    if (!waveReturn) return;
+    const recheckOnForeground = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (waveStateRef.current === 'paid') return;
+      runVerification(6);
+    };
+    document.addEventListener('visibilitychange', recheckOnForeground);
+    window.addEventListener('focus', recheckOnForeground);
+    return () => {
+      document.removeEventListener('visibilitychange', recheckOnForeground);
+      window.removeEventListener('focus', recheckOnForeground);
+    };
+  }, [waveReturn, runVerification]);
 
   if (loading) {
     return (
@@ -251,6 +275,7 @@ export default function TicketScreen() {
         reason={waveReason}
         retrying={retrying}
         onRetry={retryWave}
+        onRecheck={() => runVerification(4)}
         onHome={() => navigate('/sbtamobile/search')}
         onTickets={() => navigate('/sbtamobile/tickets')}
       />
@@ -548,6 +573,7 @@ function WaveReturnScreen({
   reason,
   retrying,
   onRetry,
+  onRecheck,
   onHome,
   onTickets,
 }: {
@@ -555,6 +581,7 @@ function WaveReturnScreen({
   reason: string;
   retrying: boolean;
   onRetry: () => void;
+  onRecheck: () => void;
   onHome: () => void;
   onTickets: () => void;
 }) {
@@ -611,7 +638,14 @@ function WaveReturnScreen({
 
       {(failed || pending) && (
         <div className="space-y-2 p-6 pt-0">
-          <Button full onClick={onRetry} disabled={retrying}>
+          {pending && (
+            <Button full onClick={onRecheck} disabled={retrying}>
+              <span className="flex items-center justify-center gap-2">
+                <RefreshCw size={17} /> Vérifier le paiement
+              </span>
+            </Button>
+          )}
+          <Button full variant={pending ? 'outline' : undefined} onClick={onRetry} disabled={retrying}>
             {retrying ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 size={18} className="animate-spin" /> Redirection vers Wave...
