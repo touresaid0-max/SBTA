@@ -13,7 +13,6 @@ import {
   Bus,
   FileText,
   Loader2,
-  Home,
   XCircle,
   RefreshCw,
 } from 'lucide-react';
@@ -752,16 +751,14 @@ function WaveReturnScreen({
         )}
       </div>
 
-      {(failed || pending) && (
+      {pending && (
         <div className="space-y-2 p-6 pt-0">
-          {pending && (
-            <Button full onClick={onRecheck} disabled={retrying}>
-              <span className="flex items-center justify-center gap-2">
-                <RefreshCw size={17} /> Vérifier le paiement
-              </span>
-            </Button>
-          )}
-          <Button full variant={pending ? 'outline' : undefined} onClick={onRetry} disabled={retrying}>
+          <Button full onClick={onRecheck} disabled={retrying}>
+            <span className="flex items-center justify-center gap-2">
+              <RefreshCw size={17} /> Vérifier le paiement
+            </span>
+          </Button>
+          <Button full variant="outline" onClick={onRetry} disabled={retrying}>
             {retrying ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 size={18} className="animate-spin" /> Redirection vers Wave...
@@ -772,13 +769,21 @@ function WaveReturnScreen({
               </span>
             )}
           </Button>
-          <Button full variant="outline" onClick={onTickets} disabled={retrying}>
+          <Button full variant="ghost" onClick={onTickets} disabled={retrying}>
             Mes billets
           </Button>
-          <Button full variant="ghost" onClick={onHome} disabled={retrying}>
-            <span className="flex items-center justify-center gap-2">
-              <Home size={17} /> Accueil
-            </span>
+        </div>
+      )}
+
+      {/* Échec : aucun billet n'existe (réservation supprimée). On propose de
+          refaire une réservation plutôt que de relancer un paiement orphelin. */}
+      {failed && (
+        <div className="space-y-2 p-6 pt-0">
+          <Button full onClick={onHome}>
+            Nouvelle réservation
+          </Button>
+          <Button full variant="ghost" onClick={onTickets}>
+            Mes billets
           </Button>
         </div>
       )}

@@ -127,6 +127,12 @@ Deno.serve(async (req: Request) => {
     const paymentStatus = String(session.payment_status ?? "").toLowerCase();
     const checkoutStatus = String(session.checkout_status ?? "").toLowerCase();
 
+    // Une tentative de paiement a échoué (solde insuffisant, refus, etc.) :
+    // Wave renseigne alors last_payment_error. On considère cela comme un échec.
+    const hasPaymentError =
+      !!session.last_payment_error &&
+      Object.keys(session.last_payment_error).length > 0;
+
     // Succès : Wave confirme le paiement.
     if (paymentStatus === "succeeded") {
       await admin
@@ -144,16 +150,21 @@ Deno.serve(async (req: Request) => {
       return json({ status: "paid" });
     }
 
-    // Échec avéré : annulé par le client ou session expirée.
-    if (paymentStatus === "cancelled" || checkoutStatus === "expired") {
+    // Échec avéré : annulé par le client, session expirée, ou tentative refusée
+    // (solde insuffisant, paiement refusé, etc.). Dans tous ces cas, le paiement
+    // n'a PAS abouti : on ne conserve aucun billet provisoire. La réservation en
+    // attente n'est qu'un jeton créé avant paiement — on la supprime pour qu'aucun
+    // ticket n'existe. Les billets provisoires ne concernent que les paiements
+    // réussis en attente de planification côté chef de gare.
+    if (paymentStatus === "cancelled" || checkoutStatus === "expired" || hasPaymentError) {
+      // Suppression sécurisée : uniquement une réservation encore provisoire et
+      // impayée (jamais un billet payé ou confirmé).
       await admin
         .from("mobile_bookings")
-        .update({
-          payment_status: "failed",
-          wave_checkout_status: "FAILED",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", booking.id);
+        .delete()
+        .eq("id", booking.id)
+        .eq("status", "provisional")
+        .eq("payment_status", "pending");
 
       return json({ status: "failed", reason: reasonFrom(session) });
     }
