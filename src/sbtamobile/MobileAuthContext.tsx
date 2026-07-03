@@ -73,16 +73,38 @@ export function MobileAuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!active) return;
-      if (data.session?.user) {
-        const profile = await loadProfile(data.session.user.id, data.session.user.email ?? null);
-        if (active) setUser(profile);
+    // Filet de sécurité : même si getSession() traîne (rafraîchissement de token
+    // sur réseau mobile lent, ex. au retour depuis l'app Wave), on débloque l'UI.
+    const safety = setTimeout(() => { if (active) setLoading(false); }, 8000);
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!active) return;
+        if (data.session?.user) {
+          try {
+            const profile = await loadProfile(data.session.user.id, data.session.user.email ?? null);
+            if (active) setUser(profile);
+          } catch {
+            // Profil non chargeable : on conserve au moins l'identité de session.
+            if (active) {
+              setUser({
+                id: data.session.user.id,
+                email: data.session.user.email ?? null,
+                fullName: 'Client SBTA',
+                phone: '',
+              });
+            }
+          }
+        }
+      } catch {
+        // Session illisible : l'utilisateur retombera sur l'écran de connexion.
+      } finally {
+        if (active) { clearTimeout(safety); setLoading(false); }
       }
-      if (active) setLoading(false);
-    });
+    })();
     return () => {
       active = false;
+      clearTimeout(safety);
     };
   }, []);
 
