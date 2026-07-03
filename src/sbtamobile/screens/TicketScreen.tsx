@@ -47,6 +47,8 @@ export default function TicketScreen() {
   const [waveReason, setWaveReason] = useState('');
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState<'pdf' | 'share' | null>(null);
+  const ticketRef = useRef<HTMLDivElement>(null);
   const qrRef = useRef<HTMLDivElement>(null);
   const verifyTokenRef = useRef(0);
   const waveStateRef = useRef(waveState);
@@ -172,50 +174,48 @@ export default function TicketScreen() {
       })
     : null;
 
-  function downloadPdf() {
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const b = booking!;
-    doc.setFillColor(0, 143, 57);
-    doc.rect(0, 0, 210, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.text('SBTA', 14, 15);
-    doc.setFontSize(10);
-    doc.text("L'aventure continue", 14, 23);
+  // Capture fidèle du e-ticket affiché (logo, QR, infos) en image haute résolution.
+  async function captureTicket(): Promise<HTMLCanvasElement | null> {
+    const el = ticketRef.current;
+    if (!el) return null;
+    const { default: html2canvas } = await import('html2canvas');
+    return html2canvas(el, {
+      scale: Math.min(3, Math.max(2, window.devicePixelRatio || 2)),
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+    });
+  }
 
-    doc.setTextColor(20, 30, 25);
-    doc.setFontSize(14);
-    doc.text(confirmed ? 'E-TICKET - Billet définitif' : 'E-TICKET - Billet provisoire', 14, 44);
-    doc.setFontSize(11);
-    let y = 56;
-    const line = (k: string, v: string) => {
-      doc.setTextColor(110, 120, 115);
-      doc.text(k, 14, y);
-      doc.setTextColor(20, 30, 25);
-      doc.text(v, 80, y);
-      y += 9;
-    };
-    line('Référence', b.booking_ref);
-    line('Trajet', `${b.origin_city} -> ${b.destination_city}`);
-    if (b.origin_station) line('Gare départ', b.origin_station);
-    if (b.destination_station) line('Gare arrivée', b.destination_station);
-    line('Date', dateShort);
-    line('Départ', b.departure_time ?? '-');
-    line('Places', String(b.seats_count));
-    if (confirmed) {
-      line('Bus', busLabel);
-      line('Sièges', seatsLabel);
+  function canvasToPdf(canvas: HTMLCanvasElement): jsPDF {
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    let w = pageW - margin * 2;
+    let h = (canvas.height * w) / canvas.width;
+    const maxH = pageH - margin * 2;
+    if (h > maxH) {
+      h = maxH;
+      w = (canvas.width * h) / canvas.height;
     }
-    line('Statut', confirmed ? 'CONFIRME' : 'EN ATTENTE DE PLANIFICATION');
-    line('Prix unitaire x ' + count, formatXOF(subtotal));
-    line('Frais de service x ' + count, formatXOF(fee));
-    line('Total payé', formatXOF(b.total));
+    const x = (pageW - w) / 2;
+    pdf.addImage(imgData, 'PNG', x, margin, w, h, undefined, 'FAST');
+    return pdf;
+  }
 
-    const canvas = qrRef.current?.querySelector('canvas');
-    if (canvas) {
-      doc.addImage(canvas.toDataURL('image/png'), 'PNG', 150, 44, 45, 45);
+  async function downloadPdf() {
+    setExporting('pdf');
+    try {
+      const canvas = await captureTicket();
+      if (!canvas) return;
+      canvasToPdf(canvas).save(`${booking!.booking_ref}.pdf`);
+    } catch {
+      setError('Impossible de générer le PDF du billet.');
+    } finally {
+      setExporting(null);
     }
-    doc.save(`${b.booking_ref}.pdf`);
   }
 
   function shareText(): string {
@@ -231,17 +231,43 @@ export default function TicketScreen() {
     ].join('\n');
   }
 
+  // Partage l'image du e-ticket (mise en page complète + QR) via l'API de partage
+  // native. À défaut (desktop / navigateur non compatible), on télécharge l'image.
   async function share() {
-    const text = shareText();
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'E-Ticket SBTA', text });
-        return;
-      } catch {
-        /* cancelled */
+    setExporting('share');
+    try {
+      const canvas = await captureTicket();
+      if (!canvas) return;
+      const blob: Blob | null = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), 'image/png')
+      );
+      if (!blob) throw new Error('capture');
+      const file = new File([blob], `${booking!.booking_ref}.png`, { type: 'image/png' });
+      const text = shareText();
+
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'E-Ticket SBTA', text });
+          return;
+        } catch {
+          return; // partage annulé par l'utilisateur
+        }
       }
+
+      // Repli : téléchargement de l'image du billet.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${booking!.booking_ref}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Impossible de partager le billet.');
+    } finally {
+      setExporting(null);
     }
-    await navigator.clipboard?.writeText(text).catch(() => undefined);
   }
 
   function shareWhatsApp() {
@@ -304,6 +330,7 @@ export default function TicketScreen() {
 
         {/* ── E-TICKET ─────────────────────────────────────────── */}
         <div
+          ref={ticketRef}
           className="overflow-hidden rounded-[20px]"
           style={{ background: SBTA.white, border: `1px solid ${SBTA.gray200}`, boxShadow: '0 10px 30px rgba(0,0,0,0.06)' }}
         >
@@ -500,18 +527,19 @@ export default function TicketScreen() {
 
         {/* Actions */}
         <div className="grid grid-cols-3 gap-2">
-          <Button variant="ghost" onClick={downloadPdf} style={{ padding: '9px 8px', fontSize: 13 }}>
+          <Button variant="ghost" onClick={downloadPdf} disabled={exporting !== null} style={{ padding: '9px 8px', fontSize: 13 }}>
             <span className="flex items-center justify-center gap-1.5">
-              <Download size={15} /> PDF
+              {exporting === 'pdf' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} PDF
             </span>
           </Button>
-          <Button variant="ghost" onClick={share} style={{ padding: '9px 8px', fontSize: 13 }}>
+          <Button variant="ghost" onClick={share} disabled={exporting !== null} style={{ padding: '9px 8px', fontSize: 13 }}>
             <span className="flex items-center justify-center gap-1.5">
-              <Share2 size={15} /> Partager
+              {exporting === 'share' ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Partager
             </span>
           </Button>
           <Button
             onClick={shareWhatsApp}
+            disabled={exporting !== null}
             style={{ padding: '9px 8px', fontSize: 13, background: '#25D366', color: SBTA.white }}
           >
             <span className="flex items-center justify-center gap-1.5">
