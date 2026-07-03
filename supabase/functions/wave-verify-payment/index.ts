@@ -14,6 +14,19 @@ function json(body: unknown, status = 200) {
   });
 }
 
+async function hmacHex(secret: string, payload: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(payload));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 // Traduit un statut / code d'erreur Wave en message clair pour l'utilisateur.
 function reasonFrom(session: Record<string, any>): string {
   const err = session?.last_payment_error ?? {};
@@ -76,7 +89,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: settings } = await admin
       .from("wave_settings")
-      .select("api_key, is_active")
+      .select("api_key, api_secret, is_active")
       .eq("id", 1)
       .maybeSingle();
 
@@ -86,9 +99,19 @@ Deno.serve(async (req: Request) => {
       return json({ status: "pending" });
     }
 
+    // L'API Wave exige une signature de requête (Wave-Signature) même en lecture.
+    // Pour un GET (corps vide), la charge signée est simplement le timestamp.
+    const headers: Record<string, string> = { Authorization: `Bearer ${apiKey}` };
+    const apiSecret = settings.api_secret?.trim();
+    if (apiSecret) {
+      const ts = Math.floor(Date.now() / 1000).toString();
+      const sig = await hmacHex(apiSecret, ts);
+      headers["Wave-Signature"] = `t=${ts},v1=${sig}`;
+    }
+
     const waveResp = await fetch(
       `https://api.wave.com/v1/checkout/sessions/${encodeURIComponent(booking.wave_session_id)}`,
-      { headers: { Authorization: `Bearer ${apiKey}` } },
+      { headers },
     );
 
     const rawText = await waveResp.text();
