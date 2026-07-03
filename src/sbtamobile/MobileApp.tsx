@@ -88,6 +88,7 @@ export default function MobileApp() {
             <Route path="track-courrier/:code" element={<RequireAuth><TrackCourrierScreen /></RequireAuth>} />
             <Route path="profile" element={<RequireAuth><ProfileScreen /></RequireAuth>} />
             <Route path="help" element={<RequireAuth><HelpScreen /></RequireAuth>} />
+            <Route path="ticket" element={<RequireAuth><TicketScreen /></RequireAuth>} />
             <Route path="ticket/:id" element={<RequireAuth><TicketScreen /></RequireAuth>} />
             <Route path="*" element={<Navigate to="/sbtamobile" replace />} />
           </Routes>

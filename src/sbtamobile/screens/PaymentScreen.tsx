@@ -53,8 +53,9 @@ export default function PaymentScreen() {
     if (isWave) {
       try {
         const booking = await createBooking({ ...bookingInput, pending: true });
-        const url = await startWaveCheckout(booking.id);
-        const ticketUrl = `/sbtamobile/ticket/${booking.id}?wave=success`;
+        const { launchUrl: url, returnToken } = await startWaveCheckout(booking.id);
+        // Lien de retour sécurisé : token opaque, sans id ni référence de billet.
+        const ticketUrl = `/sbtamobile/ticket?t=${returnToken}&wave=success`;
 
         const isAndroid =
           /Android/i.test(navigator.userAgent) ||

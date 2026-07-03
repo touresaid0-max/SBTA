@@ -363,6 +363,18 @@ export async function fetchBooking(id: string): Promise<Booking | null> {
   return (data as Booking) ?? null;
 }
 
+// Résout un billet à partir de son token de retour opaque (lien Wave sécurisé).
+// La RLS garantit qu'un utilisateur ne peut résoudre que ses propres billets.
+export async function fetchBookingByReturnToken(token: string): Promise<Booking | null> {
+  const { data, error } = await supabase
+    .from('mobile_bookings')
+    .select('*')
+    .eq('return_token', token)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Booking) ?? null;
+}
+
 // Téléverse un fichier e-ticket (PDF/PNG) dans le bucket public `tickets`
 // et renvoie son URL HTTPS publique. Nécessaire pour l'app WebToNative :
 // le téléchargement et le partage natif fonctionnent sur une vraie URL HTTPS,
@@ -392,7 +404,9 @@ export async function getWaveStatus(): Promise<{ isActive: boolean; mode: string
 
 // ── Contexte application Android (WebToNative) ──────────────────
 
-export async function startWaveCheckout(bookingId: string): Promise<string> {
+export type WaveCheckout = { launchUrl: string; returnToken: string };
+
+export async function startWaveCheckout(bookingId: string): Promise<WaveCheckout> {
   const { data: sess } = await supabase.auth.getSession();
   const token = sess.session?.access_token;
 
@@ -409,7 +423,7 @@ export async function startWaveCheckout(bookingId: string): Promise<string> {
   if (!res.ok || !data?.launchUrl) {
     throw new Error(data?.error || 'Le paiement Wave est indisponible.');
   }
-  return data.launchUrl as string;
+  return { launchUrl: data.launchUrl as string, returnToken: (data.returnToken as string) ?? '' };
 }
 
 export type WaveVerifyResult = {

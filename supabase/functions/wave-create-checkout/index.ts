@@ -74,9 +74,15 @@ Deno.serve(async (req: Request) => {
     // Wave n'accepte que des URL https valides pour success_url / error_url.
     // Le retour dans l'app WebView est géré côté app (intent:// au lancement),
     // pas via ces URL — y mettre un intent:// provoque « Request invalid » (400).
+    //
+    // On n'expose PLUS l'id de réservation dans le lien : on utilise un token
+    // opaque aléatoire. L'écran de retour résout ce token (sous RLS) pour
+    // retrouver la réservation et vérifier le paiement, sans divulguer les
+    // informations du ticket dans l'URL.
+    const returnToken = crypto.randomUUID();
     const base = String(origin).replace(/\/+$/, "");
-    const successHttps = `${base}/sbtamobile/ticket/${booking.id}?wave=success`;
-    const errorHttps = `${base}/sbtamobile/ticket/${booking.id}?wave=error`;
+    const successHttps = `${base}/sbtamobile/ticket?t=${returnToken}&wave=success`;
+    const errorHttps = `${base}/sbtamobile/ticket?t=${returnToken}&wave=error`;
 
     const payload = {
       amount: String(amount),
@@ -129,11 +135,12 @@ Deno.serve(async (req: Request) => {
         payment_status: "pending",
         wave_session_id: session.id ?? null,
         wave_checkout_status: "PENDING",
+        return_token: returnToken,
         updated_at: new Date().toISOString(),
       })
       .eq("id", booking.id);
 
-    return json({ launchUrl: session.wave_launch_url, sessionId: session.id });
+    return json({ launchUrl: session.wave_launch_url, sessionId: session.id, returnToken });
   } catch (err) {
     console.error("wave-create-checkout exception", err);
     return json({ error: "Erreur serveur." }, 500);

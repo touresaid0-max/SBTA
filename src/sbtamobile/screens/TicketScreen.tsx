@@ -22,6 +22,7 @@ import { Button, TopBar, LOGO_SRC, LOGO_ALT } from '../components';
 import {
   Booking,
   fetchBooking,
+  fetchBookingByReturnToken,
   verifyWavePayment,
   startWaveCheckout,
   uploadTicketFile,
@@ -51,13 +52,17 @@ function capitalize(s: string): string {
 }
 
 export default function TicketScreen() {
-  const { id } = useParams();
+  const { id: paramId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const waveReturn = searchParams.has('wave');
+  const returnTokenParam = searchParams.get('t');
+  // Retour Wave : soit un token de retour opaque (lien sécurisé), soit l'ancien
+  // paramètre ?wave. Dans les deux cas, on vérifie le paiement en arrière-plan.
+  const waveReturn = searchParams.has('wave') || !!returnTokenParam;
   const justPaid = (location.state as { justPaid?: boolean } | null)?.justPaid ?? false;
   const [booking, setBooking] = useState<Booking | null>(null);
+  const [bookingId, setBookingId] = useState<string | null>(paramId ?? null);
   const [loading, setLoading] = useState(true);
   const [waveState, setWaveState] = useState<'idle' | 'verifying' | 'paid' | 'failed' | 'pending'>(
     waveReturn ? 'verifying' : 'idle'
@@ -71,28 +76,30 @@ export default function TicketScreen() {
   const verifyTokenRef = useRef(0);
   const waveStateRef = useRef(waveState);
   waveStateRef.current = waveState;
+  const bookingIdRef = useRef<string | null>(bookingId);
+  bookingIdRef.current = bookingId;
 
-  const reloadBooking = useCallback(async (): Promise<Booking | null> => {
-    const b = await fetchBooking(id!);
+  const reloadBooking = useCallback(async (bId: string): Promise<Booking | null> => {
+    const b = await fetchBooking(bId);
     if (!b) { setError('Billet introuvable.'); return null; }
     setBooking(b);
     return b;
-  }, [id]);
+  }, []);
 
   // Interroge l'API Wave (via l'edge function) pour connaître le vrai statut du paiement.
   // Réutilisable : appelé au chargement, au retour au premier plan, et via « Vérifier ».
-  const runVerification = useCallback((maxAttempts: number) => {
-    if (!id) return;
+  const runVerification = useCallback((bId: string, maxAttempts: number) => {
+    if (!bId) return;
     const token = ++verifyTokenRef.current;
     setWaveState('verifying');
     let attempts = 0;
     const loop = async () => {
       if (token !== verifyTokenRef.current) return;
       attempts += 1;
-      const result = await verifyWavePayment(id);
+      const result = await verifyWavePayment(bId);
       if (token !== verifyTokenRef.current) return;
       if (result.status === 'paid') {
-        await reloadBooking();
+        await reloadBooking(bId);
         if (token === verifyTokenRef.current) setWaveState('paid');
         return;
       }
@@ -105,27 +112,33 @@ export default function TicketScreen() {
       setTimeout(loop, 2500);
     };
     loop();
-  }, [id, reloadBooking]);
+  }, [reloadBooking]);
 
   useEffect(() => {
-    if (!id) return;
     let cancelled = false;
     (async () => {
       try {
-        const b = await fetchBooking(id);
+        // Charge le billet soit par son id (navigation interne), soit en
+        // résolvant le token de retour sécurisé (retour de paiement Wave).
+        const b = paramId
+          ? await fetchBooking(paramId)
+          : returnTokenParam
+            ? await fetchBookingByReturnToken(returnTokenParam)
+            : null;
         if (cancelled) return;
         if (!b) { setError('Billet introuvable.'); setLoading(false); return; }
         setBooking(b);
+        setBookingId(b.id);
         setLoading(false);
         if (!waveReturn) return;
         if (b.payment_status === 'paid') { setWaveState('paid'); return; }
-        runVerification(6);
+        runVerification(b.id, 6);
       } catch {
         if (!cancelled) { setError('Impossible de charger le billet.'); setLoading(false); }
       }
     })();
     return () => { cancelled = true; verifyTokenRef.current += 1; };
-  }, [id, waveReturn, runVerification]);
+  }, [paramId, returnTokenParam, waveReturn, runVerification]);
 
   // Au retour de Wave, l'app revient au premier plan (l'app Wave était une app séparée) :
   // on relance la vérification pour confirmer le paiement sans action de l'utilisateur.
@@ -134,7 +147,7 @@ export default function TicketScreen() {
     const recheckOnForeground = () => {
       if (document.visibilityState === 'hidden') return;
       if (waveStateRef.current === 'paid') return;
-      runVerification(6);
+      if (bookingIdRef.current) runVerification(bookingIdRef.current, 6);
     };
     document.addEventListener('visibilitychange', recheckOnForeground);
     window.addEventListener('focus', recheckOnForeground);
@@ -143,6 +156,26 @@ export default function TicketScreen() {
       window.removeEventListener('focus', recheckOnForeground);
     };
   }, [waveReturn, runVerification]);
+
+  // Paiement confirmé : on remplace le lien de retour (token / ?wave) par un
+  // billet propre, sans divulguer l'URL Wave et sans conserver la page de
+  // paiement dans l'historique (retour arrière impossible vers le paiement).
+  useEffect(() => {
+    if (waveState !== 'paid' || !bookingId) return;
+    if (!returnTokenParam && !searchParams.has('wave')) return;
+    navigate(`/sbtamobile/ticket/${bookingId}`, { replace: true, state: { justPaid: true } });
+  }, [waveState, bookingId, returnTokenParam, searchParams, navigate]);
+
+  // Après confirmation, bloque le retour arrière matériel/TopBar vers le
+  // tunnel de paiement : on redirige vers « Mes billets ».
+  useEffect(() => {
+    const confirmedReturn = booking?.payment_status === 'paid' && (justPaid || waveReturn);
+    if (!confirmedReturn) return;
+    window.history.pushState(null, '', window.location.href);
+    const onPop = () => navigate('/sbtamobile/tickets', { replace: true });
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [booking, justPaid, waveReturn, navigate]);
 
   if (loading) {
     return (
@@ -334,7 +367,7 @@ export default function TicketScreen() {
     if (!booking) return;
     setRetrying(true);
     try {
-      const url = await startWaveCheckout(booking.id);
+      const { launchUrl: url } = await startWaveCheckout(booking.id);
       const isAndroid =
         /Android/i.test(navigator.userAgent) ||
         navigator.userAgent.includes('wv') ||
@@ -363,7 +396,7 @@ export default function TicketScreen() {
         reason={waveReason}
         retrying={retrying}
         onRetry={retryWave}
-        onRecheck={() => runVerification(4)}
+        onRecheck={() => bookingId && runVerification(bookingId, 4)}
         onHome={() => navigate('/sbtamobile/search')}
         onTickets={() => navigate('/sbtamobile/tickets')}
       />
@@ -602,14 +635,6 @@ export default function TicketScreen() {
             </span>
           </Button>
         </div>
-      </div>
-
-      <div className="px-3 pb-3 pt-0 sm:p-6 sm:pt-0">
-        <Button full variant="outline" onClick={() => navigate('/sbtamobile/search')}>
-          <span className="flex items-center justify-center gap-2">
-            <Home size={16} /> Accueil
-          </span>
-        </Button>
       </div>
     </div>
   );
