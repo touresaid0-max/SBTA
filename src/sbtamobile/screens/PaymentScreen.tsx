@@ -54,25 +54,27 @@ export default function PaymentScreen() {
       try {
         const booking = await createBooking({ ...bookingInput, pending: true });
         const url = await startWaveCheckout(booking.id);
+        const ticketUrl = `/sbtamobile/ticket/${booking.id}?wave=success`;
 
-        const isAdvancedWebView = navigator.userAgent.includes('wv') || !!(window as any).WebToNative;
+        const isAndroid =
+          /Android/i.test(navigator.userAgent) ||
+          navigator.userAgent.includes('wv') ||
+          !!(window as any).WebToNative;
 
-        if (isAdvancedWebView && url.startsWith('https://')) {
-          // L'app Wave s'ouvre comme une app séparée : la WebView ne navigue pas.
-          // On place donc l'app sur le ticket (qui vérifie le paiement au retour au
-          // premier plan) au lieu de rester bloqué sur ce bouton.
-          try {
-            const wavePath = url.replace('https://', '');
-            const androidIntentUrl = `intent://${wavePath}#Intent;scheme=https;package=com.wave.personal;end`;
-            window.location.href = androidIntentUrl;
-          } catch (error) {
-            console.error('Erreur lors de la conversion du lien Wave Intent', error);
-            window.location.href = url;
-          }
-          setTimeout(() => {
-            navigate(`/sbtamobile/ticket/${booking.id}?wave=success`, { replace: true });
-          }, 1200);
+        if (isAndroid && url.startsWith('https://')) {
+          // Android : on ouvre l'app Wave via un deep link (elle s'ouvre par-dessus
+          // la WebView, qui ne navigue pas). Le browser_fallback_url charge la page
+          // web Wave si l'app n'est pas installée.
+          const wavePath = url.replace('https://', '');
+          const fallback = encodeURIComponent(url);
+          window.location.href =
+            `intent://${wavePath}#Intent;scheme=https;package=com.wave.personal;` +
+            `S.browser_fallback_url=${fallback};end`;
+          // On place immédiatement l'app sur le ticket : au retour de Wave, l'écran
+          // ticket vérifie et confirme automatiquement le paiement (pas de blocage ici).
+          navigate(ticketUrl, { replace: true });
         } else {
+          // Navigateur classique : redirection plein écran vers Wave.
           window.location.href = url;
         }
       } catch (e) {

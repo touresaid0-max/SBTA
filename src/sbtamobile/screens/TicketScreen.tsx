@@ -254,10 +254,17 @@ export default function TicketScreen() {
     setRetrying(true);
     try {
       const url = await startWaveCheckout(booking.id);
-      const isAdvancedWebView = navigator.userAgent.includes('wv') || !!(window as any).WebToNative;
-      if (isAdvancedWebView && url.startsWith('https://')) {
+      const isAndroid =
+        /Android/i.test(navigator.userAgent) ||
+        navigator.userAgent.includes('wv') ||
+        !!(window as any).WebToNative;
+      if (isAndroid && url.startsWith('https://')) {
         const wavePath = url.replace('https://', '');
-        window.location.href = `intent://${wavePath}#Intent;scheme=https;package=com.wave.personal;end`;
+        const fallback = encodeURIComponent(url);
+        window.location.href =
+          `intent://${wavePath}#Intent;scheme=https;package=com.wave.personal;` +
+          `S.browser_fallback_url=${fallback};end`;
+        setRetrying(false);
       } else {
         window.location.href = url;
       }
