@@ -292,11 +292,11 @@ export default function TicketScreen() {
   return (
     <div className="flex flex-1 flex-col">
       <TopBar title={confirmed ? 'E-Ticket' : 'Billet provisoire'} onBack />
-      <div className="flex-1 space-y-4 px-4 pb-6 pt-2">
+      <div className="flex-1 space-y-2 px-3 pb-3 pt-1.5 sm:space-y-3 sm:px-4 sm:pb-6 sm:pt-2">
         {(justPaid || (waveReturn && paid)) && (
-          <div className="flex items-center gap-2 rounded-2xl p-3" style={{ background: SBTA.greenLight }}>
-            <CheckCircle2 size={20} color={SBTA.green} />
-            <span className="text-sm font-semibold" style={{ color: SBTA.greenDark }}>
+          <div className="flex items-center gap-2 rounded-2xl p-2.5 sm:p-3" style={{ background: SBTA.greenLight }}>
+            <CheckCircle2 size={18} color={SBTA.green} />
+            <span className="text-[13px] font-semibold sm:text-sm" style={{ color: SBTA.greenDark }}>
               Paiement confirmé. Votre billet a été généré.
             </span>
           </div>
@@ -304,59 +304,59 @@ export default function TicketScreen() {
 
         {/* ── E-TICKET ─────────────────────────────────────────── */}
         <div
-          className="overflow-hidden rounded-[22px]"
+          className="overflow-hidden rounded-[20px]"
           style={{ background: SBTA.white, border: `1px solid ${SBTA.gray200}`, boxShadow: '0 10px 30px rgba(0,0,0,0.06)' }}
         >
           {/* Logo header */}
-          <div className="flex justify-center px-5 pt-6 pb-4">
+          <div className="flex justify-center px-4 pt-3 pb-1.5 sm:pt-5 sm:pb-3">
             <img
               src={LOGO_SRC}
               alt={LOGO_ALT}
               draggable={false}
-              className="h-auto w-[150px] select-none object-contain"
+              className="h-auto w-[96px] select-none object-contain sm:w-[130px]"
             />
           </div>
 
-          <div className="mx-5 border-t border-dashed" style={{ borderColor: SBTA.gray200 }} />
+          <div className="mx-4 border-t border-dashed sm:mx-5" style={{ borderColor: SBTA.gray200 }} />
 
           {/* Title */}
-          <div className="px-5 pt-4 text-center">
-            <div className="text-[30px] font-extrabold leading-none tracking-tight" style={{ color: SBTA.ink }}>
+          <div className="px-4 pt-2 text-center sm:px-5 sm:pt-3">
+            <div className="text-[20px] font-extrabold leading-none tracking-tight sm:text-[26px]" style={{ color: SBTA.ink }}>
               E-TICKET
             </div>
-            <div className="mt-1 text-sm font-bold tracking-wide" style={{ color: SBTA.red }}>
+            <div className="mt-0.5 text-[11px] font-bold tracking-wide sm:text-sm" style={{ color: SBTA.red }}>
               BILLET ÉLECTRONIQUE
             </div>
-            <div className="mt-1.5 text-[12px]" style={{ color: SBTA.gray600 }}>
+            <div className="mt-0.5 text-[10px] leading-snug sm:text-[12px]" style={{ color: SBTA.gray600 }}>
               Merci d'arriver à l'embarquement 30 minutes avant le départ
             </div>
           </div>
 
           {/* Départ / Arrivée */}
-          <div className="px-5 pt-4">
-            <div className="rounded-2xl px-4 py-4" style={{ border: `1px solid ${SBTA.gray200}` }}>
+          <div className="px-4 pt-2 sm:px-5 sm:pt-3">
+            <div className="rounded-xl px-3 py-2.5 sm:px-4 sm:py-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
               <div className="flex items-stretch gap-2">
                 <div className="min-w-0 flex-1 text-left">
-                  <div className="text-[11px] font-bold tracking-wide" style={{ color: SBTA.green }}>DEPART</div>
-                  <div className="truncate text-lg font-extrabold uppercase" style={{ color: SBTA.ink }}>
+                  <div className="text-[10px] font-bold tracking-wide sm:text-[11px]" style={{ color: SBTA.green }}>DEPART</div>
+                  <div className="truncate text-[15px] font-extrabold uppercase sm:text-lg" style={{ color: SBTA.ink }}>
                     {booking.origin_city}
                   </div>
                   {booking.origin_station && (
-                    <div className="truncate text-[12px]" style={{ color: SBTA.gray600 }}>{booking.origin_station}</div>
+                    <div className="truncate text-[11px] sm:text-[12px]" style={{ color: SBTA.gray600 }}>{booking.origin_station}</div>
                   )}
                 </div>
-                <div className="flex items-center gap-1 px-1 pt-4" style={{ color: SBTA.gray400 }}>
-                  <Bus size={16} />
+                <div className="flex items-center gap-1 px-1 pt-3" style={{ color: SBTA.gray400 }}>
+                  <Bus size={15} />
                   <span className="tracking-[3px]">·····</span>
-                  <Bus size={16} />
+                  <Bus size={15} />
                 </div>
                 <div className="min-w-0 flex-1 text-right">
-                  <div className="text-[11px] font-bold tracking-wide" style={{ color: SBTA.green }}>ARRIVÉE</div>
-                  <div className="truncate text-lg font-extrabold uppercase" style={{ color: SBTA.ink }}>
+                  <div className="text-[10px] font-bold tracking-wide sm:text-[11px]" style={{ color: SBTA.green }}>ARRIVÉE</div>
+                  <div className="truncate text-[15px] font-extrabold uppercase sm:text-lg" style={{ color: SBTA.ink }}>
                     {booking.destination_city}
                   </div>
                   {booking.destination_station && (
-                    <div className="truncate text-[12px]" style={{ color: SBTA.gray600 }}>{booking.destination_station}</div>
+                    <div className="truncate text-[11px] sm:text-[12px]" style={{ color: SBTA.gray600 }}>{booking.destination_station}</div>
                   )}
                 </div>
               </div>
@@ -364,34 +364,34 @@ export default function TicketScreen() {
           </div>
 
           {/* Info grid */}
-          <div className="px-5 pt-3">
-            <div className="grid grid-cols-5 rounded-2xl" style={{ border: `1px solid ${SBTA.gray200}` }}>
+          <div className="px-4 pt-2 sm:px-5">
+            <div className="grid grid-cols-5 rounded-xl" style={{ border: `1px solid ${SBTA.gray200}` }}>
               <InfoCell
-                icon={<CalendarDays size={17} color={SBTA.ink} />}
+                icon={<CalendarDays size={15} color={SBTA.ink} />}
                 label="DATE DU VOYAGE"
                 value={dateShort}
                 sub={weekday}
               />
               <InfoCell
-                icon={<Clock size={17} color={SBTA.ink} />}
+                icon={<Clock size={15} color={SBTA.ink} />}
                 label="HEURE DE DÉPART"
                 value={booking.departure_time ?? '--:--'}
                 divider
               />
               <InfoCell
-                icon={<Bus size={17} color={SBTA.ink} />}
+                icon={<Bus size={15} color={SBTA.ink} />}
                 label="BUS"
                 value={busLabel}
                 divider
               />
               <InfoCell
-                icon={<Armchair size={17} color={SBTA.ink} />}
+                icon={<Armchair size={15} color={SBTA.ink} />}
                 label="SIÈGE(S)"
                 value={seatsLabel}
                 divider
               />
               <InfoCell
-                icon={<FileText size={17} color={SBTA.ink} />}
+                icon={<FileText size={15} color={SBTA.ink} />}
                 label="RÉFÉRENCE"
                 value={booking.booking_ref}
                 divider
@@ -401,27 +401,27 @@ export default function TicketScreen() {
           </div>
 
           {/* Passagers */}
-          <div className="px-5 pt-4">
-            <div className="rounded-2xl" style={{ border: `1px solid ${SBTA.gray200}`, overflow: 'hidden' }}>
-              <div className="px-4 py-2.5 text-[13px] font-bold" style={{ background: SBTA.gray100, color: SBTA.ink }}>
+          <div className="px-4 pt-2 sm:px-5">
+            <div className="rounded-xl" style={{ border: `1px solid ${SBTA.gray200}`, overflow: 'hidden' }}>
+              <div className="px-3 py-1.5 text-[12px] font-bold sm:px-4" style={{ background: SBTA.gray100, color: SBTA.ink }}>
                 PASSAGER(S)
               </div>
               <div className="divide-y" style={{ borderColor: SBTA.gray100 }}>
                 {(booking.passengers ?? []).length === 0 ? (
-                  <div className="px-4 py-3 text-[13px]" style={{ color: SBTA.gray600 }}>
+                  <div className="px-3 py-2 text-[12px] sm:px-4" style={{ color: SBTA.gray600 }}>
                     {count} {count > 1 ? 'places' : 'place'}
                   </div>
                 ) : (
                   booking.passengers.map((p, i) => (
                     <div
                       key={`${p.phone}-${i}`}
-                      className="flex items-center justify-between px-4 py-2.5"
+                      className="flex items-center justify-between px-3 py-1.5 sm:px-4"
                       style={{ borderColor: SBTA.gray100 }}
                     >
-                      <span className="truncate pr-2 text-[14px] font-bold uppercase" style={{ color: SBTA.ink }}>
+                      <span className="truncate pr-2 text-[13px] font-bold uppercase sm:text-[14px]" style={{ color: SBTA.ink }}>
                         {i + 1}. {p.lastName} {p.firstName}
                       </span>
-                      <span className="shrink-0 text-[13px] font-semibold" style={{ color: SBTA.gray600 }}>
+                      <span className="shrink-0 text-[12px] font-semibold sm:text-[13px]" style={{ color: SBTA.gray600 }}>
                         {p.phone}
                       </span>
                     </div>
@@ -432,18 +432,18 @@ export default function TicketScreen() {
           </div>
 
           {/* Pricing */}
-          <div className="px-5 pt-4">
-            <div className="rounded-2xl px-4 py-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
+          <div className="px-4 pt-2 sm:px-5">
+            <div className="rounded-xl px-3 py-2 sm:px-4 sm:py-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
               <PriceRow label={`Prix unitaire × ${count}`} value={formatXOF(subtotal)} />
-              <div className="mt-2" />
+              <div className="mt-1" />
               <PriceRow label={`Frais de service × ${count}`} value={formatXOF(fee)} />
-              <div className="mt-3 border-t pt-3" style={{ borderColor: SBTA.gray200 }}>
+              <div className="mt-2 border-t pt-2" style={{ borderColor: SBTA.gray200 }}>
                 <div className="flex items-center justify-between">
-                  <span className="text-lg font-extrabold" style={{ color: SBTA.ink }}>TOTAL PAYÉ</span>
-                  <span className="text-xl font-extrabold" style={{ color: SBTA.ink }}>{formatXOF(booking.total)}</span>
+                  <span className="text-[15px] font-extrabold sm:text-lg" style={{ color: SBTA.ink }}>TOTAL PAYÉ</span>
+                  <span className="text-[17px] font-extrabold sm:text-xl" style={{ color: SBTA.ink }}>{formatXOF(booking.total)}</span>
                 </div>
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 text-[11px] font-bold"
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 border-t pt-2 text-[10px] font-bold sm:text-[11px]"
                 style={{ borderColor: SBTA.gray100, color: SBTA.green }}>
                 <span>PAIEMENT : {payLabel.toUpperCase()}</span>
                 <span>STATUT : {confirmed ? 'CONFIRMÉ' : 'EN ATTENTE'}</span>
@@ -454,9 +454,9 @@ export default function TicketScreen() {
 
           {/* Provisional note */}
           {!confirmed && (
-            <div className="px-5 pt-4">
-              <div className="rounded-2xl px-4 py-3" style={{ background: '#FFF8E6' }}>
-                <p className="text-[12px] leading-relaxed" style={{ color: '#7A5C00' }}>
+            <div className="px-4 pt-2 sm:px-5">
+              <div className="rounded-xl px-3 py-2 sm:px-4 sm:py-3" style={{ background: '#FFF8E6' }}>
+                <p className="text-[11px] leading-snug sm:text-[12px] sm:leading-relaxed" style={{ color: '#7A5C00' }}>
                   Votre paiement est validé. Les sièges seront attribués automatiquement lorsque le chef
                   de gare planifiera le voyage. Vous recevrez votre billet définitif par notification, SMS et email.
                 </p>
@@ -465,12 +465,12 @@ export default function TicketScreen() {
           )}
 
           {/* Informations importantes */}
-          <div className="px-5 pt-4">
-            <div className="rounded-2xl px-4 py-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
-              <div className="text-[13px] font-bold" style={{ color: SBTA.red }}>INFORMATIONS IMPORTANTES</div>
-              <ul className="mt-2 space-y-1.5">
+          <div className="px-4 pt-2 sm:px-5">
+            <div className="rounded-xl px-3 py-2 sm:px-4 sm:py-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
+              <div className="text-[12px] font-bold sm:text-[13px]" style={{ color: SBTA.red }}>INFORMATIONS IMPORTANTES</div>
+              <ul className="mt-1 space-y-0.5 sm:mt-2 sm:space-y-1.5">
                 {IMPORTANT_NOTES.map((note) => (
-                  <li key={note} className="flex gap-2 text-[12px] leading-snug" style={{ color: SBTA.gray900 }}>
+                  <li key={note} className="flex gap-1.5 text-[11px] leading-snug sm:text-[12px]" style={{ color: SBTA.gray900 }}>
                     <span style={{ color: SBTA.ink }}>•</span>
                     <span>{note}</span>
                   </li>
@@ -480,18 +480,19 @@ export default function TicketScreen() {
           </div>
 
           {/* QR code */}
-          <div ref={qrRef} className="flex justify-center px-5 pt-5">
-            <div className="rounded-2xl p-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
-              <QRCodeCanvas value={qrValue} size={170} fgColor={SBTA.ink} level="M" />
+          <div ref={qrRef} className="flex justify-center px-4 pt-2.5 sm:px-5 sm:pt-4">
+            <div className="rounded-xl p-2 sm:p-3" style={{ border: `1px solid ${SBTA.gray200}` }}>
+              <QRCodeCanvas value={qrValue} size={124} fgColor={SBTA.ink} level="M" className="sm:hidden" />
+              <QRCodeCanvas value={qrValue} size={160} fgColor={SBTA.ink} level="M" className="hidden sm:block" />
             </div>
           </div>
 
           {/* Footer */}
-          <div className="px-5 pb-6 pt-4 text-center">
-            <div className="text-[15px] font-extrabold italic" style={{ color: SBTA.green }}>
+          <div className="px-4 pb-3 pt-2 text-center sm:px-5 sm:pb-6 sm:pt-4">
+            <div className="text-[13px] font-extrabold italic sm:text-[15px]" style={{ color: SBTA.green }}>
               Merci de voyager avec SBTA
             </div>
-            <div className="text-[13px] italic" style={{ color: SBTA.gray600 }}>
+            <div className="text-[11px] italic sm:text-[13px]" style={{ color: SBTA.gray600 }}>
               Le trajet en toute sécurité
             </div>
           </div>
@@ -499,31 +500,31 @@ export default function TicketScreen() {
 
         {/* Actions */}
         <div className="grid grid-cols-3 gap-2">
-          <Button variant="ghost" onClick={downloadPdf} style={{ padding: '12px 8px', fontSize: 14 }}>
+          <Button variant="ghost" onClick={downloadPdf} style={{ padding: '9px 8px', fontSize: 13 }}>
             <span className="flex items-center justify-center gap-1.5">
-              <Download size={16} /> PDF
+              <Download size={15} /> PDF
             </span>
           </Button>
-          <Button variant="ghost" onClick={share} style={{ padding: '12px 8px', fontSize: 14 }}>
+          <Button variant="ghost" onClick={share} style={{ padding: '9px 8px', fontSize: 13 }}>
             <span className="flex items-center justify-center gap-1.5">
-              <Share2 size={16} /> Partager
+              <Share2 size={15} /> Partager
             </span>
           </Button>
           <Button
             onClick={shareWhatsApp}
-            style={{ padding: '12px 8px', fontSize: 14, background: '#25D366', color: SBTA.white }}
+            style={{ padding: '9px 8px', fontSize: 13, background: '#25D366', color: SBTA.white }}
           >
             <span className="flex items-center justify-center gap-1.5">
-              <MessageCircle size={16} /> WhatsApp
+              <MessageCircle size={15} /> WhatsApp
             </span>
           </Button>
         </div>
       </div>
 
-      <div className="p-6 pt-0">
+      <div className="px-3 pb-3 pt-0 sm:p-6 sm:pt-0">
         <Button full variant="outline" onClick={() => navigate('/sbtamobile/search')}>
           <span className="flex items-center justify-center gap-2">
-            <Home size={17} /> Accueil
+            <Home size={16} /> Accueil
           </span>
         </Button>
       </div>
@@ -548,13 +549,13 @@ function InfoCell({
 }) {
   return (
     <div
-      className="flex flex-col items-center px-1 py-3 text-center"
+      className="flex flex-col items-center px-1 py-2 text-center sm:py-3"
       style={divider ? { borderLeft: `1px solid ${SBTA.gray200}` } : undefined}
     >
       <div className="text-[8px] font-bold leading-tight tracking-wide" style={{ color: SBTA.gray600 }}>
         {label}
       </div>
-      <div className="my-1.5">{icon}</div>
+      <div className="my-1">{icon}</div>
       <div
         className={`${small ? 'text-[9px]' : 'text-[11px]'} font-extrabold leading-tight`}
         style={{ color: SBTA.ink, wordBreak: 'break-word' }}
