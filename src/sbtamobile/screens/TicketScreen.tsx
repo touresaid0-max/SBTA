@@ -47,7 +47,7 @@ export default function TicketScreen() {
   const [waveReason, setWaveReason] = useState('');
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
-  const [exporting, setExporting] = useState<'pdf' | 'share' | null>(null);
+  const [exporting, setExporting] = useState<'pdf' | 'share' | 'whatsapp' | null>(null);
   const ticketRef = useRef<HTMLDivElement>(null);
   const qrRef = useRef<HTMLDivElement>(null);
   const verifyTokenRef = useRef(0);
@@ -231,38 +231,55 @@ export default function TicketScreen() {
     ].join('\n');
   }
 
-  // Partage l'image du e-ticket (mise en page complète + QR) via l'API de partage
-  // native. À défaut (desktop / navigateur non compatible), on télécharge l'image.
+  // Construit le fichier image (PNG) du e-ticket à partir du rendu affiché.
+  async function buildTicketFile(): Promise<File | null> {
+    const canvas = await captureTicket();
+    if (!canvas) return null;
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/png')
+    );
+    if (!blob) return null;
+    return new File([blob], `${booking!.booking_ref}.png`, { type: 'image/png' });
+  }
+
+  function downloadFile(file: File) {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Tente le partage natif du FICHIER image (Web Share niveau 2). Certaines WebView
+  // Android exposent navigator.share sans navigator.canShare : on essaie quand même
+  // et on ne retombe sur un repli que si l'appel échoue réellement.
+  async function tryShareFile(file: File): Promise<boolean> {
+    if (typeof navigator.share !== 'function') return false;
+    if (typeof navigator.canShare === 'function' && !navigator.canShare({ files: [file] })) {
+      return false;
+    }
+    try {
+      await navigator.share({ files: [file], title: 'E-Ticket SBTA', text: shareText() });
+      return true;
+    } catch (e) {
+      // Annulation utilisateur : considéré comme traité (ne pas télécharger derrière).
+      if (e instanceof DOMException && e.name === 'AbortError') return true;
+      return false;
+    }
+  }
+
+  // Partage l'image du e-ticket (mise en page complète + QR). À défaut de partage
+  // natif de fichier, on télécharge l'image afin que l'utilisateur puisse la joindre.
   async function share() {
     setExporting('share');
     try {
-      const canvas = await captureTicket();
-      if (!canvas) return;
-      const blob: Blob | null = await new Promise((resolve) =>
-        canvas.toBlob((b) => resolve(b), 'image/png')
-      );
-      if (!blob) throw new Error('capture');
-      const file = new File([blob], `${booking!.booking_ref}.png`, { type: 'image/png' });
-      const text = shareText();
-
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: 'E-Ticket SBTA', text });
-          return;
-        } catch {
-          return; // partage annulé par l'utilisateur
-        }
-      }
-
-      // Repli : téléchargement de l'image du billet.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${booking!.booking_ref}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const file = await buildTicketFile();
+      if (!file) throw new Error('capture');
+      const shared = await tryShareFile(file);
+      if (!shared) downloadFile(file);
     } catch {
       setError('Impossible de partager le billet.');
     } finally {
@@ -270,9 +287,26 @@ export default function TicketScreen() {
     }
   }
 
-  function shareWhatsApp() {
-    const url = `https://wa.me/?text=${encodeURIComponent(shareText())}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+  async function shareWhatsApp() {
+    setExporting('whatsapp');
+    try {
+      const file = await buildTicketFile();
+      if (!file) throw new Error('capture');
+      const shared = await tryShareFile(file);
+      if (!shared) {
+        // Repli WhatsApp : au minimum le récapitulatif texte + téléchargement de l'image.
+        downloadFile(file);
+        window.open(
+          `https://wa.me/?text=${encodeURIComponent(shareText())}`,
+          '_blank',
+          'noopener,noreferrer'
+        );
+      }
+    } catch {
+      setError('Impossible de partager le billet.');
+    } finally {
+      setExporting(null);
+    }
   }
 
   async function retryWave() {
@@ -543,7 +577,7 @@ export default function TicketScreen() {
             style={{ padding: '9px 8px', fontSize: 13, background: '#25D366', color: SBTA.white }}
           >
             <span className="flex items-center justify-center gap-1.5">
-              <MessageCircle size={15} /> WhatsApp
+              {exporting === 'whatsapp' ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />} WhatsApp
             </span>
           </Button>
         </div>
