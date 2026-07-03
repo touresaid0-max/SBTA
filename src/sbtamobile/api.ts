@@ -363,6 +363,25 @@ export async function fetchBooking(id: string): Promise<Booking | null> {
   return (data as Booking) ?? null;
 }
 
+// Téléverse un fichier e-ticket (PDF/PNG) dans le bucket public `tickets`
+// et renvoie son URL HTTPS publique. Nécessaire pour l'app WebToNative :
+// le téléchargement et le partage natif fonctionnent sur une vraie URL HTTPS,
+// pas sur un blob: interne à la WebView.
+export async function uploadTicketFile(
+  bookingRef: string,
+  blob: Blob,
+  ext: 'pdf' | 'png'
+): Promise<string> {
+  const contentType = ext === 'pdf' ? 'application/pdf' : 'image/png';
+  const path = `${bookingRef}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage
+    .from('tickets')
+    .upload(path, blob, { contentType, upsert: true, cacheControl: '3600' });
+  if (error) throw error;
+  const { data } = supabase.storage.from('tickets').getPublicUrl(path);
+  return data.publicUrl;
+}
+
 // ── Paiement Wave ───────────────────────────────────────────────
 export async function getWaveStatus(): Promise<{ isActive: boolean; mode: string }> {
   const { data, error } = await supabase.rpc('get_wave_public_status');

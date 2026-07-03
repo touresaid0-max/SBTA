@@ -19,7 +19,25 @@ import {
 } from 'lucide-react';
 import { SBTA, formatXOF, PAYMENT_METHODS } from '../theme';
 import { Button, TopBar, LOGO_SRC, LOGO_ALT } from '../components';
-import { Booking, fetchBooking, verifyWavePayment, startWaveCheckout } from '../api';
+import {
+  Booking,
+  fetchBooking,
+  verifyWavePayment,
+  startWaveCheckout,
+  uploadTicketFile,
+} from '../api';
+
+// L'app mobile est empaquetée avec WebToNative : les téléchargements blob:
+// et le partage de FICHIERS (Web Share niveau 2) y sont peu fiables. On
+// détecte ce contexte pour privilégier une vraie URL HTTPS (téléchargement
+// via le DownloadManager Android, partage via Web Share niveau 1 url).
+function isNativeWebView(): boolean {
+  return (
+    !!(window as any).WebToNative ||
+    /wv/.test(navigator.userAgent) ||
+    (/Android/i.test(navigator.userAgent) && /Version\/[\d.]+/.test(navigator.userAgent))
+  );
+}
 
 const IMPORTANT_NOTES = [
   'Présentez ce e-ticket (QR code) au contrôleur lors de l\u2019embarquement.',
@@ -209,8 +227,19 @@ export default function TicketScreen() {
     setExporting('pdf');
     try {
       const canvas = await captureTicket();
-      if (!canvas) return;
-      canvasToPdf(canvas).save(`${booking!.booking_ref}.pdf`);
+      if (!canvas) throw new Error('capture');
+      const pdf = canvasToPdf(canvas);
+      const ref = booking!.booking_ref;
+      if (isNativeWebView()) {
+        // Dans la WebView Android, un blob:/<a download> est intercepté et le
+        // fichier reste introuvable. On héberge le PDF puis on ouvre l'URL
+        // HTTPS : le DownloadManager natif prend le relais correctement.
+        const blob = pdf.output('blob') as Blob;
+        const url = await uploadTicketFile(ref, blob, 'pdf');
+        window.location.href = url;
+      } else {
+        pdf.save(`${ref}.pdf`);
+      }
     } catch {
       setError('Impossible de générer le PDF du billet.');
     } finally {
@@ -242,20 +271,9 @@ export default function TicketScreen() {
     return new File([blob], `${booking!.booking_ref}.png`, { type: 'image/png' });
   }
 
-  function downloadFile(file: File) {
-    const url = URL.createObjectURL(file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  // Tente le partage natif du FICHIER image (Web Share niveau 2). Certaines WebView
-  // Android exposent navigator.share sans navigator.canShare : on essaie quand même
-  // et on ne retombe sur un repli que si l'appel échoue réellement.
+  // Tente le partage natif du FICHIER image (Web Share niveau 2). Certaines
+  // WebView Android exposent navigator.share sans navigator.canShare : on essaie
+  // quand même et on ne retombe sur un repli que si l'appel échoue réellement.
   async function tryShareFile(file: File): Promise<boolean> {
     if (typeof navigator.share !== 'function') return false;
     if (typeof navigator.canShare === 'function' && !navigator.canShare({ files: [file] })) {
@@ -265,43 +283,46 @@ export default function TicketScreen() {
       await navigator.share({ files: [file], title: 'E-Ticket SBTA', text: shareText() });
       return true;
     } catch (e) {
-      // Annulation utilisateur : considéré comme traité (ne pas télécharger derrière).
       if (e instanceof DOMException && e.name === 'AbortError') return true;
       return false;
     }
   }
 
-  // Partage l'image du e-ticket (mise en page complète + QR). À défaut de partage
-  // natif de fichier, on télécharge l'image afin que l'utilisateur puisse la joindre.
-  async function share() {
-    setExporting('share');
+  // Partage l'image PNG du e-ticket (mise en page complète + QR) via le
+  // partage natif du téléphone. Ordre des tentatives :
+  //  1. Web Share de FICHIER (image jointe directement) — idéal quand supporté.
+  //  2. Sinon : on héberge le PNG et on partage son URL HTTPS (Web Share niveau
+  //     1, largement supporté y compris en WebView).
+  //  3. Repli WhatsApp : lien wa.me avec le récapitulatif + l'URL de l'image.
+  async function shareTicket(mode: 'share' | 'whatsapp') {
+    setExporting(mode);
     try {
       const file = await buildTicketFile();
       if (!file) throw new Error('capture');
-      const shared = await tryShareFile(file);
-      if (!shared) downloadFile(file);
-    } catch {
-      setError('Impossible de partager le billet.');
-    } finally {
-      setExporting(null);
-    }
-  }
+      if (await tryShareFile(file)) return;
 
-  async function shareWhatsApp() {
-    setExporting('whatsapp');
-    try {
-      const file = await buildTicketFile();
-      if (!file) throw new Error('capture');
-      const shared = await tryShareFile(file);
-      if (!shared) {
-        // Repli WhatsApp : au minimum le récapitulatif texte + téléchargement de l'image.
-        downloadFile(file);
+      const url = await uploadTicketFile(booking!.booking_ref, file, 'png');
+      const message = `${shareText()}\n${url}`;
+
+      if (mode === 'whatsapp') {
         window.open(
-          `https://wa.me/?text=${encodeURIComponent(shareText())}`,
+          `https://wa.me/?text=${encodeURIComponent(message)}`,
           '_blank',
           'noopener,noreferrer'
         );
+        return;
       }
+
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: 'E-Ticket SBTA', text: shareText(), url });
+          return;
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'AbortError') return;
+        }
+      }
+      // Aucun partage natif : on ouvre l'image hébergée pour l'enregistrer/partager.
+      window.location.href = url;
     } catch {
       setError('Impossible de partager le billet.');
     } finally {
@@ -566,13 +587,13 @@ export default function TicketScreen() {
               {exporting === 'pdf' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} PDF
             </span>
           </Button>
-          <Button variant="ghost" onClick={share} disabled={exporting !== null} style={{ padding: '9px 8px', fontSize: 13 }}>
+          <Button variant="ghost" onClick={() => shareTicket('share')} disabled={exporting !== null} style={{ padding: '9px 8px', fontSize: 13 }}>
             <span className="flex items-center justify-center gap-1.5">
               {exporting === 'share' ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />} Partager
             </span>
           </Button>
           <Button
-            onClick={shareWhatsApp}
+            onClick={() => shareTicket('whatsapp')}
             disabled={exporting !== null}
             style={{ padding: '9px 8px', fontSize: 13, background: '#25D366', color: SBTA.white }}
           >
