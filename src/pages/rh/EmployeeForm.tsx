@@ -146,6 +146,7 @@ export default function EmployeeForm() {
   const [avatarFile, setAvatarFile]   = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string>('')
   const [busSearch, setBusSearch]     = useState('')
+  const [busOpen, setBusOpen]         = useState(false)
   const avatarInputRef                = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -222,6 +223,8 @@ export default function EmployeeForm() {
       `${b.registration_number} ${b.brand} ${b.model} ${b.class}`.toLowerCase().includes(q)
     )
   })()
+
+  const selectedBus = buses.find(b => b.id === form.bus_id) ?? null
 
   const isHoldingRole = form.role ? HOLDING_ROLES.includes(form.role as SBTARole) : false
   const needsCompany  = form.role ? OPERATIONAL_ROLES.includes(form.role as SBTARole) && form.role !== 'bagagiste' && !COMPANY_OPTIONAL_ROLES.includes(form.role as SBTARole) : false
@@ -625,30 +628,57 @@ export default function EmployeeForm() {
               </>
             )}
             <FieldGroup label="Bus affecté">
-              <div className="relative mb-2">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
-                <input
-                  value={busSearch}
-                  onChange={e => setBusSearch(e.target.value)}
-                  className={inputCls + ' pl-9'}
-                  placeholder="Rechercher un bus (immat., marque, modèle)"
-                />
-              </div>
-              <SelectWrap>
-                <select value={form.bus_id} onChange={set('bus_id')} className={selectCls}>
-                  <option value="">— Aucun bus —</option>
-                  {searchedBuses.map(b => (
-                    <option key={b.id} value={b.id}>
-                      {b.registration_number} — {b.brand} {b.model} ({b.class})
-                    </option>
-                  ))}
-                </select>
-              </SelectWrap>
+              {selectedBus ? (
+                <div className="flex items-center gap-2 border border-[#0B7439] bg-[#F0FAF4] rounded-xl px-3 py-2.5">
+                  <Car className="w-4 h-4 text-[#0B7439] flex-shrink-0" />
+                  <span className="text-sm text-[#1A2E22] font-medium">
+                    {selectedBus.registration_number} — {selectedBus.brand} {selectedBus.model} ({selectedBus.class})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setForm(p => ({ ...p, bus_id: '' })); setBusSearch(''); setBusOpen(false) }}
+                    className="ml-auto p-1 rounded-lg text-[#4A6B55] hover:bg-[#DCEEE3] transition-colors"
+                    title="Changer de bus"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
+                  <input
+                    value={busSearch}
+                    onChange={e => { setBusSearch(e.target.value); setBusOpen(true) }}
+                    onFocus={() => setBusOpen(true)}
+                    onBlur={() => setTimeout(() => setBusOpen(false), 150)}
+                    className={inputCls + ' pl-9'}
+                    placeholder="Rechercher un bus (immat., marque, modèle)"
+                  />
+                  {busOpen && (
+                    <div className="absolute z-20 mt-1 w-full max-h-60 overflow-auto bg-white border border-[#E2EAE5] rounded-xl shadow-lg">
+                      {searchedBuses.length === 0 ? (
+                        <div className="px-3 py-2.5 text-sm text-[#8AA898]">
+                          {filteredBuses.length === 0 ? 'Aucun bus disponible' : `Aucun bus ne correspond à « ${busSearch} »`}
+                        </div>
+                      ) : (
+                        searchedBuses.map(b => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => { setForm(p => ({ ...p, bus_id: b.id })); setBusSearch(''); setBusOpen(false) }}
+                            className="w-full text-left px-3 py-2.5 text-sm text-[#374151] hover:bg-[#F0FAF4] transition-colors"
+                          >
+                            <span className="font-medium text-[#1A2E22]">{b.registration_number}</span> — {b.brand} {b.model} ({b.class})
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {form.company_id && filteredBuses.length === 0 && (
                 <p className="text-xs text-[#D97706] mt-1">Aucun bus actif pour cette société.</p>
-              )}
-              {busSearch.trim() && searchedBuses.length === 0 && filteredBuses.length > 0 && (
-                <p className="text-xs text-[#D97706] mt-1">Aucun bus ne correspond à « {busSearch} ».</p>
               )}
             </FieldGroup>
             <FieldGroup label="N° de permis">
