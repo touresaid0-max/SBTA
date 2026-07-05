@@ -42,7 +42,6 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Bus',                path: '/admin/buses',        icon: <Bus className="w-5 h-5" /> },
     { label: 'Itinéraires',        path: '/admin/routes',       icon: <Route className="w-5 h-5" /> },
     { label: 'Planification',      path: '/admin/schedules',    icon: <Calendar className="w-5 h-5" /> },
-    { label: 'Carburant',          path: '/admin/fuel',         icon: <Fuel className="w-5 h-5" /> },
     { label: 'Stations',           path: '/admin/fuel-stations', icon: <Fuel className="w-5 h-5" /> },
     { label: 'Cuves',              path: '/admin/fuel-tanks',    icon: <Droplets className="w-5 h-5" /> },
     { label: 'Svc Carburant',      path: '/admin/fuel-services', icon: <Fuel className="w-5 h-5" /> },
