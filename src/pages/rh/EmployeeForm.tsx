@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, User, Building2, Car, Info, ChevronDown, Camera, X } from 'lucide-react'
+import { ArrowLeft, Save, User, Building2, Car, Info, ChevronDown, Camera, X, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { uploadAvatar } from '@/services/hr.service'
@@ -145,6 +145,7 @@ export default function EmployeeForm() {
   const [loading, setLoading]         = useState(isEdit)
   const [avatarFile, setAvatarFile]   = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string>('')
+  const [busSearch, setBusSearch]     = useState('')
   const avatarInputRef                = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -214,6 +215,14 @@ export default function EmployeeForm() {
     ? buses.filter(b => b.company_id === form.company_id)
     : buses
 
+  const searchedBuses = (() => {
+    const q = busSearch.trim().toLowerCase()
+    if (!q) return filteredBuses
+    return filteredBuses.filter(b =>
+      `${b.registration_number} ${b.brand} ${b.model} ${b.class}`.toLowerCase().includes(q)
+    )
+  })()
+
   const isHoldingRole = form.role ? HOLDING_ROLES.includes(form.role as SBTARole) : false
   const needsCompany  = form.role ? OPERATIONAL_ROLES.includes(form.role as SBTARole) && form.role !== 'bagagiste' && !COMPANY_OPTIONAL_ROLES.includes(form.role as SBTARole) : false
   const needsStation  = form.role ? REQUIRES_STATION.includes(form.role as SBTARole) : false
@@ -247,8 +256,6 @@ export default function EmployeeForm() {
     }
     if (needsCompany && !form.company_id) { toast.error('La société est obligatoire pour ce poste'); return false }
     if (needsStation && !form.station_id) { toast.error('La gare d\'affectation est obligatoire pour ce poste'); return false }
-    if (isDriver && !form.license_number) { toast.error('Le numéro de permis est obligatoire pour un chauffeur'); return false }
-    if (isDriver && !form.license_category) { toast.error('La catégorie de permis est obligatoire'); return false }
     return true
   }
 
@@ -618,10 +625,19 @@ export default function EmployeeForm() {
               </>
             )}
             <FieldGroup label="Bus affecté">
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
+                <input
+                  value={busSearch}
+                  onChange={e => setBusSearch(e.target.value)}
+                  className={inputCls + ' pl-9'}
+                  placeholder="Rechercher un bus (immat., marque, modèle)"
+                />
+              </div>
               <SelectWrap>
                 <select value={form.bus_id} onChange={set('bus_id')} className={selectCls}>
                   <option value="">— Aucun bus —</option>
-                  {filteredBuses.map(b => (
+                  {searchedBuses.map(b => (
                     <option key={b.id} value={b.id}>
                       {b.registration_number} — {b.brand} {b.model} ({b.class})
                     </option>
@@ -631,14 +647,17 @@ export default function EmployeeForm() {
               {form.company_id && filteredBuses.length === 0 && (
                 <p className="text-xs text-[#D97706] mt-1">Aucun bus actif pour cette société.</p>
               )}
+              {busSearch.trim() && searchedBuses.length === 0 && filteredBuses.length > 0 && (
+                <p className="text-xs text-[#D97706] mt-1">Aucun bus ne correspond à « {busSearch} ».</p>
+              )}
             </FieldGroup>
-            <FieldGroup label="N° de permis" required>
+            <FieldGroup label="N° de permis">
               <input value={form.license_number} onChange={set('license_number')} className={inputCls} placeholder="AB123456" />
             </FieldGroup>
             <FieldGroup label="Date d'expiration du permis">
               <input type="date" value={form.license_expiry} onChange={set('license_expiry')} className={inputCls} />
             </FieldGroup>
-            <FieldGroup label="Catégorie de permis" required>
+            <FieldGroup label="Catégorie de permis">
               <SelectWrap>
                 <select value={form.license_category} onChange={set('license_category')} className={selectCls}>
                   <option value="">— Sélectionner —</option>

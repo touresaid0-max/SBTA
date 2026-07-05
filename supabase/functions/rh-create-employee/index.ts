@@ -114,12 +114,6 @@ Deno.serve(async (req: Request) => {
     if (REQUIRES_STATION.includes(role) && !station_id) {
       throw new Error("La gare d'affectation est obligatoire pour ce poste");
     }
-    if (role === "chauffeur" && !license_number?.trim()) {
-      throw new Error("Le numéro de permis est obligatoire pour un chauffeur");
-    }
-    if (role === "chauffeur" && !license_category) {
-      throw new Error("La catégorie de permis est obligatoire pour un chauffeur");
-    }
 
     // 5. Auto-générer matricule si absent
     let finalEmployeeId = employee_id?.trim() || null;
