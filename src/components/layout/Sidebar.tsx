@@ -9,7 +9,7 @@ import {
   PackagePlus, Truck, ChevronLeft, ChevronRight, ChevronDown, X, ShoppingCart, Car, BarChart2,
   Droplets, ArrowDownCircle, ArrowUpCircle, Zap,
   Wallet, MinusCircle, UserX, MessageSquareWarning, BookOpen, FileCheck, Landmark,
-  PieChart, Luggage,
+  PieChart, Luggage, ScrollText,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import type { UserRole } from '../../types';
@@ -50,6 +50,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Svc Carburant',      path: '/admin/fuel-services', icon: <Fuel className="w-5 h-5" /> },
     { label: 'Charges',            path: '/admin/expenses',      icon: <Receipt className="w-5 h-5" /> },
     { label: 'Garages',            path: '/admin/garages',      icon: <Wrench className="w-5 h-5" /> },
+    { label: "Journal d'audit",    path: '/admin/audit-logs',   icon: <ScrollText className="w-5 h-5" /> },
   ],
   daf: [
     { label: 'Tableau de bord',    path: '/daf/dashboard',          icon: <LayoutDashboard className="w-5 h-5" /> },
