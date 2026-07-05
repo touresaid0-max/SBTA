@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, CreditCard as Edit2, Trash2, Eye, Monitor, UserCheck, X, Package, MapPin, Luggage } from 'lucide-react';
+import { Building2, Plus, CreditCard as Edit2, Trash2, Eye, Monitor, UserCheck, X, Package, MapPin, Luggage, Search } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -83,6 +83,7 @@ const FACILITIES = [
 export default function Stations() {
   const navigate = useNavigate();
   const [stations, setStations] = useState<Station[]>([]);
+  const [search, setSearch] = useState('');
   const [stationAgentsMap, setStationAgentsMap] = useState<Record<string, StationAgent[]>>({});
   const [stationManagersMap, setStationManagersMap] = useState<Record<string, StationManager[]>>({});
   const [stationBaggageMap, setStationBaggageMap] = useState<Record<string, StationBaggageHandler[]>>({});
@@ -664,6 +665,13 @@ export default function Stations() {
     return <div className="p-8">Chargement...</div>;
   }
 
+  const filtered = stations.filter((s) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return [s.name, s.address, s.agency_code, s.cities?.name, s.cities?.region, s.phone, s.email]
+      .some((x) => (x ?? '').toLowerCase().includes(q));
+  });
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
@@ -672,7 +680,7 @@ export default function Stations() {
             Gares
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            {stations.length} gares au total
+            {search.trim() ? `${filtered.length} sur ${stations.length} gares` : `${stations.length} gares au total`}
           </p>
         </div>
         <button
@@ -683,6 +691,27 @@ export default function Stations() {
           <Plus className="w-5 h-5" />
           Nouvelle gare
         </button>
+      </div>
+
+      <div className="relative mb-6 max-w-md">
+        <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Rechercher une gare, ville, région, code..."
+          className="w-full pl-10 pr-10 py-3 border rounded-lg focus:outline-none focus:ring-2"
+          style={{ borderColor: 'var(--border)' }}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100"
+            aria-label="Effacer la recherche"
+          >
+            <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -1219,7 +1248,7 @@ export default function Stations() {
             </tr>
           </thead>
           <tbody>
-            {stations.map((station) => {
+            {filtered.map((station) => {
               const agents = stationAgentsMap[station.id] ?? [];
               return (
                 <tr key={station.id} className="border-t hover:bg-gray-50">
@@ -1422,10 +1451,12 @@ export default function Stations() {
           </tbody>
         </table>
 
-        {stations.length === 0 && (
+        {filtered.length === 0 && (
           <div className="text-center py-12">
             <Building2 className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--neutral-400)' }} />
-            <p style={{ color: 'var(--text-secondary)' }}>Aucune gare trouvée</p>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              {search.trim() ? 'Aucune gare ne correspond à votre recherche' : 'Aucune gare trouvée'}
+            </p>
           </div>
         )}
       </div>
