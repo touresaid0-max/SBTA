@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit2, Trash2, Building2 } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit2, Trash2, Building2, Search, X } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 
@@ -50,6 +50,7 @@ export default function Counters() {
   const [guichetiers, setGuichetiers] = useState<User[]>([]);
   const [stationChefs, setStationChefs] = useState<StationChef[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -225,6 +226,19 @@ export default function Counters() {
     return <div className="p-8">Chargement...</div>;
   }
 
+  const filtered = counters.filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return [
+      c.counter_number,
+      c.stations?.name,
+      c.stations?.cities?.name,
+      c.assigned_user?.full_name,
+      c.assigned_user?.email,
+      c.manager?.full_name,
+    ].some((x) => (x ?? '').toLowerCase().includes(q));
+  });
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
@@ -233,7 +247,7 @@ export default function Counters() {
             Guichets
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            {counters.length} guichets au total
+            {search.trim() ? `${filtered.length} sur ${counters.length} guichets` : `${counters.length} guichets au total`}
           </p>
         </div>
         <button
@@ -244,6 +258,27 @@ export default function Counters() {
           <Plus className="w-5 h-5" />
           Nouveau guichet
         </button>
+      </div>
+
+      <div className="relative mb-6 max-w-md">
+        <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Rechercher un guichet, gare, guichetier, chef..."
+          className="w-full pl-10 pr-10 py-3 border rounded-lg focus:outline-none focus:ring-2"
+          style={{ borderColor: 'var(--border)' }}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100"
+            aria-label="Effacer la recherche"
+          >
+            <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -369,7 +404,7 @@ export default function Counters() {
             </tr>
           </thead>
           <tbody>
-            {counters.map((counter) => (
+            {filtered.map((counter) => (
               <tr key={counter.id} className="border-t hover:bg-gray-50">
                 <td className="p-4">
                   <div className="flex items-center gap-2">
@@ -451,10 +486,12 @@ export default function Counters() {
           </tbody>
         </table>
 
-        {counters.length === 0 && (
+        {filtered.length === 0 && (
           <div className="text-center py-12">
             <Users className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--neutral-400)' }} />
-            <p style={{ color: 'var(--text-secondary)' }}>Aucun guichet trouvé</p>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              {search.trim() ? 'Aucun guichet ne correspond à votre recherche' : 'Aucun guichet trouvé'}
+            </p>
           </div>
         )}
       </div>
