@@ -91,6 +91,15 @@ export default function ChefGareNewSchedule() {
           position: i + 1, price: (s as any).price || 0,
         }));
         setTransitStops(predefined);
+        // Auto-lookup prices for predefined stops that have no price
+        predefined.forEach((stop, i) => {
+          if (!stop.price && stop.station_id) {
+            const st = allStations.find(s => s.id === stop.station_id);
+            if (st?.city_id) {
+              lookupTransitPrice(route.origin_city_id, st.city_id, i);
+            }
+          }
+        });
         if (formData.departure_datetime) {
           const dep = new Date(formData.departure_datetime);
           const arr = addMinutes(dep, route.estimated_duration_minutes);
@@ -250,11 +259,37 @@ export default function ChefGareNewSchedule() {
       if (field === 'station_id') {
         const st = allStations.find(s => s.id === value);
         updated[i] = { ...updated[i], station_id: value, station_name: st?.name || '' };
+        // Auto-fetch price from existing route (departure city -> transit station city)
+        if (value && st?.city_id && selectedRoute) {
+          lookupTransitPrice(selectedRoute.origin_city_id, st.city_id, i);
+        }
       } else {
         updated[i] = { ...updated[i], [field]: value };
       }
       return updated;
     });
+  };
+
+  const lookupTransitPrice = async (originCityId: string, transitCityId: string, index: number) => {
+    if (originCityId === transitCityId) return;
+    const { data } = await supabase
+      .from('routes')
+      .select('base_price')
+      .eq('origin_city_id', originCityId)
+      .eq('destination_city_id', transitCityId)
+      .eq('is_active', true)
+      .order('base_price', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (data?.base_price) {
+      setTransitStops(prev => {
+        const updated = [...prev];
+        if (updated[index]) {
+          updated[index] = { ...updated[index], price: Number(data.base_price) };
+        }
+        return updated;
+      });
+    }
   };
 
   const handleSubmit = async () => {
