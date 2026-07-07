@@ -32,7 +32,7 @@ interface DriverOption {
 }
 interface TransitStop {
   station_id: string; station_name: string; arrival_offset_minutes: number;
-  departure_offset_minutes: number; position: number;
+  departure_offset_minutes: number; position: number; price: number;
 }
 
 export default function ChefGareNewSchedule() {
@@ -88,7 +88,7 @@ export default function ChefGareNewSchedule() {
         const predefined: TransitStop[] = (route.stops || []).map((s, i) => ({
           station_id: s.station_id, station_name: s.station?.name || '',
           arrival_offset_minutes: s.offset_minutes, departure_offset_minutes: s.offset_minutes + 10,
-          position: i + 1,
+          position: i + 1, price: (s as any).price || 0,
         }));
         setTransitStops(predefined);
         if (formData.departure_datetime) {
@@ -137,7 +137,7 @@ export default function ChefGareNewSchedule() {
         id, name, distance_km, estimated_duration_minutes, base_price,
         origin_city_id, destination_city_id, origin_station_id, destination_station_id,
         origin_city:origin_city_id(id, name), destination_city:destination_city_id(id, name),
-        stops:route_stops(id, station_id, position, offset_minutes, cumulative_distance_km, station:station_id(id, name, city_id))
+        stops:route_stops(id, station_id, position, offset_minutes, cumulative_distance_km, price, station:station_id(id, name, city_id))
       `)
       .eq('is_active', true);
 
@@ -237,7 +237,7 @@ export default function ChefGareNewSchedule() {
 
   const addTransitStop = () => setTransitStops(prev => [...prev, {
     station_id: '', station_name: '', arrival_offset_minutes: 60,
-    departure_offset_minutes: 75, position: prev.length + 1,
+    departure_offset_minutes: 75, position: prev.length + 1, price: 0,
   }]);
 
   const removeTransitStop = (i: number) => setTransitStops(prev =>
@@ -277,6 +277,7 @@ export default function ChefGareNewSchedule() {
           station_id: s.station_id, station_name: s.station_name,
           arrival_offset_minutes: s.arrival_offset_minutes,
           departure_offset_minutes: s.departure_offset_minutes, position: s.position,
+          price: s.price || 0,
         })),
       }]);
       if (error) throw error;
@@ -491,8 +492,8 @@ export default function ChefGareNewSchedule() {
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-3 sm:col-span-1">
+            <div className="grid grid-cols-4 gap-3">
+              <div className="col-span-4 sm:col-span-1">
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Gare</label>
                 <select value={stop.station_id} onChange={(e) => updateTransitStop(i, 'station_id', e.target.value)}
                   className="w-full p-2 border rounded-lg text-sm"
@@ -501,6 +502,14 @@ export default function ChefGareNewSchedule() {
                   {allStations.filter(s => !usedStationIds.has(s.id) || s.id === stop.station_id)
                     .map(s => <option key={s.id} value={s.id}>{s.name} ({s.city_name})</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Tarif (FCFA)</label>
+                <input type="number" min={0} value={stop.price || ''}
+                  onChange={(e) => updateTransitStop(i, 'price', parseInt(e.target.value) || 0)}
+                  placeholder="Ex: 3000"
+                  className="w-full p-2 border rounded-lg text-sm"
+                  style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Arrivée (min)</label>

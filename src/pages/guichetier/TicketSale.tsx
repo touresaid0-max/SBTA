@@ -57,6 +57,7 @@ interface Schedule {
   };
   origin_city_name: string;
   destination_city_name: string;
+  transit_stops?: { station_id: string; station_name: string; price: number; position: number; arrival_offset_minutes: number; departure_offset_minutes: number }[];
 }
 
 interface ConfirmedTicket {
@@ -159,6 +160,10 @@ export default function TicketSale() {
   const [alightingStationId, setAlightingStationId] = useState('');
   const [boardingStations, setBoardingStations] = useState<Station[]>([]);
   const [alightingStations, setAlightingStations] = useState<Station[]>([]);
+
+  interface TransitStopDest { station_id: string; station_name: string; price: number; position: number }
+  const [transitDestinations, setTransitDestinations] = useState<TransitStopDest[]>([]);
+  const [selectedTransitPrice, setSelectedTransitPrice] = useState<number | null>(null);
 
   const [payment, setPayment] = useState({
     method: '' as 'especes' | 'carte' | 'mobile_money' | 'virement' | '',
@@ -404,7 +409,7 @@ export default function TicketSale() {
       .select(`
         id, route_name, departure_datetime, arrival_datetime,
         price, seats_available, seats_reserved, estimated_duration_minutes, notes,
-        route_id, bus_id, departure_station_id,
+        route_id, bus_id, departure_station_id, transit_stops,
         buses:bus_id(registration_number, total_seats, class, model, brand, seat_config_id)
       `)
       .in('route_id', routeIds)
@@ -455,6 +460,7 @@ export default function TicketSale() {
       route: s.route,
       origin_city_name: originCityName,
       destination_city_name: destCityName,
+      transit_stops: s.transit_stops,
     }));
     await offlineStore.cacheSchedules(toCache);
   };
@@ -529,6 +535,20 @@ export default function TicketSale() {
     clearSeatSelection();
     setSeatCount(1);
     setAlightingStationId('');
+    setSelectedTransitPrice(null);
+
+    // Extract transit stop destinations for this schedule
+    const stops: TransitStopDest[] = (schedule.transit_stops || [])
+      .filter((s: any) => s.station_id && s.price > 0)
+      .sort((a: any, b: any) => a.position - b.position)
+      .map((s: any) => ({
+        station_id: s.station_id,
+        station_name: s.station_name,
+        price: s.price,
+        position: s.position,
+      }));
+    setTransitDestinations(stops);
+
     if (schedule.route?.origin_city_id && schedule.route?.destination_city_id) {
       await loadStationsForCities(schedule.route.origin_city_id, schedule.route.destination_city_id);
     }
@@ -537,9 +557,12 @@ export default function TicketSale() {
   };
 
   const effectiveSeatCount = hasSeatMap ? enrichedSelectedSeats.length : seatCount;
+  const effectiveUnitPrice = selectedTransitPrice !== null ? selectedTransitPrice : (selectedSchedule?.price ?? 0);
   const totalAmount = hasSeatMap
-    ? (totalSelectedPrice > 0 ? totalSelectedPrice : (selectedSchedule ? selectedSchedule.price * Math.max(1, effectiveSeatCount) : 0))
-    : (selectedSchedule ? selectedSchedule.price * Math.max(1, effectiveSeatCount) : 0);
+    ? (selectedTransitPrice !== null
+      ? effectiveUnitPrice * Math.max(1, effectiveSeatCount)
+      : (totalSelectedPrice > 0 ? totalSelectedPrice : (selectedSchedule ? selectedSchedule.price * Math.max(1, effectiveSeatCount) : 0)))
+    : (selectedSchedule ? effectiveUnitPrice * Math.max(1, effectiveSeatCount) : 0);
   const changeAmount = payment.method === 'especes' ? Math.max(0, payment.amount_received - totalAmount) : 0;
 
   const validateSaleInputs = (): boolean => {
@@ -573,7 +596,9 @@ export default function TicketSale() {
   };
 
   const boardingStationName = boardingStations.find(s => s.id === boardingStationId)?.name;
-  const alightingStationName = alightingStations.find(s => s.id === alightingStationId)?.name;
+  const alightingStationName = alightingStationId.startsWith('transit:')
+    ? transitDestinations.find(t => `transit:${t.station_id}` === alightingStationId)?.station_name
+    : alightingStations.find(s => s.id === alightingStationId)?.name;
 
   const handleConfirmSale = async (printAndReset = false) => {
     autoPrintAndResetRef.current = printAndReset;
@@ -1729,6 +1754,13 @@ export default function TicketSale() {
                                 {schedule.route.distance_km} km
                               </span>
                             )}
+                            {schedule.transit_stops && schedule.transit_stops.length > 0 && (
+                              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full font-medium"
+                                style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
+                                <MapPin className="w-3 h-3" />
+                                {schedule.transit_stops.length} escale{schedule.transit_stops.length > 1 ? 's' : ''}
+                              </span>
+                            )}
                           </div>
 
                           <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
@@ -1899,20 +1931,49 @@ export default function TicketSale() {
                     </div>
                   )}
 
-                  {alightingStations.length > 0 && (
+                  {(alightingStations.length > 0 || transitDestinations.length > 0) && (
                     <div>
                       <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        <LogOut className="w-3 h-3 inline mr-1" />Gare de débarquement
+                        <LogOut className="w-3 h-3 inline mr-1" />Destination / Gare de débarquement
                       </label>
                       <select
                         value={alightingStationId}
-                        onChange={e => setAlightingStationId(e.target.value)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setAlightingStationId(val);
+                          if (val.startsWith('transit:')) {
+                            const transitStop = transitDestinations.find(t => `transit:${t.station_id}` === val);
+                            setSelectedTransitPrice(transitStop?.price ?? null);
+                          } else if (val === '' || val === 'final') {
+                            setSelectedTransitPrice(null);
+                          } else {
+                            setSelectedTransitPrice(null);
+                          }
+                        }}
                         className="w-full px-2.5 py-1.5 rounded-lg border text-sm"
                         style={{ borderColor: 'var(--border)' }}
                       >
-                        <option value="">— Sélectionner —</option>
-                        {alightingStations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        <option value="">— Destination finale ({selectedSchedule?.destination_city_name}) —</option>
+                        {transitDestinations.length > 0 && (
+                          <optgroup label="Arrêts intermédiaires">
+                            {transitDestinations.map(t => (
+                              <option key={t.station_id} value={`transit:${t.station_id}`}>
+                                {t.station_name} — {t.price.toLocaleString('fr-CI')} FCFA
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {alightingStations.length > 0 && (
+                          <optgroup label="Gares de la ville de destination">
+                            {alightingStations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </optgroup>
+                        )}
                       </select>
+                      {selectedTransitPrice !== null && (
+                        <p className="text-xs mt-1 font-medium" style={{ color: 'var(--primary)' }}>
+                          Tarif arrêt intermédiaire : {selectedTransitPrice.toLocaleString('fr-CI')} FCFA / place
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -1937,7 +1998,7 @@ export default function TicketSale() {
 
                   <div className="flex justify-between items-center">
                     <span style={{ color: 'var(--text-secondary)' }}>Prix unitaire</span>
-                    <span className="font-semibold">{formatCurrency(selectedSchedule.price)}</span>
+                    <span className="font-semibold">{formatCurrency(effectiveUnitPrice)}</span>
                   </div>
                   <div className="flex justify-between items-center rounded-lg px-3 py-2"
                        style={{ backgroundColor: 'var(--primary-light)' }}>

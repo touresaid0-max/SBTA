@@ -63,6 +63,7 @@ export interface CachedSchedule {
   };
   origin_city_name: string;
   destination_city_name: string;
+  transit_stops?: { station_id: string; station_name: string; price: number; position: number; arrival_offset_minutes: number; departure_offset_minutes: number }[];
 }
 
 class OfflineStore {

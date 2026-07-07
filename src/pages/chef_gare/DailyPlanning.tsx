@@ -1317,6 +1317,11 @@ export default function DailyPlanning() {
                                 <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
                                   {format(addMinutes(depDate, stop.arrival_offset_minutes), 'HH:mm')}
                                 </p>
+                                {stop.price > 0 && (
+                                  <p className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
+                                    {stop.price.toLocaleString('fr-CI')} F
+                                  </p>
+                                )}
                                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Escale</p>
                               </div>
                             </React.Fragment>
