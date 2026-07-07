@@ -162,7 +162,7 @@ export default function TicketSale() {
   const [boardingStations, setBoardingStations] = useState<Station[]>([]);
   const [alightingStations, setAlightingStations] = useState<Station[]>([]);
 
-  interface TransitStopDest { station_id: string; station_name: string; price: number; position: number }
+  interface TransitStopDest { station_id: string; station_name: string; city_name: string; price: number; position: number }
   const [transitDestinations, setTransitDestinations] = useState<TransitStopDest[]>([]);
   const [selectedTransitPrice, setSelectedTransitPrice] = useState<number | null>(null);
 
@@ -629,16 +629,41 @@ export default function TicketSale() {
     setAlightingStationId('');
     setSelectedTransitPrice(null);
 
-    // Extract transit stop destinations for this schedule
-    const stops: TransitStopDest[] = (schedule.transit_stops || [])
+    // Extract transit stop destinations for this schedule + resolve city names
+    const rawStops = (schedule.transit_stops || [])
       .filter((s: any) => s.station_id && s.price > 0)
-      .sort((a: any, b: any) => a.position - b.position)
-      .map((s: any) => ({
-        station_id: s.station_id,
-        station_name: s.station_name,
-        price: s.price,
-        position: s.position,
-      }));
+      .sort((a: any, b: any) => a.position - b.position);
+
+    let stops: TransitStopDest[] = rawStops.map((s: any) => ({
+      station_id: s.station_id,
+      station_name: s.station_name,
+      city_name: '',
+      price: s.price,
+      position: s.position,
+    }));
+
+    // Lookup city names for transit stations
+    if (stops.length > 0 && isOnline) {
+      try {
+        const stationIds = stops.map(s => s.station_id);
+        const { data: stData } = await supabase
+          .from('stations')
+          .select('id, city_id')
+          .in('id', stationIds);
+        if (stData) {
+          const cityIds = [...new Set(stData.map(s => s.city_id).filter(Boolean))];
+          const { data: cityData } = await supabase
+            .from('cities')
+            .select('id, name')
+            .in('id', cityIds);
+          const cityMap = Object.fromEntries((cityData || []).map(c => [c.id, c.name]));
+          const stationCityMap = Object.fromEntries(stData.map(s => [s.id, cityMap[s.city_id] || '']));
+          stops = stops.map(s => ({ ...s, city_name: stationCityMap[s.station_id] || s.station_name }));
+        }
+      } catch (_) {}
+    }
+    // Fallback: use station name if city name not resolved
+    stops = stops.map(s => ({ ...s, city_name: s.city_name || s.station_name }));
     setTransitDestinations(stops);
 
     // If this schedule was found via transit match, auto-select the transit destination
@@ -695,8 +720,13 @@ export default function TicketSale() {
 
   const boardingStationName = boardingStations.find(s => s.id === boardingStationId)?.name;
   const alightingStationName = alightingStationId.startsWith('transit:')
-    ? transitDestinations.find(t => `transit:${t.station_id}` === alightingStationId)?.station_name
+    ? transitDestinations.find(t => `transit:${t.station_id}` === alightingStationId)?.city_name
     : alightingStations.find(s => s.id === alightingStationId)?.name;
+
+  // Display destination: use transit city name when selected, otherwise schedule destination
+  const displayedDestination = alightingStationId.startsWith('transit:')
+    ? (transitDestinations.find(t => `transit:${t.station_id}` === alightingStationId)?.city_name || selectedSchedule?.destination_city_name || '')
+    : (selectedSchedule?.destination_city_name || '');
 
   const handleConfirmSale = async (printAndReset = false) => {
     autoPrintAndResetRef.current = printAndReset;
@@ -1017,7 +1047,7 @@ export default function TicketSale() {
     const depDate = format(new Date(confirmedTicket.schedule.departure_datetime), 'dd/MM/yyyy');
     const depTime = format(new Date(confirmedTicket.schedule.departure_datetime), 'HH:mm');
     const origin = (confirmedTicket.schedule.origin_city_name || '').toUpperCase();
-    const dest = (confirmedTicket.schedule.destination_city_name || '').toUpperCase();
+    const dest = (confirmedTicket.alighting_station || confirmedTicket.schedule.destination_city_name || '').toUpperCase();
     const tarif = formatAmount(confirmedTicket.total_price);
     const busReg = confirmedTicket.schedule.buses?.registration_number || '--';
     const printDt = format(new Date(), 'dd/MM/yyyy HH:mm:ss');
@@ -1484,7 +1514,7 @@ export default function TicketSale() {
       ...prev,
       mode,
       has_ticket: mode === 'avec_ticket' || mode === 'avec_ticket_reporte',
-      destination: autoFillSchedule ? (selectedSchedule.destination_city_name || prev.destination) : prev.destination,
+      destination: autoFillSchedule ? (displayedDestination || prev.destination) : prev.destination,
       bus_registration: autoFillSchedule ? (selectedSchedule.buses?.registration_number || prev.bus_registration) : prev.bus_registration,
       seat_number: mode === 'sans_ticket' ? '' : (seatLabels || prev.seat_number),
       owner_name: (mode === 'avec_ticket' || mode === 'avec_ticket_reporte') ? (passenger.name || prev.owner_name) : prev.owner_name,
@@ -1927,13 +1957,13 @@ export default function TicketSale() {
               <p className="text-sm flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ color: 'var(--text-secondary)' }}>
                 <span className="font-semibold">{selectedSchedule.origin_city_name}</span>
                 <ChevronRight className="w-3 h-3" />
-                <span className="font-semibold">{selectedSchedule.destination_city_name}</span>
+                <span className="font-semibold">{displayedDestination}</span>
                 <span className="opacity-40">·</span>
                 <Clock className="w-3.5 h-3.5" />
                 {format(new Date(selectedSchedule.departure_datetime), 'dd/MM/yyyy HH:mm')}
                 <span className="opacity-40">·</span>
                 <span className="font-bold" style={{ color: 'var(--primary)' }}>
-                  {formatCurrency(selectedSchedule.price)}/place
+                  {formatCurrency(effectiveUnitPrice)}/place
                 </span>
               </p>
             </div>
@@ -2010,7 +2040,7 @@ export default function TicketSale() {
                     <span className="font-bold flex items-center gap-1">
                       {selectedSchedule.origin_city_name}
                       <ChevronRight className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                      {selectedSchedule.destination_city_name}
+                      {displayedDestination}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -2064,10 +2094,10 @@ export default function TicketSale() {
                             : selectedSchedule?.destination_city_name
                         }) —</option>
                         {transitDestinations.length > 0 && (
-                          <optgroup label="Arrêts intermédiaires">
+                          <optgroup label="Escales (arrêts intermédiaires)">
                             {transitDestinations.map(t => (
                               <option key={t.station_id} value={`transit:${t.station_id}`}>
-                                {t.station_name} — {t.price.toLocaleString('fr-CI')} FCFA
+                                {t.city_name} ({t.station_name}) — {t.price.toLocaleString('fr-CI')} FCFA
                               </option>
                             ))}
                           </optgroup>
@@ -2543,7 +2573,7 @@ export default function TicketSale() {
                     <div className="flex items-center gap-2">
                       <span className="font-bold">{confirmedTicket.schedule.origin_city_name}</span>
                       <ChevronRight className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                      <span className="font-bold">{confirmedTicket.schedule.destination_city_name}</span>
+                      <span className="font-bold">{confirmedTicket.alighting_station || confirmedTicket.schedule.destination_city_name}</span>
                     </div>
                     <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
                       {format(new Date(confirmedTicket.schedule.departure_datetime), 'dd MMMM yyyy à HH:mm', { locale: fr })}
