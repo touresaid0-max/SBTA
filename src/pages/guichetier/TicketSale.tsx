@@ -58,6 +58,7 @@ interface Schedule {
   origin_city_name: string;
   destination_city_name: string;
   transit_stops?: { station_id: string; station_name: string; price: number; position: number; arrival_offset_minutes: number; departure_offset_minutes: number }[];
+  transit_match?: { station_id: string; station_name: string; price: number };
 }
 
 interface ConfirmedTicket {
@@ -220,8 +221,37 @@ export default function TicketSale() {
         .select('route_id, routes:route_id(destination_city_id)')
         .eq('counter_id', data.id);
       if (crData && crData.length > 0) {
-        const destIds = [...new Set(crData.map((cr: any) => (cr.routes as any)?.destination_city_id).filter(Boolean))];
-        setAssignedDestCityIds(destIds as string[]);
+        const routeIds = crData.map((cr: any) => cr.route_id).filter(Boolean);
+        const destIds = new Set(crData.map((cr: any) => (cr.routes as any)?.destination_city_id).filter(Boolean));
+
+        // Also include cities served by transit stops of assigned route schedules
+        const { data: transitData } = await supabase
+          .from('schedules')
+          .select('transit_stops')
+          .in('route_id', routeIds)
+          .not('transit_stops', 'is', null);
+        if (transitData) {
+          const transitStationIds = new Set<string>();
+          for (const sched of transitData) {
+            const stops = (sched.transit_stops || []) as any[];
+            for (const stop of stops) {
+              if (stop.station_id) transitStationIds.add(stop.station_id);
+            }
+          }
+          if (transitStationIds.size > 0) {
+            const { data: stData } = await supabase
+              .from('stations')
+              .select('city_id')
+              .in('id', [...transitStationIds]);
+            if (stData) {
+              for (const s of stData) {
+                if (s.city_id) destIds.add(s.city_id);
+              }
+            }
+          }
+        }
+
+        setAssignedDestCityIds([...destIds] as string[]);
       }
     });
 
@@ -363,14 +393,12 @@ export default function TicketSale() {
     const startOfDay = `${search.date}T00:00:00+00:00`;
     const endOfDay = `${search.date}T23:59:59+00:00`;
 
-    // A guichetier must be bound to a counter AND a station. Without both, no line is visible.
     if (!myCounterId || !myStationId) {
       setSchedules([]);
       setStep('select');
       return;
     }
 
-    // Only routes explicitly assigned to this counter by the Chef de gare are visible.
     const { data: assignedRoutes } = await supabase
       .from('counter_routes')
       .select('route_id')
@@ -382,65 +410,129 @@ export default function TicketSale() {
       return;
     }
 
-    const { data: routeData, error: routeError } = await supabase
+    const originCityName = cities.find(c => c.id === search.origin_city_id)?.name || '';
+    const destCityName = cities.find(c => c.id === search.destination_city_id)?.name || '';
+
+    // 1) Direct route search: origin → destination
+    const { data: routeData } = await supabase
       .from('routes')
       .select('id, name, origin_city_id, destination_city_id, distance_km, base_price')
       .eq('origin_city_id', search.origin_city_id)
       .eq('destination_city_id', search.destination_city_id)
       .eq('is_active', true);
 
-    if (routeError) throw routeError;
-    if (!routeData || routeData.length === 0) {
-      setSchedules([]);
-      setStep('select');
-      return;
+    const directRouteIds = (routeData || []).map(r => r.id).filter(id => assignedRouteIds.has(id));
+    const routeMap = Object.fromEntries((routeData || []).map(r => [r.id, r]));
+
+    let directSchedules: any[] = [];
+    if (directRouteIds.length > 0) {
+      const { data } = await supabase
+        .from('schedules')
+        .select(`
+          id, route_name, departure_datetime, arrival_datetime,
+          price, seats_available, seats_reserved, estimated_duration_minutes, notes,
+          route_id, bus_id, departure_station_id, transit_stops,
+          buses:bus_id(registration_number, total_seats, class, model, brand, seat_config_id)
+        `)
+        .in('route_id', directRouteIds)
+        .eq('departure_station_id', myStationId)
+        .in('status', ['planifie', 'en_cours', 'embarquement'])
+        .gte('departure_datetime', startOfDay)
+        .lte('departure_datetime', endOfDay)
+        .order('departure_datetime');
+      directSchedules = (data || []).filter(
+        (s: any) => s.departure_station_id === myStationId && assignedRouteIds.has(s.route_id)
+      );
     }
 
-    // Restrict to assigned routes only.
-    const routeIds = routeData.map(r => r.id).filter(id => assignedRouteIds.has(id));
-    if (routeIds.length === 0) {
-      setSchedules([]);
-      setStep('select');
-      return;
+    // 2) Transit stop search: find schedules from origin that pass through the destination city
+    const { data: destStations } = await supabase
+      .from('stations')
+      .select('id, city_id')
+      .eq('city_id', search.destination_city_id)
+      .eq('is_active', true);
+    const destStationIds = new Set((destStations || []).map(s => s.id));
+
+    let transitSchedules: any[] = [];
+    const transitMatchMap = new Map<string, { station_id: string; station_name: string; price: number }>();
+
+    if (destStationIds.size > 0) {
+      // Find routes from this origin (any destination) assigned to this counter
+      const { data: allOriginRoutes } = await supabase
+        .from('routes')
+        .select('id, name, origin_city_id, destination_city_id, distance_km, base_price')
+        .eq('origin_city_id', search.origin_city_id)
+        .neq('destination_city_id', search.destination_city_id)
+        .eq('is_active', true);
+
+      const transitRouteIds = (allOriginRoutes || []).map(r => r.id).filter(id => assignedRouteIds.has(id));
+      if (transitRouteIds.length > 0) {
+        const { data } = await supabase
+          .from('schedules')
+          .select(`
+            id, route_name, departure_datetime, arrival_datetime,
+            price, seats_available, seats_reserved, estimated_duration_minutes, notes,
+            route_id, bus_id, departure_station_id, transit_stops,
+            buses:bus_id(registration_number, total_seats, class, model, brand, seat_config_id)
+          `)
+          .in('route_id', transitRouteIds)
+          .eq('departure_station_id', myStationId)
+          .in('status', ['planifie', 'en_cours', 'embarquement'])
+          .gte('departure_datetime', startOfDay)
+          .lte('departure_datetime', endOfDay)
+          .not('transit_stops', 'is', null)
+          .order('departure_datetime');
+
+        // Filter: only keep schedules that have a transit stop matching a station in destination city
+        for (const s of (data || [])) {
+          if (s.departure_station_id !== myStationId || !assignedRouteIds.has(s.route_id)) continue;
+          const stops = (s.transit_stops || []) as any[];
+          const match = stops.find((st: any) => destStationIds.has(st.station_id) && st.price > 0);
+          if (match) {
+            transitSchedules.push(s);
+            transitMatchMap.set(s.id, { station_id: match.station_id, station_name: match.station_name, price: match.price });
+          }
+        }
+
+        // Add route data for transit schedules
+        for (const r of (allOriginRoutes || [])) {
+          if (!routeMap[r.id]) routeMap[r.id] = r;
+        }
+      }
     }
 
-    const { data, error } = await supabase
-      .from('schedules')
-      .select(`
-        id, route_name, departure_datetime, arrival_datetime,
-        price, seats_available, seats_reserved, estimated_duration_minutes, notes,
-        route_id, bus_id, departure_station_id, transit_stops,
-        buses:bus_id(registration_number, total_seats, class, model, brand, seat_config_id)
-      `)
-      .in('route_id', routeIds)
-      .eq('departure_station_id', myStationId)
-      .in('status', ['planifie', 'en_cours', 'embarquement'])
-      .gte('departure_datetime', startOfDay)
-      .lte('departure_datetime', endOfDay)
-      .order('departure_datetime');
+    // 3) Merge: direct schedules + transit schedules (deduplicate by id)
+    const seenIds = new Set<string>();
+    const enriched: Schedule[] = [];
 
-    if (error) throw error;
-
-    // Server already scoped by station + assigned routes; enforce the same client-side as a safety net.
-    const filteredData = (data || []).filter(
-      (s: any) => s.departure_station_id === myStationId && assignedRouteIds.has(s.route_id)
-    );
-
-    const routeMap = Object.fromEntries(routeData.map(r => [r.id, r]));
-    const originCityName = cities.find(c => c.id === search.origin_city_id)?.name || '';
-    const destCityName = cities.find(c => c.id === search.destination_city_id)?.name || '';
-
-    const enriched: Schedule[] = filteredData.map((s: any) => {
+    for (const s of directSchedules) {
+      seenIds.add(s.id);
       const route = routeMap[s.route_id];
-      return {
+      enriched.push({
         ...s,
         price: s.price ?? route?.base_price ?? 0,
         route,
         origin_city_name: originCityName,
         destination_city_name: destCityName,
-      };
-    });
+      });
+    }
 
+    for (const s of transitSchedules) {
+      if (seenIds.has(s.id)) continue;
+      seenIds.add(s.id);
+      const route = routeMap[s.route_id];
+      const match = transitMatchMap.get(s.id)!;
+      enriched.push({
+        ...s,
+        price: match.price,
+        route,
+        origin_city_name: originCityName,
+        destination_city_name: destCityName,
+        transit_match: match,
+      });
+    }
+
+    enriched.sort((a, b) => a.departure_datetime.localeCompare(b.departure_datetime));
     setSchedules(enriched);
     setStep('select');
 
@@ -548,6 +640,12 @@ export default function TicketSale() {
         position: s.position,
       }));
     setTransitDestinations(stops);
+
+    // If this schedule was found via transit match, auto-select the transit destination
+    if (schedule.transit_match) {
+      setAlightingStationId(`transit:${schedule.transit_match.station_id}`);
+      setSelectedTransitPrice(schedule.transit_match.price);
+    }
 
     if (schedule.route?.origin_city_id && schedule.route?.destination_city_id) {
       await loadStationsForCities(schedule.route.origin_city_id, schedule.route.destination_city_id);
@@ -1705,8 +1803,15 @@ export default function TicketSale() {
                                 <div className="h-px flex-1" style={{ backgroundColor: 'var(--border)' }} />
                               </div>
                               <p className="text-xs text-center font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                {schedule.route?.name || schedule.route_name}
+                                {schedule.transit_match
+                                  ? `${schedule.origin_city_name} \u2013 ${schedule.destination_city_name}`
+                                  : (schedule.route?.name || schedule.route_name)}
                               </p>
+                              {schedule.transit_match && (
+                                <p className="text-[10px] text-center" style={{ color: '#1D4ED8' }}>
+                                  (escale via {schedule.route?.name || schedule.route_name})
+                                </p>
+                              )}
                             </div>
                             <div className="text-center min-w-[56px]">
                               <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-primary)' }}>{arrTime}</p>
@@ -1953,7 +2058,11 @@ export default function TicketSale() {
                         className="w-full px-2.5 py-1.5 rounded-lg border text-sm"
                         style={{ borderColor: 'var(--border)' }}
                       >
-                        <option value="">— Destination finale ({selectedSchedule?.destination_city_name}) —</option>
+                        <option value="">— Destination finale ({
+                          selectedSchedule?.transit_match
+                            ? cities.find(c => c.id === selectedSchedule.route?.destination_city_id)?.name || selectedSchedule?.route?.name?.split('–')[1]?.trim() || '?'
+                            : selectedSchedule?.destination_city_name
+                        }) —</option>
                         {transitDestinations.length > 0 && (
                           <optgroup label="Arrêts intermédiaires">
                             {transitDestinations.map(t => (
