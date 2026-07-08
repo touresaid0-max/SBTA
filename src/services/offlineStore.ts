@@ -31,6 +31,7 @@ export interface OfflineTicket {
   bookingReference: string;
   bookedBy: string;
   changeAmount?: number;
+  destinationCityName?: string;
 }
 
 export interface CachedSchedule {

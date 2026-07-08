@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf'
-import type { BordereauDepartData, BordereauRecettesData, BordereauRamassageData } from '@/types/counter.types'
+import type { BordereauDepartData, BordereauRecettesData, BordereauRamassageData, BordereauDestinationGroup } from '@/types/counter.types'
 import type { Parcel } from '@/types/parcel.types'
 
 export interface BordereauCourrierData {
@@ -138,29 +138,33 @@ export function printBorderauDepart(data: BordereauDepartData) {
       y += 1.5
       line()
 
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(6.5)
-      doc.text(data.destination,                 C.dest,     y)
-      doc.text(fmtNum(data.seats_sold),          C.sieges,   y)
-      doc.text(fmt(data.unit_price),             C.tarifR,   y, { align: 'right' })
-      doc.text(fmt(data.total_ticket_amount),    C.montantR, y, { align: 'right' })
-      y += 4
+      // Display by destination groups if available
+      const groups: BordereauDestinationGroup[] = data.destination_groups && data.destination_groups.length > 0
+        ? data.destination_groups
+        : [{ destination: data.destination, seats_sold: data.seats_sold, unit_price: data.unit_price, amount: data.total_ticket_amount, seat_numbers: data.sold_seat_numbers }]
 
-      // ── SIÈGES OCCUPÉS ── (masqué si aucun siège) ──────────────────
-      if (data.sold_seat_numbers.length > 0) {
-        doc.setFontSize(6.5)
-        doc.setFont('helvetica', 'bold')
-        doc.text('SIEGES OCCUPES :', 3, y)
-        y += 3.3
-
+      for (const group of groups) {
         doc.setFont('helvetica', 'normal')
-        doc.setFontSize(6)
-        const perRow = 12
-        for (let i = 0; i < data.sold_seat_numbers.length; i += perRow) {
-          const chunk = data.sold_seat_numbers.slice(i, i + perRow).join('-')
-          doc.text(chunk, 3, y)
-          y += 3.2
+        doc.setFontSize(6.5)
+        const destLabel = group.destination.length > 14 ? group.destination.slice(0, 13) + '.' : group.destination
+        doc.text(destLabel,                          C.dest,     y)
+        doc.text(fmtNum(group.seats_sold),           C.sieges,   y)
+        doc.text(fmt(group.unit_price),              C.tarifR,   y, { align: 'right' })
+        doc.text(fmt(group.amount),                  C.montantR, y, { align: 'right' })
+        y += 3.5
+
+        // Seats for this destination
+        if (group.seat_numbers.length > 0) {
+          doc.setFontSize(5.5)
+          doc.setFont('helvetica', 'italic')
+          const perRow = 14
+          for (let i = 0; i < group.seat_numbers.length; i += perRow) {
+            const chunk = group.seat_numbers.slice(i, i + perRow).join('-')
+            doc.text('  ' + chunk, 3, y)
+            y += 2.8
+          }
         }
+        y += 1.2
       }
       line()
 

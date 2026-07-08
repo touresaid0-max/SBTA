@@ -80,6 +80,14 @@ export interface DailyCounterReport {
   }>
 }
 
+export interface BordereauDestinationGroup {
+  destination:   string
+  seats_sold:    number
+  unit_price:    number
+  amount:        number
+  seat_numbers:  string[]
+}
+
 export interface BordereauDepartData {
   station_name:        string
   departure_number:    number
@@ -104,6 +112,7 @@ export interface BordereauDepartData {
   solde_ticket:        number
   total_baggage:       number
   sold_seat_numbers:   string[]
+  destination_groups:  BordereauDestinationGroup[]
   print_date:          string
   print_time:          string
 }

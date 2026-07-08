@@ -848,6 +848,7 @@ export default function TicketSale() {
         status: 'confirmee',
         payment_status: payment.method === 'especes' || payment.method === 'carte' ? 'payee' : 'en_attente',
         booked_by: user?.id,
+        destination_city_name: displayedDestination || selectedSchedule.destination_city_name || null,
       })
       .select()
       .single();
@@ -980,6 +981,7 @@ export default function TicketSale() {
       bookingReference: reference,
       bookedBy: user.id,
       changeAmount: changeAmount > 0 ? changeAmount : undefined,
+      destinationCityName: displayedDestination || selectedSchedule.destination_city_name || undefined,
     });
 
     await offlineStore.decrementCachedScheduleSeats(selectedSchedule.id, count);

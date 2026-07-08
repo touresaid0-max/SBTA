@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import type {
   CounterCharge, ScheduleReceiptSummary,
   DailyCounterReport, BordereauDepartData, BordereauRecettesData,
+  BordereauDestinationGroup,
 } from '@/types/counter.types'
 
 export async function fetchTodayDepartures(counterId: string): Promise<ScheduleReceiptSummary[]> {
@@ -97,6 +98,36 @@ export async function fetchBorderauDepartData(scheduleId: string): Promise<Borde
   if (error) throw error
   if (!summary) throw new Error('Départ introuvable')
 
+  // Fetch reservations grouped by destination for this schedule
+  const { data: reservations } = await supabase
+    .from('reservations')
+    .select('destination_city_name, seat_numbers, total_price, total_seats')
+    .eq('schedule_id', scheduleId)
+    .in('status', ['confirmee', 'confirme', 'embarque', 'termine'])
+
+  const groupMap = new Map<string, { seats: string[], amount: number, count: number }>()
+  const defaultDest = summary.destination_city || ''
+
+  for (const r of (reservations ?? [])) {
+    const dest = r.destination_city_name || defaultDest
+    const existing = groupMap.get(dest) || { seats: [], amount: 0, count: 0 }
+    const seatNums = (r.seat_numbers ?? []).filter(Boolean)
+    existing.seats.push(...seatNums)
+    existing.amount += Number(r.total_price) || 0
+    existing.count += r.total_seats || seatNums.length
+    groupMap.set(dest, existing)
+  }
+
+  const destination_groups: BordereauDestinationGroup[] = Array.from(groupMap.entries())
+    .map(([dest, g]) => ({
+      destination: dest,
+      seats_sold: g.count,
+      unit_price: g.count > 0 ? Math.round(g.amount / g.count) : summary.base_price,
+      amount: g.amount,
+      seat_numbers: g.seats.sort((a, b) => parseInt(a) - parseInt(b)),
+    }))
+    .sort((a, b) => b.seats_sold - a.seats_sold)
+
   const now = new Date()
   return {
     station_name:        summary.station_name        ?? '',
@@ -124,6 +155,7 @@ export async function fetchBorderauDepartData(scheduleId: string): Promise<Borde
     sold_seat_numbers:   (summary.sold_seat_numbers ?? [])
       .filter(Boolean)
       .sort((a: string, b: string) => parseInt(a) - parseInt(b)),
+    destination_groups,
     print_date: now.toLocaleDateString('fr-CI'),
     print_time: now.toLocaleTimeString('fr-CI'),
   }

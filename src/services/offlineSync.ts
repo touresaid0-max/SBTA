@@ -69,6 +69,7 @@ class OfflineSyncService {
           status: 'confirmee',
           payment_status: ['especes', 'carte'].includes(ticket.paymentMethod) ? 'payee' : 'en_attente',
           booked_by: ticket.bookedBy,
+          destination_city_name: ticket.destinationCityName || null,
         })
         .select('id')
         .single();
