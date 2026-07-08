@@ -40,11 +40,12 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
     const today = new Date().toISOString().split('T')[0]
     const { data, error } = await supabase
       .from('schedules')
-      .select('id, route:routes(departure_city:cities!routes_departure_city_id_fkey(name), arrival_city:cities!routes_arrival_city_id_fkey(name)), departure_time, status')
+      .select('id, route_name, departure_datetime, status')
       .eq('bus_id', busId)
-      .eq('departure_date', today)
-      .in('status', ['programmee', 'confirmee', 'embarquement', 'en_retard'])
-      .order('departure_time', { ascending: true })
+      .gte('departure_datetime', `${today}T00:00:00`)
+      .lte('departure_datetime', `${today}T23:59:59`)
+      .in('status', ['planifie', 'en_cours', 'convoi', 'panne'])
+      .order('departure_datetime', { ascending: true })
       .limit(1)
       .maybeSingle()
 
@@ -55,10 +56,8 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
     }
 
     setScheduleId(data.id)
-    const route = data.route as any
-    const dep = route?.departure_city?.name ?? '?'
-    const arr = route?.arrival_city?.name ?? '?'
-    setScheduleInfo(`${dep} → ${arr} (${data.departure_time?.slice(0, 5) ?? ''})`)
+    const time = data.departure_datetime ? new Date(data.departure_datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''
+    setScheduleInfo(`${data.route_name ?? 'Trajet'} (${time})`)
     await loadSeatMap(data.id)
   }
 
