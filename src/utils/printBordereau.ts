@@ -380,10 +380,11 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   y += ROW_H + 8
 
   // ── RÉCAPITULATIF ENCADRÉ ──────────────────────────────────────
+  const recapStartY = y - 4
   const RECAP_H = 80
   doc.setDrawColor(11, 116, 57)
   doc.setLineWidth(0.6)
-  doc.rect(margin, y - 4, W - 2 * margin, RECAP_H, 'D')
+  doc.rect(margin, recapStartY, W - 2 * margin, RECAP_H, 'D')
   doc.setLineWidth(0.2)
   doc.setDrawColor(0, 0, 0)
 
@@ -429,7 +430,8 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   recapRow('NOMBRE TOTAL DE VEHICULES',    String(data.totals.departures))
   recapRow('NOMBRE TOTAL DE SIEGES',       fmtNum(data.totals.seats_sold))
 
-  y += 6
+  // Position below the recap box with margin
+  y = recapStartY + RECAP_H + 8
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
   doc.text(`Date d'impression : ${data.print_date}  ${data.print_time}`, margin, y)
