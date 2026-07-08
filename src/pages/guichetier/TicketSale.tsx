@@ -1543,6 +1543,74 @@ export default function TicketSale() {
     });
   };
 
+  const continueSale = async () => {
+    const schedule = confirmedTicket?.schedule;
+    setConfirmedTicket(null);
+    clearSeatSelection();
+    setSeatCount(1);
+    setPassenger({ name: '', phone: '', id_number: '' });
+    setPayment({ method: '', amount_received: 0, reference: '', mobile_provider: '' });
+    setAlightingStationId('');
+    setSelectedTransitPrice(null);
+    setShowBaggage(false);
+    setBaggageForm({
+      mode: 'none', has_ticket: false, destination: '', price: 0, seat_number: '',
+      departure_number: '', bus_registration: '', description: '',
+      owner_name: '', owner_phone: '',
+    });
+
+    if (!schedule) { resetSale(); return; }
+
+    // Refresh schedule seat availability
+    try {
+      const { data } = await supabase
+        .from('schedules')
+        .select('seats_available, seats_reserved')
+        .eq('id', schedule.id)
+        .maybeSingle();
+      if (data) {
+        const refreshed = { ...schedule, seats_available: data.seats_available, seats_reserved: data.seats_reserved };
+        setSelectedSchedule(refreshed);
+        setSchedules(prev => prev.map(s => s.id === refreshed.id ? refreshed : s));
+      } else {
+        setSelectedSchedule(schedule);
+      }
+    } catch (_) {
+      setSelectedSchedule(schedule);
+    }
+
+    // Re-extract transit stops and reload stations
+    if (schedule.transit_stops) {
+      const rawStops = (schedule.transit_stops || [])
+        .filter((s: any) => s.station_id && s.price > 0)
+        .sort((a: any, b: any) => a.position - b.position);
+      let stops: TransitStopDest[] = rawStops.map((s: any) => ({
+        station_id: s.station_id, station_name: s.station_name, city_name: '', price: s.price, position: s.position,
+      }));
+      if (stops.length > 0 && isOnline) {
+        try {
+          const stationIds = stops.map(s => s.station_id);
+          const { data: stData } = await supabase.from('stations').select('id, city_id').in('id', stationIds);
+          if (stData) {
+            const cityIds = [...new Set(stData.map(s => s.city_id).filter(Boolean))];
+            const { data: cityData } = await supabase.from('cities').select('id, name').in('id', cityIds);
+            const cityMap = Object.fromEntries((cityData || []).map(c => [c.id, c.name]));
+            const stationCityMap = Object.fromEntries(stData.map(s => [s.id, cityMap[s.city_id] || '']));
+            stops = stops.map(s => ({ ...s, city_name: stationCityMap[s.station_id] || s.station_name }));
+          }
+        } catch (_) {}
+      }
+      stops = stops.map(s => ({ ...s, city_name: s.city_name || s.station_name }));
+      setTransitDestinations(stops);
+    }
+
+    if (schedule.route?.origin_city_id && schedule.route?.destination_city_id) {
+      await loadStationsForCities(schedule.route.origin_city_id, schedule.route.destination_city_id);
+    }
+    setBoardingStationId(myStationId ?? '');
+    setStep('seats');
+  };
+
   useEffect(() => {
     if (!confirmedTicket || !autoPrintAndResetRef.current) return;
     autoPrintAndResetRef.current = false;
@@ -2642,6 +2710,14 @@ export default function TicketSale() {
               >
                 <Printer className="w-5 h-5" />
                 Imprimer le billet
+              </button>
+              <button
+                onClick={continueSale}
+                className="flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border-2 transition-all hover:opacity-80"
+                style={{ borderColor: 'var(--success, #16A34A)', color: 'var(--success, #16A34A)' }}
+              >
+                <ChevronRight className="w-5 h-5" />
+                Continuer la vente
               </button>
               <button
                 onClick={resetSale}
