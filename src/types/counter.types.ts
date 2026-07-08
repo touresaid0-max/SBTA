@@ -129,17 +129,25 @@ export interface BordereauRecettesData {
     departure_number:    number
     seats_sold:          number
     total_ticket:        number
+    total_rations:       number
+    total_carburant:     number
+    total_peages:        number
+    total_autres:        number
     total_charges:       number
     solde_ticket:        number
     total_baggage:       number
   }>
   totals: {
-    departures:    number
-    seats_sold:    number
-    total_ticket:  number
-    total_charges: number
-    solde_ticket:  number
-    total_baggage: number
+    departures:      number
+    seats_sold:      number
+    total_ticket:    number
+    total_rations:   number
+    total_carburant: number
+    total_peages:    number
+    total_autres:    number
+    total_charges:   number
+    solde_ticket:    number
+    total_baggage:   number
   }
 }
 

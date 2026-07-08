@@ -220,10 +220,8 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   const ctr = (text: string) => (W - doc.getTextWidth(text)) / 2
 
   // ── EN-TÊTE ────────────────────────────────────────────────────
-  // Logo gauche
   drawLogoSbta(doc, margin + 9, y, 9)
 
-  // Titre centré
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
   doc.text('S.B.T.A', ctr('S.B.T.A'), y - 3)
@@ -231,7 +229,6 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setFont('helvetica', 'normal')
   doc.text('Soc. Bonkoungou Transport de l\'Agneby', ctr('Soc. Bonkoungou Transport de l\'Agneby'), y + 3)
 
-  // Téléphone aligné à droite
   doc.setFontSize(8)
   doc.text('Tél : 07 69 94 88 03 / 07 99 68 60 03', W - margin - 55, y - 3)
 
@@ -241,7 +238,6 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.text('BORDEREAU DETAILLE DES RECETTES', ctr('BORDEREAU DETAILLE DES RECETTES'), y)
   y += 10
 
-  // Ligne séparatrice verte
   doc.setDrawColor(11, 116, 57)
   doc.setLineWidth(0.8)
   doc.line(margin, y, W - margin, y)
@@ -266,16 +262,14 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   y += 3
 
   // ── TABLEAU ────────────────────────────────────────────────────
-  // Bords GAUCHES pour les colonnes texte, bords DROITS pour les colonnes numériques
-  // MATRICULE / TOTAUX alignés à gauche ; colonnes numériques centrées
   const col = {
-    matL:   margin + 3,   // MATRICULE / TOTAUX (gauche)
-    num:    60,           // N°       (centré)
-    sieg:   85,           // SIEGES   (centré)
-    ticket: 110,          // MT TICKET(centré)
-    dep:    135,          // DEPENSES (centré)
-    solde:  160,          // SOLDE    (centré)
-    bag:    184,          // BAGAGE   (centré)
+    matL:   margin + 3,
+    num:    60,
+    sieg:   85,
+    ticket: 110,
+    dep:    135,
+    solde:  160,
+    bag:    184,
   }
   const ROW_H = 8
 
@@ -296,8 +290,15 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setTextColor(0, 0, 0)
   y += ROW_H + 7
 
-  // Lignes de données
+  // Lignes de données avec détail dépenses
   data.rows.forEach((row, idx) => {
+    // Check if we need a new page
+    const rowHeight = row.total_charges > 0 ? ROW_H + 20 : ROW_H
+    if (y + rowHeight > 270) {
+      doc.addPage()
+      y = 18
+    }
+
     if (idx % 2 === 1) {
       doc.setFillColor(248, 250, 248)
       doc.rect(margin, y - 5, W - 2 * margin, ROW_H, 'F')
@@ -311,13 +312,56 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
     doc.text(fmt(row.total_charges),          col.dep,     y, { align: 'center' })
     doc.text(fmt(row.solde_ticket),           col.solde,   y, { align: 'center' })
     doc.text(fmt(row.total_baggage),          col.bag,     y, { align: 'center' })
+
+    // Détail dépenses sous la ligne principale
+    if (row.total_charges > 0) {
+      y += ROW_H - 1
+      doc.setFontSize(6.5)
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(80, 80, 80)
+      const depX = col.dep - 20
+      if (row.total_rations > 0) {
+        doc.text(`Ratio carburant : ${fmt(row.total_rations)}`, depX, y)
+        y += 4
+      }
+      if (row.total_carburant > 0) {
+        doc.text(`Complément : ${fmt(row.total_carburant)}`, depX, y)
+        y += 4
+      }
+      if (row.total_peages > 0) {
+        doc.text(`Péage : ${fmt(row.total_peages)}`, depX, y)
+        y += 4
+      }
+      if (row.total_autres > 0) {
+        doc.text(`Autres : ${fmt(row.total_autres)}`, depX, y)
+        y += 4
+      }
+      doc.setTextColor(0, 0, 0)
+      y -= (ROW_H - 1)
+    }
+
     // séparateur léger
     doc.setDrawColor(226, 234, 229)
     doc.setLineWidth(0.1)
-    doc.line(margin, y + 2, W - margin, y + 2)
+    const sepY = row.total_charges > 0
+      ? y + ROW_H + Math.min(4, [row.total_rations, row.total_carburant, row.total_peages, row.total_autres].filter(v => v > 0).length) * 4
+      : y + 2
+    doc.line(margin, sepY, W - margin, sepY)
     doc.setDrawColor(0, 0, 0)
-    y += ROW_H
+
+    if (row.total_charges > 0) {
+      const detailLines = [row.total_rations, row.total_carburant, row.total_peages, row.total_autres].filter(v => v > 0).length
+      y += ROW_H + detailLines * 4 + 2
+    } else {
+      y += ROW_H
+    }
   })
+
+  // Check page space for totals + recap
+  if (y + 90 > 285) {
+    doc.addPage()
+    y = 18
+  }
 
   // Ligne TOTAUX
   doc.setFillColor(11, 116, 57)
@@ -336,7 +380,7 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   y += ROW_H + 8
 
   // ── RÉCAPITULATIF ENCADRÉ ──────────────────────────────────────
-  const RECAP_H = 52
+  const RECAP_H = 80
   doc.setDrawColor(11, 116, 57)
   doc.setLineWidth(0.6)
   doc.rect(margin, y - 4, W - 2 * margin, RECAP_H, 'D')
@@ -344,19 +388,43 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setDrawColor(0, 0, 0)
 
   y += 4
-  const recapRow = (label: string, value: string) => {
+  const recapRow = (label: string, value: string, bold = false) => {
     doc.setFontSize(9)
     doc.setFont('helvetica', 'bold')
     doc.text(label, margin + 4, y)
     doc.text(':', margin + 68, y)
-    doc.setFont('helvetica', 'normal')
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.text(value, margin + 72, y)
     y += 7
   }
 
   recapRow('TOTAL MONTANT TICKETS',        fmt(data.totals.total_ticket))
-  recapRow('TOTAL DEPENSES',               fmt(data.totals.total_charges))
-  recapRow('SOLDE TICKET',                 fmt(data.totals.solde_ticket))
+  y += 1
+  // Détail dépenses dans le récapitulatif
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(60, 60, 60)
+  doc.text('TOTAL RATIO CARBURANT', margin + 6, y)
+  doc.text(':  ' + fmt(data.totals.total_rations), margin + 68, y)
+  y += 5.5
+  doc.text('TOTAL COMPLEMENT', margin + 6, y)
+  doc.text(':  ' + fmt(data.totals.total_carburant), margin + 68, y)
+  y += 5.5
+  doc.text('TOTAL PEAGE', margin + 6, y)
+  doc.text(':  ' + fmt(data.totals.total_peages), margin + 68, y)
+  y += 5.5
+  doc.text('TOTAL AUTRES DEPENSES', margin + 6, y)
+  doc.text(':  ' + fmt(data.totals.total_autres), margin + 68, y)
+  y += 3
+  doc.setDrawColor(100, 100, 100)
+  doc.setLineWidth(0.3)
+  doc.line(margin + 4, y, margin + 110, y)
+  doc.setDrawColor(0, 0, 0)
+  doc.setLineWidth(0.2)
+  y += 4
+  doc.setTextColor(0, 0, 0)
+  recapRow('TOTAL DEPENSES',               fmt(data.totals.total_charges), true)
+  recapRow('SOLDE TICKET',                 fmt(data.totals.solde_ticket), true)
   recapRow('TOTAL BAGAGE',                 fmt(data.totals.total_baggage))
   recapRow('NOMBRE TOTAL DE VEHICULES',    String(data.totals.departures))
   recapRow('NOMBRE TOTAL DE SIEGES',       fmtNum(data.totals.seats_sold))
