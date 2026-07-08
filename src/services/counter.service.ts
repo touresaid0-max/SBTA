@@ -165,41 +165,50 @@ export async function fetchBorderauRecettesData(
   counterId: string,
   date: string,
 ): Promise<BordereauRecettesData | null> {
-  const { data, error } = await supabase
+  const { data: rows_data, error } = await supabase
     .from('daily_counter_report')
     .select('*')
     .eq('counter_id', counterId)
     .eq('departure_date', date)
-    .maybeSingle()
 
-  if (error || !data) return null
+  if (error || !rows_data || rows_data.length === 0) return null
 
-  const rows = ((data as DailyCounterReport).departures_detail ?? []).map(d => ({
-    registration_number: d.registration_number,
-    departure_number:    d.departure_number,
-    seats_sold:          d.seats_sold,
-    total_ticket:        Number(d.total_ticket),
-    total_charges:       Number(d.total_charges),
-    solde_ticket:        Number(d.solde_ticket),
-    total_baggage:       Number(d.total_baggage),
-  }))
+  const allDepartures = rows_data.flatMap((r: any) =>
+    ((r as DailyCounterReport).departures_detail ?? []).map(d => ({
+      registration_number: d.registration_number,
+      departure_number:    d.departure_number,
+      seats_sold:          d.seats_sold,
+      total_ticket:        Number(d.total_ticket),
+      total_charges:       Number(d.total_charges),
+      solde_ticket:        Number(d.solde_ticket),
+      total_baggage:       Number(d.total_baggage),
+    }))
+  )
+
+  const routeNames = [...new Set(rows_data.map((r: any) => r.route_name))].join(' / ')
+  const totalDepartures = rows_data.reduce((s: number, r: any) => s + Number(r.total_departures), 0)
+  const totalSeatsSold = rows_data.reduce((s: number, r: any) => s + Number(r.total_seats_sold), 0)
+  const totalTicket = rows_data.reduce((s: number, r: any) => s + Number(r.total_ticket_amount), 0)
+  const totalCharges = rows_data.reduce((s: number, r: any) => s + Number(r.total_charges), 0)
+  const totalSolde = rows_data.reduce((s: number, r: any) => s + Number(r.total_solde), 0)
+  const totalBaggage = rows_data.reduce((s: number, r: any) => s + Number(r.total_baggage), 0)
 
   const now = new Date()
   return {
-    station_name:  data.station_name,
-    route_name:    data.route_name,
+    station_name:  rows_data[0].station_name,
+    route_name:    routeNames,
     date_from:     new Date(date).toLocaleDateString('fr-CI'),
     date_to:       new Date(date).toLocaleDateString('fr-CI'),
     print_date:    now.toLocaleDateString('fr-CI'),
     print_time:    now.toLocaleTimeString('fr-CI'),
-    rows,
+    rows: allDepartures,
     totals: {
-      departures:    data.total_departures,
-      seats_sold:    data.total_seats_sold,
-      total_ticket:  Number(data.total_ticket_amount),
-      total_charges: Number(data.total_charges),
-      solde_ticket:  Number(data.total_solde),
-      total_baggage: Number(data.total_baggage),
+      departures:    totalDepartures,
+      seats_sold:    totalSeatsSold,
+      total_ticket:  totalTicket,
+      total_charges: totalCharges,
+      solde_ticket:  totalSolde,
+      total_baggage: totalBaggage,
     },
   }
 }
