@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw } from 'lucide-react';
+import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw, MousePointerClick } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import StatusBadge from '../../components/shared/StatusBadge';
+import AdminSeatManagement from '../../components/bus/AdminSeatManagement';
 import FillRateBar from '../../components/bus/FillRateBar';
 import BusWizard from '../../components/bus/BusWizard';
 import { generateSeatLayout } from '../../utils/generateSeatLayout';
@@ -104,6 +105,7 @@ export default function Buses() {
   const [existingBusConfig, setExistingBusConfig] = useState<any>(undefined);
   const [viewingBus, setViewingBus] = useState<BusData | null>(null);
   const [repairingId, setRepairingId] = useState<string | null>(null);
+  const [seatMgmtBus, setSeatMgmtBus] = useState<BusData | null>(null);
 
   const [filters, setFilters] = useState({
     company: '',
@@ -449,14 +451,19 @@ export default function Buses() {
                   <StatusBadge status={bus.status} />
                 </td>
                 <td className="p-4">
-                  <div style={{ minWidth: '200px' }}>
+                  <button
+                    onClick={() => setSeatMgmtBus(bus)}
+                    className="block hover:opacity-80 transition-opacity cursor-pointer"
+                    title="Cliquer pour gérer les sièges"
+                    style={{ minWidth: '200px' }}
+                  >
                     <FillRateBar
                       current={Math.round((bus.fill_rate_current / 100) * bus.capacity)}
                       total={bus.capacity}
                       showLabel={false}
                       size="sm"
                     />
-                  </div>
+                  </button>
                 </td>
                 <td className="p-4">
                   <div className="flex gap-2">
@@ -582,11 +589,21 @@ export default function Buses() {
 
               <div className="mb-6">
                 <h3 className="font-semibold mb-3">Taux de remplissage actuel</h3>
-                <FillRateBar
-                  current={Math.round((viewingBus.fill_rate_current / 100) * viewingBus.capacity)}
-                  total={viewingBus.capacity}
-                  size="lg"
-                />
+                <button
+                  onClick={() => { setSeatMgmtBus(viewingBus); }}
+                  className="w-full text-left group p-3 -m-3 rounded-xl hover:bg-green-50 transition-colors cursor-pointer"
+                  title="Cliquer pour gérer les sièges"
+                >
+                  <FillRateBar
+                    current={Math.round((viewingBus.fill_rate_current / 100) * viewingBus.capacity)}
+                    total={viewingBus.capacity}
+                    size="lg"
+                  />
+                  <div className="flex items-center gap-1 mt-2 text-xs text-[#0B7439] opacity-0 group-hover:opacity-100 transition-opacity">
+                    <MousePointerClick className="w-3.5 h-3.5" />
+                    <span>Cliquer pour voir et gérer les sièges</span>
+                  </div>
+                </button>
               </div>
 
               <div className="mb-6">
@@ -625,6 +642,14 @@ export default function Buses() {
             </div>
           </div>
         </div>
+      )}
+
+      {seatMgmtBus && (
+        <AdminSeatManagement
+          busId={seatMgmtBus.id}
+          busRegistration={seatMgmtBus.registration_number}
+          onClose={() => { setSeatMgmtBus(null); loadData(); }}
+        />
       )}
     </div>
   );
