@@ -109,7 +109,7 @@ export default function FleetBilan() {
   }, [])
 
   useEffect(() => {
-    if (buses.length > 0) loadData()
+    loadData()
   }, [period, buses.length])
 
   async function loadBuses() {
