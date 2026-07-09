@@ -282,7 +282,12 @@ export async function fetchAllParcels(stationId?: string | null): Promise<Parcel
 
   const { data, error } = await query.order('registered_at', { ascending: false })
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map((p: any) => ({
+    ...p,
+    origin_station_name: p.origin_station?.name ?? p.origin_station_name ?? '',
+    destination_station_name: p.dest_station?.name ?? p.destination_station_name ?? '',
+    company_name: p.companies?.name ?? p.company_name ?? '',
+  }))
 }
 
 export async function fetchParcelKPIs(stationId?: string | null): Promise<ParcelKPIs> {
