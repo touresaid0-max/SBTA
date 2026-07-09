@@ -24,6 +24,7 @@ interface FuelEntry {
 interface GarageExpense {
   bus_id: string | null
   registration_number: string
+  company_name: string
   amount: number
   category_name: string
   category_icon: string
@@ -96,7 +97,7 @@ function getDateRange(period: Period): { start: string; end: string } {
 
 export default function FleetBilan() {
   const [tab, setTab] = useState<Tab>('fuel')
-  const [period, setPeriod] = useState<Period>('month')
+  const [period, setPeriod] = useState<Period>('year')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [buses, setBuses] = useState<BusInfo[]>([])
@@ -185,7 +186,7 @@ export default function FleetBilan() {
     // Consolidated from vehicle_expenses (charge_achat + comptable sources)
     const { data: expenses } = await supabase
       .from('vehicle_expenses')
-      .select('vehicle_id, registration_number, amount, expense_date, source, category:expense_categories(name, icon, color)')
+      .select('vehicle_id, registration_number, amount, expense_date, company_id, source, category:expense_categories(name, icon, color), company:companies(name)')
       .gte('expense_date', start)
       .lte('expense_date', end)
       .in('source', ['charge_achat', 'comptable', 'stock_gerant'])
@@ -193,6 +194,7 @@ export default function FleetBilan() {
     const entries: GarageExpense[] = (expenses ?? []).map((e: any) => ({
       bus_id: e.vehicle_id,
       registration_number: e.registration_number ?? '',
+      company_name: e.company?.name ?? '',
       amount: Number(e.amount) || 0,
       category_name: e.category?.name ?? 'Divers',
       category_icon: e.category?.icon ?? '',
@@ -237,15 +239,12 @@ export default function FleetBilan() {
   const garageRanking: GarageRanking[] = useMemo(() => {
     const map = new Map<string, { cost: number; count: number; reg: string; company: string }>()
     garageData.forEach(e => {
-      const key = e.bus_id || e.registration_number
+      const key = e.registration_number || e.bus_id || 'unknown'
       const cur = map.get(key) ?? { cost: 0, count: 0, reg: '', company: '' }
       cur.cost += e.amount
       cur.count += 1
       if (!cur.reg && e.registration_number) cur.reg = e.registration_number
-      if (!cur.company && e.bus_id) {
-        const bus = busMap.get(e.bus_id)
-        if (bus) { cur.reg = bus.registration_number; cur.company = bus.company_name ?? '' }
-      }
+      if (!cur.company && e.company_name) cur.company = e.company_name
       map.set(key, cur)
     })
 
@@ -258,7 +257,7 @@ export default function FleetBilan() {
         intervention_count: d.count,
       }))
       .sort((a, b) => b.intervention_count - a.intervention_count)
-  }, [garageData, busMap])
+  }, [garageData])
 
   const categoryRanking: CategoryRanking[] = useMemo(() => {
     const map = new Map<string, { icon: string; color: string; count: number; amount: number }>()
