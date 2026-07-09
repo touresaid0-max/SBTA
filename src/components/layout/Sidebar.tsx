@@ -230,6 +230,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Prestataires',    path: '/logistique/providers', icon: <Building2 className="w-5 h-5" /> },
     { label: 'Types de services', path: '/logistique/service-types', icon: <Settings className="w-5 h-5" /> },
     { label: 'Rapports',        path: '/logistique/reports',   icon: <BarChart2 className="w-5 h-5" /> },
+    { label: 'Synthèse bus',   path: '/logistique/bus-synthesis', icon: <Bus className="w-5 h-5" /> },
   ],
   agent_reservation: [
     { label: 'Tableau de bord',    path: '/agent-reservation/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
