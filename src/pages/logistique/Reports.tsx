@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   FileText, Printer, FileCheck, FileWarning, FileX, Tag, CreditCard,
-  Building2, Bus, Briefcase, Wallet, RefreshCw,
+  Building2, Bus, Briefcase, Wallet, RefreshCw, Search, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatCurrency } from '@/utils/formatCurrency'
@@ -47,6 +47,7 @@ export default function LogistiqueReports() {
   const [plates, setPlates] = useState<VehiclePlate[]>([])
   const [loading, setLoading] = useState(true)
   const [active, setActive] = useState<ReportKey>('visite')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     Promise.all([fetchDocuments(), fetchVehicles(), fetchAllPlates()])
@@ -190,6 +191,44 @@ export default function LogistiqueReports() {
 
   const meta = REPORTS.find(r => r.key === active)!
 
+  const searchPlaceholder = useMemo(() => {
+    switch (active) {
+      case 'par_bus': return 'Rechercher par plaque d\'immatriculation...'
+      case 'cartes_grises': return 'Rechercher par plaque ou n° carte grise...'
+      case 'provisoires': return 'Rechercher par plaque provisoire...'
+      case 'par_societe': return 'Rechercher par nom de société...'
+      case 'par_prestataire': return 'Rechercher par nom de prestataire...'
+      case 'financier': return 'Rechercher par statut...'
+      default: return 'Rechercher par plaque, prestataire, type...'
+    }
+  }, [active])
+
+  const filteredReport: ReportData = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return report
+
+    const matchRow = (row: Record<string, string>) =>
+      Object.values(row).some(v => v.toLowerCase().includes(q))
+
+    if (report.groups) {
+      const filteredGroups = report.groups
+        .map(g => {
+          const labelMatch = g.label.toLowerCase().includes(q)
+          const matchedRows = g.rows.filter(matchRow)
+          if (labelMatch) return g
+          if (matchedRows.length === 0) return null
+          return { ...g, label: `${g.label.split(' (')[0]} (${matchedRows.length})`, rows: matchedRows }
+        })
+        .filter(Boolean) as ReportData['groups']
+
+      const allFilteredRows = filteredGroups?.flatMap(g => g.rows) ?? []
+      return { ...report, groups: filteredGroups, rows: allFilteredRows }
+    }
+
+    const filteredRows = report.rows.filter(matchRow)
+    return { ...report, rows: filteredRows }
+  }, [report, search])
+
   function buildReportHtml(): string {
     const esc = (s: string) => String(s ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const printedAt = new Date().toLocaleString('fr-FR')
@@ -308,7 +347,7 @@ export default function LogistiqueReports() {
           const Icon = r.icon
           const isActive = r.key === active
           return (
-            <button key={r.key} onClick={() => setActive(r.key)}
+            <button key={r.key} onClick={() => { setActive(r.key); setSearch('') }}
               className={'flex items-start gap-3 p-4 rounded-2xl border text-left transition-all ' + (isActive ? 'border-[#0B7439] ring-2 ring-[#0B7439]/20 bg-white' : 'border-[#E2EAE5] bg-white hover:bg-[#F8FAF8]')}>
               <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: r.bg }}>
                 <Icon className="w-5 h-5" style={{ color: r.color }} />
@@ -323,15 +362,32 @@ export default function LogistiqueReports() {
       </div>
 
       <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#E2EAE5] flex items-center gap-2">
-          <FileText className="w-5 h-5 text-[#0B7439]" />
-          <h2 className="font-semibold text-[#1A2E22]">{report.title}</h2>
+        <div className="px-5 py-4 border-b border-[#E2EAE5] flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-[#0B7439]" />
+            <h2 className="font-semibold text-[#1A2E22]">{report.title}</h2>
+          </div>
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="w-full pl-9 pr-9 py-2 text-sm rounded-xl border border-[#E2EAE5] bg-[#F8FAF8] text-[#1A2E22] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439] transition-all"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#1A2E22] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
-        {report.rows.length === 0 && !report.groups?.some(g => g.rows.length) ? (
+        {filteredReport.rows.length === 0 && !filteredReport.groups?.some(g => g.rows.length) ? (
           <div className="flex flex-col items-center justify-center py-16 text-[#6B7280]">
             <RefreshCw className="w-10 h-10 text-[#9CDAB6] mb-2" />
-            <p className="text-sm">Aucune donnée pour ce rapport.</p>
+            <p className="text-sm">{search ? 'Aucun résultat pour cette recherche.' : 'Aucune donnée pour ce rapport.'}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -343,8 +399,8 @@ export default function LogistiqueReports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0F4F1]">
-                {report.groups
-                  ? report.groups.map(g => (
+                {filteredReport.groups
+                  ? filteredReport.groups.map(g => (
                       <Fragment key={g.label}>
                         <tr className="bg-[#E7F6EC] border-t-2 border-[#0B7439]">
                           <td colSpan={report.columns.length - 1} className="px-3 py-2.5 font-extrabold text-[#0B7439] text-[13px] tracking-wide">{g.label}</td>
@@ -353,13 +409,17 @@ export default function LogistiqueReports() {
                         {renderRows(g.rows)}
                       </Fragment>
                     ))
-                  : renderRows(report.rows)}
+                  : renderRows(filteredReport.rows)}
               </tbody>
             </table>
           </div>
         )}
 
-        {report.footer && <div className="px-5 py-3.5 bg-[#1A2E22] text-sm font-bold text-white text-right tracking-wide">{report.footer}</div>}
+        {report.footer && <div className="px-5 py-3.5 bg-[#1A2E22] text-sm font-bold text-white text-right tracking-wide">
+          {search && filteredReport.rows.length !== report.rows.length
+            ? `${filteredReport.rows.length} résultat(s) sur ${report.rows.length}`
+            : report.footer}
+        </div>}
       </div>
     </div>
   )
