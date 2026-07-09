@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Fuel, Wrench, Calendar, Search, X, TrendingUp, Bus } from 'lucide-react'
+import { Fuel, Wrench, Calendar, Search, X, TrendingUp, Bus, Car } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
@@ -21,9 +21,13 @@ interface FuelEntry {
   date: string
 }
 
-interface GarageEntry {
-  bus_id: string
-  cost: number
+interface GarageExpense {
+  bus_id: string | null
+  registration_number: string
+  amount: number
+  category_name: string
+  category_icon: string
+  category_color: string
   date: string
 }
 
@@ -41,7 +45,15 @@ interface GarageRanking {
   registration_number: string
   company_name: string
   total_cost: number
-  visit_count: number
+  intervention_count: number
+}
+
+interface CategoryRanking {
+  name: string
+  icon: string
+  color: string
+  count: number
+  total_amount: number
 }
 
 const COLORS = [
@@ -89,7 +101,7 @@ export default function FleetBilan() {
   const [loading, setLoading] = useState(true)
   const [buses, setBuses] = useState<BusInfo[]>([])
   const [fuelData, setFuelData] = useState<FuelEntry[]>([])
-  const [garageData, setGarageData] = useState<GarageEntry[]>([])
+  const [garageData, setGarageData] = useState<GarageExpense[]>([])
 
   useEffect(() => {
     loadBuses()
@@ -125,7 +137,6 @@ export default function FleetBilan() {
   async function loadFuel(start: string, end: string) {
     const entries: FuelEntry[] = []
 
-    // fuel_logs
     const { data: logs } = await supabase
       .from('fuel_logs')
       .select('bus_id, liters, amount, created_at')
@@ -136,7 +147,6 @@ export default function FleetBilan() {
       if (l.bus_id) entries.push({ bus_id: l.bus_id, liters: Number(l.liters) || 0, amount: Number(l.amount) || 0, date: l.created_at })
     })
 
-    // fuel_enlevements
     const { data: enlev } = await supabase
       .from('fuel_enlevements')
       .select('bus_id, quantity_liters, total_amount, enlevement_date')
@@ -147,7 +157,6 @@ export default function FleetBilan() {
       if (e.bus_id) entries.push({ bus_id: e.bus_id, liters: Number(e.quantity_liters) || 0, amount: Number(e.total_amount) || 0, date: e.enlevement_date })
     })
 
-    // comptable_fuel_withdrawals
     const { data: cfw } = await supabase
       .from('comptable_fuel_withdrawals')
       .select('bus_id, liters, total_amount, withdrawal_date')
@@ -158,7 +167,6 @@ export default function FleetBilan() {
       if (w.bus_id) entries.push({ bus_id: w.bus_id, liters: Number(w.liters) || 0, amount: Number(w.total_amount) || 0, date: w.withdrawal_date })
     })
 
-    // fuel_vouchers (used ones)
     const { data: vouchers } = await supabase
       .from('fuel_vouchers')
       .select('bus_id, actual_liters, actual_amount, used_at')
@@ -174,29 +182,23 @@ export default function FleetBilan() {
   }
 
   async function loadGarage(start: string, end: string) {
-    const entries: GarageEntry[] = []
-
-    // maintenance_work_orders
-    const { data: orders } = await supabase
-      .from('maintenance_work_orders')
-      .select('bus_id, actual_cost, created_at')
-      .gte('created_at', start)
-      .lte('created_at', end + 'T23:59:59')
-
-    orders?.forEach(o => {
-      if (o.bus_id) entries.push({ bus_id: o.bus_id, cost: Number(o.actual_cost) || 0, date: o.created_at })
-    })
-
-    // bus_expenses
+    // Consolidated from vehicle_expenses (charge_achat + comptable sources)
     const { data: expenses } = await supabase
-      .from('bus_expenses')
-      .select('bus_id, amount, expense_date')
+      .from('vehicle_expenses')
+      .select('vehicle_id, registration_number, amount, expense_date, source, category:expense_categories(name, icon, color)')
       .gte('expense_date', start)
       .lte('expense_date', end)
+      .in('source', ['charge_achat', 'comptable', 'stock_gerant'])
 
-    expenses?.forEach(e => {
-      if (e.bus_id) entries.push({ bus_id: e.bus_id, cost: Number(e.amount) || 0, date: e.expense_date })
-    })
+    const entries: GarageExpense[] = (expenses ?? []).map((e: any) => ({
+      bus_id: e.vehicle_id,
+      registration_number: e.registration_number ?? '',
+      amount: Number(e.amount) || 0,
+      category_name: e.category?.name ?? 'Divers',
+      category_icon: e.category?.icon ?? '',
+      category_color: e.category?.color ?? '#6B7280',
+      date: e.expense_date,
+    }))
 
     setGarageData(entries)
   }
@@ -233,27 +235,44 @@ export default function FleetBilan() {
   }, [fuelData, busMap])
 
   const garageRanking: GarageRanking[] = useMemo(() => {
-    const map = new Map<string, { cost: number; count: number }>()
+    const map = new Map<string, { cost: number; count: number; reg: string; company: string }>()
     garageData.forEach(e => {
-      const cur = map.get(e.bus_id) ?? { cost: 0, count: 0 }
-      cur.cost += e.cost
+      const key = e.bus_id || e.registration_number
+      const cur = map.get(key) ?? { cost: 0, count: 0, reg: '', company: '' }
+      cur.cost += e.amount
       cur.count += 1
-      map.set(e.bus_id, cur)
+      if (!cur.reg && e.registration_number) cur.reg = e.registration_number
+      if (!cur.company && e.bus_id) {
+        const bus = busMap.get(e.bus_id)
+        if (bus) { cur.reg = bus.registration_number; cur.company = bus.company_name ?? '' }
+      }
+      map.set(key, cur)
     })
 
     return Array.from(map.entries())
-      .map(([bus_id, d]) => {
-        const bus = busMap.get(bus_id)
-        return {
-          bus_id,
-          registration_number: bus?.registration_number ?? 'Inconnu',
-          company_name: bus?.company_name ?? '',
-          total_cost: Math.round(d.cost * 100) / 100,
-          visit_count: d.count,
-        }
-      })
-      .sort((a, b) => b.visit_count - a.visit_count)
+      .map(([key, d]) => ({
+        bus_id: key,
+        registration_number: d.reg || key,
+        company_name: d.company,
+        total_cost: Math.round(d.cost * 100) / 100,
+        intervention_count: d.count,
+      }))
+      .sort((a, b) => b.intervention_count - a.intervention_count)
   }, [garageData, busMap])
+
+  const categoryRanking: CategoryRanking[] = useMemo(() => {
+    const map = new Map<string, { icon: string; color: string; count: number; amount: number }>()
+    garageData.forEach(e => {
+      const cur = map.get(e.category_name) ?? { icon: e.category_icon, color: e.category_color, count: 0, amount: 0 }
+      cur.count += 1
+      cur.amount += e.amount
+      map.set(e.category_name, cur)
+    })
+
+    return Array.from(map.entries())
+      .map(([name, d]) => ({ name, icon: d.icon, color: d.color, count: d.count, total_amount: d.amount }))
+      .sort((a, b) => b.count - a.count)
+  }, [garageData])
 
   const filteredFuel = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -278,12 +297,12 @@ export default function FleetBilan() {
   [filteredFuel])
 
   const garageChartData = useMemo(() =>
-    filteredGarage.slice(0, 15).map(r => ({ name: r.registration_number, value: r.visit_count })),
+    filteredGarage.slice(0, 15).map(r => ({ name: r.registration_number, value: r.intervention_count })),
   [filteredGarage])
 
   const totalFuelLiters = useMemo(() => fuelRanking.reduce((s, r) => s + r.total_liters, 0), [fuelRanking])
   const totalFuelAmount = useMemo(() => fuelRanking.reduce((s, r) => s + r.total_amount, 0), [fuelRanking])
-  const totalGarageVisits = useMemo(() => garageRanking.reduce((s, r) => s + r.visit_count, 0), [garageRanking])
+  const totalGarageInterventions = useMemo(() => garageRanking.reduce((s, r) => s + r.intervention_count, 0), [garageRanking])
   const totalGarageCost = useMemo(() => garageRanking.reduce((s, r) => s + r.total_cost, 0), [garageRanking])
 
   async function exportExcel() {
@@ -308,13 +327,18 @@ export default function FleetBilan() {
       const aoa: unknown[][] = [
         [`Bilan Garage - ${periodLabel}`],
         [],
-        ['Immatriculation', 'Société', 'Nb passages', 'Coût total (FCFA)'],
-        ...garageRanking.map(r => [r.registration_number, r.company_name, r.visit_count, r.total_cost]),
+        ['Immatriculation', 'Société', 'Nb interventions', 'Coût total (FCFA)'],
+        ...garageRanking.map(r => [r.registration_number, r.company_name, r.intervention_count, r.total_cost]),
         [],
-        ['TOTAL', '', totalGarageVisits, totalGarageCost.toFixed(0)],
+        ['TOTAL', '', totalGarageInterventions, totalGarageCost.toFixed(0)],
+        [],
+        [],
+        ['Top catégories de dépenses'],
+        ['Catégorie', 'Nb interventions', 'Montant total (FCFA)'],
+        ...categoryRanking.map(c => [c.name, c.count, c.total_amount.toFixed(0)]),
       ]
       const ws = utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [{ wch: 20 }, { wch: 25 }, { wch: 14 }, { wch: 18 }]
+      ws['!cols'] = [{ wch: 25 }, { wch: 25 }, { wch: 18 }, { wch: 18 }]
       const wb = utils.book_new()
       utils.book_append_sheet(wb, ws, 'Garage')
       writeFile(wb, `bilan_garage_${period}.xlsx`)
@@ -359,7 +383,7 @@ export default function FleetBilan() {
     } else {
       pdf.text('Immatriculation', 16, y)
       pdf.text('Société', 60, y)
-      pdf.text('Passages', 130, y)
+      pdf.text('Interventions', 125, y)
       pdf.text('Coût total', 160, y)
       y += 10
 
@@ -369,7 +393,7 @@ export default function FleetBilan() {
         if (i % 2 === 0) { pdf.setFillColor(247, 250, 248); pdf.rect(14, y - 4, 182, 7, 'F') }
         pdf.text(r.registration_number, 16, y)
         pdf.text(r.company_name.slice(0, 25), 60, y)
-        pdf.text(String(r.visit_count), 135, y)
+        pdf.text(String(r.intervention_count), 135, y)
         pdf.text(r.total_cost.toFixed(0), 160, y)
         y += 7
       })
@@ -388,7 +412,7 @@ export default function FleetBilan() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#1A2E22]">Bilan</h1>
-          <p className="text-sm text-[#6B7280] mt-1">Consommation carburant et passages garage par vehicule</p>
+          <p className="text-sm text-[#6B7280] mt-1">Consommation carburant et interventions garage par vehicule</p>
         </div>
         <ExportButton onExportPDF={exportPdf} onExportExcel={exportExcel} />
       </div>
@@ -477,8 +501,8 @@ export default function FleetBilan() {
                 <Wrench className="w-5 h-5 text-[#DC2626]" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-[#1A2E22]">{totalGarageVisits}</p>
-                <p className="text-xs text-[#6B7280]">Total passages garage</p>
+                <p className="text-2xl font-bold text-[#1A2E22]">{totalGarageInterventions}</p>
+                <p className="text-xs text-[#6B7280]">Total interventions</p>
               </div>
             </div>
           </div>
@@ -489,7 +513,7 @@ export default function FleetBilan() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-[#1A2E22]">{totalGarageCost.toLocaleString('fr-FR')} FCFA</p>
-                <p className="text-xs text-[#6B7280]">Cout total reparations</p>
+                <p className="text-xs text-[#6B7280]">Cout total interventions</p>
               </div>
             </div>
           </div>
@@ -510,7 +534,7 @@ export default function FleetBilan() {
       {/* Chart */}
       <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
         <h2 className="font-semibold text-[#1A2E22] mb-4">
-          {tab === 'fuel' ? 'Top 15 - Consommation carburant (litres)' : 'Top 15 - Passages garage'}
+          {tab === 'fuel' ? 'Top 15 - Consommation carburant (litres)' : 'Top 15 - Interventions garage'}
         </h2>
         {loading ? (
           <div className="flex items-center justify-center h-64">
@@ -536,8 +560,8 @@ export default function FleetBilan() {
                 <Tooltip
                   contentStyle={{ borderRadius: 12, border: '1px solid #E2EAE5', boxShadow: '0 4px 12px rgba(0,0,0,.08)' }}
                   formatter={(value: number) => [
-                    tab === 'fuel' ? `${value.toFixed(1)} L` : `${value} passages`,
-                    tab === 'fuel' ? 'Litres' : 'Passages'
+                    tab === 'fuel' ? `${value.toFixed(1)} L` : `${value} interventions`,
+                    tab === 'fuel' ? 'Litres' : 'Interventions'
                   ]}
                 />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={45}>
@@ -551,11 +575,68 @@ export default function FleetBilan() {
         )}
       </div>
 
+      {/* Garage: Top 5 + Top categories */}
+      {tab === 'garage' && !loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Top 5 véhicules coûteux */}
+          <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-[#1A2E22]">Top 5 véhicules coûteux</h2>
+            </div>
+            {garageRanking.length === 0 ? (
+              <p className="text-sm text-center py-6 text-[#9CA3AF]">Aucune donnée pour cette période</p>
+            ) : (
+              <div className="space-y-3">
+                {[...garageRanking].sort((a, b) => b.total_cost - a.total_cost).slice(0, 5).map((v, i) => (
+                  <div key={v.bus_id} className="flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: i === 0 ? '#FEF3C7' : '#F0F4F1', color: i === 0 ? '#D97706' : '#6B7280' }}>
+                      {i + 1}
+                    </span>
+                    <Car className="w-4 h-4 flex-shrink-0 text-[#6B7280]" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-mono font-bold text-[#1A2E22] truncate">{v.registration_number}</p>
+                      {v.company_name && <p className="text-xs text-[#6B7280] truncate">{v.company_name}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <span className="text-sm font-bold" style={{ color: v.total_cost >= 200000 ? '#DC2626' : v.total_cost >= 100000 ? '#D97706' : '#0B7439' }}>
+                        {v.total_cost.toLocaleString('fr-FR')} XOF
+                      </span>
+                      <p className="text-xs text-[#6B7280]">{v.intervention_count} intervention{v.intervention_count > 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Top catégories de dépenses */}
+          <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
+            <h2 className="font-semibold text-[#1A2E22] mb-4">Top catégories de dépenses</h2>
+            {categoryRanking.length === 0 ? (
+              <p className="text-sm text-center py-6 text-[#9CA3AF]">Aucune donnée pour cette période</p>
+            ) : (
+              <div className="space-y-3">
+                {categoryRanking.slice(0, 7).map(cat => (
+                  <div key={cat.name} className="flex items-center gap-3">
+                    <span className="text-lg w-7 text-center flex-shrink-0">{cat.icon}</span>
+                    <p className="text-sm font-medium text-[#1A2E22] flex-1 truncate">{cat.name}</p>
+                    <span className="text-sm font-bold tabular-nums" style={{ color: cat.color }}>
+                      {cat.count} fois
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
         <div className="px-5 py-4 border-b border-[#E2EAE5] flex items-center justify-between gap-3 flex-wrap">
           <h2 className="font-semibold text-[#1A2E22]">
-            {tab === 'fuel' ? 'Classement consommation carburant' : 'Classement passages garage'}
+            {tab === 'fuel' ? 'Classement consommation carburant' : 'Classement interventions garage'}
           </h2>
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
@@ -624,7 +705,7 @@ export default function FleetBilan() {
                   <th className="px-5 py-3 w-12">#</th>
                   <th className="px-5 py-3">Immatriculation</th>
                   <th className="px-5 py-3">Societe</th>
-                  <th className="px-5 py-3 text-right">Passages</th>
+                  <th className="px-5 py-3 text-right">Interventions</th>
                   <th className="px-5 py-3 text-right">Cout total (FCFA)</th>
                 </tr>
               </thead>
@@ -641,7 +722,7 @@ export default function FleetBilan() {
                       </div>
                     </td>
                     <td className="px-5 py-3 text-[#6B7280]">{r.company_name}</td>
-                    <td className="px-5 py-3 text-right font-bold text-[#1A2E22] tabular-nums">{r.visit_count}</td>
+                    <td className="px-5 py-3 text-right font-bold text-[#1A2E22] tabular-nums">{r.intervention_count}</td>
                     <td className="px-5 py-3 text-right text-[#1A2E22] tabular-nums">{r.total_cost.toLocaleString('fr-FR')}</td>
                   </tr>
                 ))}
@@ -650,7 +731,7 @@ export default function FleetBilan() {
                 <tfoot>
                   <tr className="bg-[#1A2E22]">
                     <td className="px-5 py-3 text-white font-bold" colSpan={3}>TOTAL</td>
-                    <td className="px-5 py-3 text-right text-white font-bold tabular-nums">{filteredGarage.reduce((s, r) => s + r.visit_count, 0)}</td>
+                    <td className="px-5 py-3 text-right text-white font-bold tabular-nums">{filteredGarage.reduce((s, r) => s + r.intervention_count, 0)}</td>
                     <td className="px-5 py-3 text-right text-white font-bold tabular-nums">{filteredGarage.reduce((s, r) => s + r.total_cost, 0).toLocaleString('fr-FR')}</td>
                   </tr>
                 </tfoot>
