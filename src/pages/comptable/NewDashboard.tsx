@@ -2,26 +2,109 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Plus, TrendingUp, Car, BarChart2,
-  RefreshCw, ChevronRight, Calendar, Wallet, Package, ArrowUpDown,
+  RefreshCw, ChevronRight, Calendar, Wallet, Package,
   Building2,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend,
 } from 'recharts'
-import { format, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth } from 'date-fns'
+import { format, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, subQuarters, startOfYear, endOfYear } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import type { VehicleExpense, CompanySummary } from '@/types/chargeAchat.types'
+import type { VehicleExpense } from '@/types/chargeAchat.types'
+
+type Period = 'week' | 'month' | 'quarter' | 'year'
+
+const PERIODS: { key: Period; label: string }[] = [
+  { key: 'week', label: 'Semaine' },
+  { key: 'month', label: 'Mois' },
+  { key: 'quarter', label: 'Trimestre' },
+  { key: 'year', label: 'Année' },
+]
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
 
-function getWeekRange(weekOffset = 0) {
-  const base = subWeeks(new Date(), weekOffset)
-  const start = startOfWeek(base, { weekStartsOn: 1 })
-  const end   = endOfWeek(base,   { weekStartsOn: 1 })
+function getDateRange(period: Period): { start: Date; end: Date; startStr: string; endStr: string } {
+  const now = new Date()
+  let start: Date, end: Date
+
+  switch (period) {
+    case 'week':
+      start = startOfWeek(now, { weekStartsOn: 1 })
+      end = endOfWeek(now, { weekStartsOn: 1 })
+      break
+    case 'month':
+      start = startOfMonth(now)
+      end = endOfMonth(now)
+      break
+    case 'quarter':
+      start = startOfQuarter(now)
+      end = endOfQuarter(now)
+      break
+    case 'year':
+      start = startOfYear(now)
+      end = endOfYear(now)
+      break
+  }
+
   return { start, end, startStr: format(start, 'yyyy-MM-dd'), endStr: format(end, 'yyyy-MM-dd') }
+}
+
+function getPeriodLabel(period: Period, start: Date, end: Date): string {
+  switch (period) {
+    case 'week':
+      return `Semaine du ${format(start, 'dd/MM', { locale: fr })} au ${format(end, 'dd/MM/yyyy', { locale: fr })}`
+    case 'month':
+      return format(start, 'MMMM yyyy', { locale: fr })
+    case 'quarter': {
+      const q = Math.ceil((start.getMonth() + 1) / 3)
+      return `${q}e trimestre ${start.getFullYear()}`
+    }
+    case 'year':
+      return `Année ${start.getFullYear()}`
+  }
+}
+
+function getTrendSegments(period: Period): { label: string; startStr: string; endStr: string }[] {
+  const now = new Date()
+
+  switch (period) {
+    case 'week': {
+      return Array.from({ length: 8 }, (_, i) => {
+        const base = subWeeks(now, 7 - i)
+        const s = startOfWeek(base, { weekStartsOn: 1 })
+        const e = endOfWeek(base, { weekStartsOn: 1 })
+        return { label: `S${format(s, 'dd/MM', { locale: fr })}`, startStr: format(s, 'yyyy-MM-dd'), endStr: format(e, 'yyyy-MM-dd') }
+      })
+    }
+    case 'month': {
+      return Array.from({ length: 6 }, (_, i) => {
+        const base = subMonths(now, 5 - i)
+        const s = startOfMonth(base)
+        const e = endOfMonth(base)
+        return { label: format(s, 'MMM yy', { locale: fr }), startStr: format(s, 'yyyy-MM-dd'), endStr: format(e, 'yyyy-MM-dd') }
+      })
+    }
+    case 'quarter': {
+      return Array.from({ length: 4 }, (_, i) => {
+        const base = subQuarters(now, 3 - i)
+        const s = startOfQuarter(base)
+        const e = endOfQuarter(base)
+        const q = Math.ceil((s.getMonth() + 1) / 3)
+        return { label: `T${q} ${s.getFullYear()}`, startStr: format(s, 'yyyy-MM-dd'), endStr: format(e, 'yyyy-MM-dd') }
+      })
+    }
+    case 'year': {
+      return Array.from({ length: 12 }, (_, i) => {
+        const base = new Date(now.getFullYear(), i, 1)
+        const s = startOfMonth(base)
+        const e = endOfMonth(base)
+        return { label: format(s, 'MMM', { locale: fr }), startStr: format(s, 'yyyy-MM-dd'), endStr: format(e, 'yyyy-MM-dd') }
+      })
+    }
+  }
 }
 
 interface CompanyInfo { id: string; name: string; code: string }
@@ -31,32 +114,31 @@ export default function ComptableNewDashboard() {
   const { user } = useAuthStore()
   const companyId = user?.company_id ?? null
 
-  const { start, end, startStr, endStr } = getWeekRange(0)
+  const [period, setPeriod] = useState<Period>('week')
+  const [loading, setLoading] = useState(true)
+  const [company, setCompany] = useState<CompanyInfo | null>(null)
+  const [periodTotal, setPeriodTotal] = useState(0)
+  const [topVehicles, setTopVehicles] = useState<{ reg: string; total: number }[]>([])
+  const [trendData, setTrendData] = useState<Record<string, unknown>[]>([])
+  const [barData, setBarData] = useState<Record<string, unknown>[]>([])
+  const [caisseBalance, setCaisseBalance] = useState<{ entrees: number; depenses: number } | null>(null)
+  const [stockAlerts, setStockAlerts] = useState(0)
 
-  const [loading,         setLoading]         = useState(true)
-  const [company,         setCompany]         = useState<CompanyInfo | null>(null)
-  const [weekTotal,       setWeekTotal]        = useState(0)
-  const [topVehicles,     setTopVehicles]      = useState<{ reg: string; total: number }[]>([])
-  const [trendData,       setTrendData]        = useState<Record<string, unknown>[]>([])
-  const [barData,         setBarData]          = useState<Record<string, unknown>[]>([])
-  const [caisseBalance,   setCaisseBalance]    = useState<{ entrees: number; depenses: number } | null>(null)
-  const [monthTotal,      setMonthTotal]       = useState<number | null>(null)
-  const [stockAlerts,     setStockAlerts]      = useState(0)
+  const { start, end, startStr, endStr } = getDateRange(period)
+  const periodLabel = getPeriodLabel(period, start, end)
 
   const load = useCallback(async () => {
     if (!companyId) { setLoading(false); return }
     setLoading(true)
     try {
-      // Load company info
       const { data: coData } = await supabase
         .from('companies').select('id, name, code').eq('id', companyId).maybeSingle()
       if (coData) setCompany(coData as CompanyInfo)
 
-      // Get buses of this company
       const { data: busData } = await supabase.from('buses').select('id').eq('company_id', companyId)
       const busIds = (busData ?? []).map(b => b.id)
 
-      // Current week expenses
+      // Period expenses
       let exps: VehicleExpense[] = []
       if (busIds.length > 0) {
         const { data } = await supabase
@@ -70,7 +152,7 @@ export default function ComptableNewDashboard() {
       }
 
       const total = exps.reduce((a, b) => a + Number(b.amount), 0)
-      setWeekTotal(total)
+      setPeriodTotal(total)
 
       // Bar data by category
       const byCat: Record<string, number> = {}
@@ -94,23 +176,28 @@ export default function ComptableNewDashboard() {
         Object.entries(byVeh).map(([reg, total]) => ({ reg, total })).sort((a, b) => b.total - a.total).slice(0, 5)
       )
 
-      // 8-week trend
-      const weeks = Array.from({ length: 8 }, (_, i) => getWeekRange(7 - i))
+      // Trend
+      const segments = getTrendSegments(period)
+      const trendStart = segments[0].startStr
+      const trendEnd = segments[segments.length - 1].endStr
+
       const { data: trendExps } = await supabase
         .from('vehicle_expenses')
         .select('expense_date, amount')
         .eq('company_id', companyId)
         .eq('source', 'comptable')
-        .gte('expense_date', weeks[0].startStr)
-        .lte('expense_date', weeks[7].endStr)
+        .gte('expense_date', trendStart)
+        .lte('expense_date', trendEnd)
 
-      const trend = weeks.map(w => ({
-        week: `S${format(w.start, 'dd/MM', { locale: fr })}`,
-        total: (trendExps ?? []).filter(e => e.expense_date >= w.startStr && e.expense_date <= w.endStr).reduce((a, b) => a + Number(b.amount), 0),
+      const trend = segments.map(seg => ({
+        label: seg.label,
+        total: (trendExps ?? [])
+          .filter(e => e.expense_date >= seg.startStr && e.expense_date <= seg.endStr)
+          .reduce((a, b) => a + Number(b.amount), 0),
       }))
       setTrendData(trend)
 
-      // Caisse this week
+      // Caisse for current period
       const { data: caisseData } = await supabase
         .from('comptable_caisse_entries')
         .select('entry_type, amount')
@@ -118,27 +205,11 @@ export default function ComptableNewDashboard() {
         .gte('entry_date', startStr)
         .lte('entry_date', endStr)
 
-      const entrees  = (caisseData ?? []).filter(c => c.entry_type === 'entree').reduce((a, b) => a + Number(b.amount), 0)
+      const entrees = (caisseData ?? []).filter(c => c.entry_type === 'entree').reduce((a, b) => a + Number(b.amount), 0)
       const depenses = (caisseData ?? []).filter(c => c.entry_type === 'depense').reduce((a, b) => a + Number(b.amount), 0)
       setCaisseBalance({ entrees, depenses })
 
-      // Monthly expenses (current month)
-      const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd')
-      const monthEnd   = format(endOfMonth(new Date()),   'yyyy-MM-dd')
-      if (busIds.length > 0) {
-        const { data: monthData } = await supabase
-          .from('vehicle_expenses')
-          .select('amount')
-          .eq('company_id', companyId)
-          .eq('source', 'comptable')
-          .gte('expense_date', monthStart)
-          .lte('expense_date', monthEnd)
-        setMonthTotal((monthData ?? []).reduce((a, b) => a + Number(b.amount), 0))
-      } else {
-        setMonthTotal(0)
-      }
-
-      // Stock alerts (stock final < stock_min)
+      // Stock alerts
       const { data: stockItems } = await supabase
         .from('comptable_stock_items')
         .select('id, stock_initial, stock_min')
@@ -154,9 +225,9 @@ export default function ComptableNewDashboard() {
         let alerts = 0
         for (const item of stockItems) {
           const itemMvts = (mvts ?? []).filter(m => m.stock_item_id === item.id)
-          const entrees  = itemMvts.filter(m => m.movement_type === 'entree').reduce((a, b) => a + Number(b.quantity), 0)
-          const sorties  = itemMvts.filter(m => m.movement_type === 'sortie').reduce((a, b) => a + Number(b.quantity), 0)
-          const stockFinal = Number(item.stock_initial) + entrees - sorties
+          const ent = itemMvts.filter(m => m.movement_type === 'entree').reduce((a, b) => a + Number(b.quantity), 0)
+          const sor = itemMvts.filter(m => m.movement_type === 'sortie').reduce((a, b) => a + Number(b.quantity), 0)
+          const stockFinal = Number(item.stock_initial) + ent - sor
           if (stockFinal < Number(item.stock_min)) alerts++
         }
         setStockAlerts(alerts)
@@ -164,12 +235,16 @@ export default function ComptableNewDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [companyId, startStr, endStr])
+  }, [companyId, startStr, endStr, period])
 
   useEffect(() => { load() }, [load])
 
-  const weekLabel = `Semaine du ${format(start, 'dd/MM', { locale: fr })} au ${format(end, 'dd/MM/yyyy', { locale: fr })}`
   const caisseReste = caisseBalance ? caisseBalance.entrees - caisseBalance.depenses : 0
+
+  const trendTitle = period === 'week' ? 'Évolution sur 8 semaines'
+    : period === 'month' ? 'Évolution sur 6 mois'
+    : period === 'quarter' ? 'Évolution sur 4 trimestres'
+    : 'Évolution mensuelle de l\'année'
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
@@ -182,7 +257,7 @@ export default function ComptableNewDashboard() {
           </h1>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <Calendar className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{weekLabel}</p>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{periodLabel}</p>
             {company && (
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
                 <Building2 className="w-3.5 h-3.5" style={{ color: '#1D4ED8' }} />
@@ -207,6 +282,22 @@ export default function ComptableNewDashboard() {
         </div>
       </div>
 
+      {/* Period selector */}
+      <div className="flex items-center gap-1 bg-[#F0F4F1] rounded-xl p-1 w-fit">
+        <Calendar className="w-4 h-4 text-[#6B7280] ml-2" />
+        {PERIODS.map(p => (
+          <button
+            key={p.key}
+            onClick={() => setPeriod(p.key)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              period === p.key ? 'bg-white text-[#0B7439] shadow-sm' : 'text-[#6B7280] hover:text-[#1A2E22]'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[...Array(4)].map((_, i) => (
@@ -217,27 +308,27 @@ export default function ComptableNewDashboard() {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total dépenses semaine */}
+            {/* Total dépenses période */}
             <div className="rounded-2xl p-4 flex flex-col justify-between col-span-2 lg:col-span-1"
               style={{ background: 'linear-gradient(135deg,#0B7439,#085c2d)', color: '#fff' }}>
               <div className="flex items-center justify-between">
-                <p className="text-xs opacity-80">Dépenses — semaine</p>
+                <p className="text-xs opacity-80">Dépenses — {PERIODS.find(p => p.key === period)?.label.toLowerCase()}</p>
                 <BarChart2 className="w-5 h-5 opacity-40" />
               </div>
-              <p className="text-2xl font-bold mt-2">{fmt(weekTotal)}</p>
+              <p className="text-2xl font-bold mt-2">{fmt(periodTotal)}</p>
             </div>
 
-            {/* Dépenses du mois */}
+            {/* Nb transactions */}
             <div className="rounded-2xl p-4 flex flex-col justify-between"
               style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD' }}>
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium" style={{ color: '#1E3A5F' }}>Dépenses du mois</p>
+                <p className="text-xs font-medium" style={{ color: '#1E3A5F' }}>Nb véhicules</p>
                 <TrendingUp className="w-4 h-4" style={{ color: '#1D4ED8' }} />
               </div>
               <p className="text-xl font-bold mt-1" style={{ color: '#1D4ED8' }}>
-                {monthTotal !== null ? fmt(monthTotal) : '—'}
+                {topVehicles.length}
               </p>
-              <p className="text-xs mt-1" style={{ color: '#1E3A5F' }}>{format(new Date(), 'MMMM yyyy', { locale: fr })}</p>
+              <p className="text-xs mt-1" style={{ color: '#1E3A5F' }}>avec dépenses</p>
             </div>
 
             {/* Caisse — Reste */}
@@ -254,7 +345,7 @@ export default function ComptableNewDashboard() {
                 {caisseBalance ? fmt(caisseReste) : '—'}
               </p>
               <p className="text-xs mt-1" style={{ color: caisseReste >= 0 ? '#065f46' : '#991B1B' }}>
-                {caisseBalance ? fmt(caisseBalance.depenses) + ' dépensés' : 'cette semaine'}
+                {caisseBalance ? fmt(caisseBalance.depenses) + ' dépensés' : ''}
               </p>
             </div>
 
@@ -282,10 +373,10 @@ export default function ComptableNewDashboard() {
             {/* Bar by category */}
             <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-                Dépenses par catégorie — semaine
+                Dépenses par catégorie
               </h2>
               {barData.length === 0 ? (
-                <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>Aucune dépense cette semaine</p>
+                <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>Aucune dépense cette période</p>
               ) : (
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={barData} barSize={28}>
@@ -299,15 +390,15 @@ export default function ComptableNewDashboard() {
               )}
             </div>
 
-            {/* 8-week trend */}
+            {/* Trend */}
             <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-                Évolution sur 8 semaines
+                {trendTitle}
               </h2>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="week" tick={{ fontSize: 10 }} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                   <YAxis tickFormatter={v => (v / 1000) + 'k'} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: number) => fmt(v)} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -326,7 +417,7 @@ export default function ComptableNewDashboard() {
               </button>
             </div>
             {topVehicles.length === 0 ? (
-              <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>Aucune donnée cette semaine</p>
+              <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>Aucune donnée pour cette période</p>
             ) : (
               <div className="space-y-2">
                 {topVehicles.map((v, i) => (
@@ -347,12 +438,12 @@ export default function ComptableNewDashboard() {
           </div>
 
           {/* Quick actions */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Saisir dépense',   path: '/comptable/expenses/new',  icon: <Plus className="w-5 h-5" />,            color: '#0B7439', bg: '#d4edda' },
-              { label: 'Liste dépenses',   path: '/comptable/expenses',       icon: <LayoutDashboard className="w-5 h-5" />, color: '#1D6FA4', bg: '#DBEAFE' },
-              { label: 'Flotte',           path: '/comptable/fleet',          icon: <Car className="w-5 h-5" />,             color: '#D97706', bg: '#FEF3C7' },
-              { label: 'Stock',            path: '/comptable/stock',          icon: <Package className="w-5 h-5" />,         color: '#6B7280', bg: '#F3F4F6' },
+              { label: 'Saisir dépense', path: '/comptable/expenses/new', icon: <Plus className="w-5 h-5" />, color: '#0B7439', bg: '#d4edda' },
+              { label: 'Liste dépenses', path: '/comptable/expenses', icon: <LayoutDashboard className="w-5 h-5" />, color: '#1D6FA4', bg: '#DBEAFE' },
+              { label: 'Flotte', path: '/comptable/fleet', icon: <Car className="w-5 h-5" />, color: '#D97706', bg: '#FEF3C7' },
+              { label: 'Stock', path: '/comptable/stock', icon: <Package className="w-5 h-5" />, color: '#6B7280', bg: '#F3F4F6' },
             ].map(a => (
               <button key={a.path} onClick={() => navigate(a.path)}
                 className="rounded-xl p-3 flex items-center gap-3 hover:shadow-md transition-all text-left"
