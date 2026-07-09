@@ -1,19 +1,15 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, AlertTriangle, Camera, Bus as BusIcon, Search, X } from 'lucide-react'
+import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { createParcel, fetchParcelAgentInfo } from '@/services/parcel.service'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
-import ParcelPhotoCapture from '@/components/parcel/ParcelPhotoCapture'
-import type { ScheduledBus } from '@/components/parcel/BusSelector'
 import type { ParcelNature, ParcelPriority, Parcel } from '@/types/parcel.types'
 
 interface Station { id: string; name: string; city_name?: string }
-interface BusOption { id: string; registration_number: string; brand: string | null; model: string | null }
-interface DriverOption { id: string; full_name: string }
 
 const NATURE_OPTIONS: { value: ParcelNature; label: string }[] = [
   { value: 'autre', label: 'Autre' },
@@ -42,24 +38,7 @@ export default function NewParcelForm() {
   const stationPhone = user?.station_phone ?? ''
 
   const [stations, setStations] = useState<Station[]>([])
-  const [parcelPhotos, setParcelPhotos] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-
-  // Bus search
-  const [busSearch, setBusSearch] = useState('')
-  const [busResults, setBusResults] = useState<BusOption[]>([])
-  const [busLoading, setBusLoading] = useState(false)
-  const [selectedBusOption, setSelectedBusOption] = useState<BusOption | null>(null)
-  const [busDropdownOpen, setBusDropdownOpen] = useState(false)
-  const busRef = useRef<HTMLDivElement>(null)
-
-  // Driver search
-  const [driverSearch, setDriverSearch] = useState('')
-  const [driverResults, setDriverResults] = useState<DriverOption[]>([])
-  const [driverLoading, setDriverLoading] = useState(false)
-  const [selectedDriver, setSelectedDriver] = useState<DriverOption | null>(null)
-  const [driverDropdownOpen, setDriverDropdownOpen] = useState(false)
-  const driverRef = useRef<HTMLDivElement>(null)
 
   const [form, setForm] = useState({
     sender_name: '',
@@ -90,84 +69,9 @@ export default function NewParcelForm() {
     loadStations()
   }, [])
 
-  // Close dropdowns on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (busRef.current && !busRef.current.contains(e.target as Node)) setBusDropdownOpen(false)
-      if (driverRef.current && !driverRef.current.contains(e.target as Node)) setDriverDropdownOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
-
-  // Bus search
-  const searchBuses = useCallback(async (q: string) => {
-    if (q.length < 2) { setBusResults([]); return }
-    setBusLoading(true)
-    try {
-      const { data } = await supabase
-        .from('buses')
-        .select('id, registration_number, brand, model')
-        .ilike('registration_number', `%${q}%`)
-        .in('status', ['disponible', 'en_service'])
-        .order('registration_number')
-        .limit(10)
-      setBusResults(data ?? [])
-    } catch { setBusResults([]) }
-    finally { setBusLoading(false) }
-  }, [])
-
-  useEffect(() => {
-    const t = setTimeout(() => searchBuses(busSearch), 300)
-    return () => clearTimeout(t)
-  }, [busSearch, searchBuses])
-
-  // Driver search
-  const searchDrivers = useCallback(async (q: string) => {
-    if (q.length < 2) { setDriverResults([]); return }
-    setDriverLoading(true)
-    try {
-      const { data } = await supabase
-        .from('users')
-        .select('id, full_name')
-        .eq('role', 'chauffeur')
-        .eq('is_active', true)
-        .ilike('full_name', `%${q}%`)
-        .order('full_name')
-        .limit(10)
-      setDriverResults(data ?? [])
-    } catch { setDriverResults([]) }
-    finally { setDriverLoading(false) }
-  }, [])
-
-  useEffect(() => {
-    const t = setTimeout(() => searchDrivers(driverSearch), 300)
-    return () => clearTimeout(t)
-  }, [driverSearch, searchDrivers])
-
   function set(field: string, value: unknown) {
     setForm(prev => ({ ...prev, [field]: value }))
   }
-
-  // Build a ScheduledBus-compatible object for ticket printing
-  const selectedBus: ScheduledBus | null = selectedBusOption ? {
-    id: '',
-    departure_datetime: '',
-    arrival_datetime: null,
-    estimated_duration_minutes: null,
-    route_name: null,
-    status: '',
-    seats_available: null,
-    seats_reserved: null,
-    registration_number: selectedBusOption.registration_number,
-    brand: selectedBusOption.brand,
-    model: selectedBusOption.model,
-    total_seats: null,
-    company_name: null,
-    driver_name: selectedDriver?.full_name ?? null,
-    departure_station_id: '',
-    arrival_station_id: '',
-  } : null
 
   const total = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
@@ -209,11 +113,11 @@ export default function NewParcelForm() {
         priority:               form.priority,
         planned_date:           form.planned_date || null,
         schedule_id:            null,
-        bus_id:                 selectedBusOption?.id || null,
-        driver_id:              selectedDriver?.id || null,
+        bus_id:                 null,
+        driver_id:              null,
         nature:                 form.nature,
         content_description:    form.content_description,
-        parcel_photos:          parcelPhotos,
+        parcel_photos:          [],
         notes:                  form.notes || null,
         company_id:             null,
       } as any)
@@ -233,7 +137,7 @@ export default function NewParcelForm() {
         { ...parcel, origin_station_name: myStation.name } as Parcel,
         myStation.name,
         stationPhone,
-        selectedBus,
+        null,
         null,
         agentInfo,
       ))
@@ -372,125 +276,7 @@ export default function NewParcelForm() {
                 {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            {/* Bus search */}
-            {form.destination_station_id && (
-              <div ref={busRef} className="relative">
-                <label className={labelCls} style={labelStyle}>Bus (plaque d'immatriculation)</label>
-                {selectedBusOption ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: '#0B7439', backgroundColor: '#f0faf4' }}>
-                    <BusIcon className="w-4 h-4 flex-shrink-0" style={{ color: '#0B7439' }} />
-                    <span className="flex-1 text-sm font-semibold truncate" style={{ color: '#0B7439' }}>
-                      {selectedBusOption.registration_number}
-                      {selectedBusOption.brand ? ` — ${selectedBusOption.brand}` : ''}
-                    </span>
-                    <button type="button" onClick={() => { setSelectedBusOption(null); setBusSearch('') }} className="p-0.5 rounded hover:bg-green-100">
-                      <X className="w-3.5 h-3.5" style={{ color: '#0B7439' }} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                    <input
-                      className={inputCls}
-                      style={{ ...inputStyle, paddingLeft: '2rem' }}
-                      placeholder="Rechercher par plaque..."
-                      value={busSearch}
-                      onChange={e => { setBusSearch(e.target.value); setBusDropdownOpen(true) }}
-                      onFocus={() => busSearch.length >= 2 && setBusDropdownOpen(true)}
-                    />
-                  </div>
-                )}
-                {busDropdownOpen && !selectedBusOption && (
-                  <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', maxHeight: 200, overflowY: 'auto' }}>
-                    {busLoading && (
-                      <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Recherche...</div>
-                    )}
-                    {!busLoading && busSearch.length >= 2 && busResults.length === 0 && (
-                      <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun bus trouvé</div>
-                    )}
-                    {busResults.map(b => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-0 text-sm"
-                        style={{ borderColor: 'var(--border)' }}
-                        onClick={() => { setSelectedBusOption(b); setBusDropdownOpen(false); setBusSearch('') }}
-                      >
-                        <span className="font-mono font-bold" style={{ color: '#0B7439' }}>{b.registration_number}</span>
-                        {b.brand && <span className="ml-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{b.brand} {b.model ?? ''}</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Driver search */}
-            {form.destination_station_id && (
-              <div ref={driverRef} className="relative">
-                <label className={labelCls} style={labelStyle}>Chauffeur</label>
-                {selectedDriver ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: '#1D6FA4', backgroundColor: '#EFF6FF' }}>
-                    <User className="w-4 h-4 flex-shrink-0" style={{ color: '#1D6FA4' }} />
-                    <span className="flex-1 text-sm font-semibold truncate" style={{ color: '#1D6FA4' }}>
-                      {selectedDriver.full_name}
-                    </span>
-                    <button type="button" onClick={() => { setSelectedDriver(null); setDriverSearch('') }} className="p-0.5 rounded hover:bg-blue-100">
-                      <X className="w-3.5 h-3.5" style={{ color: '#1D6FA4' }} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                    <input
-                      className={inputCls}
-                      style={{ ...inputStyle, paddingLeft: '2rem' }}
-                      placeholder="Rechercher par nom..."
-                      value={driverSearch}
-                      onChange={e => { setDriverSearch(e.target.value); setDriverDropdownOpen(true) }}
-                      onFocus={() => driverSearch.length >= 2 && setDriverDropdownOpen(true)}
-                    />
-                  </div>
-                )}
-                {driverDropdownOpen && !selectedDriver && (
-                  <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', maxHeight: 200, overflowY: 'auto' }}>
-                    {driverLoading && (
-                      <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Recherche...</div>
-                    )}
-                    {!driverLoading && driverSearch.length >= 2 && driverResults.length === 0 && (
-                      <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun chauffeur trouvé</div>
-                    )}
-                    {driverResults.map(d => (
-                      <button
-                        key={d.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-0 text-sm"
-                        style={{ borderColor: 'var(--border)' }}
-                        onClick={() => { setSelectedDriver(d); setDriverDropdownOpen(false); setDriverSearch('') }}
-                      >
-                        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{d.full_name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
-        </section>
-
-        {/* SECTION 4 — PHOTO DU COLIS */}
-        <section className="rounded-xl p-4 sm:p-5 space-y-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-2 mb-1">
-            <Camera className="w-4 h-4 flex-shrink-0" style={{ color: '#0B7439' }} />
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Photo du courrier</h2>
-            <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>Optionnel — max 3 photos</span>
-          </div>
-          <ParcelPhotoCapture
-            photos={parcelPhotos}
-            onChange={setParcelPhotos}
-            maxPhotos={3}
-            disabled={loading}
-          />
         </section>
 
         {/* SECTION 5 — DESCRIPTION DU COLIS */}

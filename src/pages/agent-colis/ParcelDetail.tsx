@@ -432,7 +432,9 @@ export default function ParcelDetail() {
         </div>
       )}
 
-      {/* Bus d'acheminement */}
+      {/* Bus d'acheminement — only shown from "expedie" status onwards */}
+      {['expedie', 'arrive', 'livre', 'retourne'].includes(parcel.status) && (
+        <>
       {scheduleInfo ? (
         <div className="rounded-xl overflow-hidden" style={{ border: '2px solid #0B7439' }}>
           {/* En-tete */}
@@ -580,6 +582,8 @@ export default function ParcelDetail() {
           <Navigation className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Aucun bus assigne pour l'acheminement de ce courrier.</p>
         </div>
+      )}
+        </>
       )}
 
       {/* SMS Status */}

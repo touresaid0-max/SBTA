@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Package, PackagePlus, ArrowDownToLine, Banknote, CheckCircle2,
   Printer, Eye, ArrowRight, RefreshCw, Bell, X, Truck, FileText, ChevronDown,
-  Filter, MapPin, Bus, User, Loader2, QrCode, Layers, PackageCheck, Send,
+  Filter, MapPin, Bus, User, Loader2, QrCode, Layers, PackageCheck, Send, Search,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
@@ -103,6 +103,24 @@ export default function AgentColisDashboard() {
     dest: string; action: 'mis_en_paquet' | 'expedie'; ids: string[]; fromStatus: string
   } | null>(null)
 
+  // Expedition modal state (bus + driver autocomplete)
+  const [expeditionModal, setExpeditionModal] = useState<{
+    dest: string; ids: string[]
+  } | null>(null)
+  const [expBusSearch, setExpBusSearch] = useState('')
+  const [expBusResults, setExpBusResults] = useState<{ id: string; registration_number: string; brand: string | null }[]>([])
+  const [expBusLoading, setExpBusLoading] = useState(false)
+  const [expSelectedBus, setExpSelectedBus] = useState<{ id: string; registration_number: string; brand: string | null } | null>(null)
+  const [expBusOpen, setExpBusOpen] = useState(false)
+  const [expDriverSearch, setExpDriverSearch] = useState('')
+  const [expDriverResults, setExpDriverResults] = useState<{ id: string; full_name: string }[]>([])
+  const [expDriverLoading, setExpDriverLoading] = useState(false)
+  const [expSelectedDriver, setExpSelectedDriver] = useState<{ id: string; full_name: string } | null>(null)
+  const [expDriverOpen, setExpDriverOpen] = useState(false)
+  const [expSubmitting, setExpSubmitting] = useState(false)
+  const expBusRef = useRef<HTMLDivElement>(null)
+  const expDriverRef = useRef<HTMLDivElement>(null)
+
   const stationId    = user?.station_id    ?? null
   const stationName  = user?.station_name  ?? ''
   const stationPhone = user?.station_phone ?? ''
@@ -171,6 +189,108 @@ export default function AgentColisDashboard() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [stationId, loadParcels])
+
+  // ── Expedition modal: bus search ──────────────────────────────────────────
+  useEffect(() => {
+    if (!expeditionModal) return
+    if (expBusSearch.length < 2) { setExpBusResults([]); return }
+    const t = setTimeout(async () => {
+      setExpBusLoading(true)
+      try {
+        const { data } = await supabase
+          .from('buses')
+          .select('id, registration_number, brand')
+          .ilike('registration_number', `%${expBusSearch}%`)
+          .in('status', ['disponible', 'en_service'])
+          .order('registration_number')
+          .limit(10)
+        setExpBusResults(data ?? [])
+      } catch { setExpBusResults([]) }
+      finally { setExpBusLoading(false) }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [expBusSearch, expeditionModal])
+
+  // ── Expedition modal: driver search ───────────────────────────────────────
+  useEffect(() => {
+    if (!expeditionModal) return
+    if (expDriverSearch.length < 2) { setExpDriverResults([]); return }
+    const t = setTimeout(async () => {
+      setExpDriverLoading(true)
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .eq('role', 'chauffeur')
+          .eq('is_active', true)
+          .ilike('full_name', `%${expDriverSearch}%`)
+          .order('full_name')
+          .limit(10)
+        setExpDriverResults(data ?? [])
+      } catch { setExpDriverResults([]) }
+      finally { setExpDriverLoading(false) }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [expDriverSearch, expeditionModal])
+
+  // Close expedition dropdowns on outside click
+  useEffect(() => {
+    if (!expeditionModal) return
+    function handleClick(e: MouseEvent) {
+      if (expBusRef.current && !expBusRef.current.contains(e.target as Node)) setExpBusOpen(false)
+      if (expDriverRef.current && !expDriverRef.current.contains(e.target as Node)) setExpDriverOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [expeditionModal])
+
+  // ── Submit expedition with bus + driver ────────────────────────────────────
+  async function handleExpeditionSubmit() {
+    if (!expeditionModal || !expSelectedBus || !expSelectedDriver) {
+      toast.error('Veuillez sélectionner un bus et un chauffeur')
+      return
+    }
+    setExpSubmitting(true)
+    try {
+      const now = new Date().toISOString()
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+
+      const { data, error } = await supabase
+        .from('parcels')
+        .update({
+          status: 'expedie',
+          shipped_at: now,
+          shipped_by: authUser?.id,
+          bus_id: expSelectedBus.id,
+          driver_id: expSelectedDriver.id,
+          updated_at: now,
+        })
+        .in('id', expeditionModal.ids)
+        .select('id')
+
+      if (error) throw error
+      const count = data?.length ?? 0
+      toast.success(`${count} courrier${count > 1 ? 's' : ''} expédié${count > 1 ? 's' : ''} — ${expeditionModal.dest}`)
+      setExpeditionModal(null)
+      resetExpeditionState()
+      loadParcels()
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur lors de l\'expédition')
+    } finally {
+      setExpSubmitting(false)
+    }
+  }
+
+  function resetExpeditionState() {
+    setExpBusSearch('')
+    setExpBusResults([])
+    setExpSelectedBus(null)
+    setExpBusOpen(false)
+    setExpDriverSearch('')
+    setExpDriverResults([])
+    setExpSelectedDriver(null)
+    setExpDriverOpen(false)
+  }
 
   // ── KPI counters — always based on TODAY regardless of list period filter ──
   const todayStr = new Date().toISOString().slice(0, 10)
@@ -785,12 +905,10 @@ export default function AgentColisDashboard() {
                       )}
                       {canBulkShip && (
                         <button
-                          onClick={() => setBulkConfirm({
-                            dest: group.dest,
-                            action: 'expedie',
-                            ids: misEnPaquetIds,
-                            fromStatus: 'mis_en_paquet',
-                          })}
+                          onClick={() => {
+                            resetExpeditionState()
+                            setExpeditionModal({ dest: group.dest, ids: misEnPaquetIds })
+                          }}
                           disabled={!!bulkLoading}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors"
                           style={{ backgroundColor: '#0B7439', color: '#fff' }}
@@ -1216,6 +1334,148 @@ export default function AgentColisDashboard() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Expedition Modal — Bus + Driver selection */}
+      {expeditionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-5" style={{ backgroundColor: 'var(--surface)' }}>
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#d4edda', color: '#0B7439' }}>
+                <Send className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Validation d'expédition</h3>
+                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                  {expeditionModal.ids.length} courrier{expeditionModal.ids.length > 1 ? 's' : ''} — {expeditionModal.dest}
+                </p>
+              </div>
+              <button onClick={() => { setExpeditionModal(null); resetExpeditionState() }} className="ml-auto p-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0">
+                <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+
+            {/* Bus autocomplete */}
+            <div ref={expBusRef} className="relative">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Plaque d'immatriculation du bus *
+              </label>
+              {expSelectedBus ? (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border" style={{ borderColor: '#0B7439', backgroundColor: '#f0faf4' }}>
+                  <Bus className="w-4 h-4 flex-shrink-0" style={{ color: '#0B7439' }} />
+                  <span className="flex-1 text-sm font-bold font-mono" style={{ color: '#0B7439' }}>
+                    {expSelectedBus.registration_number}
+                  </span>
+                  <button type="button" onClick={() => { setExpSelectedBus(null); setExpBusSearch('') }} className="p-0.5 rounded hover:bg-green-100">
+                    <X className="w-3.5 h-3.5" style={{ color: '#0B7439' }} />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                  <input
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-green-500"
+                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                    placeholder="Rechercher par plaque..."
+                    value={expBusSearch}
+                    onChange={e => { setExpBusSearch(e.target.value); setExpBusOpen(true) }}
+                    onFocus={() => expBusSearch.length >= 2 && setExpBusOpen(true)}
+                  />
+                </div>
+              )}
+              {expBusOpen && !expSelectedBus && (
+                <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', maxHeight: 180, overflowY: 'auto' }}>
+                  {expBusLoading && <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Recherche...</div>}
+                  {!expBusLoading && expBusSearch.length >= 2 && expBusResults.length === 0 && (
+                    <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun bus trouvé</div>
+                  )}
+                  {expBusResults.map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-0 text-sm"
+                      style={{ borderColor: 'var(--border)' }}
+                      onClick={() => { setExpSelectedBus(b); setExpBusOpen(false); setExpBusSearch('') }}
+                    >
+                      <span className="font-mono font-bold" style={{ color: '#0B7439' }}>{b.registration_number}</span>
+                      {b.brand && <span className="ml-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{b.brand}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Driver autocomplete */}
+            <div ref={expDriverRef} className="relative">
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Nom du chauffeur *
+              </label>
+              {expSelectedDriver ? (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border" style={{ borderColor: '#1D6FA4', backgroundColor: '#EFF6FF' }}>
+                  <User className="w-4 h-4 flex-shrink-0" style={{ color: '#1D6FA4' }} />
+                  <span className="flex-1 text-sm font-bold" style={{ color: '#1D6FA4' }}>
+                    {expSelectedDriver.full_name}
+                  </span>
+                  <button type="button" onClick={() => { setExpSelectedDriver(null); setExpDriverSearch('') }} className="p-0.5 rounded hover:bg-blue-100">
+                    <X className="w-3.5 h-3.5" style={{ color: '#1D6FA4' }} />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                  <input
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                    placeholder="Rechercher par nom..."
+                    value={expDriverSearch}
+                    onChange={e => { setExpDriverSearch(e.target.value); setExpDriverOpen(true) }}
+                    onFocus={() => expDriverSearch.length >= 2 && setExpDriverOpen(true)}
+                  />
+                </div>
+              )}
+              {expDriverOpen && !expSelectedDriver && (
+                <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', maxHeight: 180, overflowY: 'auto' }}>
+                  {expDriverLoading && <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Recherche...</div>}
+                  {!expDriverLoading && expDriverSearch.length >= 2 && expDriverResults.length === 0 && (
+                    <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun chauffeur trouvé</div>
+                  )}
+                  {expDriverResults.map(d => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-0 text-sm"
+                      style={{ borderColor: 'var(--border)' }}
+                      onClick={() => { setExpSelectedDriver(d); setExpDriverOpen(false); setExpDriverSearch('') }}
+                    >
+                      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{d.full_name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                onClick={() => { setExpeditionModal(null); resetExpeditionState() }}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleExpeditionSubmit}
+                disabled={!expSelectedBus || !expSelectedDriver || expSubmitting}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#0B7439', color: '#fff' }}
+              >
+                {expSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {expSubmitting ? 'Expédition...' : 'Valider l\'expédition'}
+              </button>
+            </div>
           </div>
         </div>
       )}
