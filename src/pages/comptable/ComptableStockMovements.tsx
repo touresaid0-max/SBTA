@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, ChevronDown, X, Save, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Plus, ChevronDown, X, Save, ArrowUpCircle, ArrowDownCircle, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -45,6 +45,26 @@ export default function ComptableStockMovements() {
   const [saving,     setSaving]     = useState(false)
   const [filterType, setFilterType] = useState<'all' | 'entree' | 'sortie'>('all')
   const [filterItem, setFilterItem] = useState('')
+
+  // Autocomplete state for form article field
+  const [formArticleSearch, setFormArticleSearch] = useState('')
+  const [formArticleOpen, setFormArticleOpen] = useState(false)
+  const formArticleRef = useRef<HTMLDivElement>(null)
+
+  // Autocomplete state for filter article field
+  const [filterArticleSearch, setFilterArticleSearch] = useState('')
+  const [filterArticleOpen, setFilterArticleOpen] = useState(false)
+  const filterArticleRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (formArticleRef.current && !formArticleRef.current.contains(e.target as Node)) setFormArticleOpen(false)
+      if (filterArticleRef.current && !filterArticleRef.current.contains(e.target as Node)) setFilterArticleOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   useEffect(() => {
     if (!companyId) return
@@ -165,15 +185,60 @@ export default function ComptableStockMovements() {
             </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {/* Article */}
+            {/* Article — autocomplete */}
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Article <span style={{ color: '#DC2626' }}>*</span></label>
-              <div className="relative">
-                <select value={form.stock_item_id} onChange={setF('stock_item_id')} className={inputCls} style={inputStyle}>
-                  <option value="">Sélectionner un article…</option>
-                  {items.map(i => <option key={i.id} value={i.id}>{i.designation}{i.code_article ? ` (${i.code_article})` : ''}</option>)}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+              <div className="relative" ref={formArticleRef}>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  value={formArticleSearch}
+                  onChange={e => { setFormArticleSearch(e.target.value); setFormArticleOpen(true) }}
+                  onFocus={() => setFormArticleOpen(true)}
+                  placeholder="Rechercher un article..."
+                  className={inputCls + ' pl-9'}
+                  style={inputStyle}
+                />
+                {form.stock_item_id && (
+                  <button
+                    type="button"
+                    onClick={() => { setForm(f => ({ ...f, stock_item_id: '' })); setFormArticleSearch('') }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                  >
+                    <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                  </button>
+                )}
+                {formArticleOpen && (
+                  <div className="absolute z-30 left-0 right-0 top-full mt-1 rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    {items
+                      .filter(i => {
+                        const q = formArticleSearch.toLowerCase()
+                        return !q || i.designation.toLowerCase().includes(q) || i.code_article?.toLowerCase().includes(q)
+                      })
+                      .map(i => (
+                        <button
+                          key={i.id}
+                          type="button"
+                          onClick={() => {
+                            setForm(f => ({ ...f, stock_item_id: i.id }))
+                            setFormArticleSearch(i.designation + (i.code_article ? ` (${i.code_article})` : ''))
+                            setFormArticleOpen(false)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 transition-colors flex items-center justify-between"
+                          style={{ color: form.stock_item_id === i.id ? '#0B7439' : 'var(--text-primary)' }}
+                        >
+                          <span className="font-medium">{i.designation}</span>
+                          {i.code_article && <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{i.code_article}</span>}
+                        </button>
+                      ))}
+                    {items.filter(i => {
+                      const q = formArticleSearch.toLowerCase()
+                      return !q || i.designation.toLowerCase().includes(q) || i.code_article?.toLowerCase().includes(q)
+                    }).length === 0 && (
+                      <p className="px-3 py-3 text-xs text-center" style={{ color: 'var(--text-muted)' }}>Aucun article trouv&eacute;</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             {/* Type */}
@@ -232,12 +297,62 @@ export default function ComptableStockMovements() {
             </button>
           ))}
         </div>
-        <div className="relative flex-1 min-w-[180px]">
-          <select value={filterItem} onChange={e => setFilterItem(e.target.value)} className="w-full px-3 py-1.5 rounded-lg text-xs appearance-none" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            <option value="">Tous les articles</option>
-            {items.map(i => <option key={i.id} value={i.id}>{i.designation}</option>)}
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+        <div className="relative flex-1 min-w-[220px]" ref={filterArticleRef}>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            value={filterArticleSearch}
+            onChange={e => { setFilterArticleSearch(e.target.value); setFilterArticleOpen(true) }}
+            onFocus={() => setFilterArticleOpen(true)}
+            placeholder="Filtrer par article..."
+            className="w-full pl-9 pr-8 py-1.5 rounded-lg text-xs outline-none"
+            style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+          />
+          {filterItem && (
+            <button
+              onClick={() => { setFilterItem(''); setFilterArticleSearch('') }}
+              className="absolute right-3 top-1/2 -translate-y-1/2"
+            >
+              <X className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+            </button>
+          )}
+          {filterArticleOpen && (
+            <div className="absolute z-30 left-0 right-0 top-full mt-1 rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <button
+                onClick={() => { setFilterItem(''); setFilterArticleSearch(''); setFilterArticleOpen(false) }}
+                className="w-full px-3 py-2 text-left text-xs hover:bg-gray-100 font-medium transition-colors"
+                style={{ color: !filterItem ? '#0B7439' : 'var(--text-secondary)' }}
+              >
+                Tous les articles
+              </button>
+              {items
+                .filter(i => {
+                  const q = filterArticleSearch.toLowerCase()
+                  return !q || i.designation.toLowerCase().includes(q) || i.code_article?.toLowerCase().includes(q)
+                })
+                .map(i => (
+                  <button
+                    key={i.id}
+                    onClick={() => {
+                      setFilterItem(i.id)
+                      setFilterArticleSearch(i.designation)
+                      setFilterArticleOpen(false)
+                    }}
+                    className="w-full px-3 py-2 text-left text-xs hover:bg-gray-100 transition-colors flex items-center justify-between"
+                    style={{ color: filterItem === i.id ? '#0B7439' : 'var(--text-primary)' }}
+                  >
+                    <span className="font-medium">{i.designation}</span>
+                    {i.code_article && <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{i.code_article}</span>}
+                  </button>
+                ))}
+              {items.filter(i => {
+                const q = filterArticleSearch.toLowerCase()
+                return !q || i.designation.toLowerCase().includes(q) || i.code_article?.toLowerCase().includes(q)
+              }).length === 0 && (
+                <p className="px-3 py-3 text-xs text-center" style={{ color: 'var(--text-muted)' }}>Aucun article</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
