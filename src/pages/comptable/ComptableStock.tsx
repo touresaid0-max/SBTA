@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, AlertTriangle, Package, CreditCard as Edit2, X, Save } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Plus, AlertTriangle, Package, CreditCard as Edit2, X, Save, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -38,6 +38,9 @@ export default function ComptableStock() {
   const [editId,    setEditId]    = useState<string | null>(null)
   const [form,      setForm]      = useState<ItemForm>(EMPTY_FORM)
   const [saving,    setSaving]    = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchOpen,  setSearchOpen]  = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -72,6 +75,28 @@ export default function ComptableStock() {
   }, [companyId])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const filteredItems = searchQuery.trim()
+    ? items.filter(i => {
+        const q = searchQuery.toLowerCase()
+        return i.designation.toLowerCase().includes(q) || (i.code_article ?? '').toLowerCase().includes(q)
+      })
+    : items
+
+  const suggestions = searchQuery.trim()
+    ? items.filter(i => {
+        const q = searchQuery.toLowerCase()
+        return i.designation.toLowerCase().includes(q) || (i.code_article ?? '').toLowerCase().includes(q)
+      }).slice(0, 8)
+    : []
 
   const setF = (field: keyof ItemForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }))
@@ -150,6 +175,40 @@ export default function ComptableStock() {
         </div>
       </div>
 
+      {/* Search */}
+      <div ref={searchRef} className="relative">
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <Search className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+          <input
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }}
+            onFocus={() => { if (searchQuery.trim()) setSearchOpen(true) }}
+            placeholder="Rechercher par désignation ou code article…"
+            className="flex-1 bg-transparent text-sm outline-none"
+            style={{ color: 'var(--text-primary)' }}
+          />
+          {searchQuery && (
+            <button onClick={() => { setSearchQuery(''); setSearchOpen(false) }} className="p-0.5 rounded hover:bg-gray-100">
+              <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+            </button>
+          )}
+        </div>
+        {searchOpen && suggestions.length > 0 && (
+          <div className="absolute z-20 left-0 right-0 mt-1 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            {suggestions.map(s => (
+              <button
+                key={s.id}
+                onClick={() => { setSearchQuery(s.designation); setSearchOpen(false) }}
+                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center justify-between gap-2 transition-colors"
+              >
+                <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{s.designation}</span>
+                {s.code_article && <span className="text-xs font-mono flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{s.code_article}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Add/Edit form */}
       {showForm && (
         <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -205,14 +264,14 @@ export default function ComptableStock() {
             <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {loading ? (
                 <tr><td colSpan={11} className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Chargement…</td></tr>
-              ) : items.length === 0 ? (
+              ) : filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="py-12 text-center">
                     <Package className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Aucun article. Cliquez sur "Nouvel article" pour commencer.</p>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{searchQuery ? 'Aucun article ne correspond à la recherche.' : 'Aucun article. Cliquez sur "Nouvel article" pour commencer.'}</p>
                   </td>
                 </tr>
-              ) : items.map(item => {
+              ) : filteredItems.map(item => {
                 const isAlert = item.stock_final < item.stock_min
                 const montant = item.stock_final * item.prix_unitaire
                 return (
@@ -258,12 +317,12 @@ export default function ComptableStock() {
                 )
               })}
             </tbody>
-            {items.length > 0 && (
+            {filteredItems.length > 0 && (
               <tfoot>
                 <tr style={{ backgroundColor: '#0B7439' }}>
                   <td colSpan={9} className="px-3 py-2.5 text-right text-xs font-bold text-white">VALEUR TOTALE DU STOCK</td>
                   <td className="px-3 py-2.5 text-right text-sm font-bold text-white">
-                    {fmt(items.reduce((a, i) => a + (i.prix_unitaire > 0 ? i.stock_final * i.prix_unitaire : 0), 0))} XOF
+                    {fmt(filteredItems.reduce((a, i) => a + (i.prix_unitaire > 0 ? i.stock_final * i.prix_unitaire : 0), 0))} XOF
                   </td>
                   <td />
                 </tr>
