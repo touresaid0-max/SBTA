@@ -17,6 +17,8 @@ export interface FleetVehicle {
   created_at: string
 }
 
+export type ExpenseValidationStatus = 'en_attente' | 'validee'
+
 export interface VehicleExpense {
   id: string
   company_id: string
@@ -32,6 +34,9 @@ export interface VehicleExpense {
   created_by: string | null
   created_at: string
   updated_at: string
+  validation_status: ExpenseValidationStatus
+  validated_at: string | null
+  validated_by: string | null
   // joins
   company?: { name: string; code: string }
   category?: ExpenseCategory

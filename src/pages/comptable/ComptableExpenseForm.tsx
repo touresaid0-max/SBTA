@@ -298,6 +298,7 @@ export default function ComptableExpenseForm() {
     setLoading(true)
     try {
       // Create a synthetic vehicle_expense representing the total stock movement
+      const needsValidation = REGIONAL_COMPANIES.includes(companyCode)
       const payload = {
         company_id:          companyId,
         vehicle_id:          selectedVehicle?.id ?? null,
@@ -312,6 +313,7 @@ export default function ComptableExpenseForm() {
         updated_at:          new Date().toISOString(),
         created_by:          user?.id ?? null,
         source:              'comptable',
+        validation_status:   needsValidation ? 'en_attente' : 'validee',
       }
       const { data: inserted, error } = await supabase.from('vehicle_expenses').insert(payload).select('id').single()
       if (error) throw error
@@ -332,7 +334,10 @@ export default function ComptableExpenseForm() {
       const { error: mvErr } = await supabase.from('comptable_stock_movements').insert(movements)
       if (mvErr) throw mvErr
 
-      toast.success(`Dépense enregistrée — ${stockLines.length} sortie(s) de stock`)
+      toast.success(needsValidation
+        ? `Depense en attente de validation — ${stockLines.length} sortie(s) de stock`
+        : `Depense enregistree — ${stockLines.length} sortie(s) de stock`
+      )
 
       if (addAnother) {
         setStockLines([])
@@ -354,6 +359,7 @@ export default function ComptableExpenseForm() {
   const saveOther = async (addAnother = false) => {
     if (!validateOther()) return
     setLoading(true)
+    const needsValidation = REGIONAL_COMPANIES.includes(companyCode)
     const payload = {
       company_id:          companyId,
       vehicle_id:          selectedVehicle?.id ?? null,
@@ -367,16 +373,17 @@ export default function ComptableExpenseForm() {
       notes:               other.notes.trim() || null,
       updated_at:          new Date().toISOString(),
       source:              'comptable',
+      validation_status:   needsValidation ? 'en_attente' : 'validee',
     }
     try {
       if (isEdit) {
         const { error } = await supabase.from('vehicle_expenses').update(payload).eq('id', id)
         if (error) throw error
-        toast.success('Dépense mise à jour')
+        toast.success('Depense mise a jour')
       } else {
         const { error } = await supabase.from('vehicle_expenses').insert({ ...payload, created_by: user?.id ?? null })
         if (error) throw error
-        toast.success('Dépense enregistrée')
+        toast.success(needsValidation ? 'Depense en attente de validation' : 'Depense enregistree')
       }
       if (addAnother) {
         setOther({ ...EMPTY_OTHER, expense_date: other.expense_date })
