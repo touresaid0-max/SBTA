@@ -18,6 +18,7 @@ interface ParcelExpense {
   description: string | null
   receipt_url: string | null
   created_at: string
+  agent_name?: string
 }
 
 const PAYMENT_METHODS = [
@@ -52,14 +53,15 @@ export default function AgentColisExpenses() {
     setLoading(true)
     const { data, error } = await supabase
       .from('parcel_service_expenses')
-      .select('*')
+      .select('*, users:agent_id(full_name)')
       .eq('station_id', stationId)
       .order('expense_date', { ascending: false })
       .order('created_at', { ascending: false })
     if (error) {
       toast.error('Erreur chargement des depenses')
     } else {
-      setExpenses(data || [])
+      const mapped = (data || []).map((e: any) => ({ ...e, agent_name: e.users?.full_name || '-' }))
+      setExpenses(mapped)
     }
     setLoading(false)
   }, [stationId])
@@ -338,6 +340,7 @@ export default function AgentColisExpenses() {
               <thead className="bg-gray-50 border-b">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Agent</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Nature</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600">Montant</th>
@@ -351,6 +354,9 @@ export default function AgentColisExpenses() {
                   <tr key={exp.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 whitespace-nowrap">
                       {format(new Date(exp.expense_date), 'dd/MM/yyyy')}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 text-xs font-medium whitespace-nowrap">
+                      {exp.agent_name}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${exp.expense_type === 'depense' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
