@@ -111,6 +111,64 @@ export async function bulkUpdateParcelStatus(
   return { updated: data?.length ?? 0 }
 }
 
+export async function updateParcelFields(
+  parcelId: string,
+  fields: Partial<Pick<Parcel, 'parcel_code' | 'sender_name' | 'sender_phone' | 'recipient_name' | 'recipient_phone' | 'recipient_city' | 'origin_station_id' | 'destination_station_id' | 'total_amount' | 'delivery_fee' | 'status' | 'registered_at' | 'content_description' | 'notes'>>,
+): Promise<void> {
+  const now = new Date().toISOString()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const payload: Record<string, unknown> = { ...fields, updated_at: now }
+
+  if (fields.status) {
+    switch (fields.status) {
+      case 'mis_en_paquet':
+        payload.packaged_at = now
+        payload.packaged_by = user?.id
+        break
+      case 'expedie':
+        payload.shipped_at = now
+        payload.shipped_by = user?.id
+        break
+      case 'arrive':
+        payload.arrived_at = now
+        payload.arrived_by = user?.id
+        break
+      case 'livre':
+        payload.delivered_at = now
+        payload.delivered_by = user?.id
+        break
+    }
+  }
+
+  const { error } = await supabase.from('parcels').update(payload).eq('id', parcelId)
+  if (error) throw error
+
+  if (fields.status === 'arrive') {
+    try {
+      const { data: p } = await supabase
+        .from('parcels')
+        .select('id, recipient_phone')
+        .eq('id', parcelId)
+        .maybeSingle()
+      if (p?.recipient_phone) {
+        await sendCourierArrivedSms({ id: p.id, recipient_phone: p.recipient_phone })
+      }
+    } catch { /* SMS must not block */ }
+  }
+}
+
+export async function deleteParcel(parcelId: string): Promise<void> {
+  const { error: evtErr } = await supabase
+    .from('parcel_tracking_events')
+    .delete()
+    .eq('parcel_id', parcelId)
+  if (evtErr) throw evtErr
+
+  const { error } = await supabase.from('parcels').delete().eq('id', parcelId)
+  if (error) throw error
+}
+
 export async function fetchParcelByCode(code: string): Promise<Parcel | null> {
   const { data, error } = await supabase
     .from('parcels')

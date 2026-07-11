@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Package, Search, RefreshCw, Eye, Printer, Filter, X,
-  ArrowUpDown, ChevronLeft, ChevronRight,
-} from 'lucide-react'
+import { Package, Search, RefreshCw, Eye, Printer, Filter, X, ArrowUpDown, ChevronLeft, ChevronRight, CreditCard as Edit2, Trash2, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { fetchAllParcels, fetchParcelAgentInfo } from '@/services/parcel.service'
+import { fetchAllParcels, fetchParcelAgentInfo, updateParcelFields, deleteParcel } from '@/services/parcel.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
+import { supabase } from '@/services/supabase'
 import type { Parcel, ParcelStatus } from '@/types/parcel.types'
 
 const STATUS_CONFIG: Record<ParcelStatus, { label: string; color: string; bg: string }> = {
@@ -26,6 +24,44 @@ const PAGE_SIZE = 20
 type SortField = 'registered_at' | 'parcel_code' | 'total_amount' | 'status'
 type SortDir   = 'asc' | 'desc'
 
+interface Station { id: string; name: string; city_name: string }
+
+interface EditForm {
+  parcel_code: string
+  sender_name: string
+  sender_phone: string
+  recipient_name: string
+  recipient_phone: string
+  recipient_city: string
+  origin_station_id: string
+  destination_station_id: string
+  total_amount: string
+  delivery_fee: string
+  status: ParcelStatus
+  registered_at: string
+  content_description: string
+  notes: string
+}
+
+function parcelToForm(p: Parcel): EditForm {
+  return {
+    parcel_code: p.parcel_code,
+    sender_name: p.sender_name,
+    sender_phone: p.sender_phone,
+    recipient_name: p.recipient_name,
+    recipient_phone: p.recipient_phone,
+    recipient_city: p.recipient_city,
+    origin_station_id: p.origin_station_id,
+    destination_station_id: p.destination_station_id,
+    total_amount: String(p.total_amount ?? 0),
+    delivery_fee: String(p.delivery_fee ?? 0),
+    status: p.status,
+    registered_at: p.registered_at ? p.registered_at.slice(0, 16) : '',
+    content_description: p.content_description ?? '',
+    notes: p.notes ?? '',
+  }
+}
+
 export default function SuperviseurParcelsList() {
   const navigate = useNavigate()
   const [parcels, setParcels]     = useState<Parcel[]>([])
@@ -36,6 +72,11 @@ export default function SuperviseurParcelsList() {
   const [sortField, setSortField] = useState<SortField>('registered_at')
   const [sortDir, setSortDir]     = useState<SortDir>('desc')
   const today = format(new Date(), 'dd/MM/yyyy', { locale: fr })
+
+  const [stations, setStations] = useState<Station[]>([])
+  const [editParcel, setEditParcel] = useState<Parcel | null>(null)
+  const [editForm, setEditForm] = useState<EditForm | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -50,6 +91,17 @@ export default function SuperviseurParcelsList() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    supabase
+      .from('stations')
+      .select('id, name, cities(name)')
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }) => {
+        setStations((data ?? []).map((s: any) => ({ id: s.id, name: s.name, city_name: s.cities?.name ?? '' })))
+      })
+  }, [])
 
   // Filter
   const filtered = parcels.filter(p => {
@@ -95,6 +147,70 @@ export default function SuperviseurParcelsList() {
     await printParcelTicket(buildReceiptData(parcel, parcel.origin_station_name, '', null, null, agentInfo))
   }
 
+  function openEdit(parcel: Parcel) {
+    setEditParcel(parcel)
+    setEditForm(parcelToForm(parcel))
+  }
+
+  function closeEdit() {
+    setEditParcel(null)
+    setEditForm(null)
+  }
+
+  async function handleSaveEdit() {
+    if (!editParcel || !editForm) return
+    setSaving(true)
+    try {
+      const fields: Record<string, unknown> = {}
+      if (editForm.parcel_code !== editParcel.parcel_code) fields.parcel_code = editForm.parcel_code.trim()
+      if (editForm.sender_name !== editParcel.sender_name) fields.sender_name = editForm.sender_name.trim()
+      if (editForm.sender_phone !== editParcel.sender_phone) fields.sender_phone = editForm.sender_phone.trim()
+      if (editForm.recipient_name !== editParcel.recipient_name) fields.recipient_name = editForm.recipient_name.trim()
+      if (editForm.recipient_phone !== editParcel.recipient_phone) fields.recipient_phone = editForm.recipient_phone.trim()
+      if (editForm.recipient_city !== editParcel.recipient_city) fields.recipient_city = editForm.recipient_city.trim()
+      if (editForm.origin_station_id !== editParcel.origin_station_id) fields.origin_station_id = editForm.origin_station_id
+      if (editForm.destination_station_id !== editParcel.destination_station_id) fields.destination_station_id = editForm.destination_station_id
+      const newAmount = Number(editForm.total_amount)
+      if (newAmount !== Number(editParcel.total_amount)) fields.total_amount = newAmount
+      const newFee = Number(editForm.delivery_fee)
+      if (newFee !== Number(editParcel.delivery_fee)) fields.delivery_fee = newFee
+      if (editForm.status !== editParcel.status) fields.status = editForm.status
+      const regDate = editForm.registered_at ? new Date(editForm.registered_at).toISOString() : editParcel.registered_at
+      if (regDate !== editParcel.registered_at) fields.registered_at = regDate
+      if (editForm.content_description !== (editParcel.content_description ?? '')) fields.content_description = editForm.content_description.trim()
+      if (editForm.notes !== (editParcel.notes ?? '')) fields.notes = editForm.notes.trim() || null
+
+      if (Object.keys(fields).length === 0) {
+        toast('Aucune modification')
+        closeEdit()
+        return
+      }
+
+      await updateParcelFields(editParcel.id, fields as any)
+      toast.success('Courrier mis à jour')
+      closeEdit()
+      load()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de la mise à jour')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(parcel: Parcel) {
+    if (!confirm(`Supprimer le courrier ${parcel.parcel_code} ? Cette action est irréversible.`)) return
+    try {
+      await deleteParcel(parcel.id)
+      toast.success('Courrier supprimé')
+      load()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de la suppression')
+    }
+  }
+
+  const setF = (field: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setEditForm(f => f ? { ...f, [field]: e.target.value } : f)
+
   const SortIcon = ({ field }: { field: SortField }) => (
     <ArrowUpDown
       className="w-3 h-3 inline-block ml-1 opacity-50"
@@ -106,6 +222,9 @@ export default function SuperviseurParcelsList() {
   for (const p of parcels) {
     statusCounts[p.status] = (statusCounts[p.status] ?? 0) + 1
   }
+
+  const inputCls = 'w-full px-3 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500'
+  const inputStyle = { backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }
 
   return (
     <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-5" style={{ backgroundColor: 'var(--bg-subtle)', minHeight: '100vh' }}>
@@ -167,7 +286,7 @@ export default function SuperviseurParcelsList() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
           <input
             type="text"
-            placeholder="Rechercher par code, expéditeur, destinataire, ville, gare…"
+            placeholder="Rechercher par code, expéditeur, destinataire, ville, gare..."
             value={search}
             onChange={e => handleSearch(e.target.value)}
             className="w-full pl-9 pr-8 py-2 rounded-lg text-sm border"
@@ -239,7 +358,7 @@ export default function SuperviseurParcelsList() {
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
                       <span><span style={{ color: 'var(--text-muted)' }}>De : </span>{parcel.sender_name}</span>
-                      <span><span style={{ color: 'var(--text-muted)' }}>À : </span>{parcel.recipient_name}</span>
+                      <span><span style={{ color: 'var(--text-muted)' }}>A : </span>{parcel.recipient_name}</span>
                       <span><span style={{ color: 'var(--text-muted)' }}>Gare départ : </span>{parcel.origin_station_name}</span>
                       <span><span style={{ color: 'var(--text-muted)' }}>Gare dest. : </span>{parcel.destination_station_name}</span>
                       <span><span style={{ color: 'var(--text-muted)' }}>Montant : </span><strong style={{ color: '#0B7439' }}>{Number(parcel.total_amount ?? 0).toLocaleString('fr-CI')} F</strong></span>
@@ -251,8 +370,21 @@ export default function SuperviseurParcelsList() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-1 justify-center"
                         style={{ backgroundColor: '#0B7439', color: '#fff' }}
                       >
-                        <Eye className="w-3.5 h-3.5" />
-                        Voir détails
+                        <Eye className="w-3.5 h-3.5" /> Voir
+                      </button>
+                      <button
+                        onClick={() => openEdit(parcel)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium"
+                        style={{ borderColor: 'var(--border)', color: '#1D6FA4' }}
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(parcel)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium"
+                        style={{ borderColor: 'var(--border)', color: '#DC2626' }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handlePrint(parcel)}
@@ -335,18 +467,32 @@ export default function SuperviseurParcelsList() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
                             <button
+                              onClick={() => openEdit(parcel)}
+                              className="p-1.5 rounded hover:bg-blue-50 transition-colors"
+                              title="Modifier"
+                            >
+                              <Edit2 className="w-4 h-4" style={{ color: '#1D6FA4' }} />
+                            </button>
+                            <button
                               onClick={() => navigate(`/superviseur-colis/parcels/${parcel.id}`)}
-                              className="p-1.5 rounded hover:bg-gray-100"
+                              className="p-1.5 rounded hover:bg-gray-100 transition-colors"
                               title="Voir détail"
                             >
                               <Eye className="w-4 h-4" style={{ color: '#0B7439' }} />
                             </button>
                             <button
                               onClick={() => handlePrint(parcel)}
-                              className="p-1.5 rounded hover:bg-gray-100"
+                              className="p-1.5 rounded hover:bg-gray-100 transition-colors"
                               title="Imprimer ticket"
                             >
                               <Printer className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(parcel)}
+                              className="p-1.5 rounded hover:bg-red-50 transition-colors"
+                              title="Supprimer"
+                            >
+                              <Trash2 className="w-4 h-4" style={{ color: '#DC2626' }} />
                             </button>
                           </div>
                         </td>
@@ -404,6 +550,131 @@ export default function SuperviseurParcelsList() {
           </>
         )}
       </div>
+
+      {/* Edit Modal */}
+      {editParcel && editForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl p-6 space-y-5"
+            style={{ backgroundColor: 'var(--surface)' }}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                Modifier le courrier {editParcel.parcel_code}
+              </h2>
+              <button onClick={closeEdit} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Code */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Code courrier</label>
+                <input value={editForm.parcel_code} onChange={setF('parcel_code')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Status */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Statut</label>
+                <select value={editForm.status} onChange={setF('status')} className={inputCls} style={inputStyle}>
+                  {(Object.entries(STATUS_CONFIG) as [ParcelStatus, typeof STATUS_CONFIG[ParcelStatus]][]).map(([key, cfg]) => (
+                    <option key={key} value={key}>{cfg.label}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Sender name */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Expéditeur</label>
+                <input value={editForm.sender_name} onChange={setF('sender_name')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Sender phone */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Tél. expéditeur</label>
+                <input value={editForm.sender_phone} onChange={setF('sender_phone')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Recipient name */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Destinataire</label>
+                <input value={editForm.recipient_name} onChange={setF('recipient_name')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Recipient phone */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Tél. destinataire</label>
+                <input value={editForm.recipient_phone} onChange={setF('recipient_phone')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Recipient city */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Ville destinataire</label>
+                <input value={editForm.recipient_city} onChange={setF('recipient_city')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Date d'enregistrement</label>
+                <input type="datetime-local" value={editForm.registered_at} onChange={setF('registered_at')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Origin station */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Gare de départ</label>
+                <select value={editForm.origin_station_id} onChange={setF('origin_station_id')} className={inputCls} style={inputStyle}>
+                  <option value="">-- Sélectionner --</option>
+                  {stations.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}{s.city_name ? ` (${s.city_name})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Destination station */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Gare de destination</label>
+                <select value={editForm.destination_station_id} onChange={setF('destination_station_id')} className={inputCls} style={inputStyle}>
+                  <option value="">-- Sélectionner --</option>
+                  {stations.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}{s.city_name ? ` (${s.city_name})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Amount */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Montant total (F)</label>
+                <input type="number" min="0" value={editForm.total_amount} onChange={setF('total_amount')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Delivery fee */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Frais de livraison (F)</label>
+                <input type="number" min="0" value={editForm.delivery_fee} onChange={setF('delivery_fee')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Description */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Description du contenu</label>
+                <input value={editForm.content_description} onChange={setF('content_description')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Notes */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Notes</label>
+                <textarea value={editForm.notes} onChange={setF('notes')} rows={2} className={inputCls} style={inputStyle} />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={handleSaveEdit}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors"
+                style={{ backgroundColor: '#0B7439', color: '#fff' }}
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
+              </button>
+              <button
+                onClick={closeEdit}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
