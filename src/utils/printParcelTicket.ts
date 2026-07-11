@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { QRCodeCanvas } from 'qrcode.react'
 import type { ParcelReceiptData, Parcel } from '@/types/parcel.types'
 import type { ScheduledBus } from '@/components/parcel/BusSelector'
+import { setPrintingGuard } from '@/store/authStore'
 
 function generateQRDataUrl(value: string, size = 100): Promise<string> {
   return new Promise((resolve) => {
@@ -343,8 +344,15 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   doc.close()
 
   await new Promise(r => setTimeout(r, 200))
-  iframe.contentWindow?.print()
-  setTimeout(() => iframe.remove(), 1000)
+  setPrintingGuard(true)
+  try {
+    iframe.contentWindow?.print()
+  } finally {
+    setTimeout(() => {
+      setPrintingGuard(false)
+      iframe.remove()
+    }, 1000)
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

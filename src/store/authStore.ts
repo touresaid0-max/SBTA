@@ -60,6 +60,9 @@ interface AuthState {
   initialize: () => Promise<void>;
 }
 
+let _isPrinting = false;
+export function setPrintingGuard(active: boolean) { _isPrinting = active; }
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -84,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
                 set({ session, isAuthenticated: true });
                 await get().fetchProfile();
               } else if (event === 'SIGNED_OUT') {
+                if (_isPrinting) return;
                 const user = get().user;
                 if (user?.role === 'guichetier') {
                   const today = new Date().toISOString().split('T')[0];
