@@ -74,10 +74,17 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     align-items: center;
     margin-bottom: 3mm;
   }
-  .header img {
+  .header .logo-img {
     width: 24mm;
     height: auto;
     object-fit: contain;
+  }
+  .header .logo-text {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    width: 24mm;
+    text-align: center;
   }
   .header-right {
     flex: 1;
@@ -239,7 +246,8 @@ export async function printParcelTicket(data: ParcelReceiptData) {
 </head>
 <body>
   <div class="header">
-    <img src="${logoUrl}" alt="SBTA">
+    <div class="logo-text" id="logo-fallback" style="display:none;">SBTA</div>
+    <img class="logo-img" id="logo-img" src="${logoUrl}" alt="SBTA" onerror="document.getElementById('logo-img').style.display='none';document.getElementById('logo-fallback').style.display='block';">
     <div class="header-right">
       <div><span class="label">VILLE EXP :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
       <div><span class="label">VILLE DES :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.destination_agent_phone ?? '')}</span></div>
