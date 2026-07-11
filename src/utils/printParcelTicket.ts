@@ -47,7 +47,7 @@ function escHtml(s: string): string {
 export async function printParcelTicket(data: ParcelReceiptData) {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
   const qrDataUrl = await generateQRDataUrl(data.parcel_code, 100)
-  const logoUrl = window.location.origin + '/logo_sbta02_full.JPG'
+  const logoUrl = window.location.origin + '/logo-sbta.JPG'
 
   const html = `<!DOCTYPE html>
 <html>
