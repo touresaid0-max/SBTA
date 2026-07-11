@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Printer, Package, User, MapPin, Clock, MessageCircle, AlertTriangle, Bus, Navigation, Camera, ZoomIn, X } from 'lucide-react'
+import { ArrowLeft, Printer, Package, User, MapPin, Clock, MessageCircle, AlertTriangle, Bus, Navigation, Camera, ZoomIn, X, Pencil, Check, Loader2 as Loader2Icon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
-import { fetchTrackingEvents, updateParcelStatus, fetchParcelAgentInfo } from '@/services/parcel.service'
+import { fetchTrackingEvents, updateParcelStatus, updateParcelNames, fetchParcelAgentInfo } from '@/services/parcel.service'
 import { fetchSmsLogs, resendSms } from '@/services/emisSms.service'
 import type { SmsLog } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
@@ -51,6 +51,32 @@ export default function ParcelDetail() {
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>([])
   const [resending, setResending] = useState<string | null>(null)
+
+  const [editingSender, setEditingSender] = useState(false)
+  const [editingRecipient, setEditingRecipient] = useState(false)
+  const [editSenderName, setEditSenderName] = useState('')
+  const [editRecipientName, setEditRecipientName] = useState('')
+  const [savingName, setSavingName] = useState(false)
+
+  const canEditNames = parcel != null && !['expedie', 'arrive', 'livre', 'retourne', 'perdu'].includes(parcel.status)
+
+  async function handleSaveName(field: 'sender_name' | 'recipient_name') {
+    if (!parcel) return
+    const value = field === 'sender_name' ? editSenderName : editRecipientName
+    if (!value.trim()) { toast.error('Le nom ne peut pas être vide'); return }
+    setSavingName(true)
+    try {
+      await updateParcelNames(parcel.id, { [field]: value.trim() })
+      setParcel(prev => prev ? { ...prev, [field]: value.trim() } : prev)
+      toast.success('Nom mis à jour')
+      if (field === 'sender_name') setEditingSender(false)
+      else setEditingRecipient(false)
+    } catch (e: any) {
+      toast.error(e.message || 'Erreur lors de la mise à jour')
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   const stationId    = user?.station_id    ?? null
   const stationPhone = user?.station_phone ?? ''
@@ -307,8 +333,47 @@ export default function ParcelDetail() {
           <div className="flex items-center gap-2 mb-1">
             <User className="w-4 h-4 flex-shrink-0" style={{ color: '#0B7439' }} />
             <span className="font-semibold text-xs" style={{ color: 'var(--text-secondary)' }}>EXPÉDITEUR</span>
+            {canEditNames && !editingSender && (
+              <button
+                onClick={() => { setEditSenderName(parcel.sender_name); setEditingSender(true) }}
+                className="ml-auto p-1 rounded hover:bg-gray-100 transition-colors"
+                title="Modifier le nom de l'expéditeur"
+              >
+                <Pencil className="w-3.5 h-3.5" style={{ color: '#0B7439' }} />
+              </button>
+            )}
           </div>
-          <p className="font-semibold text-sm sm:text-base" style={{ color: 'var(--text-primary)' }}>{parcel.sender_name}</p>
+          {editingSender ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                className="flex-1 text-sm font-semibold px-2 py-1.5 rounded-lg border outline-none focus:ring-2 focus:ring-green-500"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }}
+                value={editSenderName}
+                onChange={e => setEditSenderName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveName('sender_name'); if (e.key === 'Escape') setEditingSender(false) }}
+                disabled={savingName}
+              />
+              <button
+                onClick={() => handleSaveName('sender_name')}
+                disabled={savingName || !editSenderName.trim()}
+                className="p-1.5 rounded-lg disabled:opacity-50"
+                style={{ backgroundColor: '#0B7439', color: '#fff' }}
+              >
+                {savingName ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => setEditingSender(false)}
+                disabled={savingName}
+                className="p-1.5 rounded-lg border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <p className="font-semibold text-sm sm:text-base" style={{ color: 'var(--text-primary)' }}>{parcel.sender_name}</p>
+          )}
           <p className="text-xs sm:text-sm" style={{ color: 'var(--text-secondary)' }}>{parcel.sender_phone}</p>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{parcel.origin_station_name}</p>
         </div>
@@ -318,8 +383,47 @@ export default function ParcelDetail() {
           <div className="flex items-center gap-2 mb-1">
             <MapPin className="w-4 h-4 flex-shrink-0" style={{ color: '#1D6FA4' }} />
             <span className="font-semibold text-xs" style={{ color: 'var(--text-secondary)' }}>DESTINATAIRE</span>
+            {canEditNames && !editingRecipient && (
+              <button
+                onClick={() => { setEditRecipientName(parcel.recipient_name); setEditingRecipient(true) }}
+                className="ml-auto p-1 rounded hover:bg-gray-100 transition-colors"
+                title="Modifier le nom du destinataire"
+              >
+                <Pencil className="w-3.5 h-3.5" style={{ color: '#1D6FA4' }} />
+              </button>
+            )}
           </div>
-          <p className="font-semibold text-sm sm:text-base" style={{ color: 'var(--text-primary)' }}>{parcel.recipient_name}</p>
+          {editingRecipient ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                className="flex-1 text-sm font-semibold px-2 py-1.5 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }}
+                value={editRecipientName}
+                onChange={e => setEditRecipientName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveName('recipient_name'); if (e.key === 'Escape') setEditingRecipient(false) }}
+                disabled={savingName}
+              />
+              <button
+                onClick={() => handleSaveName('recipient_name')}
+                disabled={savingName || !editRecipientName.trim()}
+                className="p-1.5 rounded-lg disabled:opacity-50"
+                style={{ backgroundColor: '#1D6FA4', color: '#fff' }}
+              >
+                {savingName ? <Loader2Icon className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => setEditingRecipient(false)}
+                disabled={savingName}
+                className="p-1.5 rounded-lg border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <p className="font-semibold text-sm sm:text-base" style={{ color: 'var(--text-primary)' }}>{parcel.recipient_name}</p>
+          )}
           <p className="text-xs sm:text-sm" style={{ color: 'var(--text-secondary)' }}>{parcel.recipient_phone}</p>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{parcel.recipient_city} — {parcel.destination_station_name}</p>
         </div>

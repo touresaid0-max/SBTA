@@ -158,6 +158,34 @@ export async function updateParcelFields(
   }
 }
 
+const SHIPPED_OR_LATER: string[] = ['expedie', 'arrive', 'livre', 'retourne', 'perdu']
+
+export async function updateParcelNames(
+  parcelId: string,
+  fields: { sender_name?: string; recipient_name?: string },
+): Promise<void> {
+  const { data: current, error: fetchErr } = await supabase
+    .from('parcels')
+    .select('status')
+    .eq('id', parcelId)
+    .maybeSingle()
+
+  if (fetchErr) throw fetchErr
+  if (!current) throw new Error('Courrier introuvable')
+  if (SHIPPED_OR_LATER.includes(current.status)) {
+    throw new Error('Modification impossible : le courrier a déjà été expédié')
+  }
+
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (fields.sender_name !== undefined) payload.sender_name = fields.sender_name.trim()
+  if (fields.recipient_name !== undefined) payload.recipient_name = fields.recipient_name.trim()
+
+  if (Object.keys(payload).length <= 1) return
+
+  const { error } = await supabase.from('parcels').update(payload).eq('id', parcelId)
+  if (error) throw error
+}
+
 export async function deleteParcel(parcelId: string): Promise<void> {
   const { error: evtErr } = await supabase
     .from('parcel_tracking_events')
