@@ -6,6 +6,10 @@ import { supabase } from '@/services/supabase'
 import jsPDF from 'jspdf'
 import toast from 'react-hot-toast'
 
+function fmtNum(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+}
+
 type PeriodType = 'daily' | 'monthly' | 'quarterly' | 'yearly' | 'custom'
 
 const PERIOD_OPTIONS: { value: PeriodType; label: string }[] = [
@@ -127,7 +131,7 @@ export default function RevenueByStation() {
       doc.text(String(i + 1), cols[0], y)
       doc.text(r.stationName.substring(0, 30), cols[1], y)
       doc.text(String(r.operationCount), cols[2], y)
-      doc.text(r.totalRevenue.toLocaleString('fr-FR'), cols[3], y)
+      doc.text(fmtNum(r.totalRevenue), cols[3], y)
       y += 7
     })
 
@@ -135,7 +139,7 @@ export default function RevenueByStation() {
     doc.setFont('helvetica', 'bold')
     doc.text('TOTAL', cols[1], y)
     doc.text(String(totalOps), cols[2], y)
-    doc.text(totalRevenue.toLocaleString('fr-FR'), cols[3], y)
+    doc.text(fmtNum(totalRevenue), cols[3], y)
 
     doc.save(`recettes_par_gare_${refDate}.pdf`)
     toast.success('PDF exporte')

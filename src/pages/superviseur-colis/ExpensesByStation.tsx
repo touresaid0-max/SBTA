@@ -5,6 +5,10 @@ import { supabase } from '@/services/supabase'
 import jsPDF from 'jspdf'
 import toast from 'react-hot-toast'
 
+function fmtNum(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+}
+
 type PeriodType = 'daily' | 'monthly' | 'quarterly' | 'yearly' | 'custom'
 
 const PERIOD_OPTIONS: { value: PeriodType; label: string }[] = [
@@ -166,11 +170,11 @@ export default function ExpensesByStation() {
       doc.text(String(i + 1), cols[0], y)
       doc.text(r.stationName.substring(0, 24), cols[1], y)
       doc.text(String(r.nbDepenses), cols[2], y)
-      doc.text(r.totalDepenses.toLocaleString('fr-FR'), cols[3], y)
-      doc.text(r.totalRatios.toLocaleString('fr-FR'), cols[4], y)
-      doc.text(r.totalDeductions.toLocaleString('fr-FR'), cols[5], y)
-      doc.text(r.revenue.toLocaleString('fr-FR'), cols[6], y)
-      doc.text(r.soldeNet.toLocaleString('fr-FR'), cols[7], y)
+      doc.text(fmtNum(r.totalDepenses), cols[3], y)
+      doc.text(fmtNum(r.totalRatios), cols[4], y)
+      doc.text(fmtNum(r.totalDeductions), cols[5], y)
+      doc.text(fmtNum(r.revenue), cols[6], y)
+      doc.text(fmtNum(r.soldeNet), cols[7], y)
       y += 6
     })
 
@@ -178,11 +182,11 @@ export default function ExpensesByStation() {
     doc.setFont('helvetica', 'bold')
     doc.text('TOTAL', cols[1], y)
     doc.text(String(totals.nbDepenses), cols[2], y)
-    doc.text(totals.totalDepenses.toLocaleString('fr-FR'), cols[3], y)
-    doc.text(totals.totalRatios.toLocaleString('fr-FR'), cols[4], y)
-    doc.text(totals.totalDeductions.toLocaleString('fr-FR'), cols[5], y)
-    doc.text(totals.revenue.toLocaleString('fr-FR'), cols[6], y)
-    doc.text(totals.soldeNet.toLocaleString('fr-FR'), cols[7], y)
+    doc.text(fmtNum(totals.totalDepenses), cols[3], y)
+    doc.text(fmtNum(totals.totalRatios), cols[4], y)
+    doc.text(fmtNum(totals.totalDeductions), cols[5], y)
+    doc.text(fmtNum(totals.revenue), cols[6], y)
+    doc.text(fmtNum(totals.soldeNet), cols[7], y)
 
     doc.save(`depenses_ratios_par_gare_${refDate}.pdf`)
     toast.success('PDF exporte')
@@ -216,7 +220,7 @@ export default function ExpensesByStation() {
     toast.success('Excel exporte')
   }
 
-  const fmt = (n: number) => n.toLocaleString('fr-FR')
+  const fmt = (n: number) => fmtNum(n)
 
   return (
     <div className="space-y-6">

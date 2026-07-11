@@ -5,6 +5,10 @@ import { supabase } from '@/services/supabase'
 import jsPDF from 'jspdf'
 import toast from 'react-hot-toast'
 
+function fmtNum(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+}
+
 const SMS_UNIT_COST = 100
 
 type PeriodType = 'daily' | 'monthly' | 'quarterly' | 'yearly' | 'custom'
@@ -131,7 +135,7 @@ export default function SmsFeesByStation() {
       doc.text(r.stationName.substring(0, 28), cols[1], y)
       doc.text(String(r.operationCount), cols[2], y)
       doc.text(`${SMS_UNIT_COST}`, cols[3], y)
-      doc.text(r.smsFees.toLocaleString('fr-FR'), cols[4], y)
+      doc.text(fmtNum(r.smsFees), cols[4], y)
       y += 7
     })
 
@@ -140,7 +144,7 @@ export default function SmsFeesByStation() {
     doc.text('TOTAL', cols[1], y)
     doc.text(String(totalOps), cols[2], y)
     doc.text('', cols[3], y)
-    doc.text(totalSmsFees.toLocaleString('fr-FR'), cols[4], y)
+    doc.text(fmtNum(totalSmsFees), cols[4], y)
 
     doc.save(`frais_sms_par_gare_${refDate}.pdf`)
     toast.success('PDF exporte')

@@ -136,7 +136,7 @@ export default function ConsolidatedReport() {
     soldeNet: acc.soldeNet + r.soldeNet,
   }), { stations: 0, operations: 0, revenue: 0, smsFees: 0, depenses: 0, ratios: 0, deductions: 0, soldeNet: 0 })
 
-  const fmt = (n: number) => n.toLocaleString('fr-FR')
+  const fmt = (n: number) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 
   const exportPdf = () => {
     const doc = new jsPDF('landscape')
