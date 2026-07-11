@@ -240,15 +240,30 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     font-size: 10px;
     font-weight: bold;
   }
+  .ticket-copy + .ticket-copy {
+    border-top: 2px dashed #000;
+    padding-top: 4mm;
+    margin-top: 4mm;
+  }
+  .copy-label {
+    text-align: center;
+    font-size: 8px;
+    font-weight: bold;
+    margin-bottom: 2mm;
+    letter-spacing: 1px;
+  }
   @media print {
     body { width: 80mm; }
   }
 </style>
 </head>
 <body>
+${[1, 2].map(copyNum => `
+  <div class="ticket-copy">
+  <div class="copy-label">${copyNum === 1 ? 'EXEMPLAIRE CLIENT' : 'EXEMPLAIRE AGENCE'}</div>
   <div class="header">
-    <div class="logo-text" id="logo-fallback" style="display:none;">SBTA</div>
-    <img class="logo-img" id="logo-img" src="${logoUrl}" alt="SBTA" onerror="document.getElementById('logo-img').style.display='none';document.getElementById('logo-fallback').style.display='block';">
+    <div class="logo-text" id="logo-fallback-${copyNum}" style="display:none;">SBTA</div>
+    <img class="logo-img" id="logo-img-${copyNum}" src="${logoUrl}" alt="SBTA" onerror="document.getElementById('logo-img-${copyNum}').style.display='none';document.getElementById('logo-fallback-${copyNum}').style.display='block';">
     <div class="header-right">
       <div><span class="label">VILLE EXP :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
       <div><span class="label">VILLE DES :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.destination_agent_phone ?? '')}</span></div>
@@ -318,6 +333,8 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     Merci de votre confiance !
     <div class="supervisor">Superviseur : ${escHtml(data.supervisor_phone ?? '0508257529')}</div>
   </div>
+  </div>
+`).join('')}
 </body>
 </html>`
 
