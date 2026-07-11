@@ -20,11 +20,6 @@ interface ParcelExpense {
   created_at: string
 }
 
-interface AgentOption {
-  id: string
-  full_name: string
-}
-
 type PeriodMode = 'jour' | 'semaine' | 'mois' | 'custom'
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -40,7 +35,6 @@ export default function AgentColisExpenseReport() {
   const stationId = user?.station_id
 
   const [expenses, setExpenses] = useState<ParcelExpense[]>([])
-  const [agents, setAgents] = useState<AgentOption[]>([])
   const [loading, setLoading] = useState(true)
   const [parcelRevenue, setParcelRevenue] = useState(0)
 
@@ -49,7 +43,6 @@ export default function AgentColisExpenseReport() {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [customFrom, setCustomFrom] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [customTo, setCustomTo] = useState(format(new Date(), 'yyyy-MM-dd'))
-  const [selectedAgent, setSelectedAgent] = useState<string>('all')
 
   const dateRange = useMemo(() => {
     const ref = parseISO(selectedDate)
@@ -61,16 +54,6 @@ export default function AgentColisExpenseReport() {
     }
   }, [periodMode, selectedDate, customFrom, customTo])
 
-  const fetchAgents = useCallback(async () => {
-    if (!stationId) return
-    const { data } = await supabase
-      .from('users')
-      .select('id, full_name')
-      .eq('station_id', stationId)
-      .in('role', ['agent_colis', 'superviseur_colis'])
-      .order('full_name')
-    setAgents(data || [])
-  }, [stationId])
 
   const fetchData = useCallback(async () => {
     if (!stationId) return
@@ -84,9 +67,6 @@ export default function AgentColisExpenseReport() {
       .lte('expense_date', dateRange.to)
       .order('expense_date', { ascending: false })
 
-    if (selectedAgent !== 'all') {
-      query = query.eq('agent_id', selectedAgent)
-    }
 
     const { data: expData, error } = await query
     if (error) toast.error('Erreur chargement')
@@ -100,18 +80,14 @@ export default function AgentColisExpenseReport() {
       .gte('created_at', dateRange.from + 'T00:00:00')
       .lte('created_at', dateRange.to + 'T23:59:59')
 
-    if (selectedAgent !== 'all') {
-      revQuery = revQuery.eq('created_by', selectedAgent)
-    }
 
     const { data: parcels } = await revQuery
     const rev = (parcels || []).reduce((sum, p) => sum + (p.delivery_fee || 0), 0)
     setParcelRevenue(rev)
 
     setLoading(false)
-  }, [stationId, dateRange, selectedAgent])
+  }, [stationId, dateRange])
 
-  useEffect(() => { fetchAgents() }, [fetchAgents])
   useEffect(() => { fetchData() }, [fetchData])
 
   const totalDepenses = useMemo(() => expenses.filter(e => e.expense_type === 'depense').reduce((s, e) => s + e.amount, 0), [expenses])
@@ -221,7 +197,7 @@ export default function AgentColisExpenseReport() {
           <Filter className="w-4 h-4 text-gray-500" />
           <span className="text-sm font-medium text-gray-700">Filtres</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Periode</label>
             <select
@@ -259,17 +235,7 @@ export default function AgentColisExpenseReport() {
             </>
           )}
 
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Agent courrier</label>
-            <select
-              value={selectedAgent}
-              onChange={e => setSelectedAgent(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-            >
-              <option value="all">Tous les agents</option>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.full_name}</option>)}
-            </select>
-          </div>
+
         </div>
       </div>
 
