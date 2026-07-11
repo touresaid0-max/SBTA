@@ -1,7 +1,38 @@
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { QRCodeCanvas } from 'qrcode.react'
 import type { ParcelReceiptData, Parcel } from '@/types/parcel.types'
 import type { ScheduledBus } from '@/components/parcel/BusSelector'
+
+function generateQRDataUrl(value: string, size = 100): Promise<string> {
+  return new Promise((resolve) => {
+    const container = document.createElement('div')
+    container.style.position = 'fixed'
+    container.style.top = '-9999px'
+    container.style.left = '-9999px'
+    document.body.appendChild(container)
+
+    const root = createRoot(container)
+    root.render(
+      React.createElement(QRCodeCanvas, {
+        value,
+        size,
+        level: 'M',
+        includeMargin: false,
+      })
+    )
+
+    setTimeout(() => {
+      const canvas = container.querySelector('canvas')
+      const dataUrl = canvas ? canvas.toDataURL('image/png') : ''
+      root.unmount()
+      container.remove()
+      resolve(dataUrl)
+    }, 100)
+  })
+}
 
 function fmt(n: number): string {
   return Number(n)
@@ -15,7 +46,7 @@ function escHtml(s: string): string {
 
 export async function printParcelTicket(data: ParcelReceiptData) {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
-
+  const qrDataUrl = await generateQRDataUrl(data.parcel_code, 100)
   const logoUrl = window.location.origin + '/logo_sbta02_full.JPG'
 
   const html = `<!DOCTYPE html>
@@ -268,8 +299,8 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     NB: ${escHtml(data.legal_note_2)}
   </div>
 
-  <div class="qr-section" id="qr-section">
-    <div id="qr-container"></div>
+  <div class="qr-section">
+    <img src="${qrDataUrl}" width="100" height="100" alt="QR" style="display:block;margin:0 auto 2mm auto;">
     <div class="qr-label">Scannez pour confirmer la reception</div>
     <div class="qr-code-text">${escHtml(data.parcel_code)}</div>
   </div>
@@ -278,67 +309,34 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     Merci de votre confiance !
     <div class="supervisor">Superviseur : ${escHtml(data.supervisor_phone ?? '0508257529')}</div>
   </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
-  <script>
-    (function() {
-      var container = document.getElementById('qr-container');
-      var canvas = document.createElement('canvas');
-      container.appendChild(canvas);
-      if (window.QRCode) {
-        QRCode.toCanvas(canvas, '${data.parcel_code.replace(/'/g, "\\'")}', {
-          width: 100,
-          margin: 0,
-          errorCorrectionLevel: 'M'
-        }, function() {
-          window.parent.postMessage('parcel-ticket-ready', '*');
-        });
-      } else {
-        window.parent.postMessage('parcel-ticket-ready', '*');
-      }
-    })();
-  <\/script>
 </body>
 </html>`
 
-  return new Promise<void>((resolve) => {
-    const existingFrame = document.getElementById('parcel-print-frame')
-    if (existingFrame) existingFrame.remove()
+  const existingFrame = document.getElementById('parcel-print-frame')
+  if (existingFrame) existingFrame.remove()
 
-    const iframe = document.createElement('iframe')
-    iframe.id = 'parcel-print-frame'
-    iframe.style.position = 'fixed'
-    iframe.style.top = '-10000px'
-    iframe.style.left = '-10000px'
-    iframe.style.width = '80mm'
-    iframe.style.height = '0'
-    iframe.style.border = 'none'
-    document.body.appendChild(iframe)
+  const iframe = document.createElement('iframe')
+  iframe.id = 'parcel-print-frame'
+  iframe.style.position = 'fixed'
+  iframe.style.top = '-10000px'
+  iframe.style.left = '-10000px'
+  iframe.style.width = '80mm'
+  iframe.style.height = '0'
+  iframe.style.border = 'none'
+  document.body.appendChild(iframe)
 
-    function onMessage(e: MessageEvent) {
-      if (e.data === 'parcel-ticket-ready') {
-        window.removeEventListener('message', onMessage)
-        setTimeout(() => {
-          iframe.contentWindow?.print()
-          setTimeout(() => {
-            iframe.remove()
-            resolve()
-          }, 1000)
-        }, 100)
-      }
-    }
-    window.addEventListener('message', onMessage)
+  const doc = iframe.contentDocument || iframe.contentWindow?.document
+  if (!doc) {
+    iframe.remove()
+    return
+  }
+  doc.open()
+  doc.write(html)
+  doc.close()
 
-    const doc = iframe.contentDocument || iframe.contentWindow?.document
-    if (!doc) {
-      iframe.remove()
-      resolve()
-      return
-    }
-    doc.open()
-    doc.write(html)
-    doc.close()
-  })
+  await new Promise(r => setTimeout(r, 200))
+  iframe.contentWindow?.print()
+  setTimeout(() => iframe.remove(), 1000)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
