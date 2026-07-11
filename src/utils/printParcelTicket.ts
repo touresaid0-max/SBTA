@@ -1,39 +1,7 @@
-import jsPDF from 'jspdf'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import type { ParcelReceiptData, Parcel } from '@/types/parcel.types'
 import type { ScheduledBus } from '@/components/parcel/BusSelector'
-
-async function buildQrDataUri(text: string, size = 220): Promise<string | null> {
-  try {
-    const { QRCodeCanvas } = await import('qrcode.react')
-    const { createElement } = await import('react')
-    const { createRoot } = await import('react-dom/client')
-
-    return await new Promise((resolve) => {
-      const container = document.createElement('div')
-      container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden'
-      document.body.appendChild(container)
-
-      const root = createRoot(container)
-      root.render(createElement(QRCodeCanvas, { value: text, size, level: 'M' }))
-
-      setTimeout(() => {
-        const canvas = container.querySelector('canvas') as HTMLCanvasElement | null
-        const uri = canvas ? canvas.toDataURL('image/png') : null
-        root.unmount()
-        document.body.removeChild(container)
-        resolve(uri)
-      }, 50)
-    })
-  } catch {
-    return null
-  }
-}
-
-const W  = 80
-const ML = 3
-const MR = W - 3
 
 function fmt(n: number): string {
   return Number(n)
@@ -41,301 +9,317 @@ function fmt(n: number): string {
     .replace(/\u202f|\u00a0/g, '\u0020') + ' F'
 }
 
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 export async function printParcelTicket(data: ParcelReceiptData) {
-  const qrUri = await buildQrDataUri(data.parcel_code, 220)
+  const totalRecu = data.delivery_fee + data.sms_tracking_fee
 
-  const estimatedH = 195
+  const transportRow = (data.bus_registration || data.driver_name)
+    ? `<tr class="transport-row">
+        <td>${data.bus_registration ? `BUS: ${escHtml(data.bus_registration)}` : ''}</td>
+        <td style="text-align:right">${data.driver_name ? `CHAUFFEUR: ${escHtml(data.driver_name.toUpperCase())}` : ''}</td>
+       </tr>`
+    : ''
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [W, estimatedH] })
-  let y = 3
-  const mid = W / 2
-  const CW  = MR - ML
-
-  /* ── helpers ── */
-  const fn = (size: number) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(size); doc.setTextColor(30, 30, 30) }
-  const fb = (size: number) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(size); doc.setTextColor(20, 20, 20) }
-  const lh = (size: number) => size * 0.35 + 0.8
-
-  const dashLine = (yy: number) => {
-    doc.setDrawColor(120, 120, 120)
-    doc.setLineWidth(0.15)
-    doc.setLineDashPattern([1.2, 0.8], 0)
-    doc.line(ML, yy, MR, yy)
-    doc.setLineDashPattern([], 0)
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Recu ${escHtml(data.parcel_code)}</title>
+<style>
+  @page {
+    size: 80mm auto;
+    margin: 0;
   }
-
-  const solidLine = (yy: number) => {
-    doc.setDrawColor(100, 100, 100)
-    doc.setLineWidth(0.2)
-    doc.line(ML, yy, MR, yy)
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    width: 80mm;
+    padding: 2mm 3mm;
+    color: #1a1a1a;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-
-  const solidLineV = (x: number, y1: number, y2: number) => {
-    doc.setDrawColor(100, 100, 100)
-    doc.setLineWidth(0.2)
-    doc.line(x, y1, x, y2)
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    border-bottom: 1px dashed #666;
+    padding-bottom: 2mm;
+    margin-bottom: 2mm;
   }
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * HEADER : Logo | VILLE EXP / VILLE DES
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  const logoW = 24, logoH = 22
-  const headerTop = y
-
-  try {
-    doc.addImage('/logo_sbta02_full.JPG', 'JPEG', ML, y, logoW, logoH)
-  } catch {
-    try {
-      doc.addImage('/logo_sbta02 copy.JPG', 'JPEG', ML, y, logoW, logoH)
-    } catch {
-      fb(10)
-      doc.text('S.B.T.A', ML + 3, y + 12)
-    }
+  .header img {
+    width: 22mm;
+    height: 20mm;
+    object-fit: contain;
   }
-
-  const infoX = ML + logoW + 1.5
-  solidLineV(infoX - 0.5, headerTop + 2, headerTop + logoH - 2)
-
-  fb(6.5)
-  doc.text('VILLE EXP :', infoX + 1, headerTop + 7)
-  fb(8)
-  doc.text(data.origin_agent_phone ?? '', MR - 1, headerTop + 7, { align: 'right' })
-
-  fb(6.5)
-  doc.text('VILLE DES :', infoX + 1, headerTop + 13)
-  fb(8)
-  doc.text(data.destination_agent_phone ?? '', MR - 1, headerTop + 13, { align: 'right' })
-
-  y = headerTop + logoH + 2
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * STATION NAME + DATE
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  fb(11)
-  doc.text(data.agency_name, mid - 3, y, { align: 'center' })
-  fn(7)
-  doc.text(data.print_date, MR - 1, y, { align: 'right' })
-  y += lh(11) + 1
-  dashLine(y)
-  y += 4.5
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * RECU COURRIER
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  fb(14)
-  doc.text(data.receipt_type, mid, y, { align: 'center' })
-  y += lh(14) + 2.5
-  dashLine(y)
-  y += 2.5
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * DESTINATION (gray background row)
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  const destRowH = 6
-  doc.setFillColor(235, 235, 235)
-  doc.rect(ML, y - 1, CW, destRowH, 'F')
-
-  fn(7.5)
-  doc.text('DESTINATION', ML + 3, y + 2.5)
-  fb(9)
-  doc.text(data.destination.toUpperCase(), MR - 3, y + 2.5, { align: 'right' })
-  y += destRowH + 1.5
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * TRANSPORT: BUS + CHAUFFEUR (if set)
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  if (data.bus_registration || data.driver_name) {
-    const transRowH = 6
-    doc.setFillColor(245, 245, 245)
-    doc.rect(ML, y - 1, CW, transRowH, 'F')
-
-    fn(7)
-    const transLeft = data.bus_registration ? `BUS: ${data.bus_registration}` : ''
-    const transRight = data.driver_name ? `CHAUFFEUR: ${data.driver_name.toUpperCase()}` : ''
-    if (transLeft) doc.text(transLeft, ML + 3, y + 2.5)
-    if (transRight) doc.text(transRight, MR - 3, y + 2.5, { align: 'right' })
-    y += transRowH + 1.5
+  .header-info {
+    flex: 1;
+    border-left: 1px solid #666;
+    padding-left: 2mm;
+    font-size: 9px;
   }
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * CODE | REFERENCE (boxed)
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  const codeBoxTop = y
-  const codeBoxH = 12
-
-  doc.setDrawColor(100, 100, 100)
-  doc.setLineWidth(0.2)
-  doc.rect(ML, codeBoxTop, CW, codeBoxH)
-  solidLineV(mid, codeBoxTop, codeBoxTop + codeBoxH)
-
-  fn(6.5)
-  doc.text('CODE', ML + 3, codeBoxTop + 3.5)
-  doc.text('REFERENCE', mid + 3, codeBoxTop + 3.5)
-
-  fb(14)
-  doc.text(data.parcel_code, ML + 3, codeBoxTop + 9.5)
-  fb(8.5)
-  doc.text(data.reference, mid + 3, codeBoxTop + 9.5)
-
-  y = codeBoxTop + codeBoxH + 1.5
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * EXPEDITEUR | DESTINATAIRE (boxed)
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  const personBoxTop = y
-  const senderW = mid - ML - 6
-  const recipW  = MR - mid - 6
-
-  fb(7)
-  const sLines = doc.splitTextToSize(data.sender_name.toUpperCase(), senderW)
-  const rLines = doc.splitTextToSize(data.recipient_name.toUpperCase(), recipW)
-  const nameRows = Math.max(sLines.length, rLines.length)
-  const personBoxH = 5.5 + nameRows * lh(7) + 1.5
-
-  doc.setDrawColor(100, 100, 100)
-  doc.setLineWidth(0.2)
-  doc.rect(ML, personBoxTop, CW, personBoxH)
-  solidLineV(mid, personBoxTop, personBoxTop + personBoxH)
-
-  fn(6.5)
-  doc.text('EXPEDITEUR', ML + 3, personBoxTop + 3.5)
-  doc.text('DESTINATAIRE', mid + 3, personBoxTop + 3.5)
-
-  fb(7)
-  let ny = personBoxTop + 7
-  for (let i = 0; i < nameRows; i++) {
-    if (sLines[i]) doc.text(sLines[i], ML + 3, ny)
-    if (rLines[i]) doc.text(rLines[i], mid + 3, ny)
-    ny += lh(7)
+  .header-info .label { font-weight: normal; }
+  .header-info .value { font-weight: bold; font-size: 11px; }
+  .header-info div { margin-bottom: 2px; }
+  .station-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1mm;
   }
-
-  y = personBoxTop + personBoxH + 2
-  dashLine(y)
-  y += 2
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * FINANCES
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  const finRow = (label: string, val: string) => {
-    fn(7)
-    doc.text(label, ML + 3, y)
-    doc.text(val, MR - 3, y, { align: 'right' })
-    y += lh(7) + 0.8
+  .station-name { font-weight: bold; font-size: 14px; }
+  .date { font-size: 9px; }
+  .title {
+    text-align: center;
+    font-weight: bold;
+    font-size: 16px;
+    margin: 2mm 0;
+    padding: 1mm 0;
+    border-top: 1px dashed #666;
+    border-bottom: 1px dashed #666;
   }
-
-  finRow('Valeur declaree :', fmt(data.declared_value))
-  finRow('Frais :', fmt(data.delivery_fee))
-  finRow('Frais suivi SMS :', fmt(data.sms_tracking_fee))
-
-  y += 0.5
-  solidLine(y)
-  y += 3
-
-  fb(9)
-  doc.text('TOTAL RECU', ML + 3, y)
-  fb(11)
-  doc.text(fmt(data.delivery_fee + data.sms_tracking_fee), MR - 3, y, { align: 'right' })
-  y += lh(11) + 2
-  solidLine(y)
-  y += 2.5
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * TABLE: NATURE / DESIGNATION
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  const rowH   = 5
-  const tblL   = ML + 0.5
-  const tblR   = MR - 0.5
-  const tblW   = tblR - tblL
-  const tblMid = tblL + tblW * 0.42
-
-  // Header row
-  doc.setFillColor(215, 215, 215)
-  doc.setDrawColor(100, 100, 100)
-  doc.setLineWidth(0.2)
-  doc.rect(tblL, y, tblW, rowH, 'FD')
-  doc.line(tblMid, y, tblMid, y + rowH)
-
-  fb(6.5)
-  doc.text('NATURE', tblL + 2.5, y + 3.2)
-  doc.text('DESIGNATION', tblMid + 2.5, y + 3.2)
-  y += rowH
-
-  // Data row
-  doc.setFillColor(255, 255, 255)
-  doc.rect(tblL, y, tblW, rowH, 'FD')
-  doc.line(tblMid, y, tblMid, y + rowH)
-
-  fn(6.5)
-  const natTxt = doc.splitTextToSize(data.nature.toUpperCase(), tblMid - tblL - 5)
-  const desTxt = doc.splitTextToSize(data.designation.toUpperCase(), tblR - tblMid - 5)
-  doc.text(natTxt[0] || '', tblL + 2.5, y + 3.2)
-  doc.text(desTxt[0] || '', tblMid + 2.5, y + 3.2)
-  y += rowH + 2.5
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * LEGAL NOTES (boxed)
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  fb(5)
-  doc.setTextColor(40, 40, 40)
-  const n1Lines = doc.splitTextToSize(data.legal_note_1, CW - 8)
-  const n2Lines = doc.splitTextToSize('NB: ' + data.legal_note_2, CW - 8)
-  const allNoteLines = [...n1Lines, ...n2Lines]
-  const noteBlockH = allNoteLines.length * 2.3 + 3
-
-  doc.setDrawColor(120, 120, 120)
-  doc.setLineWidth(0.15)
-  doc.rect(ML + 1, y, CW - 2, noteBlockH)
-
-  let noteY = y + 2.5
-  for (const line of n1Lines) {
-    doc.text(line, ML + 4, noteY)
-    noteY += 2.3
+  .dest-row {
+    background: #eee;
+    padding: 1.5mm 3mm;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5mm;
   }
-  for (const line of n2Lines) {
-    doc.text(line, ML + 4, noteY)
-    noteY += 2.3
+  .dest-row .label { font-size: 10px; }
+  .dest-row .value { font-weight: bold; font-size: 12px; }
+  table.transport-row td {
+    font-size: 9px;
+    padding: 1mm 0;
   }
-  doc.setTextColor(30, 30, 30)
-
-  y += noteBlockH + 2.5
-
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * QR CODE
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  if (qrUri) {
-    dashLine(y)
-    y += 3
-
-    const qrSize = 22
-    const qrX = (W - qrSize) / 2
-    doc.addImage(qrUri, 'PNG', qrX, y, qrSize, qrSize)
-    y += qrSize + 1.5
-
-    fn(5.5)
-    doc.text('Scannez pour confirmer la reception', mid, y, { align: 'center' })
-    y += lh(5.5) + 0.5
-
-    fb(9)
-    doc.text(data.parcel_code, mid, y, { align: 'center' })
-    y += lh(9) + 1.5
+  .transport-row {
+    background: #f5f5f5;
+    margin-bottom: 1.5mm;
   }
+  .transport-row td {
+    padding: 1.5mm 3mm;
+    font-size: 9px;
+  }
+  .code-box {
+    border: 1px solid #666;
+    display: flex;
+    margin-bottom: 2mm;
+  }
+  .code-box .cell {
+    flex: 1;
+    padding: 1.5mm 3mm;
+  }
+  .code-box .cell:first-child {
+    border-right: 1px solid #666;
+  }
+  .code-box .cell-label {
+    font-size: 8px;
+    color: #444;
+  }
+  .code-box .cell-value {
+    font-weight: bold;
+    font-size: 14px;
+  }
+  .code-box .cell:last-child .cell-value {
+    font-size: 11px;
+  }
+  .person-box {
+    border: 1px solid #666;
+    display: flex;
+    margin-bottom: 2mm;
+  }
+  .person-box .cell {
+    flex: 1;
+    padding: 1.5mm 3mm;
+  }
+  .person-box .cell:first-child {
+    border-right: 1px solid #666;
+  }
+  .person-box .cell-label {
+    font-size: 8px;
+    color: #444;
+    margin-bottom: 1px;
+  }
+  .person-box .cell-value {
+    font-weight: bold;
+    font-size: 9px;
+    word-break: break-word;
+  }
+  .fin-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5mm 3mm;
+    font-size: 10px;
+  }
+  .total-row {
+    border-top: 1px solid #666;
+    border-bottom: 1px solid #666;
+    padding: 1.5mm 3mm;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 1.5mm 0;
+  }
+  .total-row .label { font-weight: bold; font-size: 12px; }
+  .total-row .value { font-weight: bold; font-size: 14px; }
+  .nature-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 2mm;
+    font-size: 9px;
+  }
+  .nature-table th, .nature-table td {
+    border: 1px solid #666;
+    padding: 1.5mm 2.5mm;
+    text-align: left;
+  }
+  .nature-table th {
+    background: #ddd;
+    font-weight: bold;
+    font-size: 8px;
+  }
+  .notes-box {
+    border: 1px solid #888;
+    padding: 2mm 3mm;
+    font-size: 7px;
+    margin-bottom: 2mm;
+    line-height: 1.5;
+  }
+  .qr-section {
+    text-align: center;
+    border-top: 1px dashed #666;
+    padding-top: 2mm;
+    margin-top: 1mm;
+  }
+  .qr-section canvas { margin: 0 auto; }
+  .qr-label { font-size: 8px; margin-top: 1mm; }
+  .qr-code-text { font-weight: bold; font-size: 12px; margin-top: 1mm; }
+  .footer {
+    border-top: 1px dashed #666;
+    padding-top: 2mm;
+    margin-top: 2mm;
+    text-align: center;
+    font-weight: bold;
+    font-size: 10px;
+  }
+  .footer .supervisor {
+    margin-top: 1.5mm;
+    font-size: 10px;
+  }
+  @media print {
+    body { width: 80mm; }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <img src="/logo_sbta02_full.JPG" onerror="this.onerror=null;this.src='/logo_sbta02 copy.JPG'" alt="SBTA">
+    <div class="header-info">
+      <div><span class="label">VILLE EXP :</span> <span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
+      <div><span class="label">VILLE DES :</span> <span class="value">${escHtml(data.destination_agent_phone ?? '')}</span></div>
+    </div>
+  </div>
 
-  /* ═══════════════════════════════════════════════════════════════════════════
-   * FOOTER
-   * ═══════════════════════════════════════════════════════════════════════════ */
-  dashLine(y)
-  y += 2.5
+  <div class="station-row">
+    <span class="station-name">${escHtml(data.agency_name)}</span>
+    <span class="date">${escHtml(data.print_date)}</span>
+  </div>
 
-  fb(7)
-  doc.text('Merci de votre confiance !', mid, y, { align: 'center' })
-  y += lh(7) + 1.2
+  <div class="title">${escHtml(data.receipt_type)}</div>
 
-  fb(7)
-  const supervisorPhone = data.supervisor_phone ?? '0508257529'
-  doc.text(`Superviseur : ${supervisorPhone}`, mid, y, { align: 'center' })
-  y += lh(7) + 1
+  <div class="dest-row">
+    <span class="label">DESTINATION</span>
+    <span class="value">${escHtml(data.destination.toUpperCase())}</span>
+  </div>
 
-  doc.save(`recu_colis_${data.parcel_code}.pdf`)
+  ${transportRow ? `<table style="width:100%;margin-bottom:1.5mm"><tbody>${transportRow}</tbody></table>` : ''}
+
+  <div class="code-box">
+    <div class="cell">
+      <div class="cell-label">CODE</div>
+      <div class="cell-value">${escHtml(data.parcel_code)}</div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">REFERENCE</div>
+      <div class="cell-value">${escHtml(data.reference)}</div>
+    </div>
+  </div>
+
+  <div class="person-box">
+    <div class="cell">
+      <div class="cell-label">EXPEDITEUR</div>
+      <div class="cell-value">${escHtml(data.sender_name.toUpperCase())}</div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">DESTINATAIRE</div>
+      <div class="cell-value">${escHtml(data.recipient_name.toUpperCase())}</div>
+    </div>
+  </div>
+
+  <div class="fin-row"><span>Valeur declaree :</span><span>${fmt(data.declared_value)}</span></div>
+  <div class="fin-row"><span>Frais :</span><span>${fmt(data.delivery_fee)}</span></div>
+  <div class="fin-row"><span>Frais suivi SMS :</span><span>${fmt(data.sms_tracking_fee)}</span></div>
+
+  <div class="total-row">
+    <span class="label">TOTAL RECU</span>
+    <span class="value">${fmt(totalRecu)}</span>
+  </div>
+
+  <table class="nature-table">
+    <thead><tr><th>NATURE</th><th>DESIGNATION</th></tr></thead>
+    <tbody><tr><td>${escHtml(data.nature.toUpperCase())}</td><td>${escHtml(data.designation.toUpperCase())}</td></tr></tbody>
+  </table>
+
+  <div class="notes-box">
+    ${escHtml(data.legal_note_1)}<br>
+    NB: ${escHtml(data.legal_note_2)}
+  </div>
+
+  <div class="qr-section" id="qr-section">
+    <div id="qr-container"></div>
+    <div class="qr-label">Scannez pour confirmer la reception</div>
+    <div class="qr-code-text">${escHtml(data.parcel_code)}</div>
+  </div>
+
+  <div class="footer">
+    Merci de votre confiance !
+    <div class="supervisor">Superviseur : ${escHtml(data.supervisor_phone ?? '0508257529')}</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
+  <script>
+    (function() {
+      var container = document.getElementById('qr-container');
+      var canvas = document.createElement('canvas');
+      container.appendChild(canvas);
+      if (window.QRCode) {
+        QRCode.toCanvas(canvas, '${data.parcel_code.replace(/'/g, "\\'")}', {
+          width: 80,
+          margin: 0,
+          errorCorrectionLevel: 'M'
+        }, function() {
+          setTimeout(function() { window.print(); window.close(); }, 200);
+        });
+      } else {
+        setTimeout(function() { window.print(); window.close(); }, 300);
+      }
+    })();
+  <\/script>
+</body>
+</html>`
+
+  const printWindow = window.open('', '_blank', 'width=350,height=700')
+  if (!printWindow) {
+    window.alert('Veuillez autoriser les popups pour imprimer le ticket.')
+    return
+  }
+  printWindow.document.open()
+  printWindow.document.write(html)
+  printWindow.document.close()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
