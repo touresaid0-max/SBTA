@@ -302,24 +302,54 @@ export async function printParcelTicket(data: ParcelReceiptData) {
           margin: 0,
           errorCorrectionLevel: 'M'
         }, function() {
-          setTimeout(function() { window.print(); window.close(); }, 200);
+          window.parent.postMessage('parcel-ticket-ready', '*');
         });
       } else {
-        setTimeout(function() { window.print(); window.close(); }, 300);
+        window.parent.postMessage('parcel-ticket-ready', '*');
       }
     })();
   <\/script>
 </body>
 </html>`
 
-  const printWindow = window.open('', '_blank', 'width=350,height=700')
-  if (!printWindow) {
-    window.alert('Veuillez autoriser les popups pour imprimer le ticket.')
-    return
-  }
-  printWindow.document.open()
-  printWindow.document.write(html)
-  printWindow.document.close()
+  return new Promise<void>((resolve) => {
+    const existingFrame = document.getElementById('parcel-print-frame')
+    if (existingFrame) existingFrame.remove()
+
+    const iframe = document.createElement('iframe')
+    iframe.id = 'parcel-print-frame'
+    iframe.style.position = 'fixed'
+    iframe.style.top = '-10000px'
+    iframe.style.left = '-10000px'
+    iframe.style.width = '80mm'
+    iframe.style.height = '0'
+    iframe.style.border = 'none'
+    document.body.appendChild(iframe)
+
+    function onMessage(e: MessageEvent) {
+      if (e.data === 'parcel-ticket-ready') {
+        window.removeEventListener('message', onMessage)
+        setTimeout(() => {
+          iframe.contentWindow?.print()
+          setTimeout(() => {
+            iframe.remove()
+            resolve()
+          }, 1000)
+        }, 100)
+      }
+    }
+    window.addEventListener('message', onMessage)
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document
+    if (!doc) {
+      iframe.remove()
+      resolve()
+      return
+    }
+    doc.open()
+    doc.write(html)
+    doc.close()
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
