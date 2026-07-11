@@ -332,7 +332,8 @@ export async function fetchAllParcels(stationId?: string | null): Promise<Parcel
       origin_station:stations!origin_station_id(id, name),
       dest_station:stations!destination_station_id(id, name),
       companies(name),
-      driver:users!parcels_driver_id_fkey(full_name)
+      driver:users!parcels_driver_id_fkey(full_name),
+      bus:buses!parcels_bus_id_fkey(registration_number)
     `)
 
   if (stationId) {
@@ -347,6 +348,7 @@ export async function fetchAllParcels(stationId?: string | null): Promise<Parcel
     destination_station_name: p.dest_station?.name ?? p.destination_station_name ?? '',
     company_name: p.companies?.name ?? p.company_name ?? '',
     driver_name: p.driver?.full_name ?? null,
+    bus_registration: p.bus?.registration_number ?? null,
   }))
 }
 
