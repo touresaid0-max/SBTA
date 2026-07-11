@@ -25,6 +25,8 @@ export interface Parcel {
   destination_station_id:   string
   destination_station_name: string
   schedule_id:              string | null
+  driver_id:                string | null
+  driver_name:              string | null
   bus_registration:         string | null
   declared_value:           number
   delivery_fee:             number

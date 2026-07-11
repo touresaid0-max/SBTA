@@ -142,6 +142,22 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   y += destRowH + 1.5
 
   /* ═══════════════════════════════════════════════════════════════════════════
+   * TRANSPORT: BUS + CHAUFFEUR (if set)
+   * ═══════════════════════════════════════════════════════════════════════════ */
+  if (data.bus_registration || data.driver_name) {
+    const transRowH = 6
+    doc.setFillColor(245, 245, 245)
+    doc.rect(ML, y - 1, CW, transRowH, 'F')
+
+    fn(7)
+    const transLeft = data.bus_registration ? `BUS: ${data.bus_registration}` : ''
+    const transRight = data.driver_name ? `CHAUFFEUR: ${data.driver_name.toUpperCase()}` : ''
+    if (transLeft) doc.text(transLeft, ML + 3, y + 2.5)
+    if (transRight) doc.text(transRight, MR - 3, y + 2.5, { align: 'right' })
+    y += transRowH + 1.5
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════════
    * CODE | REFERENCE (boxed)
    * ═══════════════════════════════════════════════════════════════════════════ */
   const codeBoxTop = y

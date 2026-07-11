@@ -113,7 +113,7 @@ export async function bulkUpdateParcelStatus(
 
 export async function updateParcelFields(
   parcelId: string,
-  fields: Partial<Pick<Parcel, 'parcel_code' | 'sender_name' | 'sender_phone' | 'recipient_name' | 'recipient_phone' | 'recipient_city' | 'origin_station_id' | 'destination_station_id' | 'total_amount' | 'delivery_fee' | 'status' | 'registered_at' | 'content_description' | 'notes'>>,
+  fields: Partial<Pick<Parcel, 'parcel_code' | 'sender_name' | 'sender_phone' | 'recipient_name' | 'recipient_phone' | 'recipient_city' | 'origin_station_id' | 'destination_station_id' | 'total_amount' | 'delivery_fee' | 'status' | 'registered_at' | 'content_description' | 'notes' | 'bus_registration' | 'driver_id'>>,
 ): Promise<void> {
   const now = new Date().toISOString()
   const { data: { user } } = await supabase.auth.getUser()
@@ -331,7 +331,8 @@ export async function fetchAllParcels(stationId?: string | null): Promise<Parcel
       *,
       origin_station:stations!origin_station_id(id, name),
       dest_station:stations!destination_station_id(id, name),
-      companies(name)
+      companies(name),
+      driver:users!parcels_driver_id_fkey(full_name)
     `)
 
   if (stationId) {
@@ -345,6 +346,7 @@ export async function fetchAllParcels(stationId?: string | null): Promise<Parcel
     origin_station_name: p.origin_station?.name ?? p.origin_station_name ?? '',
     destination_station_name: p.dest_station?.name ?? p.destination_station_name ?? '',
     company_name: p.companies?.name ?? p.company_name ?? '',
+    driver_name: p.driver?.full_name ?? null,
   }))
 }
 

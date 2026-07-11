@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Package, Search, RefreshCw, Eye, Printer, Filter, X, ArrowUpDown, ChevronLeft, ChevronRight, CreditCard as Edit2, Trash2, Save } from 'lucide-react'
+import { Package, Search, RefreshCw, Eye, Printer, Filter, X, ArrowUpDown, ChevronLeft, ChevronRight, CreditCard as Edit2, Trash2, Save, Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -25,6 +25,8 @@ type SortField = 'registered_at' | 'parcel_code' | 'total_amount' | 'status'
 type SortDir   = 'asc' | 'desc'
 
 interface Station { id: string; name: string; city_name: string }
+interface DriverOption { id: string; full_name: string }
+interface BusOption { id: string; registration_number: string }
 
 interface EditForm {
   parcel_code: string
@@ -41,6 +43,9 @@ interface EditForm {
   registered_at: string
   content_description: string
   notes: string
+  bus_registration: string
+  driver_id: string
+  driver_name: string
 }
 
 function parcelToForm(p: Parcel): EditForm {
@@ -59,6 +64,9 @@ function parcelToForm(p: Parcel): EditForm {
     registered_at: p.registered_at ? p.registered_at.slice(0, 16) : '',
     content_description: p.content_description ?? '',
     notes: p.notes ?? '',
+    bus_registration: p.bus_registration ?? '',
+    driver_id: p.driver_id ?? '',
+    driver_name: p.driver_name ?? '',
   }
 }
 
@@ -74,9 +82,17 @@ export default function SuperviseurParcelsList() {
   const today = format(new Date(), 'dd/MM/yyyy', { locale: fr })
 
   const [stations, setStations] = useState<Station[]>([])
+  const [drivers, setDrivers] = useState<DriverOption[]>([])
+  const [buses, setBuses] = useState<BusOption[]>([])
   const [editParcel, setEditParcel] = useState<Parcel | null>(null)
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [saving, setSaving] = useState(false)
+  const [driverSearch, setDriverSearch] = useState('')
+  const [busSearch, setBusSearch] = useState('')
+  const [showDriverDropdown, setShowDriverDropdown] = useState(false)
+  const [showBusDropdown, setShowBusDropdown] = useState(false)
+  const driverRef = useRef<HTMLDivElement>(null)
+  const busRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -101,6 +117,32 @@ export default function SuperviseurParcelsList() {
       .then(({ data }) => {
         setStations((data ?? []).map((s: any) => ({ id: s.id, name: s.name, city_name: s.cities?.name ?? '' })))
       })
+    supabase
+      .from('users')
+      .select('id, full_name')
+      .eq('role', 'chauffeur')
+      .eq('is_active', true)
+      .order('full_name')
+      .then(({ data }) => {
+        setDrivers((data ?? []).map((d: any) => ({ id: d.id, full_name: d.full_name ?? '' })))
+      })
+    supabase
+      .from('buses')
+      .select('id, registration_number')
+      .eq('is_active', true)
+      .order('registration_number')
+      .then(({ data }) => {
+        setBuses((data ?? []).map((b: any) => ({ id: b.id, registration_number: b.registration_number })))
+      })
+  }, [])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (driverRef.current && !driverRef.current.contains(e.target as Node)) setShowDriverDropdown(false)
+      if (busRef.current && !busRef.current.contains(e.target as Node)) setShowBusDropdown(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [])
 
   // Filter
@@ -144,7 +186,7 @@ export default function SuperviseurParcelsList() {
 
   async function handlePrint(parcel: Parcel) {
     const agentInfo = await fetchParcelAgentInfo(parcel.origin_station_id, parcel.destination_station_id).catch(() => null)
-    await printParcelTicket(buildReceiptData(parcel, parcel.origin_station_name, '', null, null, agentInfo))
+    await printParcelTicket(buildReceiptData(parcel, parcel.origin_station_name, '', null, parcel.driver_name, agentInfo))
   }
 
   function openEdit(parcel: Parcel) {
@@ -179,6 +221,8 @@ export default function SuperviseurParcelsList() {
       if (regDate !== editParcel.registered_at) fields.registered_at = regDate
       if (editForm.content_description !== (editParcel.content_description ?? '')) fields.content_description = editForm.content_description.trim()
       if (editForm.notes !== (editParcel.notes ?? '')) fields.notes = editForm.notes.trim() || null
+      if (editForm.bus_registration !== (editParcel.bus_registration ?? '')) fields.bus_registration = editForm.bus_registration.trim() || null
+      if (editForm.driver_id !== (editParcel.driver_id ?? '')) fields.driver_id = editForm.driver_id || null
 
       if (Object.keys(fields).length === 0) {
         toast('Aucune modification')
@@ -363,6 +407,12 @@ export default function SuperviseurParcelsList() {
                       <span><span style={{ color: 'var(--text-muted)' }}>Gare dest. : </span>{parcel.destination_station_name}</span>
                       <span><span style={{ color: 'var(--text-muted)' }}>Montant : </span><strong style={{ color: '#0B7439' }}>{Number(parcel.total_amount ?? 0).toLocaleString('fr-CI')} F</strong></span>
                       <span><span style={{ color: 'var(--text-muted)' }}>Date : </span>{format(new Date(parcel.registered_at), 'dd/MM/yyyy', { locale: fr })}</span>
+                      {(parcel.bus_registration || parcel.driver_name) && (
+                        <>
+                          <span><span style={{ color: 'var(--text-muted)' }}>Plaque : </span>{parcel.bus_registration || '—'}</span>
+                          <span><span style={{ color: 'var(--text-muted)' }}>Chauffeur : </span>{parcel.driver_name || '—'}</span>
+                        </>
+                      )}
                     </div>
                     <div className="flex gap-2 pt-1">
                       <button
@@ -418,6 +468,7 @@ export default function SuperviseurParcelsList() {
                         Montant <SortIcon field="total_amount" />
                       </button>
                     </th>
+                    <th className="px-4 py-3 text-left font-semibold text-xs uppercase" style={{ color: 'var(--text-muted)' }}>Transport</th>
                     <th className="px-4 py-3 text-left">
                       <button onClick={() => toggleSort('status')} className="flex items-center gap-1 font-semibold text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
                         Statut <SortIcon field="status" />
@@ -455,6 +506,19 @@ export default function SuperviseurParcelsList() {
                         </td>
                         <td className="px-4 py-3 font-semibold text-sm" style={{ color: '#0B7439' }}>
                           {Number(parcel.total_amount ?? 0).toLocaleString('fr-CI')} F
+                        </td>
+                        <td className="px-4 py-3" style={{ color: 'var(--text-secondary)' }}>
+                          {(parcel.bus_registration || parcel.driver_name) ? (
+                            <div className="flex items-center gap-1.5">
+                              <Truck className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                              <div className="text-xs leading-tight">
+                                {parcel.bus_registration && <p className="font-mono font-semibold">{parcel.bus_registration}</p>}
+                                {parcel.driver_name && <p>{parcel.driver_name}</p>}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap" style={{ backgroundColor: sc.bg, color: sc.color }}>
@@ -641,6 +705,66 @@ export default function SuperviseurParcelsList() {
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Frais de livraison (F)</label>
                 <input type="number" min="0" value={editForm.delivery_fee} onChange={setF('delivery_fee')} className={inputCls} style={inputStyle} />
+              </div>
+              {/* Bus registration - autocomplete */}
+              <div ref={busRef} className="relative">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Plaque d'immatriculation</label>
+                <input
+                  value={busSearch !== '' ? busSearch : editForm.bus_registration}
+                  onChange={e => { setBusSearch(e.target.value); setShowBusDropdown(true); setEditForm(f => f ? { ...f, bus_registration: e.target.value } : f) }}
+                  onFocus={() => { setBusSearch(editForm.bus_registration); setShowBusDropdown(true) }}
+                  placeholder="Rechercher une plaque..."
+                  className={inputCls}
+                  style={inputStyle}
+                />
+                {showBusDropdown && (
+                  <div className="absolute z-30 left-0 right-0 mt-1 rounded-lg shadow-lg max-h-40 overflow-y-auto" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    {buses.filter(b => !busSearch || b.registration_number.toLowerCase().includes(busSearch.toLowerCase())).slice(0, 10).map(b => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => { setEditForm(f => f ? { ...f, bus_registration: b.registration_number } : f); setBusSearch(''); setShowBusDropdown(false) }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors font-mono"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {b.registration_number}
+                      </button>
+                    ))}
+                    {buses.filter(b => !busSearch || b.registration_number.toLowerCase().includes(busSearch.toLowerCase())).length === 0 && (
+                      <p className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun bus trouvé</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Driver - autocomplete */}
+              <div ref={driverRef} className="relative">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Chauffeur</label>
+                <input
+                  value={driverSearch !== '' ? driverSearch : editForm.driver_name}
+                  onChange={e => { setDriverSearch(e.target.value); setShowDriverDropdown(true) }}
+                  onFocus={() => { setDriverSearch(editForm.driver_name); setShowDriverDropdown(true) }}
+                  placeholder="Rechercher un chauffeur..."
+                  className={inputCls}
+                  style={inputStyle}
+                />
+                {showDriverDropdown && (
+                  <div className="absolute z-30 left-0 right-0 mt-1 rounded-lg shadow-lg max-h-40 overflow-y-auto" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    {drivers.filter(d => !driverSearch || d.full_name.toLowerCase().includes(driverSearch.toLowerCase())).slice(0, 10).map(d => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => { setEditForm(f => f ? { ...f, driver_id: d.id, driver_name: d.full_name } : f); setDriverSearch(''); setShowDriverDropdown(false) }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {d.full_name}
+                      </button>
+                    ))}
+                    {drivers.filter(d => !driverSearch || d.full_name.toLowerCase().includes(driverSearch.toLowerCase())).length === 0 && (
+                      <p className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun chauffeur trouvé</p>
+                    )}
+                  </div>
+                )}
               </div>
               {/* Description */}
               <div className="sm:col-span-2">
