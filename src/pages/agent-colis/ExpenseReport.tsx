@@ -130,6 +130,7 @@ export default function AgentColisExpenseReport() {
   }, [periodMode, dateRange])
 
   const exportPDF = () => {
+    const fmtPdf = (n: number) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' F CFA'
     const doc = new jsPDF()
     doc.setFontSize(16)
     doc.text('Rapport Depenses & Ratios - Service Courrier', 14, 20)
@@ -139,12 +140,12 @@ export default function AgentColisExpenseReport() {
 
     let y = 45
     doc.setFontSize(11)
-    doc.text(`Recettes courrier :`, 14, y); doc.text(fmt(parcelRevenue), 120, y); y += 7
-    doc.text(`Total Depenses :`, 14, y); doc.text(fmt(totalDepenses), 120, y); y += 7
-    doc.text(`Total Ratios :`, 14, y); doc.text(fmt(totalRatios), 120, y); y += 7
-    doc.text(`Total Deductions :`, 14, y); doc.text(fmt(totalDeductions), 120, y); y += 7
+    doc.text(`Recettes courrier :`, 14, y); doc.text(fmtPdf(parcelRevenue), 120, y); y += 7
+    doc.text(`Total Depenses :`, 14, y); doc.text(fmtPdf(totalDepenses), 120, y); y += 7
+    doc.text(`Total Ratios :`, 14, y); doc.text(fmtPdf(totalRatios), 120, y); y += 7
+    doc.text(`Total Deductions :`, 14, y); doc.text(fmtPdf(totalDeductions), 120, y); y += 7
     doc.setFontSize(12)
-    doc.text(`Solde Net :`, 14, y); doc.text(fmt(soldeNet), 120, y); y += 14
+    doc.text(`Solde Net :`, 14, y); doc.text(fmtPdf(soldeNet), 120, y); y += 14
 
     doc.setFontSize(9)
     const headers = ['Date', 'Type', 'Nature', 'Montant', 'Paiement', 'Description']
@@ -158,7 +159,7 @@ export default function AgentColisExpenseReport() {
       doc.text(format(parseISO(exp.expense_date), 'dd/MM/yy'), colX[0], y)
       doc.text(exp.expense_type === 'depense' ? 'Dep.' : 'Ratio', colX[1], y)
       doc.text(exp.nature.substring(0, 20), colX[2], y)
-      doc.text(exp.amount.toLocaleString('fr-FR'), colX[3], y)
+      doc.text(fmtPdf(exp.amount), colX[3], y)
       doc.text(PAYMENT_LABELS[exp.payment_method] || exp.payment_method, colX[4], y)
       doc.text((exp.description || '-').substring(0, 20), colX[5], y)
       y += 5
