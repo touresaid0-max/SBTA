@@ -192,6 +192,8 @@ export default function SuperviseurParcelsList() {
   function openEdit(parcel: Parcel) {
     setEditParcel(parcel)
     setEditForm(parcelToForm(parcel))
+    setBusSearch('')
+    setDriverSearch('')
   }
 
   function closeEdit() {
