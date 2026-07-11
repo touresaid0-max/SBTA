@@ -324,6 +324,8 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   const existingFrame = document.getElementById('parcel-print-frame')
   if (existingFrame) existingFrame.remove()
 
+  setPrintingGuard(true)
+
   const iframe = document.createElement('iframe')
   iframe.id = 'parcel-print-frame'
   iframe.style.position = 'fixed'
@@ -337,6 +339,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   const doc = iframe.contentDocument || iframe.contentWindow?.document
   if (!doc) {
     iframe.remove()
+    setPrintingGuard(false)
     return
   }
   doc.open()
@@ -344,14 +347,13 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   doc.close()
 
   await new Promise(r => setTimeout(r, 200))
-  setPrintingGuard(true)
   try {
     iframe.contentWindow?.print()
   } finally {
     setTimeout(() => {
-      setPrintingGuard(false)
       iframe.remove()
-    }, 1000)
+      setPrintingGuard(false)
+    }, 2000)
   }
 }
 

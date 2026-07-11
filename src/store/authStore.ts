@@ -61,7 +61,24 @@ interface AuthState {
 }
 
 let _isPrinting = false;
-export function setPrintingGuard(active: boolean) { _isPrinting = active; }
+let _printingTimeout: ReturnType<typeof setTimeout> | null = null;
+export function setPrintingGuard(active: boolean) {
+  if (_printingTimeout) { clearTimeout(_printingTimeout); _printingTimeout = null; }
+  if (active) {
+    _isPrinting = true;
+  } else {
+    // Keep the guard active for 10 seconds after printing ends to cover
+    // async token refresh failures that fire after the print dialog closes
+    _printingTimeout = setTimeout(() => { _isPrinting = false; }, 10000);
+  }
+}
+export function isPrintingActive() { return _isPrinting; }
+
+// Also listen to native beforeprint/afterprint to catch any print trigger
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeprint', () => { setPrintingGuard(true); });
+  window.addEventListener('afterprint', () => { setPrintingGuard(false); });
+}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -83,6 +100,7 @@ export const useAuthStore = create<AuthState>()(
 
           supabase.auth.onAuthStateChange((event, session) => {
             (async () => {
+              if (_isPrinting && (event === 'SIGNED_OUT' || (!session && event !== 'SIGNED_IN'))) return;
               if (event === 'SIGNED_IN' && session?.user) {
                 set({ session, isAuthenticated: true });
                 await get().fetchProfile();
@@ -363,7 +381,28 @@ export const useAuthStore = create<AuthState>()(
         return rolesArray.includes(user.role);
       },
     }),
-    { name: 'sbta-auth' }
+    { 
+      name: 'sbta-auth',
+      partialize: (state) => ({
+        user: state.user,
+        session: state.session,
+        isAuthenticated: state.isAuthenticated,
+        initialized: state.initialized,
+      }),
+      storage: {
+        getItem: (name) => {
+          const str = localStorage.getItem(name);
+          if (!str) return null;
+          return JSON.parse(str);
+        },
+        setItem: (name, value) => {
+          localStorage.setItem(name, JSON.stringify(value));
+        },
+        removeItem: (name) => {
+          localStorage.removeItem(name);
+        },
+      },
+    }
   )
 );
 
