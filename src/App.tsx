@@ -162,6 +162,10 @@ import AgentColisSmsFeesReport from './pages/agent-colis/SmsFeesReport';
 import SuperviseurColisDashboard from './pages/superviseur-colis/Dashboard';
 import SuperviseurParcelsList from './pages/superviseur-colis/ParcelsList';
 import SuperviseurParcelDetail from './pages/superviseur-colis/ParcelDetail';
+import SuperviseurRevenueByStation from './pages/superviseur-colis/RevenueByStation';
+import SuperviseurSmsFeesByStation from './pages/superviseur-colis/SmsFeesByStation';
+import SuperviseurExpensesByStation from './pages/superviseur-colis/ExpensesByStation';
+import SuperviseurConsolidatedReport from './pages/superviseur-colis/ConsolidatedReport';
 import TrackParcel from './pages/track/TrackParcel';
 import ChargeAchatDashboard from './pages/charge-achat/Dashboard';
 import ChargeAchatExpensesList from './pages/charge-achat/ExpensesList';
@@ -458,6 +462,10 @@ function App() {
             <Route path="superviseur-colis/dashboard" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurColisDashboard /></ProtectedRoute>} />
             <Route path="superviseur-colis/parcels" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurParcelsList /></ProtectedRoute>} />
             <Route path="superviseur-colis/parcels/:id" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurParcelDetail /></ProtectedRoute>} />
+            <Route path="superviseur-colis/revenue" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurRevenueByStation /></ProtectedRoute>} />
+            <Route path="superviseur-colis/sms-fees" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurSmsFeesByStation /></ProtectedRoute>} />
+            <Route path="superviseur-colis/expenses" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurExpensesByStation /></ProtectedRoute>} />
+            <Route path="superviseur-colis/consolidated" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurConsolidatedReport /></ProtectedRoute>} />
 
             <Route path="fuel/report" element={<ProtectedRoute roles={['pompiste', 'admin', 'daf']}><FuelReport /></ProtectedRoute>} />
 

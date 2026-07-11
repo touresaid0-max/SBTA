@@ -188,6 +188,10 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   superviseur_colis: [
     { label: 'Dashboard',   path: '/superviseur-colis/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Tous les courriers',path: '/superviseur-colis/parcels', icon: <Package className="w-5 h-5" /> },
+    { label: 'Recettes par gare', path: '/superviseur-colis/revenue', icon: <Banknote className="w-5 h-5" /> },
+    { label: 'Frais SMS par gare', path: '/superviseur-colis/sms-fees', icon: <MessageSquareWarning className="w-5 h-5" /> },
+    { label: 'Depenses par gare', path: '/superviseur-colis/expenses', icon: <Wallet className="w-5 h-5" /> },
+    { label: 'Rapport consolide', path: '/superviseur-colis/consolidated', icon: <BarChart2 className="w-5 h-5" /> },
   ],
   agent_colis: [
     { label: 'Dashboard',     path: '/agent-colis/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
