@@ -18,7 +18,6 @@ interface ParcelExpense {
   payment_method: string
   description: string | null
   created_at: string
-  agent_name?: string
 }
 
 interface AgentOption {
@@ -79,7 +78,7 @@ export default function AgentColisExpenseReport() {
 
     let query = supabase
       .from('parcel_service_expenses')
-      .select('*, users:agent_id(full_name)')
+      .select('*')
       .eq('station_id', stationId)
       .gte('expense_date', dateRange.from)
       .lte('expense_date', dateRange.to)
@@ -91,8 +90,7 @@ export default function AgentColisExpenseReport() {
 
     const { data: expData, error } = await query
     if (error) toast.error('Erreur chargement')
-    const mapped = (expData || []).map((e: any) => ({ ...e, agent_name: e.users?.full_name || '-' }))
-    setExpenses(mapped)
+    setExpenses(expData || [])
 
     // Fetch parcel revenue for same period and station
     let revQuery = supabase
@@ -150,8 +148,8 @@ export default function AgentColisExpenseReport() {
     doc.text(`Solde Net :`, 14, y); doc.text(fmtPdf(soldeNet), 120, y); y += 14
 
     doc.setFontSize(9)
-    const headers = ['Date', 'Agent', 'Type', 'Nature', 'Montant', 'Paiement']
-    const colX = [14, 36, 80, 100, 130, 160]
+    const headers = ['Date', 'Type', 'Nature', 'Montant', 'Paiement', 'Description']
+    const colX = [14, 36, 58, 100, 130, 155]
     headers.forEach((h, i) => doc.text(h, colX[i], y))
     y += 5
     doc.line(14, y, 196, y); y += 4
@@ -159,11 +157,11 @@ export default function AgentColisExpenseReport() {
     expenses.forEach(exp => {
       if (y > 275) { doc.addPage(); y = 20 }
       doc.text(format(parseISO(exp.expense_date), 'dd/MM/yy'), colX[0], y)
-      doc.text((exp.agent_name || '-').substring(0, 22), colX[1], y)
-      doc.text(exp.expense_type === 'depense' ? 'Dep.' : 'Ratio', colX[2], y)
-      doc.text(exp.nature.substring(0, 15), colX[3], y)
-      doc.text(fmtPdf(exp.amount), colX[4], y)
-      doc.text(PAYMENT_LABELS[exp.payment_method] || exp.payment_method, colX[5], y)
+      doc.text(exp.expense_type === 'depense' ? 'Dep.' : 'Ratio', colX[1], y)
+      doc.text(exp.nature.substring(0, 20), colX[2], y)
+      doc.text(fmtPdf(exp.amount), colX[3], y)
+      doc.text(PAYMENT_LABELS[exp.payment_method] || exp.payment_method, colX[4], y)
+      doc.text((exp.description || '-').substring(0, 20), colX[5], y)
       y += 5
     })
 
@@ -175,7 +173,6 @@ export default function AgentColisExpenseReport() {
     const XLSX = await import('xlsx')
     const rows = expenses.map(exp => ({
       Date: format(parseISO(exp.expense_date), 'dd/MM/yyyy'),
-      Agent: exp.agent_name || '-',
       Type: exp.expense_type === 'depense' ? 'Depense' : 'Ratio',
       Nature: exp.nature,
       Montant: exp.amount,
@@ -347,7 +344,6 @@ export default function AgentColisExpenseReport() {
                   <thead className="bg-gray-50 border-b">
                     <tr>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Agent</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Nature</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-600">Montant</th>
@@ -359,7 +355,6 @@ export default function AgentColisExpenseReport() {
                     {expenses.map(exp => (
                       <tr key={exp.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 whitespace-nowrap">{format(parseISO(exp.expense_date), 'dd/MM/yyyy')}</td>
-                        <td className="px-4 py-3 text-gray-700 text-xs font-medium whitespace-nowrap">{exp.agent_name}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${exp.expense_type === 'depense' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
                             {exp.expense_type === 'depense' ? 'Depense' : 'Ratio'}
@@ -374,7 +369,7 @@ export default function AgentColisExpenseReport() {
                   </tbody>
                   <tfoot className="border-t bg-gray-50">
                     <tr>
-                      <td className="px-4 py-3 font-semibold" colSpan={4}>TOTAL</td>
+                      <td className="px-4 py-3 font-semibold" colSpan={3}>TOTAL</td>
                       <td className="px-4 py-3 text-right font-bold text-gray-900">{totalDeductions.toLocaleString('fr-FR')} FCFA</td>
                       <td colSpan={2}></td>
                     </tr>
