@@ -223,7 +223,10 @@ export default function SuperviseurParcelsList() {
       if (regDate !== editParcel.registered_at) fields.registered_at = regDate
       if (editForm.content_description !== (editParcel.content_description ?? '')) fields.content_description = editForm.content_description.trim()
       if (editForm.notes !== (editParcel.notes ?? '')) fields.notes = editForm.notes.trim() || null
-      if (editForm.bus_registration !== (editParcel.bus_registration ?? '')) fields.bus_registration = editForm.bus_registration.trim() || null
+      if (editForm.bus_registration !== (editParcel.bus_registration ?? '')) {
+        const selectedBus = buses.find(b => b.registration_number === editForm.bus_registration.trim())
+        fields.bus_id = selectedBus ? selectedBus.id : null
+      }
       if (editForm.driver_id !== (editParcel.driver_id ?? '')) fields.driver_id = editForm.driver_id || null
 
       if (Object.keys(fields).length === 0) {
