@@ -158,6 +158,7 @@ import ParcelDetail from './pages/agent-colis/ParcelDetail';
 import QrScanner from './pages/agent-colis/QrScanner';
 import AgentColisExpenses from './pages/agent-colis/Expenses';
 import AgentColisExpenseReport from './pages/agent-colis/ExpenseReport';
+import AgentColisSmsFeesReport from './pages/agent-colis/SmsFeesReport';
 import SuperviseurColisDashboard from './pages/superviseur-colis/Dashboard';
 import SuperviseurParcelsList from './pages/superviseur-colis/ParcelsList';
 import SuperviseurParcelDetail from './pages/superviseur-colis/ParcelDetail';
@@ -453,6 +454,7 @@ function App() {
             <Route path="agent-colis/scan" element={<ProtectedRoute roles={['agent_colis']}><QrScanner /></ProtectedRoute>} />
             <Route path="agent-colis/expenses" element={<ProtectedRoute roles={['agent_colis', 'superviseur_colis']}><AgentColisExpenses /></ProtectedRoute>} />
             <Route path="agent-colis/expense-report" element={<ProtectedRoute roles={['agent_colis', 'superviseur_colis']}><AgentColisExpenseReport /></ProtectedRoute>} />
+            <Route path="agent-colis/sms-fees" element={<ProtectedRoute roles={['agent_colis', 'superviseur_colis']}><AgentColisSmsFeesReport /></ProtectedRoute>} />
             <Route path="superviseur-colis/dashboard" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurColisDashboard /></ProtectedRoute>} />
             <Route path="superviseur-colis/parcels" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurParcelsList /></ProtectedRoute>} />
             <Route path="superviseur-colis/parcels/:id" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurParcelDetail /></ProtectedRoute>} />
