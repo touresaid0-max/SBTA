@@ -16,12 +16,7 @@ function escHtml(s: string): string {
 export async function printParcelTicket(data: ParcelReceiptData) {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
 
-  const transportRow = (data.bus_registration || data.driver_name)
-    ? `<tr class="transport-row">
-        <td>${data.bus_registration ? `BUS: ${escHtml(data.bus_registration)}` : ''}</td>
-        <td style="text-align:right">${data.driver_name ? `CHAUFFEUR: ${escHtml(data.driver_name.toUpperCase())}` : ''}</td>
-       </tr>`
-    : ''
+  const logoUrl = window.location.origin + '/logo_sbta02_full.JPG'
 
   const html = `<!DOCTYPE html>
 <html>
@@ -35,180 +30,176 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: 'Courier New', monospace;
+    font-family: Arial, Helvetica, sans-serif;
     font-size: 11px;
     width: 80mm;
-    padding: 2mm 3mm;
-    color: #1a1a1a;
+    padding: 3mm 4mm;
+    color: #000;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .header {
     display: flex;
     align-items: center;
-    gap: 3mm;
-    border-bottom: 1px dashed #666;
-    padding-bottom: 2mm;
-    margin-bottom: 2mm;
+    margin-bottom: 3mm;
   }
   .header img {
-    width: 22mm;
-    height: 20mm;
+    width: 24mm;
+    height: auto;
     object-fit: contain;
   }
-  .header-info {
+  .header-right {
     flex: 1;
-    border-left: 1px solid #666;
-    padding-left: 2mm;
-    font-size: 9px;
+    text-align: right;
+    font-size: 10px;
+    line-height: 1.8;
   }
-  .header-info .label { font-weight: normal; }
-  .header-info .value { font-weight: bold; font-size: 11px; }
-  .header-info div { margin-bottom: 2px; }
+  .header-right .label { font-weight: normal; }
+  .header-right .value { font-weight: bold; font-size: 13px; }
   .station-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 1mm;
+    text-align: center;
+    margin-bottom: 2mm;
   }
-  .station-name { font-weight: bold; font-size: 14px; }
-  .date { font-size: 9px; }
+  .station-name { font-weight: bold; font-size: 13px; }
+  .station-date { font-size: 10px; margin-left: 4mm; }
   .title {
     text-align: center;
     font-weight: bold;
-    font-size: 16px;
-    margin: 2mm 0;
-    padding: 1mm 0;
-    border-top: 1px dashed #666;
-    border-bottom: 1px dashed #666;
+    font-size: 20px;
+    margin: 3mm 0;
+    padding: 2mm 0;
+    border-bottom: 1px solid #000;
   }
   .dest-row {
-    background: #eee;
-    padding: 1.5mm 3mm;
+    border: 1px solid #000;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5mm;
+    padding: 2mm 3mm;
+    margin-bottom: 2mm;
   }
   .dest-row .label { font-size: 10px; }
-  .dest-row .value { font-weight: bold; font-size: 12px; }
-  table.transport-row td {
-    font-size: 9px;
-    padding: 1mm 0;
-  }
-  .transport-row {
-    background: #f5f5f5;
-    margin-bottom: 1.5mm;
-  }
-  .transport-row td {
-    padding: 1.5mm 3mm;
-    font-size: 9px;
-  }
-  .code-box {
-    border: 1px solid #666;
+  .dest-row .value { font-weight: bold; font-size: 14px; }
+  .info-grid {
     display: flex;
+    border: 1px solid #000;
     margin-bottom: 2mm;
   }
-  .code-box .cell {
+  .info-grid .cell {
     flex: 1;
-    padding: 1.5mm 3mm;
+    padding: 2mm 3mm;
   }
-  .code-box .cell:first-child {
-    border-right: 1px solid #666;
+  .info-grid .cell + .cell {
+    border-left: 1px solid #000;
   }
-  .code-box .cell-label {
+  .info-grid .cell-label {
     font-size: 8px;
-    color: #444;
-  }
-  .code-box .cell-value {
     font-weight: bold;
-    font-size: 14px;
-  }
-  .code-box .cell:last-child .cell-value {
-    font-size: 11px;
-  }
-  .person-box {
-    border: 1px solid #666;
-    display: flex;
-    margin-bottom: 2mm;
-  }
-  .person-box .cell {
-    flex: 1;
-    padding: 1.5mm 3mm;
-  }
-  .person-box .cell:first-child {
-    border-right: 1px solid #666;
-  }
-  .person-box .cell-label {
-    font-size: 8px;
-    color: #444;
+    color: #333;
     margin-bottom: 1px;
   }
-  .person-box .cell-value {
+  .info-grid .cell-value {
     font-weight: bold;
-    font-size: 9px;
-    word-break: break-word;
+    font-size: 16px;
+  }
+  .info-grid .cell-value.ref {
+    font-size: 11px;
+  }
+  .person-grid {
+    display: flex;
+    border: 1px solid #000;
+    margin-bottom: 3mm;
+  }
+  .person-grid .cell {
+    flex: 1;
+    padding: 2mm 3mm;
+  }
+  .person-grid .cell + .cell {
+    border-left: 1px solid #000;
+  }
+  .person-grid .cell-label {
+    font-size: 8px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 1px;
+  }
+  .person-grid .cell-value {
+    font-weight: bold;
+    font-size: 10px;
   }
   .fin-row {
     display: flex;
     justify-content: space-between;
-    padding: 0.5mm 3mm;
-    font-size: 10px;
+    align-items: baseline;
+    padding: 1mm 0;
+    font-size: 11px;
+    border-bottom: 1px dotted #999;
   }
+  .fin-row:last-of-type { border-bottom: none; }
   .total-row {
-    border-top: 1px solid #666;
-    border-bottom: 1px solid #666;
-    padding: 1.5mm 3mm;
+    border-top: 2px solid #000;
+    border-bottom: 2px solid #000;
+    padding: 2mm 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 1.5mm 0;
+    margin: 2mm 0 3mm 0;
   }
-  .total-row .label { font-weight: bold; font-size: 12px; }
-  .total-row .value { font-weight: bold; font-size: 14px; }
+  .total-row .label { font-weight: bold; font-size: 13px; }
+  .total-row .value { font-weight: bold; font-size: 16px; }
   .nature-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 2mm;
-    font-size: 9px;
+    margin-bottom: 3mm;
+    font-size: 10px;
   }
   .nature-table th, .nature-table td {
-    border: 1px solid #666;
-    padding: 1.5mm 2.5mm;
+    border: 1px solid #000;
+    padding: 2mm 3mm;
     text-align: left;
   }
   .nature-table th {
     background: #ddd;
     font-weight: bold;
-    font-size: 8px;
+    font-size: 9px;
   }
   .notes-box {
-    border: 1px solid #888;
+    border: 1px solid #000;
     padding: 2mm 3mm;
-    font-size: 7px;
-    margin-bottom: 2mm;
-    line-height: 1.5;
+    font-size: 8px;
+    margin-bottom: 3mm;
+    line-height: 1.6;
   }
   .qr-section {
     text-align: center;
-    border-top: 1px dashed #666;
-    padding-top: 2mm;
-    margin-top: 1mm;
+    padding: 3mm 0;
+    border-top: 1px solid #000;
   }
-  .qr-section canvas { margin: 0 auto; }
-  .qr-label { font-size: 8px; margin-top: 1mm; }
-  .qr-code-text { font-weight: bold; font-size: 12px; margin-top: 1mm; }
+  .qr-section canvas {
+    display: block;
+    margin: 0 auto 2mm auto;
+  }
+  .qr-label {
+    font-size: 8px;
+    font-style: italic;
+    margin-bottom: 1mm;
+  }
+  .qr-code-text {
+    font-weight: bold;
+    font-size: 14px;
+  }
   .footer {
-    border-top: 1px dashed #666;
+    border-top: 1px solid #000;
     padding-top: 2mm;
     margin-top: 2mm;
     text-align: center;
     font-weight: bold;
-    font-size: 10px;
+    font-size: 11px;
   }
   .footer .supervisor {
-    margin-top: 1.5mm;
+    margin-top: 2mm;
     font-size: 10px;
+    font-weight: bold;
   }
   @media print {
     body { width: 80mm; }
@@ -217,16 +208,16 @@ export async function printParcelTicket(data: ParcelReceiptData) {
 </head>
 <body>
   <div class="header">
-    <img src="/logo_sbta02_full.JPG" onerror="this.onerror=null;this.src='/logo_sbta02 copy.JPG'" alt="SBTA">
-    <div class="header-info">
-      <div><span class="label">VILLE EXP :</span> <span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
-      <div><span class="label">VILLE DES :</span> <span class="value">${escHtml(data.destination_agent_phone ?? '')}</span></div>
+    <img src="${logoUrl}" alt="SBTA">
+    <div class="header-right">
+      <div><span class="label">VILLE EXP :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
+      <div><span class="label">VILLE DES :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.destination_agent_phone ?? '')}</span></div>
     </div>
   </div>
 
   <div class="station-row">
     <span class="station-name">${escHtml(data.agency_name)}</span>
-    <span class="date">${escHtml(data.print_date)}</span>
+    <span class="station-date">${escHtml(data.print_date)}</span>
   </div>
 
   <div class="title">${escHtml(data.receipt_type)}</div>
@@ -236,20 +227,18 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     <span class="value">${escHtml(data.destination.toUpperCase())}</span>
   </div>
 
-  ${transportRow ? `<table style="width:100%;margin-bottom:1.5mm"><tbody>${transportRow}</tbody></table>` : ''}
-
-  <div class="code-box">
+  <div class="info-grid">
     <div class="cell">
       <div class="cell-label">CODE</div>
       <div class="cell-value">${escHtml(data.parcel_code)}</div>
     </div>
     <div class="cell">
       <div class="cell-label">REFERENCE</div>
-      <div class="cell-value">${escHtml(data.reference)}</div>
+      <div class="cell-value ref">${escHtml(data.reference)}</div>
     </div>
   </div>
 
-  <div class="person-box">
+  <div class="person-grid">
     <div class="cell">
       <div class="cell-label">EXPEDITEUR</div>
       <div class="cell-value">${escHtml(data.sender_name.toUpperCase())}</div>
@@ -298,7 +287,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
       container.appendChild(canvas);
       if (window.QRCode) {
         QRCode.toCanvas(canvas, '${data.parcel_code.replace(/'/g, "\\'")}', {
-          width: 80,
+          width: 100,
           margin: 0,
           errorCorrectionLevel: 'M'
         }, function() {
