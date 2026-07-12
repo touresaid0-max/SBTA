@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 import { printBordereauRamassage } from '../../utils/printBordereau';
 import type { BordereauRamassageData } from '../../types/counter.types';
+import EditScheduleModal from '../../components/chef_gare/EditScheduleModal';
 
 interface TransitStop {
   station_id: string;
@@ -131,6 +132,9 @@ export default function DailyPlanning() {
   const [ramassageModalSched, setRamassageModalSched] = useState<any | null>(null);
   const [ramassageAmount, setRamassageAmount] = useState<number | ''>('');
   const [ramassageObs, setRamassageObs] = useState('');
+
+  // Edit schedule modal
+  const [editSchedule, setEditSchedule] = useState<ScheduleRow | null>(null);
   const [ramassageSaving, setRamassageSaving] = useState(false);
 
   useEffect(() => {
@@ -1367,6 +1371,20 @@ export default function DailyPlanning() {
                       </div>
                     )}
 
+                    {/* Edit schedule button */}
+                    {!isCancelled && !isConvoi && sched.status !== 'termine' && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => setEditSchedule(sched)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors border"
+                          style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', borderColor: '#93C5FD' }}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Modifier le depart
+                        </button>
+                      </div>
+                    )}
+
                     {/* Status actions */}
                     {!isCancelled && !isConvoi && (
                       <div className="flex items-center gap-3 pt-1">
@@ -2247,6 +2265,27 @@ export default function DailyPlanning() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Schedule Modal */}
+      {editSchedule && (
+        <EditScheduleModal
+          schedule={{
+            id: editSchedule.id,
+            route_name: editSchedule.route_name,
+            departure_datetime: editSchedule.departure_datetime,
+            arrival_datetime: editSchedule.arrival_datetime || '',
+            bus_registration: editSchedule.bus_registration,
+            bus_capacity: editSchedule.bus_capacity,
+            driver_name: editSchedule.driver_name,
+            seats_reserved: editSchedule.seats_reserved,
+            status: editSchedule.status,
+          }}
+          stationId={station?.id || ''}
+          userId={user?.id || ''}
+          onClose={() => setEditSchedule(null)}
+          onSaved={() => { setEditSchedule(null); loadSchedules(); }}
+        />
       )}
     </div>
   );
