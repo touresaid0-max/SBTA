@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Bus, User, Fuel, MapPin, Droplets, DollarSign, Calendar, FileText, Search, AlertCircle, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Bus, MapPin, Droplets, DollarSign, Calendar, FileText, Search, AlertCircle, CheckCircle } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { useAuthStore } from '../../store/authStore'
 import { format } from 'date-fns'
@@ -12,12 +12,6 @@ interface BusOption {
   brand: string
   model: string
   company_id: string
-}
-
-interface DriverOption {
-  id: string
-  full_name: string
-  company_id: string | null
 }
 
 interface StationOption {
@@ -40,18 +34,14 @@ export default function CarburantNewWithdrawal() {
   const navigate = useNavigate()
 
   const [buses,    setBuses]    = useState<BusOption[]>([])
-  const [drivers,  setDrivers]  = useState<DriverOption[]>([])
   const [stations, setStations] = useState<StationOption[]>([])
 
   // search state
   const [busSearch,          setBusSearch]          = useState('')
   const [showBusDropdown,    setShowBusDropdown]    = useState(false)
-  const [driverSearch,       setDriverSearch]       = useState('')
-  const [showDriverDropdown, setShowDriverDropdown] = useState(false)
 
   // selected
   const [selectedBus,     setSelectedBus]     = useState<BusOption | null>(null)
-  const [selectedDriver,  setSelectedDriver]  = useState<DriverOption | null>(null)
   const [selectedStation, setSelectedStation] = useState<StationOption | null>(null)
 
   // form fields
@@ -64,13 +54,11 @@ export default function CarburantNewWithdrawal() {
 
   useEffect(() => {
     const loadData = async () => {
-      const [busRes, drvRes, stnRes] = await Promise.all([
+      const [busRes, stnRes] = await Promise.all([
         supabase.from('buses').select('id,registration_number,brand,model,company_id').eq('is_active', true).order('registration_number'),
-        supabase.from('users').select('id,full_name,company_id').eq('role', 'chauffeur').eq('is_active', true).order('full_name'),
         supabase.from('fuel_stations').select('id,name,code,fuel_types,price_essence,price_gasoil').eq('is_active', true).order('name'),
       ])
       if (busRes.data) setBuses(busRes.data as BusOption[])
-      if (drvRes.data) setDrivers(drvRes.data as DriverOption[])
       if (stnRes.data) setStations(stnRes.data as StationOption[])
     }
     loadData()
@@ -88,20 +76,11 @@ export default function CarburantNewWithdrawal() {
   const filteredBuses = buses.filter(b =>
     !busSearch || b.registration_number.toLowerCase().includes(busSearch.toLowerCase())
   )
-  const filteredDrivers = drivers.filter(d =>
-    !driverSearch || d.full_name.toLowerCase().includes(driverSearch.toLowerCase())
-  )
 
   const selectBus = (bus: BusOption) => {
     setSelectedBus(bus)
     setBusSearch(bus.registration_number)
     setShowBusDropdown(false)
-  }
-
-  const selectDriver = (driver: DriverOption) => {
-    setSelectedDriver(driver)
-    setDriverSearch(driver.full_name)
-    setShowDriverDropdown(false)
   }
 
   const selectStation = (station: StationOption) => {
@@ -126,8 +105,8 @@ export default function CarburantNewWithdrawal() {
         company_id:          selectedBus!.company_id,
         bus_id:              selectedBus!.id,
         registration_number: selectedBus!.registration_number,
-        driver_id:           selectedDriver?.id ?? null,
-        driver_name:         selectedDriver?.full_name ?? null,
+        driver_id:           null,
+        driver_name:         null,
         fuel_station_id:     selectedStation!.id,
         station_name:        selectedStation!.name,
         station_code:        selectedStation!.code,
@@ -230,43 +209,7 @@ export default function CarburantNewWithdrawal() {
                 )}
               </div>
 
-              {/* Driver search */}
-              <div>
-                {lbl('Chauffeur')}
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-                  <input
-                    type="text"
-                    value={driverSearch}
-                    onChange={e => { setDriverSearch(e.target.value); setShowDriverDropdown(true); setSelectedDriver(null) }}
-                    onFocus={() => setShowDriverDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowDriverDropdown(false), 150)}
-                    placeholder="Rechercher un chauffeur…"
-                    className="w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm outline-none transition-colors"
-                    style={{ borderColor: selectedDriver ? '#0B7439' : 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
-                  />
-                  {showDriverDropdown && filteredDrivers.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-xl border shadow-lg overflow-hidden"
-                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-                      <div className="max-h-52 overflow-y-auto">
-                        {filteredDrivers.map(d => (
-                          <button key={d.id} type="button" onMouseDown={() => selectDriver(d)}
-                            className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm transition-colors"
-                            style={{ color: 'var(--text-primary)' }}>
-                            {d.full_name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {selectedDriver && (
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-green-600" />
-                    <span className="text-xs text-green-600">Chauffeur sélectionné</span>
-                  </div>
-                )}
-              </div>
+
             </div>
           </div>
 
