@@ -35,10 +35,14 @@ export default function CarburantNewWithdrawal() {
 
   const [buses,    setBuses]    = useState<BusOption[]>([])
   const [stations, setStations] = useState<StationOption[]>([])
+  const [cities,   setCities]   = useState<string[]>([])
 
   // search state
   const [busSearch,          setBusSearch]          = useState('')
   const [showBusDropdown,    setShowBusDropdown]    = useState(false)
+  const [citySearch,         setCitySearch]         = useState('')
+  const [showCityDropdown,   setShowCityDropdown]   = useState(false)
+  const [cityConfirmed,      setCityConfirmed]      = useState(false)
 
   // selected
   const [selectedBus,     setSelectedBus]     = useState<BusOption | null>(null)
@@ -46,7 +50,6 @@ export default function CarburantNewWithdrawal() {
 
   // form fields
   const [fuelType,        setFuelType]        = useState('')
-  const [city,            setCity]            = useState('')
   const [liters,          setLiters]          = useState('')
   const [withdrawalDate,  setWithdrawalDate]  = useState(format(new Date(), 'yyyy-MM-dd'))
   const [observations,    setObservations]    = useState('')
@@ -54,12 +57,14 @@ export default function CarburantNewWithdrawal() {
 
   useEffect(() => {
     const loadData = async () => {
-      const [busRes, stnRes] = await Promise.all([
+      const [busRes, stnRes, cityRes] = await Promise.all([
         supabase.from('buses').select('id,registration_number,brand,model,company_id').eq('is_active', true).order('registration_number'),
         supabase.from('fuel_stations').select('id,name,code,fuel_types,price_essence,price_gasoil').eq('is_active', true).order('name'),
+        supabase.from('cities').select('name').order('name'),
       ])
       if (busRes.data) setBuses(busRes.data as BusOption[])
       if (stnRes.data) setStations(stnRes.data as StationOption[])
+      if (cityRes.data) setCities(cityRes.data.map((c: any) => c.name))
     }
     loadData()
   }, [])
@@ -110,7 +115,7 @@ export default function CarburantNewWithdrawal() {
         fuel_station_id:     selectedStation!.id,
         station_name:        selectedStation!.name,
         station_code:        selectedStation!.code,
-        city:                city.trim() || null,
+        city:                cityConfirmed ? citySearch.trim() : null,
         fuel_type:           fuelType,
         liters:              litersNum,
         unit_price:          unitPrice,
@@ -235,11 +240,39 @@ export default function CarburantNewWithdrawal() {
                 {lbl('Ville')}
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-                  <input type="text" value={city} onChange={e => setCity(e.target.value)}
-                    placeholder="Ex : Abidjan"
-                    className="w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm outline-none"
-                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={citySearch}
+                    onChange={e => { setCitySearch(e.target.value); setShowCityDropdown(true); setCityConfirmed(false) }}
+                    onFocus={() => setShowCityDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowCityDropdown(false), 150)}
+                    placeholder="Rechercher une ville…"
+                    className="w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm outline-none transition-colors"
+                    style={{ borderColor: cityConfirmed ? '#0B7439' : 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
+                  {showCityDropdown && citySearch.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-xl border shadow-lg overflow-hidden"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+                      <div className="max-h-52 overflow-y-auto">
+                        {cities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase())).length > 0 ? (
+                          cities.filter(c => c.toLowerCase().includes(citySearch.toLowerCase())).map(c => (
+                            <button key={c} type="button"
+                              onMouseDown={() => { setCitySearch(c); setCityConfirmed(true); setShowCityDropdown(false) }}
+                              className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm transition-colors"
+                              style={{ color: 'var(--text-primary)' }}>
+                              {c}
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>Aucune ville trouvée</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
+                {cityConfirmed && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                    <span className="text-xs text-green-600">Ville sélectionnée</span>
+                  </div>
+                )}
               </div>
             </div>
 
