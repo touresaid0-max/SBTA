@@ -75,16 +75,23 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     align-items: center;
     margin-bottom: 3mm;
   }
+  .logo-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 26mm;
+    min-width: 26mm;
+  }
   .header .logo-img {
-    width: 24mm;
+    width: 22mm;
     height: auto;
     object-fit: contain;
+    margin-bottom: 1mm;
   }
   .header .logo-text {
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 900;
     letter-spacing: 2px;
-    width: 24mm;
     text-align: center;
   }
   .header-right {
@@ -262,8 +269,10 @@ ${[1, 2].map(copyNum => `
   <div class="ticket-copy">
   <div class="copy-label">${copyNum === 1 ? 'EXEMPLAIRE CLIENT' : 'EXEMPLAIRE AGENCE'}</div>
   <div class="header">
-    <div class="logo-text" id="logo-fallback-${copyNum}" style="display:none;">SBTA</div>
-    <img class="logo-img" id="logo-img-${copyNum}" src="${logoUrl}" alt="SBTA" onerror="document.getElementById('logo-img-${copyNum}').style.display='none';document.getElementById('logo-fallback-${copyNum}').style.display='block';">
+    <div class="logo-container">
+      <img class="logo-img" id="logo-img-${copyNum}" src="${logoUrl}" alt="SBTA" onerror="this.style.display='none';">
+      <div class="logo-text">SBTA</div>
+    </div>
     <div class="header-right">
       <div><span class="label">VILLE EXP :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
       <div><span class="label">VILLE DES :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.destination_agent_phone ?? '')}</span></div>
