@@ -2284,7 +2284,7 @@ export default function DailyPlanning() {
           stationId={station?.id || ''}
           userId={user?.id || ''}
           onClose={() => setEditSchedule(null)}
-          onSaved={() => { setEditSchedule(null); loadSchedules(); }}
+          onSaved={() => { setEditSchedule(null); loadSchedules(station!.id, selectedDate); }}
         />
       )}
     </div>
