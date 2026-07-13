@@ -4,7 +4,7 @@ import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, MapPin, Bus, User, AlertTriangle, CheckCircle,
-  Clock, Navigation, Plus, Trash2, ChevronRight, Search, X, Truck
+  Clock, Navigation, Plus, Trash2, ChevronRight, Search, X, Truck, Loader2
 } from 'lucide-react';
 import { validateSchedule, getAvailableBuses, getAvailableDrivers, formatHours } from '../../services/scheduleValidation';
 import { addMinutes, format } from 'date-fns';
@@ -44,6 +44,8 @@ export default function ChefGareNewSchedule() {
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [allStations, setAllStations] = useState<Station[]>([]);
   const [myStationId, setMyStationId] = useState<string | null>(null);
+
+  const [isAnticipated, setIsAnticipated] = useState(false);
 
   const [formData, setFormData] = useState({
     route_id: '',
@@ -236,6 +238,12 @@ export default function ChefGareNewSchedule() {
   };
 
   const validateForm = async (): Promise<boolean> => {
+    if (isAnticipated) {
+      if (!formData.route_id) { setValidationErrors(['Itinéraire requis']); return false; }
+      if (!formData.departure_station_id || !formData.arrival_station_id) { setValidationErrors(['Gares requises']); return false; }
+      setValidationErrors([]);
+      return true;
+    }
     const result = await validateSchedule(
       formData.route_id, formData.bus_id, formData.driver_id,
       formData.copilot_id || null, formData.departure_datetime, formData.arrival_datetime
@@ -297,24 +305,35 @@ export default function ChefGareNewSchedule() {
     try {
       const isValid = await validateForm();
       if (!isValid) { toast.error('Veuillez corriger les erreurs'); setLoading(false); return; }
-      const { error } = await supabase.from('schedules').insert([{
+      const insertPayload: Record<string, any> = {
         route_id: formData.route_id,
-        bus_id: formData.bus_id,
-        driver_id: formData.driver_id,
-        copilot_id: formData.copilot_id || null,
         departure_station_id: formData.departure_station_id || null,
         arrival_station_id: formData.arrival_station_id || null,
-        departure_datetime: formData.departure_datetime,
-        arrival_datetime: formData.arrival_datetime,
         status: 'planifie',
         is_ramassage: formData.is_ramassage,
+        is_anticipated: isAnticipated,
         transit_stops: transitStops.filter(s => s.station_id).map(s => ({
           station_id: s.station_id, station_name: s.station_name,
           arrival_offset_minutes: s.arrival_offset_minutes,
           departure_offset_minutes: s.departure_offset_minutes, position: s.position,
           price: s.price || 0,
         })),
-      }]);
+      };
+      if (isAnticipated) {
+        insertPayload.bus_id = formData.bus_id || null;
+        insertPayload.driver_id = formData.driver_id || null;
+        insertPayload.copilot_id = formData.copilot_id || null;
+        insertPayload.departure_datetime = formData.departure_datetime || new Date().toISOString();
+        insertPayload.arrival_datetime = formData.arrival_datetime || new Date().toISOString();
+        insertPayload.seats_available = 60;
+      } else {
+        insertPayload.bus_id = formData.bus_id;
+        insertPayload.driver_id = formData.driver_id;
+        insertPayload.copilot_id = formData.copilot_id || null;
+        insertPayload.departure_datetime = formData.departure_datetime;
+        insertPayload.arrival_datetime = formData.arrival_datetime;
+      }
+      const { error } = await supabase.from('schedules').insert([insertPayload]);
       if (error) throw error;
       toast.success('Voyage créé avec succès');
       navigate('/chef-gare/planning');
@@ -432,6 +451,22 @@ export default function ChefGareNewSchedule() {
             <p style={{ color: 'var(--text-secondary)' }}>Aucun itinéraire ne correspond à « {routeSearch} »</p>
           </div>
         )}
+      </div>
+      {/* Anticipated departure checkbox */}
+      <div className="mt-5 p-4 rounded-xl border-2 border-dashed"
+        style={{ borderColor: isAnticipated ? '#D97706' : 'var(--border)', backgroundColor: isAnticipated ? '#FFFBEB' : 'transparent' }}>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" checked={isAnticipated} onChange={e => setIsAnticipated(e.target.checked)}
+            className="mt-0.5 w-5 h-5 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+          <div>
+            <span className="text-sm font-semibold" style={{ color: isAnticipated ? '#92400E' : 'var(--text-primary)' }}>
+              Depart anticipe
+            </span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+              Creer le depart immediatement pour permettre la vente rapide des billets, meme si le vehicule, l'heure et le chauffeur ne sont pas encore connus.
+            </p>
+          </div>
+        </label>
       </div>
       <div className="flex justify-end mt-6">
         <button onClick={() => setStep(2)} disabled={!formData.route_id}
@@ -572,8 +607,21 @@ export default function ChefGareNewSchedule() {
       <div className="flex gap-4 mt-6">
         <button onClick={() => setStep(2)} className="px-6 py-3 rounded-lg border text-sm font-medium"
           style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Retour</button>
-        <button onClick={() => setStep(4)} className="px-6 py-3 rounded-lg text-white font-medium"
-          style={{ backgroundColor: 'var(--primary)' }}>Continuer</button>
+        {isAnticipated ? (
+          <>
+            <button onClick={() => setStep(4)} className="px-6 py-3 rounded-lg border text-sm font-medium"
+              style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}>Ajouter horaire/bus/chauffeur (optionnel)</button>
+            <button onClick={handleSubmit} disabled={loading}
+              className="px-6 py-3 rounded-lg text-white font-semibold disabled:opacity-50 flex items-center gap-2"
+              style={{ backgroundColor: '#D97706' }}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Creer le depart anticipe
+            </button>
+          </>
+        ) : (
+          <button onClick={() => setStep(4)} className="px-6 py-3 rounded-lg text-white font-medium"
+            style={{ backgroundColor: 'var(--primary)' }}>Continuer</button>
+        )}
       </div>
     </div>
   );
@@ -609,7 +657,7 @@ export default function ChefGareNewSchedule() {
       <div className="flex gap-4 mt-6">
         <button onClick={() => setStep(3)} className="px-6 py-3 rounded-lg border text-sm font-medium"
           style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Retour</button>
-        <button onClick={() => { setStep(5); loadAvailableBuses(formData.departure_datetime, formData.arrival_datetime); }} disabled={!formData.departure_datetime}
+        <button onClick={() => { setStep(5); loadAvailableBuses(formData.departure_datetime, formData.arrival_datetime); }} disabled={!isAnticipated && !formData.departure_datetime}
           className="px-6 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ backgroundColor: 'var(--primary)' }}>Continuer</button>
       </div>
@@ -777,7 +825,7 @@ export default function ChefGareNewSchedule() {
         <div className="flex gap-4 mt-6">
           <button onClick={() => setStep(4)} className="px-6 py-3 rounded-lg border text-sm font-medium"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Retour</button>
-          <button onClick={() => { setStep(6); loadAvailableDrivers(formData.departure_datetime, formData.arrival_datetime); }} disabled={!formData.bus_id}
+          <button onClick={() => { setStep(6); loadAvailableDrivers(formData.departure_datetime, formData.arrival_datetime); }} disabled={!isAnticipated && !formData.bus_id}
             className="px-6 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: 'var(--primary)' }}>Continuer</button>
         </div>
@@ -989,7 +1037,7 @@ export default function ChefGareNewSchedule() {
         <div className="flex gap-4 mt-6">
           <button onClick={() => setStep(5)} className="px-6 py-3 rounded-lg border text-sm font-medium"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Retour</button>
-          <button onClick={handleSubmit} disabled={loading || !formData.driver_id}
+          <button onClick={handleSubmit} disabled={loading || (!isAnticipated && !formData.driver_id)}
             className="flex-1 px-6 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: 'var(--primary)' }}>
             {loading ? 'Création en cours...' : 'Créer le voyage'}

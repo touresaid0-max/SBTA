@@ -47,6 +47,7 @@ interface ScheduleRow {
   counter_number: number | null;
   departure_order: number | null;
   convoy_amount: number | null;
+  is_anticipated: boolean;
 }
 
 interface CounterOption {
@@ -195,7 +196,7 @@ export default function DailyPlanning() {
     const { data, error } = await supabase
       .from('schedules')
       .select(`
-        id, route_name, departure_datetime, arrival_datetime,
+        id, route_name, departure_datetime, arrival_datetime, is_anticipated,
         status, seats_available, seats_reserved, fill_rate, notes, transit_stops,
         bus:bus_id(registration_number, model, capacity),
         driver:driver_id(full_name, phone),
@@ -264,6 +265,7 @@ export default function DailyPlanning() {
       counter_number: assignmentMap[s.id]?.counter_number ?? null,
       departure_order: (assignmentMap[s.id] as any)?.departure_order ?? null,
       convoy_amount: convoyMap[s.id] ?? null,
+      is_anticipated: s.is_anticipated ?? false,
     }));
 
     setSchedules(rows);
@@ -1030,15 +1032,20 @@ export default function DailyPlanning() {
                     <div className="flex items-center gap-1.5">
                       <Bus className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                       <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                        {sched.bus_registration}
+                        {sched.bus_registration === '—' && sched.is_anticipated ? 'A definir' : sched.bus_registration}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <User className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                       <span className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
-                        {sched.driver_name}
+                        {sched.driver_name === '—' && sched.is_anticipated ? 'A definir' : sched.driver_name}
                       </span>
                     </div>
+                    {sched.is_anticipated && (!sched.bus_registration || sched.bus_registration === '—' || !sched.driver_name || sched.driver_name === '—') && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 w-fit">
+                        ANTICIPE
+                      </span>
+                    )}
                   </div>
 
                   {/* Passengers & fill */}

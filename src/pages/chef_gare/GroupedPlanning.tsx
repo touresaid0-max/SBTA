@@ -86,6 +86,7 @@ export default function GroupedPlanning() {
   const [driverSearch, setDriverSearch] = useState('');
   const [expandedTrips, setExpandedTrips] = useState<Set<string>>(new Set());
   const [routeSearch, setRouteSearch] = useState('');
+  const [isAnticipated, setIsAnticipated] = useState(false);
 
   useEffect(() => { initData(); }, []);
 
@@ -255,10 +256,10 @@ export default function GroupedPlanning() {
 
     trips.forEach((t, i) => {
       const label = `Voyage ${i + 1} (${t.origin_city} → ${t.destination_city})`;
-      if (!t.departure_datetime) alerts.push({ uid: t.uid, message: `${label} : horaire manquant`, type: 'error' });
+      if (!isAnticipated && !t.departure_datetime) alerts.push({ uid: t.uid, message: `${label} : horaire manquant`, type: 'error' });
       if (!t.arrival_station_id) alerts.push({ uid: t.uid, message: `${label} : destination manquante`, type: 'error' });
-      if (!t.bus_id) alerts.push({ uid: t.uid, message: `${label} : bus non selectionne`, type: 'error' });
-      if (!t.driver_id) alerts.push({ uid: t.uid, message: `${label} : chauffeur non selectionne`, type: 'error' });
+      if (!isAnticipated && !t.bus_id) alerts.push({ uid: t.uid, message: `${label} : bus non selectionne`, type: 'error' });
+      if (!isAnticipated && !t.driver_id) alerts.push({ uid: t.uid, message: `${label} : chauffeur non selectionne`, type: 'error' });
 
       if (t.bus_id) {
         const prev = busAssignments.get(t.bus_id) || [];
@@ -301,15 +302,17 @@ export default function GroupedPlanning() {
     try {
       const inserts = trips.map(t => ({
         route_id: t.route_id,
-        bus_id: t.bus_id,
-        driver_id: t.driver_id,
+        bus_id: t.bus_id || null,
+        driver_id: t.driver_id || null,
         copilot_id: t.copilot_id || null,
         departure_station_id: t.departure_station_id || null,
         arrival_station_id: t.arrival_station_id || null,
-        departure_datetime: t.departure_datetime,
-        arrival_datetime: t.arrival_datetime,
+        departure_datetime: t.departure_datetime || new Date().toISOString(),
+        arrival_datetime: t.arrival_datetime || new Date().toISOString(),
         is_ramassage: t.is_ramassage,
+        is_anticipated: isAnticipated,
         status: 'planifie' as const,
+        ...(isAnticipated && !t.bus_id ? { seats_available: 60 } : {}),
         transit_stops: t.transit_stops.filter(s => s.station_id).map(s => ({
           station_id: s.station_id, station_name: s.station_name,
           arrival_offset_minutes: s.arrival_offset_minutes,
@@ -421,6 +424,23 @@ export default function GroupedPlanning() {
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Aucun itineraire trouve</p>
           </div>
         )}
+      </div>
+
+      {/* Anticipated departure checkbox */}
+      <div className="mt-5 p-4 rounded-xl border-2 border-dashed"
+        style={{ borderColor: isAnticipated ? '#D97706' : 'var(--border)', backgroundColor: isAnticipated ? '#FFFBEB' : 'transparent' }}>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" checked={isAnticipated} onChange={e => setIsAnticipated(e.target.checked)}
+            className="mt-0.5 w-5 h-5 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+          <div>
+            <span className="text-sm font-semibold" style={{ color: isAnticipated ? '#92400E' : 'var(--text-primary)' }}>
+              Depart anticipe
+            </span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+              Creer les departs immediatement pour permettre la vente rapide des billets, meme si le vehicule, l'heure et le chauffeur ne sont pas encore connus.
+            </p>
+          </div>
+        </label>
       </div>
 
       <div className="flex justify-between items-center mt-6">
@@ -591,9 +611,23 @@ export default function GroupedPlanning() {
       <div className="flex gap-4 mt-6">
         <button onClick={() => setStep(1)} className="px-6 py-3 rounded-lg border text-sm font-medium"
           style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Retour</button>
-        <button onClick={() => goStep(3)}
-          className="px-6 py-3 rounded-lg text-white font-medium"
-          style={{ backgroundColor: 'var(--primary)' }}>Continuer</button>
+        {isAnticipated ? (
+          <>
+            <button onClick={() => goStep(3)}
+              className="px-6 py-3 rounded-lg border text-sm font-medium"
+              style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}>Ajouter horaire/bus/chauffeur (optionnel)</button>
+            <button onClick={handleSubmit} disabled={submitting}
+              className="px-6 py-3 rounded-lg text-white font-semibold disabled:opacity-50 flex items-center gap-2"
+              style={{ backgroundColor: '#D97706' }}>
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Creer les departs anticipes
+            </button>
+          </>
+        ) : (
+          <button onClick={() => goStep(3)}
+            className="px-6 py-3 rounded-lg text-white font-medium"
+            style={{ backgroundColor: 'var(--primary)' }}>Continuer</button>
+        )}
       </div>
     </div>
   );
@@ -675,7 +709,7 @@ export default function GroupedPlanning() {
         <button onClick={() => setStep(2)} className="px-6 py-3 rounded-lg border text-sm font-medium"
           style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Retour</button>
         <button onClick={() => goStep(4)}
-          disabled={trips.some(t => !t.departure_datetime)}
+          disabled={!isAnticipated && trips.some(t => !t.departure_datetime)}
           className="px-6 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ backgroundColor: 'var(--primary)' }}>Continuer</button>
       </div>
