@@ -1049,7 +1049,9 @@ export default function TicketSale() {
     };
 
     const depDate = format(new Date(confirmedTicket.schedule.departure_datetime), 'dd/MM/yyyy');
-    const depTime = format(new Date(confirmedTicket.schedule.departure_datetime), 'HH:mm');
+    const depTime = confirmedTicket.schedule.is_anticipated && !confirmedTicket.schedule.bus_id
+      ? '--'
+      : format(new Date(confirmedTicket.schedule.departure_datetime), 'HH:mm');
     const origin = (confirmedTicket.schedule.origin_city_name || '').toUpperCase();
     const dest = (confirmedTicket.alighting_station || confirmedTicket.schedule.destination_city_name || '').toUpperCase();
     const tarif = formatAmount(confirmedTicket.total_price);
@@ -2667,7 +2669,9 @@ export default function TicketSale() {
                       <span className="font-bold">{confirmedTicket.alighting_station || confirmedTicket.schedule.destination_city_name}</span>
                     </div>
                     <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                      {format(new Date(confirmedTicket.schedule.departure_datetime), 'dd MMMM yyyy à HH:mm', { locale: fr })}
+                      {confirmedTicket.schedule.is_anticipated && !confirmedTicket.schedule.bus_id
+                        ? format(new Date(confirmedTicket.schedule.departure_datetime), 'dd MMMM yyyy', { locale: fr })
+                        : format(new Date(confirmedTicket.schedule.departure_datetime), 'dd MMMM yyyy à HH:mm', { locale: fr })}
                     </p>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                       Bus {confirmedTicket.schedule.buses?.registration_number} · {BUS_CLASS_LABELS[confirmedTicket.schedule.buses?.class] || 'Standard'}
