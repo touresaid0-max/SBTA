@@ -52,6 +52,12 @@ export async function fetchScheduleSeatMap(
   }
 
   const bus = schedule.buses as any
+
+  // Anticipated departure with no bus assigned — no seat map available
+  if (!bus) {
+    throw new Error('__NO_BUS__')
+  }
+
   const isImperial = bus?.bus_deck_type === 'imperial'
 
   let rawConfig: any = null

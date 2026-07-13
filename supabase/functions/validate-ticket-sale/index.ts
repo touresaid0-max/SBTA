@@ -72,7 +72,7 @@ Deno.serve(async (req: Request) => {
     // Get schedule departure time
     const { data: schedule, error: schedError } = await supabase
       .from("schedules")
-      .select("id, departure_datetime, status, seats_available")
+      .select("id, departure_datetime, status, seats_available, is_anticipated, bus_id")
       .eq("id", schedule_id)
       .maybeSingle();
 
@@ -103,8 +103,8 @@ Deno.serve(async (req: Request) => {
       ? Math.round((clientTs.getTime() - serverNow.getTime()) / 1000)
       : null;
 
-    // Check 1: Departure must be in the future
-    if (departure <= serverNow) {
+    // Check 1: Departure must be in the future (skip for anticipated departures)
+    if (departure <= serverNow && !schedule.is_anticipated) {
       await logAttempt(supabase, {
         user_id: user.id,
         counter_id,

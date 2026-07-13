@@ -117,7 +117,13 @@ export function useSeatMap({
         }
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erreur inconnue')
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
+      if (msg === '__NO_BUS__') {
+        setSeatMap(null)
+        setError(null)
+      } else {
+        setError(msg)
+      }
     } finally {
       if (!silent) setIsLoading(false)
     }

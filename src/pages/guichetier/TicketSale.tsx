@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
   Search, MapPin, ChevronRight, Bus, Users, Calendar,
   User, Phone, CreditCard, CheckCircle, Printer, ArrowLeft,
-  Banknote, Smartphone, RefreshCw, Clock, AlertCircle, Tag,
+  Banknote, Smartphone, RefreshCw, Clock, AlertCircle, AlertTriangle, Tag,
   LayoutGrid, WifiOff, List, LogIn, LogOut, Luggage, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -784,7 +784,7 @@ export default function TicketSale() {
         // If validation endpoint is unreachable, fall back to RPC check
         try {
           const { data: serverTimeData } = await supabase.rpc('get_server_time');
-          if (serverTimeData) {
+          if (serverTimeData && !selectedSchedule.is_anticipated) {
             const serverNow = new Date(serverTimeData);
             const departure = new Date(selectedSchedule.departure_datetime);
             if (departure <= serverNow) {
@@ -2039,7 +2039,9 @@ export default function TicketSale() {
                 <span className="font-semibold">{displayedDestination}</span>
                 <span className="opacity-40">·</span>
                 <Clock className="w-3.5 h-3.5" />
-                {format(new Date(selectedSchedule.departure_datetime), 'dd/MM/yyyy HH:mm')}
+                {selectedSchedule.is_anticipated && !selectedSchedule.bus_id
+                  ? 'Depart anticipe'
+                  : format(new Date(selectedSchedule.departure_datetime), 'dd/MM/yyyy HH:mm')}
                 <span className="opacity-40">·</span>
                 <span className="font-bold" style={{ color: 'var(--primary)' }}>
                   {formatCurrency(effectiveUnitPrice)}/place
@@ -2082,7 +2084,15 @@ export default function TicketSale() {
                 />
               ) : (
                 <div className="p-6">
-                  <p className="text-xs font-medium mb-3" style={{ color: 'var(--text-muted)' }}>Nombre de places à réserver *</p>
+                  {selectedSchedule.is_anticipated && !selectedSchedule.bus_id && (
+                    <div className="mb-4 p-3 rounded-lg flex items-start gap-2" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FDE68A' }}>
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#92400E' }} />
+                      <p className="text-xs font-medium" style={{ color: '#92400E' }}>
+                        Depart anticipe — vehicule non encore affecte. Les numeros de sieges seront attribues sequentiellement.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs font-medium mb-3" style={{ color: 'var(--text-muted)' }}>Nombre de places a reserver *</p>
                   <div className="flex items-center gap-3 mb-5">
                     <button
                       onClick={() => setSeatCount(c => Math.max(1, c - 1))}
