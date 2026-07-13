@@ -332,6 +332,13 @@ export default function ChefGareNewSchedule() {
         insertPayload.copilot_id = formData.copilot_id || null;
         insertPayload.departure_datetime = formData.departure_datetime;
         insertPayload.arrival_datetime = formData.arrival_datetime;
+        // Set seats_available from selected bus capacity
+        if (formData.bus_id) {
+          const selectedBus = buses.find(b => b.id === formData.bus_id);
+          insertPayload.seats_available = selectedBus?.capacity ?? 60;
+        } else {
+          insertPayload.seats_available = 60;
+        }
       }
       const { error } = await supabase.from('schedules').insert([insertPayload]);
       if (error) throw error;

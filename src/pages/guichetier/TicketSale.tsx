@@ -620,7 +620,7 @@ export default function TicketSale() {
       toast.error('Vente impossible : la date de vente doit correspondre à la date système serveur.');
       return;
     }
-    if (schedule.seats_available === 0) {
+    if ((schedule.seats_available ?? schedule.buses?.total_seats ?? 60) === 0) {
       toast.error('Ce voyage est complet');
       return;
     }
@@ -869,7 +869,7 @@ export default function TicketSale() {
     await supabase
       .from('schedules')
       .update({
-        seats_available: Math.max(0, selectedSchedule.seats_available - count),
+        seats_available: Math.max(0, (selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60) - count),
         seats_reserved: (selectedSchedule.seats_reserved || 0) + count,
       })
       .eq('id', selectedSchedule.id);
@@ -1868,7 +1868,8 @@ export default function TicketSale() {
                 const depTime = isAnticipatedIncomplete ? '--:--' : format(new Date(schedule.departure_datetime), 'HH:mm');
                 const arrTime = isAnticipatedIncomplete ? '--:--' : format(new Date(schedule.arrival_datetime), 'HH:mm');
                 const duration = isAnticipatedIncomplete ? null : getDuration(schedule.departure_datetime, schedule.arrival_datetime, schedule.estimated_duration_minutes);
-                const isFull = schedule.seats_available === 0;
+                const availableSeats = schedule.seats_available ?? schedule.buses?.total_seats ?? 60;
+                const isFull = availableSeats === 0;
                 const isDeparted = !isAnticipatedIncomplete && new Date(schedule.departure_datetime) <= now;
                 const isDisabled = isFull || isDeparted;
                 const fillPct = schedule.buses?.total_seats
@@ -1939,8 +1940,8 @@ export default function TicketSale() {
                             )}
                             <span className="flex items-center gap-1">
                               <Users className="w-3.5 h-3.5" />
-                              <span style={{ color: isDeparted ? '#B91C1C' : isFull ? 'var(--danger)' : schedule.seats_available <= 5 ? 'var(--warning)' : 'var(--success)' }}>
-                                {isDeparted ? 'Embarquement' : isFull ? 'Complet' : `${schedule.seats_available} place${schedule.seats_available > 1 ? 's' : ''} dispo`}
+                              <span style={{ color: isDeparted ? '#B91C1C' : isFull ? 'var(--danger)' : availableSeats <= 5 ? 'var(--warning)' : 'var(--success)' }}>
+                                {isDeparted ? 'Embarquement' : isFull ? 'Complet' : `${availableSeats} place${availableSeats > 1 ? 's' : ''} dispo`}
                               </span>
                               {!isDeparted && <span style={{ color: 'var(--text-muted)' }}>/ {schedule.buses?.total_seats || 60}</span>}
                             </span>
@@ -2105,13 +2106,13 @@ export default function TicketSale() {
                       {seatCount}
                     </span>
                     <button
-                      onClick={() => setSeatCount(c => Math.min(selectedSchedule.seats_available, c + 1))}
+                      onClick={() => setSeatCount(c => Math.min(selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60, c + 1))}
                       className="w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all hover:bg-slate-50"
                       style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
                       type="button"
                     >+</button>
                     <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      / {selectedSchedule.seats_available} disponibles
+                      / {selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60} disponibles
                     </span>
                   </div>
                 </div>
