@@ -39,6 +39,7 @@ interface Schedule {
   estimated_duration_minutes: number | null;
   notes: string | null;
   bus_id: string;
+  is_anticipated?: boolean;
   buses: {
     registration_number: string;
     total_seats: number;
@@ -46,7 +47,7 @@ interface Schedule {
     model: string | null;
     brand: string | null;
     seat_config_id: string | null;
-  };
+  } | null;
   route: {
     id: string;
     name: string;
@@ -431,7 +432,7 @@ export default function TicketSale() {
         .select(`
           id, route_name, departure_datetime, arrival_datetime,
           price, seats_available, seats_reserved, estimated_duration_minutes, notes,
-          route_id, bus_id, departure_station_id, transit_stops,
+          route_id, bus_id, departure_station_id, transit_stops, is_anticipated,
           buses:bus_id(registration_number, total_seats, class, model, brand, seat_config_id)
         `)
         .in('route_id', directRouteIds)
@@ -472,7 +473,7 @@ export default function TicketSale() {
           .select(`
             id, route_name, departure_datetime, arrival_datetime,
             price, seats_available, seats_reserved, estimated_duration_minutes, notes,
-            route_id, bus_id, departure_station_id, transit_stops,
+            route_id, bus_id, departure_station_id, transit_stops, is_anticipated,
             buses:bus_id(registration_number, total_seats, class, model, brand, seat_config_id)
           `)
           .in('route_id', transitRouteIds)
@@ -615,7 +616,7 @@ export default function TicketSale() {
 
   const handleSelectSchedule = async (schedule: Schedule) => {
     const serverNow = getServerNow();
-    if (new Date(schedule.departure_datetime) <= serverNow) {
+    if (!schedule.is_anticipated && new Date(schedule.departure_datetime) <= serverNow) {
       toast.error('Vente impossible : la date de vente doit correspondre à la date système serveur.');
       return;
     }
@@ -1862,15 +1863,16 @@ export default function TicketSale() {
           ) : (
             <div className="space-y-3">
               {schedules.map(schedule => {
-                const depTime = format(new Date(schedule.departure_datetime), 'HH:mm');
-                const arrTime = format(new Date(schedule.arrival_datetime), 'HH:mm');
-                const duration = getDuration(schedule.departure_datetime, schedule.arrival_datetime, schedule.estimated_duration_minutes);
+                const isAnticipatedIncomplete = schedule.is_anticipated && (!schedule.bus_id || !schedule.buses);
+                const depTime = isAnticipatedIncomplete ? '--:--' : format(new Date(schedule.departure_datetime), 'HH:mm');
+                const arrTime = isAnticipatedIncomplete ? '--:--' : format(new Date(schedule.arrival_datetime), 'HH:mm');
+                const duration = isAnticipatedIncomplete ? null : getDuration(schedule.departure_datetime, schedule.arrival_datetime, schedule.estimated_duration_minutes);
                 const isFull = schedule.seats_available === 0;
-                const isDeparted = new Date(schedule.departure_datetime) <= now;
+                const isDeparted = !isAnticipatedIncomplete && new Date(schedule.departure_datetime) <= now;
                 const isDisabled = isFull || isDeparted;
                 const fillPct = schedule.buses?.total_seats
                   ? Math.round(((schedule.seats_reserved || 0) / schedule.buses.total_seats) * 100)
-                  : 0;
+                  : schedule.is_anticipated ? Math.round(((schedule.seats_reserved || 0) / 60) * 100) : 0;
 
                 return (
                   <div
@@ -1922,17 +1924,24 @@ export default function TicketSale() {
                           </div>
 
                           <div className="flex items-center gap-3 flex-wrap text-xs" style={{ color: 'var(--text-muted)' }}>
-                            <span className="flex items-center gap-1">
-                              <Bus className="w-3.5 h-3.5" />
-                              {schedule.buses?.registration_number}
-                              {schedule.buses?.brand && ` · ${schedule.buses.brand}`}
-                            </span>
+                            {isAnticipatedIncomplete ? (
+                              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full font-bold"
+                                style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                                DEPART ANTICIPE
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1">
+                                <Bus className="w-3.5 h-3.5" />
+                                {schedule.buses?.registration_number}
+                                {schedule.buses?.brand && ` · ${schedule.buses.brand}`}
+                              </span>
+                            )}
                             <span className="flex items-center gap-1">
                               <Users className="w-3.5 h-3.5" />
                               <span style={{ color: isDeparted ? '#B91C1C' : isFull ? 'var(--danger)' : schedule.seats_available <= 5 ? 'var(--warning)' : 'var(--success)' }}>
                                 {isDeparted ? 'Embarquement' : isFull ? 'Complet' : `${schedule.seats_available} place${schedule.seats_available > 1 ? 's' : ''} dispo`}
                               </span>
-                              {!isDeparted && <span style={{ color: 'var(--text-muted)' }}>/ {schedule.buses?.total_seats}</span>}
+                              {!isDeparted && <span style={{ color: 'var(--text-muted)' }}>/ {schedule.buses?.total_seats || 60}</span>}
                             </span>
                             {isDeparted && (
                               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full font-bold"

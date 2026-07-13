@@ -1398,12 +1398,16 @@ export default function DailyPlanning() {
                         <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                           Changer le statut :
                         </p>
+                        {(() => {
+                          const anticipatedIncomplete = sched.is_anticipated && (sched.bus_registration === '—' || sched.driver_name === '—');
+                          return (
                         <div className="flex items-center gap-2 flex-wrap">
                           {sched.status === 'planifie' && (
                             <button
                               onClick={() => updateStatus(sched.id, 'en_cours')}
-                              disabled={updatingId === sched.id}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors"
+                              disabled={updatingId === sched.id || anticipatedIncomplete}
+                              title={anticipatedIncomplete ? 'Completez d\'abord le vehicule, le chauffeur et l\'heure de depart' : ''}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{ backgroundColor: STATUS_CONFIG.en_cours.bg, color: STATUS_CONFIG.en_cours.color, border: `1px solid ${STATUS_CONFIG.en_cours.border}` }}
                             >
                               <PlayCircle className="w-3.5 h-3.5" />
@@ -1413,13 +1417,19 @@ export default function DailyPlanning() {
                           {sched.status === 'en_cours' && (
                             <button
                               onClick={() => updateStatus(sched.id, 'termine')}
-                              disabled={updatingId === sched.id}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors"
+                              disabled={updatingId === sched.id || anticipatedIncomplete}
+                              title={anticipatedIncomplete ? 'Completez d\'abord le vehicule, le chauffeur et l\'heure de depart' : ''}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{ backgroundColor: STATUS_CONFIG.termine.bg, color: STATUS_CONFIG.termine.color, border: `1px solid ${STATUS_CONFIG.termine.border}` }}
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Marquer comme parti
                             </button>
+                          )}
+                          {anticipatedIncomplete && sched.status === 'planifie' && (
+                            <span className="text-xs font-medium px-2 py-1 rounded" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                              Completez le vehicule, chauffeur et horaire pour activer l'embarquement
+                            </span>
                           )}
                           {(sched.status === 'planifie' || sched.status === 'en_cours') && (
                             <>
@@ -1492,6 +1502,8 @@ export default function DailyPlanning() {
                             </button>
                           )}
                         </div>
+                          );
+                        })()}
                         {updatingId === sched.id && (
                           <div className="w-4 h-4 border-2 rounded-full animate-spin"
                             style={{ borderColor: 'var(--primary)', borderTopColor: 'transparent' }} />
