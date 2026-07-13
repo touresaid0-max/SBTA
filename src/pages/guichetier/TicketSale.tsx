@@ -691,16 +691,17 @@ export default function TicketSale() {
 
   const validateSaleInputs = (): boolean => {
     if (!selectedSchedule) return false;
+    const available = selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60;
     if (hasSeatMap) {
       if (enrichedSelectedSeats.length === 0) { toast.error('Sélectionnez au moins un siège'); return false; }
-      if (enrichedSelectedSeats.length > selectedSchedule.seats_available) {
-        toast.error(`Seulement ${selectedSchedule.seats_available} place(s) disponible(s)`);
+      if (enrichedSelectedSeats.length > available) {
+        toast.error(`Seulement ${available} place(s) disponible(s)`);
         return false;
       }
     } else {
       if (seatCount < 1) { toast.error('Sélectionnez au moins 1 siège'); return false; }
-      if (seatCount > selectedSchedule.seats_available) {
-        toast.error(`Seulement ${selectedSchedule.seats_available} place(s) disponible(s)`);
+      if (seatCount > available) {
+        toast.error(`Seulement ${available} place(s) disponible(s)`);
         return false;
       }
     }
