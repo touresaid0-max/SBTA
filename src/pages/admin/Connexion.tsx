@@ -56,7 +56,7 @@ export default function Connexion() {
     try {
       const { data: usersData, error } = await supabase
         .from('users')
-        .select('id, full_name, first_name, last_name, email, role, phone, avatar_url, station_id, stations!users_station_id_fkey(name)')
+        .select('id, full_name, first_name, last_name, email, role, phone, avatar_url, station_id, last_seen_at, stations!users_station_id_fkey(name)')
         .in('role', MONITORED_ROLES)
         .eq('is_active', true)
         .order('full_name');
@@ -88,9 +88,12 @@ export default function Connexion() {
         });
       } catch {}
 
+      const now = new Date();
       const mapped: ConnectedUser[] = (usersData || []).map((u: any) => {
         const session = activeSessionMap.get(u.id);
-        const isOnline = !!session;
+        const lastSeen = u.last_seen_at ? new Date(u.last_seen_at) : null;
+        const isOnlineByPresence = lastSeen && (now.getTime() - lastSeen.getTime()) < 2 * 60 * 1000;
+        const isOnline = !!session || !!isOnlineByPresence;
         return {
           id: u.id,
           full_name: u.full_name || `${u.first_name || ''} ${u.last_name || ''}`.trim(),

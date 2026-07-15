@@ -7,7 +7,9 @@ import {
 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import ChatInbox from '../shared/ChatInbox';
 import { useAuthStore } from '../../store/authStore';
+import { usePresenceHeartbeat } from '../../hooks/usePresenceHeartbeat';
 import type { UserRole } from '../../types';
 
 // Bottom nav items per role (max 5 items for comfortable touch targets)
@@ -70,7 +72,10 @@ export default function Layout() {
     setSidebarOpen(false);
   }, [location.pathname]);
 
+  usePresenceHeartbeat();
+
   const bottomItems = user ? (BOTTOM_NAV[user.role] ?? null) : null;
+  const showChatInbox = user && user.role !== 'admin' && user.role !== 'client';
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: 'var(--bg-app)' }}>
@@ -102,6 +107,9 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      {/* ── Chat Inbox for non-admin users ────────────────────────────── */}
+      {showChatInbox && <ChatInbox />}
 
       {/* ── Mobile Bottom Navigation ────────────────────────────────────── */}
       {bottomItems && (

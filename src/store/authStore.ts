@@ -107,13 +107,16 @@ export const useAuthStore = create<AuthState>()(
               } else if (event === 'SIGNED_OUT') {
                 if (_isPrinting) return;
                 const user = get().user;
-                if (user?.role === 'guichetier') {
+                const TRACKED = ['guichetier', 'chef_gare', 'bagagiste', 'agent_colis', 'chauffeur', 'comptable'];
+                if (user && TRACKED.includes(user.role)) {
                   const today = new Date().toISOString().split('T')[0];
                   const nowIso = new Date().toISOString();
                   supabase.from('user_sessions').update({ logged_out_at: nowIso })
                     .eq('user_id', user.id).eq('session_date', today).is('logged_out_at', null).then(() => {});
-                  supabase.from('counter_shifts').update({ ended_at: nowIso })
-                    .eq('user_id', user.id).eq('shift_date', today).is('ended_at', null).then(() => {});
+                  if (user.role === 'guichetier') {
+                    supabase.from('counter_shifts').update({ ended_at: nowIso })
+                      .eq('user_id', user.id).eq('shift_date', today).is('ended_at', null).then(() => {});
+                  }
                 }
                 set({ user: null, session: null, isAuthenticated: false });
               } else if (event === 'PASSWORD_RECOVERY') {
@@ -192,6 +195,27 @@ export const useAuthStore = create<AuthState>()(
               }).then(() => {});
             }
           }
+
+          // Record session for all tracked roles
+          const TRACKED_ROLES = ['guichetier', 'chef_gare', 'bagagiste', 'agent_colis', 'chauffeur', 'comptable'];
+          if (TRACKED_ROLES.includes(profile.role) && profile.role !== 'guichetier') {
+            const today = new Date().toISOString().split('T')[0];
+            await supabase
+              .from('user_sessions')
+              .update({ logged_out_at: new Date().toISOString() })
+              .eq('user_id', profile.id)
+              .eq('session_date', today)
+              .is('logged_out_at', null);
+            await supabase.from('user_sessions').insert({
+              user_id: profile.id,
+              station_id: profile.station_id || null,
+              session_date: today,
+              logged_in_at: new Date().toISOString(),
+            });
+          }
+
+          // Update presence
+          supabase.from('users').update({ last_seen_at: new Date().toISOString() }).eq('id', profile.id).then(() => {});
         } finally {
           set({ isLoading: false });
         }
@@ -199,30 +223,35 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         const { user } = get();
-        // Record logout for guichetiers
-        if (user?.role === 'guichetier') {
-          const today = new Date().toISOString().split('T')[0];
-          const nowIso = new Date().toISOString();
-          // Close open user_session
-          await supabase
-            .from('user_sessions')
-            .update({ logged_out_at: nowIso })
-            .eq('user_id', user.id)
-            .eq('session_date', today)
-            .is('logged_out_at', null);
-          // Close open counter_shift
-          const { data: openShift } = await supabase
-            .from('counter_shifts')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('shift_date', today)
-            .is('ended_at', null)
-            .maybeSingle();
-          if (openShift) {
+        // Record logout for tracked roles
+        if (user) {
+          const TRACKED_ROLES = ['guichetier', 'chef_gare', 'bagagiste', 'agent_colis', 'chauffeur', 'comptable'];
+          if (TRACKED_ROLES.includes(user.role)) {
+            const today = new Date().toISOString().split('T')[0];
+            const nowIso = new Date().toISOString();
             await supabase
+              .from('user_sessions')
+              .update({ logged_out_at: nowIso })
+              .eq('user_id', user.id)
+              .eq('session_date', today)
+              .is('logged_out_at', null);
+          }
+          if (user.role === 'guichetier') {
+            const today = new Date().toISOString().split('T')[0];
+            const nowIso = new Date().toISOString();
+            const { data: openShift } = await supabase
               .from('counter_shifts')
-              .update({ ended_at: nowIso })
-              .eq('id', openShift.id);
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('shift_date', today)
+              .is('ended_at', null)
+              .maybeSingle();
+            if (openShift) {
+              await supabase
+                .from('counter_shifts')
+                .update({ ended_at: nowIso })
+                .eq('id', openShift.id);
+            }
           }
         }
         await supabase.auth.signOut();
