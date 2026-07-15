@@ -441,6 +441,17 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
     return 0;
   });
 
+  const departNumberByRow = (() => {
+    const counters: Record<string, number> = {};
+    const map = new Map<string, number>();
+    for (const row of sortedDepartures) {
+      const dest = (row.arrival_station_name || '').toLowerCase();
+      counters[dest] = (counters[dest] || 0) + 1;
+      map.set(row.id, counters[dest]);
+    }
+    return map;
+  })();
+
   const totalPages = Math.ceil(sortedDepartures.length / ROWS_PER_PAGE);
   const pageRows = sortedDepartures.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
 
@@ -686,9 +697,8 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((row, idx) => {
-                  const globalIdx = page * ROWS_PER_PAGE + idx;
-                  const departNumber = globalIdx + 1;
+                {pageRows.map((row) => {
+                  const departNumber = departNumberByRow.get(row.id) || 1;
                   const status = computeEffectiveStatus(row, currentTime);
                   const cfg = STATUS_CFG[status] || STATUS_CFG.planifie;
                   const isPast = status === 'termine';

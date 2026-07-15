@@ -765,6 +765,17 @@ export default function DailyPlanning() {
     ? schedules
     : schedules.filter(s => s.status === statusFilter);
 
+  const departNumberByDest = (() => {
+    const counters: Record<string, number> = {};
+    const map = new Map<string, number>();
+    for (const s of schedules) {
+      const dest = (s.arrival_station_name || '').toLowerCase();
+      counters[dest] = (counters[dest] || 0) + 1;
+      map.set(s.id, counters[dest]);
+    }
+    return map;
+  })();
+
   const stats = {
     total: schedules.length,
     planifie: schedules.filter(s => s.status === 'planifie').length,
@@ -1106,10 +1117,10 @@ export default function DailyPlanning() {
 
                   {/* Counter assignment badge + departure order */}
                   <div className="hidden md:flex items-center gap-2 flex-shrink-0">
-                    {sched.departure_order != null && (
+                    {departNumberByDest.get(sched.id) && (
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0"
                         style={{ backgroundColor: 'var(--primary)' }}>
-                        {sched.departure_order}
+                        {departNumberByDest.get(sched.id)}
                       </div>
                     )}
                     {sched.counter_number != null ? (
@@ -1524,10 +1535,10 @@ export default function DailyPlanning() {
                     {/* Counter assignment actions */}
                     {!isConvoi && <div className="flex items-center gap-3 pt-1 border-t flex-wrap"
                       style={{ borderColor: 'var(--border)' }}>
-                      {sched.departure_order != null && (
+                      {departNumberByDest.get(sched.id) && (
                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border"
                           style={{ backgroundColor: '#F0FDF4', color: '#16A34A', borderColor: '#86EFAC' }}>
-                          N° Départ : {sched.departure_order}
+                          N° Départ : {departNumberByDest.get(sched.id)}
                         </div>
                       )}
                       <p className="text-xs font-semibold uppercase tracking-wider flex-shrink-0"
