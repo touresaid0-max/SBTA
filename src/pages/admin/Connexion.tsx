@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, RefreshCw, Wifi, WifiOff, MessageCircle, Clock, MapPin, Monitor } from 'lucide-react';
+import { Search, RefreshCw, Wifi, WifiOff, MessageCircle, Clock, MapPin, Monitor, Mail } from 'lucide-react';
 import { supabase } from '../../services/supabase';
-import { format, differenceInMinutes } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { differenceInMinutes } from 'date-fns';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '../../store/authStore';
 import ChatPanel from '../../components/admin/ChatPanel';
 
 interface ConnectedUser {
@@ -44,6 +44,7 @@ const ROLE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
 };
 
 export default function Connexion() {
+  const { user: currentUser } = useAuthStore();
   const [users, setUsers] = useState<ConnectedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,6 +52,7 @@ export default function Connexion() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [chatTarget, setChatTarget] = useState<ConnectedUser | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [unreadMap, setUnreadMap] = useState<Map<string, number>>(new Map());
 
   const loadUsers = useCallback(async () => {
     try {
@@ -130,13 +132,60 @@ export default function Connexion() {
 
   useEffect(() => {
     loadUsers();
+    loadUnreadCounts();
   }, [loadUsers]);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(loadUsers, 30000);
+    const interval = setInterval(() => { loadUsers(); loadUnreadCounts(); }, 30000);
     return () => clearInterval(interval);
   }, [autoRefresh, loadUsers]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const channel = supabase
+      .channel('admin-inbox-notify')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'admin_chat_messages',
+        filter: `receiver_id=eq.${currentUser.id}`,
+      }, (payload) => {
+        const msg = payload.new as { sender_id: string };
+        setUnreadMap(prev => {
+          const next = new Map(prev);
+          next.set(msg.sender_id, (next.get(msg.sender_id) || 0) + 1);
+          return next;
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id]);
+
+  const loadUnreadCounts = async () => {
+    if (!currentUser) return;
+    const { data } = await supabase
+      .from('admin_chat_messages')
+      .select('sender_id')
+      .eq('receiver_id', currentUser.id)
+      .eq('is_read', false);
+    if (data) {
+      const map = new Map<string, number>();
+      data.forEach(m => map.set(m.sender_id, (map.get(m.sender_id) || 0) + 1));
+      setUnreadMap(map);
+    }
+  };
+
+  const openChat = (u: ConnectedUser) => {
+    setChatTarget(u);
+    setUnreadMap(prev => {
+      const next = new Map(prev);
+      next.delete(u.id);
+      return next;
+    });
+  };
+
+  const totalUnread = Array.from(unreadMap.values()).reduce((s, v) => s + v, 0);
 
   const filteredUsers = users.filter(u => {
     const matchesSearch = !searchTerm || 
@@ -207,9 +256,16 @@ export default function Connexion() {
             <p className="text-sm text-gray-500">Total utilisateurs</p>
           </div>
         </div>
+        <div className={`bg-white rounded-xl border p-5 flex items-center gap-4 ${totalUnread > 0 ? 'border-amber-300 ring-1 ring-amber-200' : 'border-gray-200'}`}>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${totalUnread > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+            <Mail className={`w-6 h-6 ${totalUnread > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
+          </div>
+          <div>
+            <p className={`text-2xl font-bold ${totalUnread > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{totalUnread}</p>
+            <p className="text-sm text-gray-500">Messages non lus</p>
+          </div>
+        </div>
       </div>
-
-      {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
@@ -293,7 +349,7 @@ export default function Connexion() {
                   <tr
                     key={u.id}
                     className="hover:bg-gray-50/80 transition-colors cursor-pointer group"
-                    onClick={() => setChatTarget(u)}
+                    onClick={() => openChat(u)}
                   >
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-center">
@@ -359,11 +415,20 @@ export default function Connexion() {
                     </td>
                     <td className="px-5 py-4">
                       <button
-                        onClick={(e) => { e.stopPropagation(); setChatTarget(u); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors text-xs font-medium opacity-0 group-hover:opacity-100"
+                        onClick={(e) => { e.stopPropagation(); openChat(u); }}
+                        className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                          unreadMap.has(u.id)
+                            ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300 opacity-100 animate-pulse'
+                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 opacity-0 group-hover:opacity-100'
+                        }`}
                       >
                         <MessageCircle className="w-3.5 h-3.5" />
-                        Chat
+                        {unreadMap.has(u.id) ? (
+                          <span className="flex items-center gap-1">
+                            <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center font-bold">{unreadMap.get(u.id)}</span>
+                            Nouveau
+                          </span>
+                        ) : 'Chat'}
                       </button>
                     </td>
                   </tr>
