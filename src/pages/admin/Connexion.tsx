@@ -79,11 +79,11 @@ export default function Connexion() {
 
       const { data: counters } = await supabase
         .from('counters')
-        .select('id, name, agent_id');
+        .select('id, counter_number, assigned_user_id');
 
       const counterMap = new Map<string, string>();
       counters?.forEach(c => {
-        if (c.agent_id) counterMap.set(c.agent_id, c.name);
+        if (c.assigned_user_id) counterMap.set(c.assigned_user_id, c.counter_number || `Guichet`);
       });
 
       const mapped: ConnectedUser[] = (usersData || []).map((u: any) => {
