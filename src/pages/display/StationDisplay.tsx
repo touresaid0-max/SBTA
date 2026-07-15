@@ -655,18 +655,20 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
           <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}` }}>
             <table className="w-full table-fixed border-collapse">
               <colgroup>
-                <col style={{ width: '8%' }} />   {/* Heure */}
-                <col style={{ width: '16%' }} />  {/* Destination */}
-                <col style={{ width: '13%' }} />  {/* Ligne */}
-                <col style={{ width: '13%' }} />  {/* Gare départ */}
-                <col style={{ width: '13%' }} />  {/* Gare arrivée */}
-                <col style={{ width: '12%' }} />  {/* Plaque */}
-                <col style={{ width: '10%' }} />  {/* Places */}
+                <col style={{ width: '9%' }} />   {/* N° Départ */}
+                <col style={{ width: '7%' }} />   {/* Heure */}
+                <col style={{ width: '14%' }} />  {/* Destination */}
+                <col style={{ width: '12%' }} />  {/* Ligne */}
+                <col style={{ width: '12%' }} />  {/* Gare départ */}
+                <col style={{ width: '12%' }} />  {/* Gare arrivée */}
+                <col style={{ width: '10%' }} />  {/* Plaque */}
+                <col style={{ width: '9%' }} />   {/* Places */}
                 <col style={{ width: '15%' }} />  {/* Statut */}
               </colgroup>
               <thead>
                 <tr style={{ backgroundColor: T.green, color: 'white' }}>
                   {[
+                    { icon: <Navigation className="w-3.5 h-3.5" />, label: 'N° DÉPART' },
                     { icon: <Clock className="w-3.5 h-3.5" />, label: 'HEURE' },
                     { icon: <Navigation className="w-3.5 h-3.5" />, label: 'DESTINATION' },
                     { icon: null, label: 'LIGNE' },
@@ -687,6 +689,8 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
               </thead>
               <tbody>
                 {pageRows.map((row, idx) => {
+                  const globalIdx = page * ROWS_PER_PAGE + idx;
+                  const departNumber = globalIdx + 1;
                   const status = computeEffectiveStatus(row, currentTime);
                   const cfg = STATUS_CFG[status] || STATUS_CFG.planifie;
                   const isPast = status === 'termine';
@@ -729,8 +733,18 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.filter = 'brightness(0.94)'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.filter = ''}
                       >
-                        {/* ── Heure ── */}
+                        {/* ── N° Départ ── */}
                         <td className="px-3 py-4 align-middle" style={{ borderLeft: `4px solid ${accentColor}` }}>
+                          <div className="flex flex-col items-start">
+                            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: T.text3 }}>DÉPART</span>
+                            <span className="text-2xl xl:text-3xl font-black tabular-nums" style={{ color: isActive ? cfg.color : T.green }}>
+                              {departNumber}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* ── Heure ── */}
+                        <td className="px-3 py-4 align-middle">
                           <span
                             className="text-xl xl:text-2xl font-black tabular-nums leading-none block"
                             style={{ color: isImminent ? '#A16207' : isEmbarquement ? '#C2410C' : isRetard ? '#C2410C' : isPast ? '#9CA3AF' : T.text }}
@@ -832,7 +846,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                       {/* Alert banner */}
                       {isActive && (
                         <tr>
-                          <td colSpan={8} className="py-2 text-center font-black text-xs tracking-widest uppercase"
+                          <td colSpan={9} className="py-2 text-center font-black text-xs tracking-widest uppercase"
                             style={{
                               backgroundColor: status === 'imminent' ? '#EAB308' : T.green,
                               color: status === 'imminent' ? '#422006' : 'white',
@@ -845,7 +859,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                       )}
                       {isRetard && (
                         <tr>
-                          <td colSpan={8} className="py-2 text-center font-black text-xs tracking-widest uppercase"
+                          <td colSpan={9} className="py-2 text-center font-black text-xs tracking-widest uppercase"
                             style={{ backgroundColor: 'rgba(249,115,22,0.15)', color: '#C2410C', borderTop: '1px solid #F97316' }}>
                             DEPART RETARDE — VEUILLEZ PATIENTER
                           </td>
