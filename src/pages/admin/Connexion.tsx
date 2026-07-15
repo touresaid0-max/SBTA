@@ -56,35 +56,37 @@ export default function Connexion() {
     try {
       const { data: usersData, error } = await supabase
         .from('users')
-        .select('id, full_name, first_name, last_name, email, role, phone, avatar_url, station_id, stations(name)')
+        .select('id, full_name, first_name, last_name, email, role, phone, avatar_url, station_id, stations!users_station_id_fkey(name)')
         .in('role', MONITORED_ROLES)
         .eq('is_active', true)
-        .order('role')
         .order('full_name');
 
-      if (error) throw error;
-
-      const { data: sessions } = await supabase
-        .from('user_sessions')
-        .select('user_id, logged_in_at, logged_out_at, station_id')
-        .is('logged_out_at', null)
-        .gte('session_date', new Date().toISOString().split('T')[0]);
+      if (error) {
+        console.error('Users query error:', error.message, error.code, error.details);
+        throw error;
+      }
 
       const activeSessionMap = new Map<string, { logged_in_at: string }>();
-      sessions?.forEach(s => {
-        if (!s.logged_out_at) {
+      try {
+        const { data: sessions } = await supabase
+          .from('user_sessions')
+          .select('user_id, logged_in_at, logged_out_at')
+          .is('logged_out_at', null)
+          .gte('session_date', new Date().toISOString().split('T')[0]);
+        sessions?.forEach(s => {
           activeSessionMap.set(s.user_id, { logged_in_at: s.logged_in_at });
-        }
-      });
-
-      const { data: counters } = await supabase
-        .from('counters')
-        .select('id, counter_number, assigned_user_id');
+        });
+      } catch {}
 
       const counterMap = new Map<string, string>();
-      counters?.forEach(c => {
-        if (c.assigned_user_id) counterMap.set(c.assigned_user_id, c.counter_number || `Guichet`);
-      });
+      try {
+        const { data: counters } = await supabase
+          .from('counters')
+          .select('id, counter_number, assigned_user_id, station_id');
+        counters?.forEach(c => {
+          if (c.assigned_user_id) counterMap.set(c.assigned_user_id, c.counter_number || 'Guichet');
+        });
+      } catch {}
 
       const mapped: ConnectedUser[] = (usersData || []).map((u: any) => {
         const session = activeSessionMap.get(u.id);
@@ -115,7 +117,9 @@ export default function Connexion() {
 
       setUsers(mapped);
     } catch (err: any) {
-      toast.error('Erreur de chargement des utilisateurs');
+      const msg = err?.message || 'Erreur inconnue';
+      console.error('Connexion load error:', msg);
+      toast.error(`Erreur: ${msg}`);
     } finally {
       setLoading(false);
     }
