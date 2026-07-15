@@ -77,6 +77,15 @@ a, button { transition: background-color 0.15s, color 0.15s, opacity 0.15s; }
   80%  { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(1.02); }
 }
+
+@keyframes slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.25s ease-out;
+}
 .sbta-splash-logo {
   animation: sbta-splash-fade 2.6s ease-in-out forwards;
 }

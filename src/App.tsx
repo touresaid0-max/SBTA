@@ -133,6 +133,7 @@ import LoyaltyReport from './pages/reports/LoyaltyReport';
 import ActivityLogs from './pages/admin/ActivityLogs';
 import AuditLogs from './pages/admin/AuditLogs';
 import Archives from './pages/admin/Archives';
+import Connexion from './pages/admin/Connexion';
 import RHDashboard from './pages/rh/Dashboard';
 import EmployeesPage from './pages/rh/EmployeesPage';
 import EmployeeDetail from './pages/rh/EmployeeDetail';
@@ -302,6 +303,7 @@ function App() {
             <Route path="admin/activity-logs" element={<ProtectedRoute roles={['admin']}><ActivityLogs /></ProtectedRoute>} />
             <Route path="admin/audit-logs" element={<ProtectedRoute roles={['admin']}><AuditLogs /></ProtectedRoute>} />
             <Route path="admin/archives" element={<ProtectedRoute roles={['admin']}><Archives /></ProtectedRoute>} />
+            <Route path="admin/connexion" element={<ProtectedRoute roles={['admin']}><Connexion /></ProtectedRoute>} />
             <Route path="reports/driver-performance" element={<ProtectedRoute roles={['admin', 'gestionnaire']}><DriverPerformanceReport /></ProtectedRoute>} />
             <Route path="daf/dashboard" element={<ProtectedRoute roles={['daf']}><DAFDashboard /></ProtectedRoute>} />
             <Route path="daf/financial-report" element={<ProtectedRoute roles={['daf']}><DAFFinancialReport /></ProtectedRoute>} />
