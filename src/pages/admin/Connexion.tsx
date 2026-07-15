@@ -58,7 +58,7 @@ export default function Connexion() {
     try {
       const { data: usersData, error } = await supabase
         .from('users')
-        .select('id, full_name, first_name, last_name, email, role, phone, avatar_url, station_id, last_seen_at, stations!users_station_id_fkey(name)')
+        .select('id, full_name, first_name, last_name, email, role, phone, avatar_url, station_id, last_seen_at, last_login, stations!users_station_id_fkey(name)')
         .in('role', MONITORED_ROLES)
         .eq('is_active', true)
         .order('full_name');
@@ -70,13 +70,30 @@ export default function Connexion() {
 
       const activeSessionMap = new Map<string, { logged_in_at: string }>();
       try {
+        const today = new Date().toISOString().split('T')[0];
         const { data: sessions } = await supabase
           .from('user_sessions')
-          .select('user_id, logged_in_at, logged_out_at')
+          .select('user_id, logged_in_at')
           .is('logged_out_at', null)
-          .gte('session_date', new Date().toISOString().split('T')[0]);
+          .gte('session_date', today);
         sessions?.forEach(s => {
           activeSessionMap.set(s.user_id, { logged_in_at: s.logged_in_at });
+        });
+      } catch {}
+
+      // Fallback: get most recent session for today (even if closed) to provide session_start
+      const recentSessionMap = new Map<string, string>();
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: recentSessions } = await supabase
+          .from('user_sessions')
+          .select('user_id, logged_in_at')
+          .eq('session_date', today)
+          .order('logged_in_at', { ascending: false });
+        recentSessions?.forEach(s => {
+          if (!recentSessionMap.has(s.user_id)) {
+            recentSessionMap.set(s.user_id, s.logged_in_at);
+          }
         });
       } catch {}
 
@@ -96,6 +113,10 @@ export default function Connexion() {
         const lastSeen = u.last_seen_at ? new Date(u.last_seen_at) : null;
         const isOnlineByPresence = lastSeen && (now.getTime() - lastSeen.getTime()) < 2 * 60 * 1000;
         const isOnline = !!session || !!isOnlineByPresence;
+        const sessionStart = session?.logged_in_at
+          || recentSessionMap.get(u.id)
+          || u.last_login
+          || null;
         return {
           id: u.id,
           full_name: u.full_name || `${u.first_name || ''} ${u.last_name || ''}`.trim(),
@@ -109,8 +130,8 @@ export default function Connexion() {
           station_name: u.stations?.name || '',
           counter_name: counterMap.get(u.id) || '',
           is_online: isOnline,
-          session_start: session?.logged_in_at,
-          last_activity: session?.logged_in_at,
+          session_start: isOnline ? sessionStart : undefined,
+          last_activity: u.last_seen_at || session?.logged_in_at || u.last_login,
         };
       });
 
@@ -402,9 +423,9 @@ export default function Connexion() {
                       </div>
                     </td>
                     <td className="px-5 py-4">
-                      {u.is_online && u.session_start ? (
+                      {u.session_start ? (
                         <div className="flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                          <Clock className={`w-3.5 h-3.5 ${u.is_online ? 'text-emerald-500' : 'text-gray-400'}`} />
                           <span className="text-xs font-medium text-gray-700">
                             {getSessionDuration(u.session_start)}
                           </span>
