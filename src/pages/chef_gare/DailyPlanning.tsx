@@ -268,6 +268,16 @@ export default function DailyPlanning() {
       is_anticipated: s.is_anticipated ?? false,
     }));
 
+    rows.sort((a, b) => {
+      const timeA = new Date(a.departure_datetime).getTime();
+      const timeB = new Date(b.departure_datetime).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      const destA = (a.arrival_station_name || '').toLowerCase();
+      const destB = (b.arrival_station_name || '').toLowerCase();
+      if (destA !== destB) return destA.localeCompare(destB, 'fr');
+      return 0;
+    });
+
     setSchedules(rows);
   };
 

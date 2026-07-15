@@ -431,16 +431,14 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
   }, []);
 
   // ── Derived ──
-  const STATUS_SORT_ORDER: Record<string, number> = {
-    imminent: 0, embarquement: 1, retard: 2, complet: 3, planifie: 4, ouvert: 5, termine: 6, annule: 7, en_cours: 1,
-  };
   const sortedDepartures = [...departures].sort((a, b) => {
-    const sa = computeEffectiveStatus(a, currentTime);
-    const sb = computeEffectiveStatus(b, currentTime);
-    const oa = STATUS_SORT_ORDER[sa] ?? 5;
-    const ob = STATUS_SORT_ORDER[sb] ?? 5;
-    if (oa !== ob) return oa - ob;
-    return new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime();
+    const timeA = new Date(a.departure_datetime).getTime();
+    const timeB = new Date(b.departure_datetime).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    const destA = (a.arrival_station_name || '').toLowerCase();
+    const destB = (b.arrival_station_name || '').toLowerCase();
+    if (destA !== destB) return destA.localeCompare(destB, 'fr');
+    return 0;
   });
 
   const totalPages = Math.ceil(sortedDepartures.length / ROWS_PER_PAGE);
