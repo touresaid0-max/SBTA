@@ -697,7 +697,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((row) => {
+                {pageRows.map((row, idx) => {
                   const departNumber = departNumberByRow.get(row.id) || 1;
                   const status = computeEffectiveStatus(row, currentTime);
                   const cfg = STATUS_CFG[status] || STATUS_CFG.planifie;
