@@ -6,7 +6,8 @@ import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import {
   Building2, Users, Clock, Calendar, Monitor, CheckCircle, AlertCircle,
-  MapPin, Phone, Mail, Banknote, TicketCheck, TrendingUp, Plus, ArrowRight
+  MapPin, Phone, Mail, Banknote, TicketCheck, TrendingUp, Plus, ArrowRight,
+  AlertTriangle, Fuel, Receipt, ShieldAlert, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -32,6 +33,20 @@ interface CounterRow {
   solde: number;
   has_user: boolean;
   user_name?: string;
+}
+
+interface CompletionAlert {
+  schedule_id: string;
+  route_name: string;
+  departure_datetime: string;
+  bus_registration: string;
+  driver_name: string;
+  status: string;
+  has_charges: boolean;
+  has_tickets: boolean;
+  has_fuel: boolean;
+  has_expenses: boolean;
+  missing: string[];
 }
 
 interface TodaySchedule {
@@ -60,6 +75,8 @@ export default function ChefGareDashboard() {
   const [counterRows, setCounterRows] = useState<CounterRow[]>([]);
   const [totalSeatsRemaining, setTotalSeatsRemaining] = useState(0);
   const [todaySchedules, setTodaySchedules] = useState<TodaySchedule[]>([]);
+  const [completionAlerts, setCompletionAlerts] = useState<CompletionAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -92,6 +109,7 @@ export default function ChefGareDashboard() {
       await Promise.all([
         loadCounterStats(stationInfo.id),
         loadTodaySchedules(stationInfo.id),
+        loadCompletionAlerts(stationInfo.id),
       ]);
     } finally {
       setLoading(false);
@@ -224,6 +242,26 @@ export default function ChefGareDashboard() {
         counter_number: depSeqMap[s.id] ?? null,
       }))
     );
+  };
+
+  const loadCompletionAlerts = async (stationId: string) => {
+    setAlertsLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('get_schedule_completion_alerts', {
+        p_station_id: stationId,
+        p_target_date: today
+      });
+      if (error) throw error;
+      setCompletionAlerts(data || []);
+    } catch (err: any) {
+      console.error('Erreur chargement alertes:', err);
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const refreshAlerts = () => {
+    if (station) loadCompletionAlerts(station.id);
   };
 
   const activeCounters = counterRows.length;
@@ -446,6 +484,90 @@ export default function ChefGareDashboard() {
           </div>
         )}
       </div>
+
+      {/* Completion Alerts */}
+      {completionAlerts.length > 0 && (
+        <div className="rounded-2xl border border-[#FBBF24] bg-[#FFFBEB] shadow-sm mb-6">
+          <div className="px-6 py-4 border-b border-[#FDE68A] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-[#D97706]" />
+              <h3 className="font-bold text-lg text-[#92400E]">
+                Alertes de complétude ({completionAlerts.length})
+              </h3>
+            </div>
+            <button
+              onClick={refreshAlerts}
+              disabled={alertsLoading}
+              className="flex items-center gap-1.5 text-sm font-medium text-[#D97706] hover:text-[#B45309] transition-colors"
+            >
+              <RefreshCw className={`w-4 h-4 ${alertsLoading ? 'animate-spin' : ''}`} />
+              Actualiser
+            </button>
+          </div>
+
+          <div className="divide-y divide-[#FDE68A]">
+            {completionAlerts.map((alert) => (
+              <div key={alert.schedule_id} className="px-6 py-4">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[#FEF3C7] flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-[#D97706]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-[#1E293B] text-sm">
+                        {format(new Date(alert.departure_datetime), 'HH:mm')}
+                      </span>
+                      <span className="text-sm text-[#374151] font-medium truncate">
+                        {alert.route_name}
+                      </span>
+                      {alert.bus_registration && (
+                        <span className="text-xs bg-white border border-[#E2E8F0] rounded px-1.5 py-0.5 text-[#64748B]">
+                          {alert.bus_registration}
+                        </span>
+                      )}
+                    </div>
+                    {alert.driver_name && (
+                      <p className="text-xs text-[#64748B] mt-0.5">{alert.driver_name}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      {alert.missing?.map((item) => (
+                        <span key={item} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#FEE2E2] text-[#DC2626] border border-[#FECACA]">
+                          {item === 'Charges' && <Receipt className="w-3 h-3" />}
+                          {item === 'Billets' && <TicketCheck className="w-3 h-3" />}
+                          {item === 'Carburant' && <Fuel className="w-3 h-3" />}
+                          {item === 'Dépenses' && <Banknote className="w-3 h-3" />}
+                          {item}
+                        </span>
+                      ))}
+                      {/* Show completed items */}
+                      {alert.has_charges && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#D1FAE5] text-[#065F46] border border-[#A7F3D0]">
+                          <CheckCircle className="w-3 h-3" /> Charges
+                        </span>
+                      )}
+                      {alert.has_tickets && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#D1FAE5] text-[#065F46] border border-[#A7F3D0]">
+                          <CheckCircle className="w-3 h-3" /> Billets
+                        </span>
+                      )}
+                      {alert.has_fuel && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#D1FAE5] text-[#065F46] border border-[#A7F3D0]">
+                          <CheckCircle className="w-3 h-3" /> Carburant
+                        </span>
+                      )}
+                      {alert.has_expenses && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#D1FAE5] text-[#065F46] border border-[#A7F3D0]">
+                          <CheckCircle className="w-3 h-3" /> Dépenses
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Today's schedule list */}
       <div className="rounded-2xl border shadow-sm"
