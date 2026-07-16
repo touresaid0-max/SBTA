@@ -5,7 +5,7 @@ import {
   TicketCheck, DollarSign, Calendar, Gift, Users,
   Search, Check, RefreshCw, TrendingUp, Clock,
   CheckCircle, AlertCircle, Bus, ArrowRight, Printer, Banknote,
-  ChevronLeft, ChevronRight, Truck, X, Loader2,
+  ChevronLeft, ChevronRight, Truck, X, Loader2, Lock,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { format, startOfDay, endOfDay, addDays, subDays } from 'date-fns'
@@ -642,8 +642,9 @@ export default function GuichetierDashboard() {
                     {counterDepartures.map((d) => {
                       const hasCharges = Number(d.total_charges) > 0
                       const isConvoi = d.status === 'convoi'
+                      const isPastDate = selectedDate < startOfDay(new Date())
                       return (
-                        <tr key={d.schedule_id} className="hover:bg-[#F8FAF8] transition-colors">
+                        <tr key={d.schedule_id} className={`transition-colors ${isPastDate ? 'opacity-60 bg-[#F9FAFB]' : 'hover:bg-[#F8FAF8]'}`}>
 
                           {/* N° départ */}
                           <td className="px-4 py-3.5">
@@ -790,7 +791,12 @@ export default function GuichetierDashboard() {
                           {/* Actions */}
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-1 justify-center">
-                              {isConvoi ? (
+                              {isPastDate ? (
+                                <span className="text-xs font-medium text-[#94A3B8] px-2 py-1 rounded-lg bg-[#F1F5F9] border border-[#E2E8F0] whitespace-nowrap flex items-center gap-1">
+                                  <Lock className="w-3 h-3" />
+                                  Verrouillé
+                                </span>
+                              ) : isConvoi ? (
                                 <span className="text-xs font-medium text-[#92400E] px-2 py-1 rounded-lg bg-[#FFF7ED] border border-[#FDBA74] whitespace-nowrap">
                                   Voyage boucle
                                 </span>

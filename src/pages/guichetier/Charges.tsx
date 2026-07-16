@@ -3,9 +3,9 @@ import toast from 'react-hot-toast'
 import {
   ChevronLeft, ChevronRight, Bus, Clock, Banknote,
   Plus, X, Loader2, RefreshCw, FileText, ChevronDown, ChevronUp,
-  Utensils, Fuel, Route, MoreHorizontal,
+  Utensils, Fuel, Route, MoreHorizontal, Lock,
 } from 'lucide-react'
-import { format, addDays, subDays } from 'date-fns'
+import { format, addDays, subDays, startOfDay } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { createCounterCharge, fetchScheduleCharges, checkChargeExists } from '@/services/counter.service'
@@ -32,12 +32,13 @@ interface DepartureRowProps {
   dep: ScheduleReceiptSummary
   counterId: string
   stationId: string
+  locked: boolean
   onChargesChange: (scheduleId: string, charges: CounterCharge[]) => void
 }
 
 const UNIQUE_CHARGE_TYPES: ChargeType[] = ['ration', 'carburant_complement', 'peage']
 
-function DepartureRow({ dep, counterId, stationId, onChargesChange }: DepartureRowProps) {
+function DepartureRow({ dep, counterId, stationId, locked, onChargesChange }: DepartureRowProps) {
   const [expanded,    setExpanded]    = useState(false)
   const [charges,     setCharges]     = useState<CounterCharge[]>([])
   const [loadingCh,   setLoadingCh]   = useState(false)
@@ -97,16 +98,22 @@ function DepartureRow({ dep, counterId, stationId, onChargesChange }: DepartureR
   const hasCharges   = charges.length > 0
 
   return (
-    <div className="border border-[#E2EAE5] rounded-2xl overflow-hidden bg-white">
+    <div className={`border rounded-2xl overflow-hidden ${locked ? 'border-[#E2E8F0] bg-[#F9FAFB] opacity-70' : 'border-[#E2EAE5] bg-white'}`}>
       {/* En-tête de la ligne départ — toujours visible */}
       <button
         onClick={() => setExpanded(v => !v)}
         className="w-full text-left px-5 py-4 hover:bg-[#F8FAF8] transition-colors"
       >
         <div className="flex items-center gap-4 flex-wrap">
+          {/* Lock indicator */}
+          {locked && (
+            <div className="flex-shrink-0">
+              <Lock className="w-4 h-4 text-[#94A3B8]" />
+            </div>
+          )}
           {/* Numéro */}
-          <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm
-                          bg-[#0B7439] text-white">
+          <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm
+                          ${locked ? 'bg-[#94A3B8]' : 'bg-[#0B7439]'} text-white`}>
             {dep.departure_number ?? '—'}
           </div>
 
@@ -363,6 +370,12 @@ function DepartureRow({ dep, counterId, stationId, onChargesChange }: DepartureR
                 }
               </button>
             </div>
+          ) : locked ? (
+            <div className="w-full h-10 rounded-xl border-2 border-dashed border-[#D1D5DB] text-[#94A3B8]
+                         font-semibold text-sm flex items-center justify-center gap-2">
+              <Lock className="w-4 h-4" />
+              Verrouillé (date passée)
+            </div>
           ) : (
             <button
               onClick={() => {
@@ -580,6 +593,7 @@ export default function ChargesPage() {
               dep={dep}
               counterId={counterId}
               stationId={stationId}
+              locked={selectedDate < startOfDay(new Date())}
               onChargesChange={handleChargesChange}
             />
           ))}
