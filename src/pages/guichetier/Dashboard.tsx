@@ -642,7 +642,7 @@ export default function GuichetierDashboard() {
                     {counterDepartures.map((d) => {
                       const hasCharges = Number(d.total_charges) > 0
                       const isConvoi = d.status === 'convoi'
-                      const isPastDate = selectedDate < startOfDay(new Date())
+                      const isPastDate = selectedDate < startOfDay(new Date()) && d.status !== 'en_cours'
                       return (
                         <tr key={d.schedule_id} className={`transition-colors ${isPastDate ? 'opacity-60 bg-[#F9FAFB]' : 'hover:bg-[#F8FAF8]'}`}>
 

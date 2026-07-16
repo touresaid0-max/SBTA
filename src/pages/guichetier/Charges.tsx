@@ -593,7 +593,7 @@ export default function ChargesPage() {
               dep={dep}
               counterId={counterId}
               stationId={stationId}
-              locked={selectedDate < startOfDay(new Date())}
+              locked={selectedDate < startOfDay(new Date()) && dep.status !== 'en_cours'}
               onChargesChange={handleChargesChange}
             />
           ))}

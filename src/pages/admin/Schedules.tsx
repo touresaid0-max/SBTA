@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, CreditCard as Edit2, Trash2, Bus, Route as RouteIcon, Clock, User } from 'lucide-react';
+import {
+  Calendar, Plus, CreditCard as Edit2, Trash2, Bus, Route as RouteIcon,
+  Clock, User, RotateCcw, CheckCircle2, X, History, AlertTriangle, Loader2
+} from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 
 interface RouteData {
   id: string;
@@ -40,6 +43,18 @@ interface Schedule {
   copilots?: { full_name: string };
 }
 
+interface ReactivationLog {
+  id: string;
+  schedule_id: string;
+  action: string;
+  old_status: string;
+  new_status: string;
+  reason: string;
+  performed_at: string;
+  user_role: string;
+  user_full_name: string;
+}
+
 export default function Schedules() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [routes, setRoutes] = useState<RouteData[]>([]);
@@ -48,6 +63,16 @@ export default function Schedules() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Reactivation state
+  const [reactivateModal, setReactivateModal] = useState<{ schedule: Schedule; action: 'reactivate' | 'reterminate' } | null>(null);
+  const [reactivateReason, setReactivateReason] = useState('');
+  const [reactivateLoading, setReactivateLoading] = useState(false);
+
+  // History state
+  const [historyModal, setHistoryModal] = useState<string | null>(null);
+  const [historyLogs, setHistoryLogs] = useState<ReactivationLog[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     route_id: '',
@@ -185,13 +210,70 @@ export default function Schedules() {
     });
   };
 
+  // --- Reactivation Logic ---
+  const handleToggleStatus = async () => {
+    if (!reactivateModal || !reactivateReason.trim()) {
+      toast.error('Veuillez saisir un motif');
+      return;
+    }
+
+    setReactivateLoading(true);
+    try {
+      const newStatus = reactivateModal.action === 'reactivate' ? 'en_cours' : 'termine';
+      const { data, error } = await supabase.rpc('admin_toggle_schedule_status', {
+        p_schedule_id: reactivateModal.schedule.id,
+        p_new_status: newStatus,
+        p_reason: reactivateReason.trim()
+      });
+
+      if (error) throw error;
+
+      toast.success(
+        reactivateModal.action === 'reactivate'
+          ? 'Voyage réactivé avec succès'
+          : 'Voyage reterminé avec succès'
+      );
+      setReactivateModal(null);
+      setReactivateReason('');
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || 'Erreur lors du changement de statut');
+    } finally {
+      setReactivateLoading(false);
+    }
+  };
+
+  const loadHistory = async (scheduleId: string) => {
+    setHistoryModal(scheduleId);
+    setHistoryLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('schedule_reactivation_logs')
+        .select('*')
+        .eq('schedule_id', scheduleId)
+        .order('performed_at', { ascending: false });
+
+      if (error) throw error;
+      setHistoryLogs(data || []);
+    } catch (error: any) {
+      toast.error('Erreur chargement historique');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const isPastSchedule = (schedule: Schedule) => {
+    const depDate = new Date(schedule.departure_datetime);
+    return depDate < startOfDay(new Date());
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'planifie': return { bg: 'var(--primary-light)', text: 'var(--primary)' };
-      case 'en_cours': return { bg: 'var(--warning-light)', text: 'var(--warning)' };
-      case 'termine': return { bg: 'var(--success-light)', text: 'var(--success)' };
-      case 'annule': return { bg: 'var(--danger-light)', text: 'var(--danger)' };
-      default: return { bg: 'var(--neutral-200)', text: 'var(--neutral-600)' };
+      case 'planifie': return { bg: '#EFF6FF', text: '#2563EB' };
+      case 'en_cours': return { bg: '#FFF7ED', text: '#EA580C' };
+      case 'termine': return { bg: '#F0FDF4', text: '#16A34A' };
+      case 'annule': return { bg: '#FEF2F2', text: '#DC2626' };
+      default: return { bg: '#F3F4F6', text: '#6B7280' };
     }
   };
 
@@ -377,6 +459,139 @@ export default function Schedules() {
         </div>
       )}
 
+      {/* Reactivation Modal */}
+      {reactivateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="p-6 border-b border-[#F1F5F9]">
+              <div className="flex items-center gap-3">
+                {reactivateModal.action === 'reactivate' ? (
+                  <div className="w-10 h-10 rounded-full bg-[#FFF7ED] flex items-center justify-center">
+                    <RotateCcw className="w-5 h-5 text-[#EA580C]" />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#F0FDF4] flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5 text-[#16A34A]" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-[#1E293B]">
+                    {reactivateModal.action === 'reactivate' ? 'Réactiver le voyage' : 'Terminer le voyage'}
+                  </h3>
+                  <p className="text-sm text-[#64748B]">
+                    {reactivateModal.schedule.routes?.name || 'N/A'} - {format(new Date(reactivateModal.schedule.departure_datetime), 'dd/MM/yyyy HH:mm')}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {reactivateModal.action === 'reactivate' && (
+                <div className="flex items-start gap-3 p-3 bg-[#FFFBEB] rounded-lg border border-[#FDE68A]">
+                  <AlertTriangle className="w-5 h-5 text-[#D97706] flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-[#92400E]">
+                    La réactivation remettra ce voyage au statut "En cours" et permettra au Chef de gare et au Guichet d'effectuer des modifications.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-semibold text-[#374151] mb-2">
+                  Motif de {reactivateModal.action === 'reactivate' ? 'la réactivation' : 'la clôture'} *
+                </label>
+                <textarea
+                  value={reactivateReason}
+                  onChange={(e) => setReactivateReason(e.target.value)}
+                  placeholder="Saisissez le motif obligatoire..."
+                  rows={3}
+                  className="w-full p-3 border border-[#D1D5DB] rounded-lg text-sm focus:ring-2 focus:ring-[#0B7439] focus:border-transparent resize-none"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-[#F1F5F9] flex gap-3">
+              <button
+                onClick={() => { setReactivateModal(null); setReactivateReason(''); }}
+                className="flex-1 px-4 py-2.5 border border-[#D1D5DB] rounded-lg text-sm font-medium text-[#374151] hover:bg-[#F9FAFB] transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleToggleStatus}
+                disabled={reactivateLoading || !reactivateReason.trim()}
+                className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-colors
+                  flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed
+                  ${reactivateModal.action === 'reactivate'
+                    ? 'bg-[#EA580C] hover:bg-[#C2410C]'
+                    : 'bg-[#16A34A] hover:bg-[#15803D]'
+                  }`}
+              >
+                {reactivateLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {reactivateModal.action === 'reactivate' ? 'Réactiver' : 'Terminer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {historyModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b border-[#F1F5F9] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#F1F5F9] flex items-center justify-center">
+                  <History className="w-5 h-5 text-[#475569]" />
+                </div>
+                <h3 className="text-lg font-bold text-[#1E293B]">Historique des modifications</h3>
+              </div>
+              <button onClick={() => setHistoryModal(null)} className="p-2 hover:bg-[#F1F5F9] rounded-lg">
+                <X className="w-5 h-5 text-[#64748B]" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {historyLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#0B7439]" />
+                </div>
+              ) : historyLogs.length === 0 ? (
+                <div className="text-center py-8">
+                  <History className="w-12 h-12 text-[#D1D5DB] mx-auto mb-3" />
+                  <p className="text-sm text-[#64748B]">Aucune modification enregistrée</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {historyLogs.map(log => (
+                    <div key={log.id} className="border border-[#E2E8F0] rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        {log.action === 'reactivate' ? (
+                          <RotateCcw className="w-4 h-4 text-[#EA580C]" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-[#16A34A]" />
+                        )}
+                        <span className="text-sm font-semibold text-[#1E293B]">
+                          {log.action === 'reactivate' ? 'Réactivation' : 'Reterminaison'}
+                        </span>
+                        <span className="ml-auto text-xs text-[#64748B]">
+                          {format(new Date(log.performed_at), 'dd/MM/yyyy HH:mm')}
+                        </span>
+                      </div>
+                      <div className="text-xs text-[#64748B] space-y-1">
+                        <p><span className="font-medium text-[#374151]">Par :</span> {log.user_full_name} ({log.user_role})</p>
+                        <p><span className="font-medium text-[#374151]">Statut :</span> {getStatusLabel(log.old_status)} → {getStatusLabel(log.new_status)}</p>
+                        <p><span className="font-medium text-[#374151]">Motif :</span> {log.reason}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full">
           <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
@@ -395,6 +610,9 @@ export default function Schedules() {
           <tbody>
             {schedules.map((schedule) => {
               const statusColors = getStatusColor(schedule.status);
+              const past = isPastSchedule(schedule);
+              const canReactivate = schedule.status === 'termine' && past;
+              const canReterminate = schedule.status === 'en_cours' && past;
               return (
                 <tr key={schedule.id} className="border-t hover:bg-gray-50">
                   <td className="p-4">
@@ -466,7 +684,36 @@ export default function Schedules() {
                     </span>
                   </td>
                   <td className="p-4">
-                    <div className="flex gap-2">
+                    <div className="flex gap-1 items-center">
+                      {/* Reactivation buttons */}
+                      {canReactivate && (
+                        <button
+                          onClick={() => setReactivateModal({ schedule, action: 'reactivate' })}
+                          className="p-2 hover:bg-[#FFF7ED] rounded-lg transition-colors group"
+                          title="Réactiver ce voyage (remettre En cours)"
+                        >
+                          <RotateCcw className="w-4 h-4 text-[#EA580C] group-hover:text-[#C2410C]" />
+                        </button>
+                      )}
+                      {canReterminate && (
+                        <button
+                          onClick={() => setReactivateModal({ schedule, action: 'reterminate' })}
+                          className="p-2 hover:bg-[#F0FDF4] rounded-lg transition-colors group"
+                          title="Terminer ce voyage"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-[#16A34A] group-hover:text-[#15803D]" />
+                        </button>
+                      )}
+                      {/* History button for past schedules */}
+                      {past && (
+                        <button
+                          onClick={() => loadHistory(schedule.id)}
+                          className="p-2 hover:bg-[#F1F5F9] rounded-lg transition-colors"
+                          title="Historique des modifications"
+                        >
+                          <History className="w-4 h-4 text-[#64748B]" />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleEdit(schedule)}
                         className="p-2 hover:bg-gray-100 rounded-lg"
