@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Calendar, Plus, CreditCard as Edit2, Trash2, Bus, Route as RouteIcon,
-  Clock, User, RotateCcw, CheckCircle2, X, History, AlertTriangle, Loader2
+  Clock, User, RotateCcw, CheckCircle2, X, History, AlertTriangle, Loader2,
+  Search, Filter
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
@@ -63,6 +64,13 @@ export default function Schedules() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Search / filter state
+  const [searchRoute, setSearchRoute] = useState('');
+  const [searchBus, setSearchBus] = useState('');
+  const [searchDriver, setSearchDriver] = useState('');
+  const [searchDeparture, setSearchDeparture] = useState('');
+  const [searchArrival, setSearchArrival] = useState('');
 
   // Reactivation state
   const [reactivateModal, setReactivateModal] = useState<{ schedule: Schedule; action: 'reactivate' | 'reterminate' } | null>(null);
@@ -291,6 +299,21 @@ export default function Schedules() {
     return <div className="p-8">Chargement...</div>;
   }
 
+  const filteredSchedules = schedules.filter(s => {
+    const routeName = (s.route_name || s.routes?.name || '').toLowerCase();
+    const busReg = (s.buses?.registration_number || '').toLowerCase();
+    const driverName = (s.drivers?.full_name || '').toLowerCase();
+    const depDate = s.departure_datetime ? format(new Date(s.departure_datetime), 'yyyy-MM-dd') : '';
+    const arrDate = s.arrival_datetime ? format(new Date(s.arrival_datetime), 'yyyy-MM-dd') : '';
+
+    if (searchRoute && !routeName.includes(searchRoute.toLowerCase())) return false;
+    if (searchBus && !busReg.includes(searchBus.toLowerCase())) return false;
+    if (searchDriver && !driverName.includes(searchDriver.toLowerCase())) return false;
+    if (searchDeparture && depDate !== searchDeparture) return false;
+    if (searchArrival && arrDate !== searchArrival) return false;
+    return true;
+  });
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
@@ -299,7 +322,7 @@ export default function Schedules() {
             Planification
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            {schedules.length} horaires au total
+            {filteredSchedules.length} / {schedules.length} horaires
           </p>
         </div>
         <button
@@ -310,6 +333,77 @@ export default function Schedules() {
           <Plus className="w-5 h-5" />
           Nouvel horaire
         </button>
+      </div>
+
+      {/* Search filters */}
+      <div className="bg-white border border-[#E2E8F0] rounded-xl p-4 mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Filter className="w-4 h-4 text-[#64748B]" />
+          <span className="text-sm font-semibold text-[#374151]">Filtres de recherche</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+            <input
+              type="text"
+              placeholder="Itinéraire..."
+              value={searchRoute}
+              onChange={e => setSearchRoute(e.target.value)}
+              className="w-full pl-9 pr-3 py-2.5 border border-[#E2E8F0] rounded-lg text-sm
+                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439] transition-colors"
+            />
+          </div>
+          <div className="relative">
+            <Bus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+            <input
+              type="text"
+              placeholder="Bus (immatriculation)..."
+              value={searchBus}
+              onChange={e => setSearchBus(e.target.value)}
+              className="w-full pl-9 pr-3 py-2.5 border border-[#E2E8F0] rounded-lg text-sm
+                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439] transition-colors"
+            />
+          </div>
+          <div className="relative">
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+            <input
+              type="text"
+              placeholder="Chauffeur..."
+              value={searchDriver}
+              onChange={e => setSearchDriver(e.target.value)}
+              className="w-full pl-9 pr-3 py-2.5 border border-[#E2E8F0] rounded-lg text-sm
+                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439] transition-colors"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              value={searchDeparture}
+              onChange={e => setSearchDeparture(e.target.value)}
+              title="Date de départ"
+              className="w-full px-3 py-2.5 border border-[#E2E8F0] rounded-lg text-sm
+                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439] transition-colors"
+            />
+          </div>
+          <div>
+            <input
+              type="date"
+              value={searchArrival}
+              onChange={e => setSearchArrival(e.target.value)}
+              title="Date d'arrivée"
+              className="w-full px-3 py-2.5 border border-[#E2E8F0] rounded-lg text-sm
+                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439] transition-colors"
+            />
+          </div>
+        </div>
+        {(searchRoute || searchBus || searchDriver || searchDeparture || searchArrival) && (
+          <button
+            onClick={() => { setSearchRoute(''); setSearchBus(''); setSearchDriver(''); setSearchDeparture(''); setSearchArrival(''); }}
+            className="mt-3 text-xs text-[#64748B] hover:text-[#1E293B] underline"
+          >
+            Effacer les filtres
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -608,7 +702,7 @@ export default function Schedules() {
             </tr>
           </thead>
           <tbody>
-            {schedules.map((schedule) => {
+            {filteredSchedules.map((schedule) => {
               const statusColors = getStatusColor(schedule.status);
               const past = isPastSchedule(schedule);
               const canReactivate = schedule.status === 'termine' && past;
@@ -736,10 +830,12 @@ export default function Schedules() {
           </tbody>
         </table>
 
-        {schedules.length === 0 && (
+        {filteredSchedules.length === 0 && (
           <div className="text-center py-12">
             <Calendar className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--neutral-400)' }} />
-            <p style={{ color: 'var(--text-secondary)' }}>Aucun horaire trouvé</p>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              {schedules.length === 0 ? 'Aucun horaire trouvé' : 'Aucun résultat pour ces filtres'}
+            </p>
           </div>
         )}
       </div>
