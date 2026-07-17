@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../services/supabase';
 import {
-  Building2, Calendar, Download, FileSpreadsheet, FileText,
-  ChevronDown, ChevronRight, Save, Loader2, RefreshCw
+  Building2, Calendar, FileSpreadsheet, FileText, ChevronDown, ChevronRight,
+  Save, Loader2, RefreshCw, Database, TrendingUp, TrendingDown, Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -11,6 +11,13 @@ import jsPDF from 'jspdf';
 interface Company {
   id: string;
   name: string;
+}
+
+interface DetailItem {
+  source: string;
+  date: string;
+  description: string;
+  amount: number;
 }
 
 interface LineEntry {
@@ -23,6 +30,9 @@ interface LineEntry {
   amount_n: number;
   amount_n1: number;
   formula?: string;
+  detail_n?: DetailItem[];
+  detail_n1?: DetailItem[];
+  autoPopulated?: boolean;
 }
 
 const STRUCTURE: Omit<LineEntry, 'amount_n' | 'amount_n1'>[] = [
@@ -70,6 +80,8 @@ const STRUCTURE: Omit<LineEntry, 'amount_n' | 'amount_n1'>[] = [
   { ref: 'XI', label: 'RESULTAT NET', sign: '', note: '', isComputed: true, isBold: true, formula: 'XG+XH+RQ+RS' },
 ];
 
+const AUTO_REFS = ['TC', 'RE', 'RF', 'RG', 'RH', 'RJ', 'RK'];
+
 export default function CompteResultat() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string>('');
@@ -78,7 +90,6 @@ export default function CompteResultat() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedRef, setExpandedRef] = useState<string | null>(null);
-  const [hasData, setHasData] = useState(false);
 
   useEffect(() => {
     supabase.from('companies').select('id, name').order('name')
@@ -94,13 +105,11 @@ export default function CompteResultat() {
     rawLines.forEach(l => { map[l.ref] = { n: l.amount_n, n1: l.amount_n1 }; });
 
     const getVal = (ref: string, field: 'n' | 'n1') => map[ref]?.[field] || 0;
-
     const compute = (formula: string, field: 'n' | 'n1'): number => {
-      const refs = formula.split('+');
-      return refs.reduce((sum, r) => sum + getVal(r.trim(), field), 0);
+      return formula.split('+').reduce((sum, r) => sum + getVal(r.trim(), field), 0);
     };
 
-    const result = rawLines.map(l => {
+    return rawLines.map(l => {
       if (l.isComputed && l.formula) {
         const n = compute(l.formula, 'n');
         const n1 = compute(l.formula, 'n1');
@@ -109,34 +118,56 @@ export default function CompteResultat() {
       }
       return l;
     });
-    return result;
   }, []);
 
   const loadData = useCallback(async () => {
     if (!selectedCompany || !fiscalYear) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('income_statement_entries')
-        .select('ref_code, amount_n, amount_n1')
-        .eq('company_id', selectedCompany)
-        .eq('fiscal_year', fiscalYear);
-
-      if (error) throw error;
-
       const base = initLines();
-      if (data && data.length > 0) {
-        setHasData(true);
-        data.forEach(entry => {
+
+      // Load auto-computed data for N and N-1
+      const [resN, resN1, savedData] = await Promise.all([
+        supabase.rpc('compute_income_statement', { p_company_id: selectedCompany, p_fiscal_year: fiscalYear }),
+        supabase.rpc('compute_income_statement', { p_company_id: selectedCompany, p_fiscal_year: fiscalYear - 1 }),
+        supabase.from('income_statement_entries').select('ref_code, amount_n, amount_n1')
+          .eq('company_id', selectedCompany).eq('fiscal_year', fiscalYear),
+      ]);
+
+      // Apply auto-computed data for year N
+      if (resN.data && Array.isArray(resN.data)) {
+        resN.data.forEach((entry: { ref: string; amount: number; detail: DetailItem[] }) => {
+          const line = base.find(l => l.ref === entry.ref);
+          if (line) {
+            line.amount_n = entry.amount;
+            line.detail_n = entry.detail || [];
+            line.autoPopulated = true;
+          }
+        });
+      }
+
+      // Apply auto-computed data for year N-1
+      if (resN1.data && Array.isArray(resN1.data)) {
+        resN1.data.forEach((entry: { ref: string; amount: number; detail: DetailItem[] }) => {
+          const line = base.find(l => l.ref === entry.ref);
+          if (line) {
+            line.amount_n1 = entry.amount;
+            line.detail_n1 = entry.detail || [];
+          }
+        });
+      }
+
+      // Overlay any manually saved data for NON-auto lines
+      if (savedData.data && savedData.data.length > 0) {
+        savedData.data.forEach((entry) => {
           const line = base.find(l => l.ref === entry.ref_code);
-          if (line && !line.isComputed) {
+          if (line && !AUTO_REFS.includes(entry.ref_code) && !line.isComputed) {
             line.amount_n = Number(entry.amount_n) || 0;
             line.amount_n1 = Number(entry.amount_n1) || 0;
           }
         });
-      } else {
-        setHasData(false);
       }
+
       setLines(computeLines(base));
     } catch (err: any) {
       toast.error(err.message || 'Erreur de chargement');
@@ -162,26 +193,30 @@ export default function CompteResultat() {
     }
     setSaving(true);
     try {
-      const inputLines = lines.filter(l => !l.isComputed);
-      const computedLines = lines.filter(l => l.isComputed);
-      const allLinesToSave = [...inputLines, ...computedLines];
-
-      const rows = allLinesToSave.map(l => ({
+      const allLines = lines.filter(l => !l.isComputed);
+      const rows = allLines.map(l => ({
         company_id: selectedCompany,
         fiscal_year: fiscalYear,
         ref_code: l.ref,
         amount_n: l.amount_n,
         amount_n1: l.amount_n1,
-        created_by: null,
+        updated_at: new Date().toISOString()
+      }));
+      // Also save computed subtotals for historical record
+      const computedRows = lines.filter(l => l.isComputed).map(l => ({
+        company_id: selectedCompany,
+        fiscal_year: fiscalYear,
+        ref_code: l.ref,
+        amount_n: l.amount_n,
+        amount_n1: l.amount_n1,
         updated_at: new Date().toISOString()
       }));
 
       const { error } = await supabase
         .from('income_statement_entries')
-        .upsert(rows, { onConflict: 'company_id,fiscal_year,ref_code' });
+        .upsert([...rows, ...computedRows], { onConflict: 'company_id,fiscal_year,ref_code' });
 
       if (error) throw error;
-      setHasData(true);
       toast.success('Compte de résultat enregistré');
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors de l\'enregistrement');
@@ -192,41 +227,53 @@ export default function CompteResultat() {
 
   const companyName = companies.find(c => c.id === selectedCompany)?.name || '';
 
+  const formatNum = (val: number): string => {
+    if (val === 0) return '-';
+    return Math.round(val).toLocaleString('fr-FR');
+  };
+
   const exportExcel = () => {
     const ws_data = [
       ['COMPTE DE RESULTAT AU 31/12/' + fiscalYear],
       ['Société: ' + companyName],
+      ['Système comptable OHADA - Système Normal'],
       [],
-      ['REF', 'LIBELLES', 'SIGNE', 'NOTE', `Exercice au 31/12/${fiscalYear}`, `Exercice au 31/12/${fiscalYear - 1}`],
+      ['REF', 'LIBELLES', '(2)', 'NOTE', `Exercice 31/12/${fiscalYear}`, `Exercice 31/12/${fiscalYear - 1}`],
     ];
     lines.forEach(l => {
-      ws_data.push([l.ref, l.label, l.sign, l.note, l.amount_n.toString(), l.amount_n1.toString()]);
+      ws_data.push([l.ref, l.label, l.sign, l.note,
+        l.amount_n ? Math.round(l.amount_n).toString() : '',
+        l.amount_n1 ? Math.round(l.amount_n1).toString() : ''
+      ]);
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
-    ws['!cols'] = [{ wch: 6 }, { wch: 55 }, { wch: 6 }, { wch: 8 }, { wch: 18 }, { wch: 18 }];
+    ws['!cols'] = [{ wch: 6 }, { wch: 55 }, { wch: 6 }, { wch: 8 }, { wch: 20 }, { wch: 20 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Compte de résultat');
-    XLSX.writeFile(wb, `Compte_Resultat_${companyName}_${fiscalYear}.xlsx`);
+    XLSX.writeFile(wb, `Compte_Resultat_${companyName.replace(/\s/g,'_')}_${fiscalYear}.xlsx`);
     toast.success('Export Excel terminé');
   };
 
   const exportPDF = () => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageW = doc.internal.pageSize.getWidth();
-    const margin = 14;
-    let y = 20;
+    const margin = 12;
+    let y = 18;
 
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
     doc.text('COMPTE DE RESULTAT AU 31/12/' + fiscalYear, pageW / 2, y, { align: 'center' });
-    y += 8;
-    doc.setFontSize(10);
+    y += 7;
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
     doc.text('Société: ' + companyName, pageW / 2, y, { align: 'center' });
-    y += 10;
+    y += 5;
+    doc.text('Système comptable OHADA - Système Normal', pageW / 2, y, { align: 'center' });
+    y += 8;
 
-    const colX = [margin, margin + 10, margin + 95, margin + 107, margin + 117, margin + 148];
-    doc.setFontSize(8);
+    // Header row
+    const colX = [margin, margin + 10, margin + 100, margin + 112, margin + 122, margin + 155];
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     doc.text('REF', colX[0], y);
     doc.text('LIBELLES', colX[1], y);
@@ -235,41 +282,29 @@ export default function CompteResultat() {
     doc.text(`31/12/${fiscalYear}`, colX[4], y);
     doc.text(`31/12/${fiscalYear - 1}`, colX[5], y);
     y += 2;
-    doc.setDrawColor(0);
     doc.line(margin, y, pageW - margin, y);
     y += 4;
 
     doc.setFontSize(7);
     lines.forEach(l => {
-      if (y > 275) {
-        doc.addPage();
-        y = 20;
-      }
-      if (l.isBold) {
-        doc.setFont('helvetica', 'bold');
-      } else {
-        doc.setFont('helvetica', 'normal');
-      }
+      if (y > 278) { doc.addPage(); y = 15; }
+      doc.setFont('helvetica', l.isBold ? 'bold' : 'normal');
       doc.text(l.ref, colX[0], y);
-      doc.text(l.label.substring(0, 50), colX[1], y);
+      const label = l.label.length > 55 ? l.label.substring(0, 55) + '...' : l.label;
+      doc.text(label, colX[1], y);
       doc.text(l.sign, colX[2], y);
       doc.text(l.note, colX[3], y);
       doc.text(formatNum(l.amount_n), colX[4], y);
       doc.text(formatNum(l.amount_n1), colX[5], y);
       y += 5;
       if (l.isBold) {
-        doc.setDrawColor(200);
+        doc.setDrawColor(180);
         doc.line(margin, y - 2, pageW - margin, y - 2);
       }
     });
 
-    doc.save(`Compte_Resultat_${companyName}_${fiscalYear}.pdf`);
+    doc.save(`Compte_Resultat_${companyName.replace(/\s/g,'_')}_${fiscalYear}.pdf`);
     toast.success('Export PDF terminé');
-  };
-
-  const formatNum = (val: number): string => {
-    if (val === 0) return '-';
-    return val.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   };
 
   const currentYear = new Date().getFullYear();
@@ -277,16 +312,17 @@ export default function CompteResultat() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-[#1E293B] mb-1">Compte de résultat</h1>
-        <p className="text-sm text-[#64748B]">Système comptable OHADA - Système Normal</p>
+        <p className="text-sm text-[#64748B]">
+          Système comptable OHADA - Alimenté automatiquement depuis les données de la plateforme
+        </p>
       </div>
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 mb-6 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+          <div className="lg:col-span-2">
             <label className="block text-sm font-semibold text-[#374151] mb-1.5">
               <Building2 className="w-4 h-4 inline mr-1.5 text-[#64748B]" />
               Société
@@ -297,14 +333,14 @@ export default function CompteResultat() {
               className="w-full px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
                          focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
             >
-              <option value="">-- Sélectionner --</option>
+              <option value="">-- Sélectionner une société --</option>
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-semibold text-[#374151] mb-1.5">
               <Calendar className="w-4 h-4 inline mr-1.5 text-[#64748B]" />
-              Exercice comptable
+              Exercice
             </label>
             <select
               value={fiscalYear}
@@ -320,7 +356,7 @@ export default function CompteResultat() {
               onClick={handleSave}
               disabled={saving || !selectedCompany || lines.length === 0}
               className="flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-lg text-sm font-medium
-                         hover:bg-[#095e2e] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                         hover:bg-[#095e2e] disabled:opacity-50 transition-colors"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Enregistrer
@@ -329,7 +365,8 @@ export default function CompteResultat() {
               onClick={loadData}
               disabled={loading || !selectedCompany}
               className="flex items-center gap-2 px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
-                         hover:bg-[#F9FAFB] transition-colors disabled:opacity-50"
+                         hover:bg-[#F9FAFB] disabled:opacity-50 transition-colors"
+              title="Actualiser les données"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -338,24 +375,34 @@ export default function CompteResultat() {
             <button
               onClick={exportExcel}
               disabled={!selectedCompany || lines.length === 0}
-              className="flex items-center gap-2 px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
-                         hover:bg-[#F0FDF4] text-[#0B7439] font-medium transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
+                         hover:bg-[#F0FDF4] text-[#0B7439] font-medium disabled:opacity-50 transition-colors"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              Excel
+              <FileSpreadsheet className="w-4 h-4" /> Excel
             </button>
             <button
               onClick={exportPDF}
               disabled={!selectedCompany || lines.length === 0}
-              className="flex items-center gap-2 px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
-                         hover:bg-[#FEF2F2] text-[#DC2626] font-medium transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
+                         hover:bg-[#FEF2F2] text-[#DC2626] font-medium disabled:opacity-50 transition-colors"
             >
-              <FileText className="w-4 h-4" />
-              PDF
+              <FileText className="w-4 h-4" /> PDF
             </button>
           </div>
         </div>
       </div>
+
+      {/* Info banner */}
+      {selectedCompany && !loading && lines.length > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl mb-5">
+          <Database className="w-5 h-5 text-[#2563EB] mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-[#1E40AF]">
+            <span className="font-medium">Données auto-alimentées :</span> Les lignes TC, RE, RF, RG, RH, RJ, RK
+            sont calculées automatiquement depuis les modules de la plateforme (billets, colis, bagages,
+            carburant, charges, stock, salaires). Cliquez sur une ligne pour voir le détail.
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       {!selectedCompany ? (
@@ -366,109 +413,100 @@ export default function CompteResultat() {
       ) : loading ? (
         <div className="bg-white rounded-2xl border border-[#E2E8F0] p-16 text-center">
           <Loader2 className="w-8 h-8 mx-auto mb-4 text-[#0B7439] animate-spin" />
-          <p className="text-[#64748B]">Chargement...</p>
+          <p className="text-[#64748B]">Chargement et calcul des données...</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-          {/* Title bar */}
-          <div className="px-6 py-4 border-b border-[#E2E8F0] bg-[#F8FAFC]">
-            <h2 className="text-sm font-bold text-[#1E293B] uppercase tracking-wide">
-              Compte de résultat au 31/12/{fiscalYear}
-            </h2>
-            <p className="text-xs text-[#64748B] mt-0.5">
-              {companyName} - Comparaison avec l'exercice au 31/12/{fiscalYear - 1}
-            </p>
+          <div className="px-6 py-4 border-b border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-[#1E293B] uppercase tracking-wide">
+                Compte de résultat au 31/12/{fiscalYear}
+              </h2>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                {companyName} - Comparaison avec l'exercice au 31/12/{fiscalYear - 1}
+              </p>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-[#64748B]">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB]"></span> Auto
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#D1D5DB]"></span> Manuel
+              </span>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#F1F5F9] border-b border-[#E2E8F0]">
-                  <th className="text-left px-4 py-3 font-semibold text-[#374151] w-[60px]">REF</th>
+                  <th className="text-left px-4 py-3 font-semibold text-[#374151] w-[70px]">REF</th>
                   <th className="text-left px-4 py-3 font-semibold text-[#374151]">LIBELLES</th>
-                  <th className="text-center px-3 py-3 font-semibold text-[#374151] w-[50px]">(2)</th>
-                  <th className="text-center px-3 py-3 font-semibold text-[#374151] w-[60px]">NOTE</th>
-                  <th className="text-right px-4 py-3 font-semibold text-[#374151] w-[170px]">
-                    Exercice au 31/12/{fiscalYear}
+                  <th className="text-center px-2 py-3 font-semibold text-[#374151] w-[45px]">(2)</th>
+                  <th className="text-center px-2 py-3 font-semibold text-[#374151] w-[55px]">NOTE</th>
+                  <th className="text-right px-4 py-3 font-semibold text-[#374151] w-[160px]">
+                    31/12/{fiscalYear}
                   </th>
-                  <th className="text-right px-4 py-3 font-semibold text-[#374151] w-[170px]">
-                    Exercice au 31/12/{fiscalYear - 1}
+                  <th className="text-right px-4 py-3 font-semibold text-[#374151] w-[160px]">
+                    31/12/{fiscalYear - 1}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {lines.map((line) => {
                   const isExpanded = expandedRef === line.ref;
+                  const isAuto = AUTO_REFS.includes(line.ref);
+                  const hasDetail = (line.detail_n && line.detail_n.length > 0) || (line.detail_n1 && line.detail_n1.length > 0);
+                  const canExpand = !line.isComputed;
+
                   return (
                     <React.Fragment key={line.ref}>
                       <tr
                         className={`border-b border-[#F1F5F9] transition-colors
                           ${line.isBold ? 'bg-[#F8FAFC]' : 'hover:bg-[#FAFAFA]'}
-                          ${line.isComputed ? 'cursor-default' : 'cursor-pointer'}
+                          ${canExpand ? 'cursor-pointer' : ''}
                         `}
-                        onClick={() => !line.isComputed && setExpandedRef(isExpanded ? null : line.ref)}
+                        onClick={() => canExpand && setExpandedRef(isExpanded ? null : line.ref)}
                       >
                         <td className={`px-4 py-2.5 ${line.isBold ? 'font-bold text-[#1E293B]' : 'text-[#475569]'}`}>
                           <div className="flex items-center gap-1">
-                            {!line.isComputed && (
+                            {canExpand && (
                               isExpanded
                                 ? <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
                                 : <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8]" />
                             )}
-                            {line.ref}
+                            <span>{line.ref}</span>
+                            {isAuto && (
+                              <span className="ml-1 w-2 h-2 rounded-full bg-[#2563EB] inline-block" title="Auto-alimenté"></span>
+                            )}
                           </div>
                         </td>
                         <td className={`px-4 py-2.5 ${line.isBold ? 'font-bold text-[#1E293B]' : 'text-[#374151]'}`}>
                           {line.label}
                         </td>
-                        <td className="px-3 py-2.5 text-center text-[#64748B]">{line.sign}</td>
-                        <td className="px-3 py-2.5 text-center text-[#64748B]">{line.note}</td>
-                        <td className={`px-4 py-2.5 text-right font-mono ${line.isBold ? 'font-bold text-[#1E293B]' : 'text-[#374151]'}`}>
-                          {line.isComputed ? (
-                            <span className={line.amount_n < 0 ? 'text-[#DC2626]' : ''}>
-                              {formatNum(line.amount_n)}
-                            </span>
-                          ) : (
-                            <span>{formatNum(line.amount_n)}</span>
-                          )}
+                        <td className="px-2 py-2.5 text-center text-[#64748B] text-xs">{line.sign}</td>
+                        <td className="px-2 py-2.5 text-center text-[#64748B] text-xs">{line.note}</td>
+                        <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${line.isBold ? 'font-bold' : ''} ${line.amount_n < 0 ? 'text-[#DC2626]' : 'text-[#1E293B]'}`}>
+                          {formatNum(line.amount_n)}
                         </td>
-                        <td className={`px-4 py-2.5 text-right font-mono ${line.isBold ? 'font-bold text-[#1E293B]' : 'text-[#374151]'}`}>
-                          {line.isComputed ? (
-                            <span className={line.amount_n1 < 0 ? 'text-[#DC2626]' : ''}>
-                              {formatNum(line.amount_n1)}
-                            </span>
-                          ) : (
-                            <span>{formatNum(line.amount_n1)}</span>
-                          )}
+                        <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${line.isBold ? 'font-bold' : ''} ${line.amount_n1 < 0 ? 'text-[#DC2626]' : 'text-[#64748B]'}`}>
+                          {formatNum(line.amount_n1)}
                         </td>
                       </tr>
-                      {/* Expanded row for editing */}
-                      {isExpanded && !line.isComputed && (
-                        <tr className="bg-[#FEFCE8] border-b border-[#FDE68A]">
-                          <td colSpan={4} className="px-4 py-3">
-                            <span className="text-xs font-medium text-[#92400E]">
-                              Saisie des montants pour : {line.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="number"
-                              value={line.amount_n || ''}
-                              onChange={e => handleAmountChange(line.ref, 'amount_n', e.target.value)}
-                              className="w-full px-3 py-1.5 border border-[#D1D5DB] rounded text-sm text-right font-mono
-                                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
-                              placeholder="0"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="number"
-                              value={line.amount_n1 || ''}
-                              onChange={e => handleAmountChange(line.ref, 'amount_n1', e.target.value)}
-                              className="w-full px-3 py-1.5 border border-[#D1D5DB] rounded text-sm text-right font-mono
-                                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
-                              placeholder="0"
-                            />
+
+                      {/* Expanded drill-down / edit */}
+                      {isExpanded && canExpand && (
+                        <tr className="border-b border-[#E2E8F0]">
+                          <td colSpan={6} className="p-0">
+                            {isAuto && hasDetail ? (
+                              <DrillDown line={line} fiscalYear={fiscalYear} />
+                            ) : isAuto && !hasDetail ? (
+                              <div className="px-8 py-4 bg-[#F9FAFB] text-sm text-[#64748B] italic">
+                                Aucune écriture trouvée pour cet exercice.
+                              </div>
+                            ) : (
+                              <ManualEdit line={line} onChange={handleAmountChange} fiscalYear={fiscalYear} />
+                            )}
                           </td>
                         </tr>
                       )}
@@ -479,18 +517,28 @@ export default function CompteResultat() {
             </table>
           </div>
 
-          {/* Footer summary */}
-          <div className="px-6 py-4 border-t border-[#E2E8F0] bg-[#F8FAFC]">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {['XA', 'XB', 'XE', 'XI'].map(ref => {
+          {/* Summary footer */}
+          <div className="px-6 py-5 border-t border-[#E2E8F0] bg-[#F8FAFC]">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              {[
+                { ref: 'XB', color: '#2563EB' },
+                { ref: 'XC', color: '#0B7439' },
+                { ref: 'XE', color: '#D97706' },
+                { ref: 'XI', color: '#7C3AED' },
+              ].map(({ ref, color }) => {
                 const l = lines.find(x => x.ref === ref);
                 if (!l) return null;
+                const isNeg = l.amount_n < 0;
                 return (
                   <div key={ref} className="text-center">
-                    <p className="text-xs text-[#64748B] mb-1">{l.label.split('(')[0].trim()}</p>
-                    <p className={`text-base font-bold ${l.amount_n < 0 ? 'text-[#DC2626]' : 'text-[#0B7439]'}`}>
-                      {formatNum(l.amount_n)} FCFA
-                    </p>
+                    <p className="text-xs text-[#64748B] mb-1.5 font-medium">{l.label.split('(')[0].trim()}</p>
+                    <div className="flex items-center justify-center gap-1.5">
+                      {isNeg ? <TrendingDown className="w-4 h-4 text-[#DC2626]" /> : <TrendingUp className="w-4 h-4" style={{ color }} />}
+                      <span className={`text-lg font-bold ${isNeg ? 'text-[#DC2626]' : ''}`} style={{ color: isNeg ? undefined : color }}>
+                        {formatNum(l.amount_n)}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#94A3B8] mt-0.5">FCFA</p>
                   </div>
                 );
               })}
@@ -501,3 +549,117 @@ export default function CompteResultat() {
     </div>
   );
 }
+
+function DrillDown({ line, fiscalYear }: { line: LineEntry; fiscalYear: number }) {
+  const details = line.detail_n || [];
+  const groupedBySource = details.reduce<Record<string, { items: DetailItem[]; total: number }>>((acc, d) => {
+    if (!acc[d.source]) acc[d.source] = { items: [], total: 0 };
+    acc[d.source].items.push(d);
+    acc[d.source].total += d.amount;
+    return acc;
+  }, {});
+
+  return (
+    <div className="bg-[#FAFBFC] border-t border-[#E2E8F0]">
+      <div className="px-6 py-3 border-b border-[#E2E8F0] flex items-center gap-2">
+        <Info className="w-4 h-4 text-[#2563EB]" />
+        <span className="text-xs font-semibold text-[#374151]">
+          Détail des écritures - {line.label} (Exercice {fiscalYear})
+        </span>
+        <span className="ml-auto text-xs text-[#64748B]">
+          {details.length} opération{details.length > 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {Object.entries(groupedBySource).map(([source, { items, total }]) => (
+        <div key={source} className="px-6 py-3 border-b border-[#F1F5F9] last:border-b-0">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-[#1E293B] bg-[#E2E8F0] px-2 py-0.5 rounded">
+              {source}
+            </span>
+            <span className="text-xs font-mono font-semibold text-[#374151]">
+              {Math.round(Math.abs(total)).toLocaleString('fr-FR')} FCFA
+              <span className="text-[#94A3B8] ml-1">({items.length})</span>
+            </span>
+          </div>
+          <div className="max-h-[200px] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[#64748B]">
+                  <th className="text-left py-1 font-medium w-[90px]">Date</th>
+                  <th className="text-left py-1 font-medium">Description</th>
+                  <th className="text-right py-1 font-medium w-[100px]">Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.slice(0, 50).map((item, i) => (
+                  <tr key={i} className="border-t border-[#F1F5F9]">
+                    <td className="py-1 text-[#64748B]">{item.date}</td>
+                    <td className="py-1 text-[#374151] truncate max-w-[300px]">{item.description}</td>
+                    <td className="py-1 text-right font-mono text-[#1E293B]">
+                      {Math.round(Math.abs(item.amount)).toLocaleString('fr-FR')}
+                    </td>
+                  </tr>
+                ))}
+                {items.length > 50 && (
+                  <tr>
+                    <td colSpan={3} className="py-1 text-center text-[#94A3B8] italic">
+                      ... et {items.length - 50} autres opérations
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+
+      {details.length === 0 && (
+        <div className="px-6 py-4 text-sm text-[#64748B] italic">
+          Aucune écriture trouvée pour cet exercice.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ManualEdit({ line, onChange, fiscalYear }: {
+  line: LineEntry;
+  onChange: (ref: string, field: 'amount_n' | 'amount_n1', value: string) => void;
+  fiscalYear: number;
+}) {
+  return (
+    <div className="bg-[#FFFBEB] px-6 py-4 border-t border-[#FDE68A]">
+      <p className="text-xs font-medium text-[#92400E] mb-3">
+        Saisie manuelle : {line.label}
+      </p>
+      <div className="grid grid-cols-2 gap-4 max-w-lg">
+        <div>
+          <label className="text-xs text-[#64748B] mb-1 block">Exercice {fiscalYear}</label>
+          <input
+            type="number"
+            value={line.amount_n || ''}
+            onChange={e => onChange(line.ref, 'amount_n', e.target.value)}
+            className="w-full px-3 py-2 border border-[#D1D5DB] rounded-lg text-sm text-right font-mono
+                       focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
+            placeholder="0"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-[#64748B] mb-1 block">Exercice {fiscalYear - 1}</label>
+          <input
+            type="number"
+            value={line.amount_n1 || ''}
+            onChange={e => onChange(line.ref, 'amount_n1', e.target.value)}
+            className="w-full px-3 py-2 border border-[#D1D5DB] rounded-lg text-sm text-right font-mono
+                       focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
+            placeholder="0"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+export default ManualEdit
