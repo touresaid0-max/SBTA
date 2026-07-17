@@ -145,6 +145,17 @@ export default function CompteResultat() {
   }, []);
 
   const getCompanyIds = useCallback((companyId: string): string[] => {
+    if (companyId === 'ALL') {
+      const allIds: string[] = [];
+      companies.forEach(c => {
+        if (c.children && c.children.length > 0) {
+          c.children.forEach(ch => allIds.push(ch.id));
+        } else {
+          allIds.push(c.id);
+        }
+      });
+      return allIds;
+    }
     const company = companies.find(c => c.id === companyId);
     if (company?.children && company.children.length > 0) {
       return company.children.map(c => c.id);
@@ -169,8 +180,10 @@ export default function CompteResultat() {
       const [resultsN, resultsN1, savedData] = await Promise.all([
         Promise.all(rpcCallsN),
         Promise.all(rpcCallsN1),
-        supabase.from('income_statement_entries').select('ref_code, amount_n, amount_n1')
-          .eq('company_id', selectedCompany).eq('fiscal_year', fiscalYear),
+        selectedCompany === 'ALL'
+          ? Promise.resolve({ data: [] })
+          : supabase.from('income_statement_entries').select('ref_code, amount_n, amount_n1')
+              .eq('company_id', selectedCompany).eq('fiscal_year', fiscalYear),
       ]);
 
       // Merge N results from all sub-companies
@@ -253,7 +266,7 @@ export default function CompteResultat() {
   };
 
   const handleSave = async () => {
-    if (!selectedCompany || !fiscalYear) {
+    if (!selectedCompany || selectedCompany === 'ALL' || !fiscalYear) {
       toast.error('Sélectionnez une société et un exercice');
       return;
     }
@@ -292,6 +305,7 @@ export default function CompteResultat() {
   };
 
   const companyName = (() => {
+    if (selectedCompany === 'ALL') return 'Toutes les sociétés (Consolidé)';
     const c = companies.find(x => x.id === selectedCompany);
     if (c) return c.children && c.children.length > 0 ? `${c.name} (Groupe)` : c.name;
     for (const parent of companies) {
@@ -420,6 +434,7 @@ export default function CompteResultat() {
                   <span className="flex items-center gap-2 truncate">
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-[#0B7439]/10 text-[#0B7439]">
                       {(() => {
+                        if (selectedCompany === 'ALL') return 'ALL';
                         const c = companies.find(x => x.id === selectedCompany);
                         if (c) return c.children && c.children.length > 0 ? 'GRP' : c.name.slice(0, 4).toUpperCase();
                         for (const p of companies) {
@@ -469,6 +484,25 @@ export default function CompteResultat() {
 
                       return (
                         <>
+                          {!term && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCompany('ALL');
+                                setDropdownOpen(false);
+                                setSearchTerm('');
+                              }}
+                              className={`w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-[#0B7439]/5 transition-colors border-b border-gray-100
+                                ${selectedCompany === 'ALL' ? 'bg-[#0B7439]/10' : ''}`}
+                            >
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700">
+                                ALL
+                              </span>
+                              <span className="font-semibold text-sm text-gray-800">Toutes les sociétés</span>
+                              <span className="ml-auto text-xs text-gray-400">Consolidé</span>
+                            </button>
+                          )}
+
                           {filteredGroups.map(group => (
                             <div key={group.id}>
                               <button
@@ -563,7 +597,7 @@ export default function CompteResultat() {
           <div className="flex gap-2">
             <button
               onClick={handleSave}
-              disabled={saving || !selectedCompany || lines.length === 0}
+              disabled={saving || !selectedCompany || selectedCompany === 'ALL' || lines.length === 0}
               className="flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-lg text-sm font-medium
                          hover:bg-[#095e2e] disabled:opacity-50 transition-colors"
             >
