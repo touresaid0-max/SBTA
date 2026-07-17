@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronRight, RefreshCw, CheckCircle2,
   AlertTriangle, PlayCircle, XCircle, TrendingUp,
   Navigation, Armchair, ExternalLink, Plus, Link2, Link2Off, Pencil, Layers,
-  Truck, Loader2, X, Banknote, Wrench, Printer
+  Truck, Loader2, X, Banknote, Wrench, Printer, Bell
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { printBordereauRamassage } from '../../utils/printBordereau';
@@ -101,6 +101,8 @@ export default function DailyPlanning() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [autoCloseAlerts, setAutoCloseAlerts] = useState<{schedule_id: string; route_name: string; plate_number: string; departure: string; missing_charges: boolean}[]>([]);
+  const [showAlerts, setShowAlerts] = useState(false);
   const stationRef = useRef<any>(null);
 
   // Counter assignment
@@ -183,6 +185,20 @@ export default function DailyPlanning() {
     const s = { ...data, city_name: (data as any).cities?.name || '' };
     setStation(s);
     stationRef.current = s;
+
+    // Auto-terminate past en_cours/retard schedules and get alerts
+    try {
+      const { data: alerts } = await supabase.rpc('auto_terminate_past_schedules', { p_station_id: s.id });
+      if (alerts && Array.isArray(alerts) && alerts.length > 0) {
+        setAutoCloseAlerts(alerts);
+        const missing = alerts.filter((a: any) => a.missing_charges);
+        if (missing.length > 0) {
+          setShowAlerts(true);
+          toast.error(`${missing.length} voyage(s) d'hier terminé(s) sans charges enregistrées`, { duration: 6000 });
+        }
+      }
+    } catch (_) {}
+
     await Promise.all([loadSchedules(s.id), loadCounters(s.id), loadRamassageSchedules(s.id)]);
     setLoading(false);
   };
@@ -851,6 +867,17 @@ export default function DailyPlanning() {
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Actualiser
           </button>
+          {autoCloseAlerts.filter(a => a.missing_charges).length > 0 && (
+            <button
+              onClick={() => setShowAlerts(!showAlerts)}
+              className="relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <Bell className="w-4 h-4" />
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">
+                {autoCloseAlerts.filter(a => a.missing_charges).length}
+              </span>
+            </button>
+          )}
           <button
             onClick={openDisplay}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border"
@@ -882,6 +909,40 @@ export default function DailyPlanning() {
           </Link>
         </div>
       </div>
+
+      {/* Auto-close alerts panel */}
+      {showAlerts && autoCloseAlerts.filter(a => a.missing_charges).length > 0 && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 bg-red-100 border-b border-red-200">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              <span className="font-semibold text-red-800 text-sm">
+                Voyages terminés automatiquement sans charges
+              </span>
+            </div>
+            <button onClick={() => setShowAlerts(false)} className="text-red-400 hover:text-red-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="divide-y divide-red-100 max-h-48 overflow-y-auto">
+            {autoCloseAlerts.filter(a => a.missing_charges).map((alert, idx) => (
+              <div key={idx} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                <div className="flex-1">
+                  <span className="font-medium text-red-900">{alert.route_name}</span>
+                  <span className="text-red-600 ml-2">({alert.plate_number})</span>
+                  <span className="text-red-500 ml-2 text-xs">
+                    {new Date(alert.departure).toLocaleDateString('fr-FR')} {new Date(alert.departure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-200 text-red-800">
+                  Charges manquantes
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Next departure highlight */}
       {nextSched && (
@@ -987,6 +1048,7 @@ export default function DailyPlanning() {
             const isActive = sched.status === 'en_cours';
             const isPast = sched.status === 'termine';
             const isCancelled = sched.status === 'annule';
+            const isPastDay = selectedDate < format(new Date(), 'yyyy-MM-dd');
             const isConvoi = sched.status === 'convoi';
 
             return (
@@ -1423,6 +1485,13 @@ export default function DailyPlanning() {
                           const anticipatedIncomplete = sched.is_anticipated && (sched.bus_registration === '—' || sched.driver_name === '—');
                           return (
                         <div className="flex items-center gap-2 flex-wrap">
+                          {isPastDay ? (
+                            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Verrouillé (date passée)
+                            </span>
+                          ) : (
+                          <>
                           {sched.status === 'planifie' && (
                             <button
                               onClick={() => updateStatus(sched.id, 'en_cours')}
@@ -1522,6 +1591,7 @@ export default function DailyPlanning() {
                               Annuler
                             </button>
                           )}
+                          </>)}
                         </div>
                           );
                         })()}

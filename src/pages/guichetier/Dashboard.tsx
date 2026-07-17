@@ -138,6 +138,11 @@ export default function GuichetierDashboard() {
 
     setStationName(station?.name ?? '')
 
+    // Auto-terminate past en_cours/retard schedules
+    try {
+      await supabase.rpc('auto_terminate_past_schedules', { p_station_id: counter.station_id });
+    } catch (_) {}
+
     // Charger les départs immédiatement avec le counterId connu
     loadStationDepartures(counter.station_id, selectedDate, counter.id)
   }
@@ -642,7 +647,7 @@ export default function GuichetierDashboard() {
                     {counterDepartures.map((d) => {
                       const hasCharges = Number(d.total_charges) > 0
                       const isConvoi = d.status === 'convoi'
-                      const isPastDate = selectedDate < startOfDay(new Date()) && d.status !== 'en_cours'
+                      const isPastDate = selectedDate < startOfDay(new Date())
                       return (
                         <tr key={d.schedule_id} className={`transition-colors ${isPastDate ? 'opacity-60 bg-[#F9FAFB]' : 'hover:bg-[#F8FAF8]'}`}>
 

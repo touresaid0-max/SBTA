@@ -432,6 +432,11 @@ export default function ChargesPage() {
       setCounterId(counter.id)
       setStationId(counter.station_id)
 
+      // Auto-terminate past en_cours/retard schedules
+      try {
+        await supabase.rpc('auto_terminate_past_schedules', { p_station_id: counter.station_id });
+      } catch (_) {}
+
       const { data: station } = await supabase
         .from('stations')
         .select('name')
@@ -593,7 +598,7 @@ export default function ChargesPage() {
               dep={dep}
               counterId={counterId}
               stationId={stationId}
-              locked={selectedDate < startOfDay(new Date()) && dep.status !== 'en_cours'}
+              locked={selectedDate < startOfDay(new Date())}
               onChargesChange={handleChargesChange}
             />
           ))}
