@@ -101,7 +101,7 @@ export default function DailyPlanning() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
-  const [autoCloseAlerts, setAutoCloseAlerts] = useState<{schedule_id: string; route_name: string; plate_number: string; departure: string; missing_charges: boolean}[]>([]);
+  const [autoCloseAlerts, setAutoCloseAlerts] = useState<{schedule_id: string; route_name: string; plate_number: string; departure: string; missing_charges: boolean; missing_peage?: boolean; missing_ration?: boolean}[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const stationRef = useRef<any>(null);
 
@@ -546,6 +546,29 @@ export default function DailyPlanning() {
 
   const updateStatus = async (id: string, newStatus: string) => {
     setUpdatingId(id);
+
+    // Before allowing 'termine', check mandatory charges (peage + ration)
+    if (newStatus === 'termine') {
+      const { data: chargeTypes } = await supabase
+        .from('counter_charges')
+        .select('charge_type')
+        .eq('schedule_id', id)
+        .neq('status', 'rejete');
+
+      const types = (chargeTypes ?? []).map((c: any) => c.charge_type);
+      const hasPeage = types.includes('peage');
+      const hasRation = types.includes('ration');
+      const missing: string[] = [];
+      if (!hasPeage) missing.push('Péage');
+      if (!hasRation) missing.push('Ratios');
+
+      if (missing.length > 0) {
+        toast.error(`Impossible de clôturer : ${missing.join(' et ')} obligatoire(s) non renseigné(s)`, { duration: 5000 });
+        setUpdatingId(null);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from('schedules')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -917,7 +940,7 @@ export default function DailyPlanning() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-600" />
               <span className="font-semibold text-red-800 text-sm">
-                Voyages terminés automatiquement sans charges
+                Voyages termin\u00e9s automatiquement - Charges obligatoires manquantes
               </span>
             </div>
             <button onClick={() => setShowAlerts(false)} className="text-red-400 hover:text-red-700">
@@ -935,11 +958,19 @@ export default function DailyPlanning() {
                     {new Date(alert.departure).toLocaleDateString('fr-FR')} {new Date(alert.departure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-200 text-red-800">
-                  Charges manquantes
-                </span>
+                <div className="flex gap-1">
+                  {alert.missing_peage && (
+                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-200 text-red-800">P\u00e9age</span>
+                  )}
+                  {alert.missing_ration && (
+                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-200 text-red-800">Ratios</span>
+                  )}
+                </div>
               </div>
             ))}
+          </div>
+          <div className="px-4 py-2 bg-red-50 border-t border-red-100">
+            <p className="text-xs text-red-600 italic">Seuls le P\u00e9age et les Ratios sont obligatoires pour la cl\u00f4ture d'un voyage.</p>
           </div>
         </div>
       )}
