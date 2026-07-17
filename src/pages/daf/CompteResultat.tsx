@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../services/supabase';
 import {
-  Building2, Calendar, FileSpreadsheet, FileText, ChevronDown, ChevronRight,
-  Save, Loader2, RefreshCw, Database, TrendingUp, TrendingDown, Info
+  Building2, Calendar, FileSpreadsheet, FileText, ChevronDown, ChevronUp, ChevronRight,
+  Save, Loader2, RefreshCw, Database, TrendingUp, TrendingDown, Info, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -92,6 +92,9 @@ export default function CompteResultat() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedRef, setExpandedRef] = useState<string | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     supabase.from('companies').select('id, name, parent_id').order('name')
@@ -105,6 +108,16 @@ export default function CompteResultat() {
           setCompanies(grouped);
         }
       });
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const initLines = useCallback((): LineEntry[] => {
@@ -395,26 +408,143 @@ export default function CompteResultat() {
               <Building2 className="w-4 h-4 inline mr-1.5 text-[#64748B]" />
               Société
             </label>
-            <select
-              value={selectedCompany}
-              onChange={e => setSelectedCompany(e.target.value)}
-              className="w-full px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
-                         focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
-            >
-              <option value="">-- Sélectionner une société --</option>
-              {companies.map(c => (
-                <React.Fragment key={c.id}>
-                  <option value={c.id}>
-                    {c.children && c.children.length > 0 ? `▸ ${c.name} (Groupe)` : c.name}
-                  </option>
-                  {c.children && c.children.length > 0 && c.children.map(child => (
-                    <option key={child.id} value={child.id}>
-                      {'    '}{child.name}
-                    </option>
-                  ))}
-                </React.Fragment>
-              ))}
-            </select>
+            <div ref={dropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="w-full px-3 py-2.5 border border-[#D1D5DB] rounded-lg text-sm
+                           focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]
+                           bg-white flex items-center justify-between gap-2 text-left"
+              >
+                {selectedCompany ? (
+                  <span className="flex items-center gap-2 truncate">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-[#0B7439]/10 text-[#0B7439]">
+                      {(() => {
+                        const c = companies.find(x => x.id === selectedCompany);
+                        if (c) return c.children && c.children.length > 0 ? 'GRP' : c.name.slice(0, 4).toUpperCase();
+                        for (const p of companies) {
+                          const ch = p.children?.find(x => x.id === selectedCompany);
+                          if (ch) return ch.name.slice(0, 7).toUpperCase();
+                        }
+                        return '';
+                      })()}
+                    </span>
+                    <span className="truncate">{companyName}</span>
+                  </span>
+                ) : (
+                  <span className="text-gray-400">-- Sélectionner une société --</span>
+                )}
+                {dropdownOpen ? <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />}
+              </button>
+
+              {dropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+                  <div className="p-2 border-b border-gray-100">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        placeholder="Rechercher une société..."
+                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm
+                                   focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439] outline-none"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    {(() => {
+                      const term = searchTerm.toLowerCase();
+                      const groupCompanies = companies.filter(c => c.children && c.children.length > 0);
+                      const standaloneCompanies = companies.filter(c => !c.children || c.children.length === 0);
+
+                      const filteredGroups = groupCompanies.filter(g =>
+                        g.name.toLowerCase().includes(term) ||
+                        g.children!.some(ch => ch.name.toLowerCase().includes(term))
+                      );
+                      const filteredStandalone = standaloneCompanies.filter(c =>
+                        c.name.toLowerCase().includes(term)
+                      );
+
+                      return (
+                        <>
+                          {filteredGroups.map(group => (
+                            <div key={group.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCompany(group.id);
+                                  setDropdownOpen(false);
+                                  setSearchTerm('');
+                                }}
+                                className={`w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-[#0B7439]/5 transition-colors
+                                  ${selectedCompany === group.id ? 'bg-[#0B7439]/10' : ''}`}
+                              >
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700">
+                                  GRP
+                                </span>
+                                <span className="font-semibold text-sm text-gray-800">{group.name}</span>
+                                <span className="ml-auto text-xs text-gray-400">{group.children!.length} filiales</span>
+                              </button>
+                              {group.children!.filter(ch => !term || ch.name.toLowerCase().includes(term) || group.name.toLowerCase().includes(term)).map(child => (
+                                <button
+                                  key={child.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCompany(child.id);
+                                    setDropdownOpen(false);
+                                    setSearchTerm('');
+                                  }}
+                                  className={`w-full pl-8 pr-3 py-2 flex items-center gap-2 text-left hover:bg-[#0B7439]/5 transition-colors
+                                    ${selectedCompany === child.id ? 'bg-[#0B7439]/10' : ''}`}
+                                >
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-600">
+                                    {child.name.replace('SBTA-', '').slice(0, 5)}
+                                  </span>
+                                  <span className="text-sm text-gray-700">{child.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ))}
+
+                          {filteredStandalone.length > 0 && filteredGroups.length > 0 && (
+                            <div className="px-3 py-1.5 mt-1 border-t border-gray-100">
+                              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Autres sociétés</span>
+                            </div>
+                          )}
+
+                          {filteredStandalone.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCompany(c.id);
+                                setDropdownOpen(false);
+                                setSearchTerm('');
+                              }}
+                              className={`w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-[#0B7439]/5 transition-colors
+                                ${selectedCompany === c.id ? 'bg-[#0B7439]/10' : ''}`}
+                            >
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-600">
+                                {c.name.slice(0, 4).toUpperCase()}
+                              </span>
+                              <span className="text-sm text-gray-700">{c.name}</span>
+                            </button>
+                          ))}
+
+                          {filteredGroups.length === 0 && filteredStandalone.length === 0 && (
+                            <div className="px-3 py-4 text-center text-sm text-gray-400">
+                              Aucune société trouvée
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-[#374151] mb-1.5">
