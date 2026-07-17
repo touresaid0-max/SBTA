@@ -11,6 +11,8 @@ import jsPDF from 'jspdf';
 interface Company {
   id: string;
   name: string;
+  parent_id: string | null;
+  children?: Company[];
 }
 
 interface DetailItem {
@@ -92,8 +94,17 @@ export default function CompteResultat() {
   const [expandedRef, setExpandedRef] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('companies').select('id, name').order('name')
-      .then(({ data }) => { if (data) setCompanies(data); });
+    supabase.from('companies').select('id, name, parent_id').order('name')
+      .then(({ data }) => {
+        if (data) {
+          const parents = data.filter(c => !c.parent_id);
+          const grouped = parents.map(p => ({
+            ...p,
+            children: data.filter(c => c.parent_id === p.id)
+          }));
+          setCompanies(grouped);
+        }
+      });
   }, []);
 
   const initLines = useCallback((): LineEntry[] => {
@@ -120,22 +131,64 @@ export default function CompteResultat() {
     });
   }, []);
 
+  const getCompanyIds = useCallback((companyId: string): string[] => {
+    const company = companies.find(c => c.id === companyId);
+    if (company?.children && company.children.length > 0) {
+      return company.children.map(c => c.id);
+    }
+    return [companyId];
+  }, [companies]);
+
   const loadData = useCallback(async () => {
     if (!selectedCompany || !fiscalYear) return;
     setLoading(true);
     try {
       const base = initLines();
+      const companyIds = getCompanyIds(selectedCompany);
 
-      // Load auto-computed data for N and N-1
-      const [resN, resN1, savedData] = await Promise.all([
-        supabase.rpc('compute_income_statement', { p_company_id: selectedCompany, p_fiscal_year: fiscalYear }),
-        supabase.rpc('compute_income_statement', { p_company_id: selectedCompany, p_fiscal_year: fiscalYear - 1 }),
+      // Load auto-computed data for N and N-1 (aggregate across sub-groups)
+      const rpcCallsN = companyIds.map(id =>
+        supabase.rpc('compute_income_statement', { p_company_id: id, p_fiscal_year: fiscalYear })
+      );
+      const rpcCallsN1 = companyIds.map(id =>
+        supabase.rpc('compute_income_statement', { p_company_id: id, p_fiscal_year: fiscalYear - 1 })
+      );
+      const [resultsN, resultsN1, savedData] = await Promise.all([
+        Promise.all(rpcCallsN),
+        Promise.all(rpcCallsN1),
         supabase.from('income_statement_entries').select('ref_code, amount_n, amount_n1')
           .eq('company_id', selectedCompany).eq('fiscal_year', fiscalYear),
       ]);
 
+      // Merge N results from all sub-companies
+      const mergedN: Record<string, { amount: number; detail: DetailItem[] }> = {};
+      resultsN.forEach(res => {
+        if (res.data && Array.isArray(res.data)) {
+          res.data.forEach((entry: { ref: string; amount: number; detail: DetailItem[] }) => {
+            if (!mergedN[entry.ref]) mergedN[entry.ref] = { amount: 0, detail: [] };
+            mergedN[entry.ref].amount += entry.amount;
+            mergedN[entry.ref].detail = mergedN[entry.ref].detail.concat(entry.detail || []);
+          });
+        }
+      });
+
+      // Merge N-1 results
+      const mergedN1: Record<string, { amount: number; detail: DetailItem[] }> = {};
+      resultsN1.forEach(res => {
+        if (res.data && Array.isArray(res.data)) {
+          res.data.forEach((entry: { ref: string; amount: number; detail: DetailItem[] }) => {
+            if (!mergedN1[entry.ref]) mergedN1[entry.ref] = { amount: 0, detail: [] };
+            mergedN1[entry.ref].amount += entry.amount;
+            mergedN1[entry.ref].detail = mergedN1[entry.ref].detail.concat(entry.detail || []);
+          });
+        }
+      });
+
+      const resN = { data: Object.entries(mergedN).map(([ref, v]) => ({ ref, ...v })) };
+      const resN1 = { data: Object.entries(mergedN1).map(([ref, v]) => ({ ref, ...v })) };
+
       // Apply auto-computed data for year N
-      if (resN.data && Array.isArray(resN.data)) {
+      if (resN.data) {
         resN.data.forEach((entry: { ref: string; amount: number; detail: DetailItem[] }) => {
           const line = base.find(l => l.ref === entry.ref);
           if (line) {
@@ -147,7 +200,7 @@ export default function CompteResultat() {
       }
 
       // Apply auto-computed data for year N-1
-      if (resN1.data && Array.isArray(resN1.data)) {
+      if (resN1.data) {
         resN1.data.forEach((entry: { ref: string; amount: number; detail: DetailItem[] }) => {
           const line = base.find(l => l.ref === entry.ref);
           if (line) {
@@ -174,7 +227,7 @@ export default function CompteResultat() {
     } finally {
       setLoading(false);
     }
-  }, [selectedCompany, fiscalYear, initLines, computeLines]);
+  }, [selectedCompany, fiscalYear, initLines, computeLines, getCompanyIds]);
 
   useEffect(() => {
     if (selectedCompany && fiscalYear) loadData();
@@ -225,7 +278,15 @@ export default function CompteResultat() {
     }
   };
 
-  const companyName = companies.find(c => c.id === selectedCompany)?.name || '';
+  const companyName = (() => {
+    const c = companies.find(x => x.id === selectedCompany);
+    if (c) return c.children && c.children.length > 0 ? `${c.name} (Groupe)` : c.name;
+    for (const parent of companies) {
+      const child = parent.children?.find(x => x.id === selectedCompany);
+      if (child) return child.name;
+    }
+    return '';
+  })();
 
   const formatNum = (val: number): string => {
     if (val === 0) return '-';
@@ -341,7 +402,18 @@ export default function CompteResultat() {
                          focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
             >
               <option value="">-- Sélectionner une société --</option>
-              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {companies.map(c => (
+                <React.Fragment key={c.id}>
+                  <option value={c.id}>
+                    {c.children && c.children.length > 0 ? `▸ ${c.name} (Groupe)` : c.name}
+                  </option>
+                  {c.children && c.children.length > 0 && c.children.map(child => (
+                    <option key={child.id} value={child.id}>
+                      {'    '}{child.name}
+                    </option>
+                  ))}
+                </React.Fragment>
+              ))}
             </select>
           </div>
           <div>
