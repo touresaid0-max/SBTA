@@ -660,6 +660,3 @@ function ManualEdit({ line, onChange, fiscalYear }: {
     </div>
   );
 }
-
-
-export default ManualEdit
