@@ -232,6 +232,13 @@ export default function CompteResultat() {
     return Math.round(val).toLocaleString('fr-FR');
   };
 
+  const formatNumPdf = (val: number): string => {
+    if (val === 0) return '-';
+    const abs = Math.abs(Math.round(val));
+    const str = abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return val < 0 ? '-' + str : str;
+  };
+
   const exportExcel = () => {
     const ws_data = [
       ['COMPTE DE RESULTAT AU 31/12/' + fiscalYear],
@@ -294,8 +301,8 @@ export default function CompteResultat() {
       doc.text(label, colX[1], y);
       doc.text(l.sign, colX[2], y);
       doc.text(l.note, colX[3], y);
-      doc.text(formatNum(l.amount_n), colX[4], y);
-      doc.text(formatNum(l.amount_n1), colX[5], y);
+      doc.text(formatNumPdf(l.amount_n), colX[4], y);
+      doc.text(formatNumPdf(l.amount_n1), colX[5], y);
       y += 5;
       if (l.isBold) {
         doc.setDrawColor(180);
