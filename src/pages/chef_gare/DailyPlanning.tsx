@@ -1493,7 +1493,7 @@ export default function DailyPlanning() {
                     )}
 
                     {/* Edit schedule button */}
-                    {!isCancelled && !isConvoi && sched.status !== 'termine' && (
+                    {!isCancelled && !isConvoi && sched.status !== 'termine' && !isPastDay && (
                       <div className="flex items-center gap-2 pt-1">
                         <button
                           onClick={() => setEditSchedule(sched)}
@@ -1516,10 +1516,10 @@ export default function DailyPlanning() {
                           const anticipatedIncomplete = sched.is_anticipated && (sched.bus_registration === '—' || sched.driver_name === '—');
                           return (
                         <div className="flex items-center gap-2 flex-wrap">
-                          {isPastDay ? (
+                          {(isPastDay || sched.status === 'termine') ? (
                             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200">
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              Verrouillé (date passée)
+                              Verrouillé{isPastDay ? ' (date passée)' : ''}
                             </span>
                           ) : (
                           <>
@@ -1634,7 +1634,7 @@ export default function DailyPlanning() {
                     )}
 
                     {/* Counter assignment actions */}
-                    {!isConvoi && <div className="flex items-center gap-3 pt-1 border-t flex-wrap"
+                    {!isConvoi && !isPastDay && sched.status !== 'termine' && <div className="flex items-center gap-3 pt-1 border-t flex-wrap"
                       style={{ borderColor: 'var(--border)' }}>
                       {departNumberByDest.get(sched.id) && (
                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border"
