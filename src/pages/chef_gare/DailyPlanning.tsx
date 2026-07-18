@@ -209,6 +209,25 @@ export default function DailyPlanning() {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    // Auto-terminate any en_cours/retard schedules that should be terminated
+    const nowStr = format(new Date(), 'yyyy-MM-dd');
+    if (targetDate <= nowStr) {
+      try {
+        const { data: terminated } = await supabase.rpc('auto_terminate_past_schedules', { p_station_id: stationId });
+        if (terminated && Array.isArray(terminated) && terminated.length > 0) {
+          const missing = terminated.filter((a: any) => a.missing_charges);
+          if (missing.length > 0) {
+            setAutoCloseAlerts(prev => {
+              const existing = prev.map(p => p.schedule_id);
+              const newAlerts = missing.filter((a: any) => !existing.includes(a.schedule_id));
+              return [...prev, ...newAlerts];
+            });
+            setShowAlerts(true);
+          }
+        }
+      } catch (_) {}
+    }
+
     const { data, error } = await supabase
       .from('schedules')
       .select(`
