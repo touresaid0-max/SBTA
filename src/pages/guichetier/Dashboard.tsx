@@ -648,8 +648,9 @@ export default function GuichetierDashboard() {
                       const hasCharges = Number(d.total_charges) > 0
                       const isConvoi = d.status === 'convoi'
                       const isPastDate = selectedDate < startOfDay(new Date())
+                      const isLocked = d.status === 'termine' || (isPastDate && d.status !== 'en_cours' && d.status !== 'retard')
                       return (
-                        <tr key={d.schedule_id} className={`transition-colors ${isPastDate ? 'opacity-60 bg-[#F9FAFB]' : 'hover:bg-[#F8FAF8]'}`}>
+                        <tr key={d.schedule_id} className={`transition-colors ${isLocked ? 'opacity-60 bg-[#F9FAFB]' : 'hover:bg-[#F8FAF8]'}`}>
 
                           {/* N° départ */}
                           <td className="px-4 py-3.5">
@@ -796,7 +797,7 @@ export default function GuichetierDashboard() {
                           {/* Actions */}
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-1 justify-center">
-                              {isPastDate ? (
+                              {isLocked ? (
                                 <span className="text-xs font-medium text-[#94A3B8] px-2 py-1 rounded-lg bg-[#F1F5F9] border border-[#E2E8F0] whitespace-nowrap flex items-center gap-1">
                                   <Lock className="w-3 h-3" />
                                   Verrouillé
