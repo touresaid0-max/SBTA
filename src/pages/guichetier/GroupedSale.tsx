@@ -692,13 +692,28 @@ export default function GroupedSale() {
     const L = 4;
     const R = 76;
     const MID = 46;
+    const GAP = 6;
+    const PAD = 3;
+    const seatsX = 16;
+    const colSplit = 52;
+    const seatsMaxW = colSplit - seatsX;
+    const lineH = 4.5;
+    const carColEnd = 37;
+
+    const isAnticipated = !!schedule.is_anticipated;
     const depDate = format(new Date(schedule.departure_datetime), 'dd/MM/yyyy');
-    const depTime = format(new Date(schedule.departure_datetime), 'HH:mm');
-    const origin = schedule.origin_city_name.toUpperCase();
-    const dest = schedule.destination_city_name.toUpperCase();
+    const depTime = isAnticipated ? '' : format(new Date(schedule.departure_datetime), 'HH:mm');
+    const origin = (schedule.origin_city_name || '').toUpperCase();
+    const dest = (schedule.destination_city_name || '').toUpperCase();
+    const gareDep = String(myStationName || schedule.origin_city_name || '--').toUpperCase();
+    const gareArr = String(schedule.destination_city_name || '--').toUpperCase();
     const busReg = schedule.buses?.registration_number || '--';
     const printDt = format(new Date(), 'dd/MM/yyyy HH:mm:ss');
     const departureNum = schedule.departure_number ?? '';
+
+    const seatsDisplay = ticket.seatLabel;
+    const tarif = formatAmount(ticket.price);
+    const refFull = `${booking_reference}-${ticketIndex + 1}`;
 
     let logoDataUrl: string | null = null;
     try {
@@ -711,121 +726,290 @@ export default function GroupedSale() {
       });
     } catch {}
 
-    const ticketH = 126;
-    const doc = new jsPDF({ unit: 'mm', format: [W, ticketH] });
+    const measureDoc = new jsPDF({ unit: 'mm', format: [W, 300] });
+    measureDoc.setFont('helvetica', 'bold');
+    measureDoc.setFontSize(9);
+    const seatLineCount = Math.max(measureDoc.splitTextToSize(seatsDisplay, seatsMaxW).length, 1);
+    const pageH = 200 + (seatLineCount - 1) * lineH * 2;
+    const doc = new jsPDF({ unit: 'mm', format: [W, pageH] });
 
-    const dashed = (y: number) => {
+    const dashed = (y: number, x1 = L, x2 = R) => {
       doc.setLineDashPattern([1.2, 1.0], 0);
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.3);
-      doc.line(L, y, R, y);
+      doc.line(x1, y, x2, y);
       doc.setLineDashPattern([], 0);
     };
-    const solid = (y: number) => {
+    const solid = (y: number, x1 = L, x2 = R) => {
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.3);
-      doc.line(L, y, R, y);
+      doc.line(x1, y, x2, y);
+    };
+    const heavyDotted = (y: number) => {
+      doc.setLineDashPattern([1.5, 1.0], 0);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.55);
+      doc.line(2, y, 78, y);
+      doc.setLineDashPattern([], 0);
     };
 
-    const oY = 0;
-    const tarif = formatAmount(ticket.price);
-    const refFull = `${booking_reference}-${ticketIndex + 1}`;
-
+    // ── HEADER ──────────────────────────────────────────────
     if (logoDataUrl) {
-      doc.addImage(logoDataUrl, 'JPEG', 3, oY + 3, 18, 16);
+      doc.addImage(logoDataUrl, 'JPEG', 3, 3, 18, 16);
     } else {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
-      doc.text('S.B.T.A', 12, oY + 9, { align: 'center' });
+      doc.setTextColor(0, 0, 0);
+      doc.text('S.B.T.A', 12, 9, { align: 'center' });
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(5.5);
+      doc.text("L'Aventure continue", 12, 13, { align: 'center' });
     }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(20);
     doc.setTextColor(0, 0, 0);
-    doc.text('SBTA', R, oY + 11, { align: 'right' });
+    doc.text('SBTA', R, 11, { align: 'right' });
     doc.setFontSize(5.5);
     doc.setFont('helvetica', 'normal');
-    doc.text("Societe Bonkoungou Transport de L'Agneby", R, oY + 15, { align: 'right' });
-    doc.text('Tel 01 14 34 60 / 01 14 34 87', R, oY + 18.5, { align: 'right' });
-    solid(oY + 21);
+    doc.text('Societe Bonkoungou Transport de L\'Agneby', R, 15, { align: 'right' });
+    doc.text('Tel 01 14 34 60 / 01 14 34 87', R, 18.5, { align: 'right' });
+    solid(21);
+    let y = 21;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('DEPART', L, oY + 29);
-    doc.setLineWidth(0.3);
-    doc.line(MID, oY + 22, MID, oY + 33);
-    doc.setFontSize(13);
-    doc.text(String(departureNum), (MID + R) / 2, oY + 29, { align: 'center' });
-    dashed(oY + 33);
-
-    doc.setFontSize(10);
-    doc.text(origin, L, oY + 41);
-    doc.setFontSize(9);
-    doc.text('=>', 38, oY + 41, { align: 'center' });
-    doc.text(dest, R, oY + 41, { align: 'right' });
-    dashed(oY + 45);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text('SIEGE', L, oY + 52);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(ticket.seatLabel, 16, oY + 52);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text('TARIF', 53, oY + 52);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(tarif, R, oY + 52, { align: 'right' });
-    dashed(oY + 57);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text('CAR', L, oY + 64);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(busReg.substring(0, 18), 16, oY + 64);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.text('N\u00b0TICKET', 38, oY + 64);
+    const gareValMaxW = R - L - doc.getTextWidth('GARE ARRIVEE ');
+    const gareLine = (yy: number, label: string, value: string, x1: number, x2: number) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text(label, x1, yy);
+      doc.setFont('helvetica', 'bold');
+      doc.text(doc.splitTextToSize(value, gareValMaxW)[0], x2, yy, { align: 'right' });
+    };
+
+    // ── DEPART row ───────────────────────────────────────────
+    const depBaseY = y + GAP + 1;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('DEPART', L, depBaseY);
+    doc.setLineWidth(0.3);
+    doc.line(MID, y + 1, MID, depBaseY + PAD);
+    doc.setFontSize(13);
+    doc.text(String(departureNum), (MID + R) / 2, depBaseY, { align: 'center' });
+    y = depBaseY + PAD;
+    dashed(y);
+
+    // ── ITINERARY row ────────────────────────────────────────
+    const itiBaseY = y + GAP;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text(origin, L, itiBaseY);
+    doc.setFontSize(9);
+    doc.text('=>', 38, itiBaseY, { align: 'center' });
+    doc.text(dest, R, itiBaseY, { align: 'right' });
+    y = itiBaseY + PAD;
+    dashed(y);
+
+    // ── GARES ────────────────────────────────────────────────
+    const gareDepY = y + 5;
+    gareLine(gareDepY, 'GARE DEPART', gareDep, L, R);
+    const gareArrY = gareDepY + 4.5;
+    gareLine(gareArrY, 'GARE ARRIVEE', gareArr, L, R);
+    y = gareArrY + PAD;
+    dashed(y);
+
+    // ── SIEGE | TARIF row ────────────────────────────────────
+    const siegeRowY = y + GAP;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('SIEGE', L, siegeRowY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(seatsDisplay, seatsX, siegeRowY, { maxWidth: seatsMaxW });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('TARIF', colSplit + 1, siegeRowY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(tarif, R, siegeRowY, { align: 'right' });
+    const seatsLines = doc.splitTextToSize(seatsDisplay, seatsMaxW);
+    const rowH = Math.max(seatsLines.length, 1) * lineH;
+    y = siegeRowY + rowH - lineH + PAD;
+    dashed(y);
+
+    // ── CAR | N°TICKET row ───────────────────────────────────
+    const carY = y + GAP;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('CAR', L, carY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    const busRegMaxW = carColEnd - 16;
+    const busRegLines = doc.splitTextToSize(busReg, busRegMaxW);
+    doc.text(busRegLines[0], 16, carY);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text('N\u00b0TICKET', carColEnd + 1, carY);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(11, 116, 57);
-    doc.text(refFull, R, oY + 64, { align: 'right' });
+    const refMaxW = R - (carColEnd + 1) - doc.getTextWidth('N\u00b0TICKET ');
+    const refLines = doc.splitTextToSize(refFull, refMaxW);
+    doc.text(refLines[0], R, carY, { align: 'right' });
     doc.setTextColor(0, 0, 0);
-    dashed(oY + 69);
+    y = carY + PAD;
+    dashed(y);
 
+    // ── DATE / HEURE row ─────────────────────────────────────
+    const dateY = y + GAP;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text('DATE :', L, oY + 76);
+    doc.text('DATE :', L, dateY);
     doc.setFont('helvetica', 'bold');
-    doc.text(depDate, 17, oY + 76);
-    doc.setFont('helvetica', 'normal');
-    doc.text('HEURE:', 47, oY + 76);
-    doc.setFont('helvetica', 'bold');
-    doc.text(depTime, 62, oY + 76);
-    dashed(oY + 81);
+    doc.text(depDate, 17, dateY);
+    if (!isAnticipated) {
+      doc.setFont('helvetica', 'normal');
+      doc.text('HEURE:', 47, dateY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(depTime, 62, dateY);
+    }
+    y = dateY + PAD;
+    dashed(y);
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text('PASSAGER:', L, oY + 87);
-    doc.setFont('helvetica', 'bold');
-    doc.text(ticket.passengerName.toUpperCase().substring(0, 30), 22, oY + 87);
-    dashed(oY + 91);
-
+    // ── NOTES ────────────────────────────────────────────────
+    const noteGap = 5;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
-    doc.text('NB. Tout ticket encaisse n est plus remboursable', 40, oY + 97, { align: 'center' });
-    dashed(oY + 101);
+    let noteY = y + noteGap;
+    doc.text('NB. Tout ticket encaisse n est plus remboursable', 40, noteY, { align: 'center' });
+    dashed(noteY + PAD);
+    noteY = noteY + PAD + noteGap;
+    doc.text('SBTA pas responsable ces bagages sans ticket', 40, noteY, { align: 'center' });
+    dashed(noteY + PAD);
+    noteY = noteY + PAD + noteGap;
     doc.setFontSize(6);
-    doc.text('VEUILLEZ CONSERVER LES TICKETS JUSQU\'A DESTINATION', 40, oY + 107, { align: 'center' });
-    dashed(oY + 111);
+    doc.text('VEUILLEZ CONSERVER LES TICKETS JUSQU\'A DESTINATION', 40, noteY, { align: 'center' });
+    dashed(noteY + PAD);
+    y = noteY + PAD;
 
+    // ── PRINT LINE ───────────────────────────────────────────
+    const printY = y + 5;
     doc.setFontSize(6.5);
-    doc.text('V10  Imprimer le :', L, oY + 117);
-    doc.text(printDt, R, oY + 117, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.text('V10  Imprimer le :', L, printY);
+    doc.text(printDt, R, printY, { align: 'right' });
+    const solidY = printY + 4;
+    solid(solidY);
+
+    // ── OUTER BORDER (main ticket) ────────────────────────────
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.4);
+    doc.rect(2, 2, W - 4, solidY - 2);
+
+    // ══════════════════════ SOUCHE ═══════════════════════════
+    const soucheStart = solidY + 4;
+    heavyDotted(soucheStart);
+    doc.setFont('helvetica', 'bolditalic');
+    doc.setFontSize(12);
+    doc.text('SOUCHE', 40, soucheStart + 7, { align: 'center' });
+    const soucheBodyStart = soucheStart + 10;
+    heavyDotted(soucheBodyStart);
+    let sy = soucheBodyStart;
+
+    // DEPART souche
+    const sdepY = sy + GAP + 1;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('DEPART', L, sdepY);
+    doc.setLineWidth(0.3);
+    doc.line(MID, sy + 1, MID, sdepY + PAD);
+    doc.text(String(departureNum), (MID + R) / 2, sdepY, { align: 'center' });
+    sy = sdepY + PAD;
+    dashed(sy, L, R);
+
+    // itinerary souche
+    const sitiY = sy + GAP;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(origin, L, sitiY);
+    doc.text('=>', 38, sitiY, { align: 'center' });
+    doc.text(dest, R, sitiY, { align: 'right' });
+    sy = sitiY + PAD;
+    dashed(sy, L, R);
+
+    // gares souche
+    const sGareDepY = sy + 5;
+    gareLine(sGareDepY, 'GARE DEPART', gareDep, L, R);
+    const sGareArrY = sGareDepY + 4.5;
+    gareLine(sGareArrY, 'GARE ARRIVEE', gareArr, L, R);
+    sy = sGareArrY + PAD;
+    dashed(sy, L, R);
+
+    // siege | tarif souche
+    const ssiegeY = sy + GAP;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('SIEGE', L, ssiegeY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(seatsDisplay, seatsX, ssiegeY, { maxWidth: seatsMaxW });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('TARIF', colSplit + 1, ssiegeY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(tarif, R, ssiegeY, { align: 'right' });
+    const ssLines = doc.splitTextToSize(seatsDisplay, seatsMaxW);
+    sy = ssiegeY + Math.max(ssLines.length, 1) * lineH - lineH + PAD;
+    dashed(sy, L, R);
+
+    // car | N°TICKET souche
+    const scarY = sy + GAP;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('CAR', L, scarY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    const sBusRegLines = doc.splitTextToSize(busReg, busRegMaxW);
+    doc.text(sBusRegLines[0], 16, scarY);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.text('N\u00b0TICKET', carColEnd + 1, scarY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(11, 116, 57);
+    const sRefLines = doc.splitTextToSize(refFull, refMaxW);
+    doc.text(sRefLines[0], R, scarY, { align: 'right' });
+    doc.setTextColor(0, 0, 0);
+    sy = scarY + PAD;
+    dashed(sy, L, R);
+
+    // date/heure souche
+    const sdateY = sy + GAP;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('DATE :', L, sdateY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(depDate, 17, sdateY);
+    if (!isAnticipated) {
+      doc.setFont('helvetica', 'normal');
+      doc.text('HEURE:', 47, sdateY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(depTime, 62, sdateY);
+    }
+    sy = sdateY + PAD;
+    dashed(sy, L, R);
+
+    // print line souche
+    const sprintY = sy + 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.text('V10  Imprimer le :', L, sprintY);
+    doc.text(printDt, R, sprintY, { align: 'right' });
 
     doc.setLineWidth(0.4);
-    doc.rect(2, oY + 2, W - 4, 119);
+    doc.setDrawColor(0, 0, 0);
+    doc.rect(2, soucheBodyStart, W - 4, sprintY + PAD - soucheBodyStart);
 
     doc.autoPrint();
     const blobUrl = doc.output('bloburl');
