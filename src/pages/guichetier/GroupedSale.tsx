@@ -507,7 +507,10 @@ export default function GroupedSale() {
   /* ─── generate tickets for anticipated trips (random seats) ─ */
   const generateAnticipatedTickets = () => {
     if (!activeSchedule) return;
-    const count = Math.max(1, Math.min(anticipatedCount, activeSchedule.seats_available - tickets.length));
+    const availableForAnticipated = activeSchedule.is_anticipated
+      ? (activeSchedule.buses?.total_seats ?? 60) - (activeSchedule.seats_reserved || 0) - tickets.length
+      : activeSchedule.seats_available - tickets.length;
+    const count = Math.max(1, Math.min(anticipatedCount, availableForAnticipated));
     if (count <= 0) { toast.error('Aucun siege disponible'); return; }
 
     const capacity = activeSchedule.buses?.total_seats || 60;
@@ -1360,7 +1363,7 @@ export default function GroupedSale() {
                   </div>
                 </div>
                 <button onClick={() => selectScheduleForSale(schedule)}
-                  disabled={schedule.seats_available <= 0}
+                  disabled={schedule.is_anticipated ? (schedule.seats_reserved || 0) >= (schedule.buses?.total_seats ?? 60) : schedule.seats_available <= 0}
                   className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 flex-shrink-0"
                   style={{ backgroundColor: 'var(--primary)' }}>
                   <Ticket className="w-4 h-4" />
@@ -1477,15 +1480,15 @@ export default function GroupedSale() {
                 className="w-20 px-3 py-2 border-2 rounded-lg text-sm text-center font-bold"
                 style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }} />
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                / {Math.max(0, activeSchedule.seats_available - tickets.length)} disponible(s)
+                / {Math.max(0, (activeSchedule.is_anticipated ? (activeSchedule.buses?.total_seats ?? 60) - (activeSchedule.seats_reserved || 0) : activeSchedule.seats_available) - tickets.length)} disponible(s)
               </span>
             </div>
             <button onClick={generateAnticipatedTickets}
-              disabled={tickets.length >= activeSchedule.seats_available}
+              disabled={tickets.length >= (activeSchedule.is_anticipated ? (activeSchedule.buses?.total_seats ?? 60) - (activeSchedule.seats_reserved || 0) : activeSchedule.seats_available)}
               className="w-full py-2.5 rounded-lg text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: 'var(--primary)' }}>
               <Ticket className="w-4 h-4" />
-              Charger les tickets ({Math.min(anticipatedCount, Math.max(0, activeSchedule.seats_available - tickets.length))})
+              Charger les tickets ({Math.min(anticipatedCount, Math.max(0, (activeSchedule.is_anticipated ? (activeSchedule.buses?.total_seats ?? 60) - (activeSchedule.seats_reserved || 0) : activeSchedule.seats_available) - tickets.length))})
             </button>
           </div>
         )}

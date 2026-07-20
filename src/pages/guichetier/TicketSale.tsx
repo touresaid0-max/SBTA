@@ -620,7 +620,11 @@ export default function TicketSale() {
       toast.error('Vente impossible : la date de vente doit correspondre à la date système serveur.');
       return;
     }
-    if ((schedule.seats_available ?? schedule.buses?.total_seats ?? 60) === 0) {
+    const tripCapacity = schedule.buses?.total_seats ?? 60;
+    const tripFull = schedule.is_anticipated
+      ? (schedule.seats_reserved || 0) >= tripCapacity
+      : (schedule.seats_available ?? tripCapacity) === 0;
+    if (tripFull) {
       toast.error('Ce voyage est complet');
       return;
     }
@@ -1871,7 +1875,10 @@ export default function TicketSale() {
                 const arrTime = isAnticipatedIncomplete ? '--:--' : format(new Date(schedule.arrival_datetime), 'HH:mm');
                 const duration = isAnticipatedIncomplete ? null : getDuration(schedule.departure_datetime, schedule.arrival_datetime, schedule.estimated_duration_minutes);
                 const availableSeats = schedule.seats_available ?? schedule.buses?.total_seats ?? 60;
-                const isFull = availableSeats === 0;
+                const tripCapacity = schedule.buses?.total_seats ?? 60;
+                const isFull = schedule.is_anticipated
+                  ? (schedule.seats_reserved || 0) >= tripCapacity
+                  : availableSeats === 0;
                 const isDeparted = !isAnticipatedIncomplete && new Date(schedule.departure_datetime) <= now;
                 const isDisabled = isFull || isDeparted;
                 const fillPct = schedule.buses?.total_seats
