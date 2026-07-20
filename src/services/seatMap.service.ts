@@ -19,6 +19,16 @@ export async function getSiblingScheduleIds(scheduleId: string): Promise<string[
   return [scheduleId]
 }
 
+export async function getSiblingOccupancy(scheduleId: string): Promise<number> {
+  const siblingIds = await getSiblingScheduleIds(scheduleId)
+  const { data } = await supabase
+    .from('reservations')
+    .select('total_seats')
+    .in('schedule_id', siblingIds)
+    .in('status', ['confirme', 'confirmee', 'en_attente', 'embarque'])
+  return (data ?? []).reduce((sum, r) => sum + (r.total_seats ?? 1), 0)
+}
+
 export async function fetchScheduleSeatMap(
   scheduleId: string,
   deckLevel: 'simple' | 'lower' | 'upper' = 'simple'

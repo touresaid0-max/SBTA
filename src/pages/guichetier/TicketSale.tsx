@@ -15,7 +15,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import { useSeatMap } from '../../hooks/useSeatMap';
 import { BusSeatMapPanel } from '../../components/bus/BusSeatMapPanel';
-import { isSeatStillAvailable } from '../../services/seatMap.service';
+import { isSeatStillAvailable, getSiblingOccupancy } from '../../services/seatMap.service';
 import type { EnrichedSeat } from '../../types/seatMap.types';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useOfflineTickets } from '../../hooks/useOfflineTickets';
@@ -536,6 +536,20 @@ export default function TicketSale() {
     enriched.sort((a, b) => a.departure_datetime.localeCompare(b.departure_datetime));
     setSchedules(enriched);
     setStep('select');
+
+    const anticipated = enriched.filter(s => s.is_anticipated);
+    if (anticipated.length > 0) {
+      const occupancyMap: Record<string, number> = {};
+      await Promise.all(anticipated.map(async s => {
+        occupancyMap[s.id] = await getSiblingOccupancy(s.id);
+      }));
+      setSchedules(prev => prev.map(s => {
+        if (!s.is_anticipated) return s;
+        const totalReserved = occupancyMap[s.id] ?? (s.seats_reserved || 0);
+        const capacity = s.buses?.total_seats ?? 60;
+        return { ...s, seats_reserved: totalReserved, seats_available: Math.max(0, capacity - totalReserved) };
+      }));
+    }
 
     const toCache: CachedSchedule[] = enriched.map(s => ({
       id: s.id,
@@ -1573,17 +1587,25 @@ export default function TicketSale() {
 
     // Refresh schedule seat availability
     try {
-      const { data } = await supabase
-        .from('schedules')
-        .select('seats_available, seats_reserved')
-        .eq('id', schedule.id)
-        .maybeSingle();
-      if (data) {
-        const refreshed = { ...schedule, seats_available: data.seats_available, seats_reserved: data.seats_reserved };
+      if (schedule.is_anticipated) {
+        const totalReserved = await getSiblingOccupancy(schedule.id);
+        const capacity = schedule.buses?.total_seats ?? 60;
+        const refreshed = { ...schedule, seats_reserved: totalReserved, seats_available: Math.max(0, capacity - totalReserved) };
         setSelectedSchedule(refreshed);
         setSchedules(prev => prev.map(s => s.id === refreshed.id ? refreshed : s));
       } else {
-        setSelectedSchedule(schedule);
+        const { data } = await supabase
+          .from('schedules')
+          .select('seats_available, seats_reserved')
+          .eq('id', schedule.id)
+          .maybeSingle();
+        if (data) {
+          const refreshed = { ...schedule, seats_available: data.seats_available, seats_reserved: data.seats_reserved };
+          setSelectedSchedule(refreshed);
+          setSchedules(prev => prev.map(s => s.id === refreshed.id ? refreshed : s));
+        } else {
+          setSelectedSchedule(schedule);
+        }
       }
     } catch (_) {
       setSelectedSchedule(schedule);

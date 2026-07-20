@@ -11,7 +11,7 @@ import {
   Loader2, ChevronRight, Armchair, Printer, Check, AlertTriangle,
   Zap, RefreshCw, Ticket, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
-import { fetchScheduleSeatMap, tryLockSeat, releaseSeatLock, isSeatStillAvailable, subscribeToSeatChanges, getSiblingScheduleIds } from '../../services/seatMap.service';
+import { fetchScheduleSeatMap, tryLockSeat, releaseSeatLock, isSeatStillAvailable, subscribeToSeatChanges, getSiblingScheduleIds, getSiblingOccupancy } from '../../services/seatMap.service';
 import type { ScheduleSeatMap, EnrichedSeat } from '../../types/seatMap.types';
 import { SeatMap as SeatMapComponent } from '../../components/bus/SeatMap';
 
@@ -313,6 +313,20 @@ export default function GroupedSale() {
 
       setSchedules(enriched);
       setStep('schedules');
+
+      const anticipated = enriched.filter(s => s.is_anticipated);
+      if (anticipated.length > 0) {
+        const occupancyMap: Record<string, number> = {};
+        await Promise.all(anticipated.map(async s => {
+          occupancyMap[s.id] = await getSiblingOccupancy(s.id);
+        }));
+        setSchedules(prev => prev.map(s => {
+          if (!s.is_anticipated) return s;
+          const totalReserved = occupancyMap[s.id] ?? (s.seats_reserved || 0);
+          const capacity = s.buses?.total_seats ?? 60;
+          return { ...s, seats_reserved: totalReserved, seats_available: Math.max(0, capacity - totalReserved) };
+        }));
+      }
     } catch {
       toast.error('Erreur chargement des voyages');
     } finally {
@@ -1042,16 +1056,32 @@ export default function GroupedSale() {
 
     const { data: sched } = await supabase
       .from('schedules')
-      .select('seats_available, seats_reserved')
+      .select('seats_available, seats_reserved, is_anticipated')
       .eq('id', scheduleId)
       .single();
 
     if (sched) {
-      await supabase.from('schedules').update({
-        seats_available: Math.max(0, sched.seats_available - 1),
-        seats_reserved: (sched.seats_reserved || 0) + 1,
-      }).eq('id', scheduleId);
+      if (sched.is_anticipated) {
+        const totalReserved = await getSiblingOccupancy(scheduleId);
+        const capacity = confirmedGroup.schedule.buses?.total_seats ?? 60;
+        await supabase.from('schedules').update({
+          seats_reserved: totalReserved,
+          seats_available: Math.max(0, capacity - totalReserved),
+        }).eq('id', scheduleId);
+      } else {
+        await supabase.from('schedules').update({
+          seats_available: Math.max(0, sched.seats_available - 1),
+          seats_reserved: (sched.seats_reserved || 0) + 1,
+        }).eq('id', scheduleId);
+      }
     }
+
+    setSchedules(prev => prev.map(s => {
+      if (s.id !== scheduleId) return s;
+      const capacity = s.buses?.total_seats ?? 60;
+      const newReserved = (s.seats_reserved || 0) + 1;
+      return { ...s, seats_reserved: newReserved, seats_available: Math.max(0, capacity - newReserved) };
+    }));
   };
 
   /* ─── print next ticket in queue ───────────────────────── */
