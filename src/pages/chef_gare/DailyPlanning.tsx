@@ -1515,7 +1515,7 @@ export default function DailyPlanning() {
                     )}
 
                     {/* Edit schedule button */}
-                    {!isCancelled && !isConvoi && sched.status !== 'termine' && !(isPastDay && !sched.admin_reactivated_at) && (
+                    {!isCancelled && !isConvoi && (sched.status !== 'termine' || sched.is_anticipated) && !(isPastDay && !sched.admin_reactivated_at) && (
                       <div className="flex items-center gap-2 pt-1">
                         <button
                           onClick={() => setEditSchedule(sched)}
