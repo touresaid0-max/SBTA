@@ -28,6 +28,7 @@ interface ScheduleItem {
   seats_reserved: number;
   bus_id: string;
   route_id: string;
+  is_anticipated: boolean;
   buses: {
     registration_number: string;
     total_seats: number;
@@ -124,6 +125,7 @@ export default function GroupedSale() {
 
   /* state: seat map */
   const [seatMap, setSeatMap] = useState<ScheduleSeatMap | null>(null);
+  const [anticipatedCount, setAnticipatedCount] = useState(1);
   const [loadingSeatMap, setLoadingSeatMap] = useState(false);
   const [selectedSeats, setSelectedSeats] = useState<EnrichedSeat[]>([]);
   const [lockCountdowns, setLockCountdowns] = useState<Record<string, number>>({});
@@ -256,7 +258,7 @@ export default function GroupedSale() {
         .from('schedules')
         .select(`
           id, route_name, departure_datetime, arrival_datetime,
-          price, seats_available, seats_reserved, bus_id, route_id,
+          price, seats_available, seats_reserved, bus_id, route_id, is_anticipated,
           buses:bus_id(registration_number, total_seats, class, model, seat_config_id),
           driver:driver_id(full_name)
         `)
@@ -299,6 +301,7 @@ export default function GroupedSale() {
           const seq = assignedMap.get(s.id);
           return {
             ...s,
+            is_anticipated: (s as any).is_anticipated ?? false,
             price: s.price ?? route?.base_price ?? 0,
             route: route || { id: s.route_id, name: s.route_name, base_price: 0 },
             origin_city_name: cityMap.get(myCityId!) || '',
@@ -356,14 +359,19 @@ export default function GroupedSale() {
     setTicketMode(null);
     quickConfirmRef.current = false;
     setStep('sale');
-    await loadSeatMap(schedule.id);
+    if (!schedule.is_anticipated) {
+      await loadSeatMap(schedule.id);
 
-    unsubRef.current?.();
-    const siblingIds = await getSiblingScheduleIds(schedule.id);
-    unsubRef.current = subscribeToSeatChanges(schedule.id, () => {
-      if (suppressCountRef.current > 0) { suppressCountRef.current--; return; }
-      loadSeatMap(schedule.id, true);
-    }, siblingIds);
+      unsubRef.current?.();
+      const siblingIds = await getSiblingScheduleIds(schedule.id);
+      unsubRef.current = subscribeToSeatChanges(schedule.id, () => {
+        if (suppressCountRef.current > 0) { suppressCountRef.current--; return; }
+        loadSeatMap(schedule.id, true);
+      }, siblingIds);
+    } else {
+      setSeatMap(null);
+      setAnticipatedCount(1);
+    }
   };
 
   const switchSchedule = async (schedule: ScheduleItem) => {
@@ -375,14 +383,19 @@ export default function GroupedSale() {
     setTickets([]);
     setTicketMode(null);
     quickConfirmRef.current = false;
-    await loadSeatMap(schedule.id);
+    if (!schedule.is_anticipated) {
+      await loadSeatMap(schedule.id);
 
-    unsubRef.current?.();
-    const siblingIds = await getSiblingScheduleIds(schedule.id);
-    unsubRef.current = subscribeToSeatChanges(schedule.id, () => {
-      if (suppressCountRef.current > 0) { suppressCountRef.current--; return; }
-      loadSeatMap(schedule.id, true);
-    }, siblingIds);
+      unsubRef.current?.();
+      const siblingIds = await getSiblingScheduleIds(schedule.id);
+      unsubRef.current = subscribeToSeatChanges(schedule.id, () => {
+        if (suppressCountRef.current > 0) { suppressCountRef.current--; return; }
+        loadSeatMap(schedule.id, true);
+      }, siblingIds);
+    } else {
+      setSeatMap(null);
+      setAnticipatedCount(1);
+    }
   };
 
   /* ─── seat toggle (manual) ──────────────────────────────── */
@@ -491,6 +504,37 @@ export default function GroupedSale() {
     setTicketMode('choose');
   };
 
+  /* ─── generate tickets for anticipated trips (random seats) ─ */
+  const generateAnticipatedTickets = () => {
+    if (!activeSchedule) return;
+    const count = Math.max(1, Math.min(anticipatedCount, activeSchedule.seats_available - tickets.length));
+    if (count <= 0) { toast.error('Aucun siege disponible'); return; }
+
+    const capacity = activeSchedule.buses?.total_seats || 60;
+    const usedLabels = new Set(tickets.map(t => t.seatLabel));
+    const newTickets: TicketEntry[] = [];
+    for (let i = 0; i < count; i++) {
+      let label = '';
+      let attempts = 0;
+      do {
+        label = String(Math.floor(Math.random() * capacity) + 1);
+        attempts++;
+      } while (usedLabels.has(label) && attempts < 200);
+      usedLabels.add(label);
+      newTickets.push({
+        uid: `t_${++ticketUid}`,
+        scheduleId: activeSchedule.id,
+        seatLabel: label,
+        passengerName: '',
+        passengerPhone: '',
+        price: activeSchedule.price || 0,
+      });
+    }
+
+    setTickets(prev => [...prev, ...newTickets]);
+    setTicketMode('choose');
+  };
+
   /* ─── quick validation (auto-fill + confirm + print) ───── */
   const handleQuickValidation = async () => {
     setTickets(prev => prev.map(t => ({
@@ -565,15 +609,17 @@ export default function GroupedSale() {
     try {
       const seatNumbers = tickets.map(t => t.seatLabel);
 
-      const checks = await Promise.all(
-        seatNumbers.map(s => isSeatStillAvailable(activeSchedule.id, s))
-      );
-      const conflictIdx = checks.findIndex(ok => !ok);
-      if (conflictIdx !== -1) {
-        toast.error(`Siege ${seatNumbers[conflictIdx]} deja reserve. Veuillez actualiser.`);
-        await loadSeatMap(activeSchedule.id);
-        setProcessing(false);
-        return;
+      if (!activeSchedule.is_anticipated) {
+        const checks = await Promise.all(
+          seatNumbers.map(s => isSeatStillAvailable(activeSchedule.id, s))
+        );
+        const conflictIdx = checks.findIndex(ok => !ok);
+        if (conflictIdx !== -1) {
+          toast.error(`Siege ${seatNumbers[conflictIdx]} deja reserve. Veuillez actualiser.`);
+          await loadSeatMap(activeSchedule.id);
+          setProcessing(false);
+          return;
+        }
       }
 
       const totalPrice = tickets.reduce((s, t) => s + t.price, 0);
@@ -1122,6 +1168,11 @@ export default function GroupedSale() {
                       </span>
                       / {schedule.seats_reserved} vendus
                     </span>
+                    {schedule.is_anticipated && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: '#EA580C' }}>
+                        <Zap className="w-2.5 h-2.5" /> Anticipe
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button onClick={() => selectScheduleForSale(schedule)}
@@ -1203,7 +1254,8 @@ export default function GroupedSale() {
           </div>
         </div>
 
-        {/* Auto-select controls */}
+        {/* Auto-select controls (non-anticipated only) */}
+        {!activeSchedule.is_anticipated && (
         <div className="flex items-center gap-3 mb-4 p-3 rounded-xl border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--neutral-50)' }}>
           <Zap className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--primary)' }} />
           <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Selection automatique :</span>
@@ -1219,8 +1271,43 @@ export default function GroupedSale() {
             Selection auto
           </button>
         </div>
+        )}
 
-        {/* Seat map */}
+        {/* Anticipated departure: count selector (no seat map) */}
+        {activeSchedule.is_anticipated && (
+          <div className="mb-4 p-5 rounded-xl border-2" style={{ borderColor: 'var(--primary)', backgroundColor: 'var(--primary-light)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Zap className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+              <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
+                Depart anticipe - Vente sans plan de sieges
+              </span>
+            </div>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>
+              Les sieges seront attribues automatiquement et de maniere aleatoire par le systeme.
+            </p>
+            <div className="flex items-center gap-3 mb-4">
+              <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Nombre de billets :</label>
+              <input type="number" min={1} max={Math.max(1, activeSchedule.seats_available - tickets.length)}
+                value={anticipatedCount}
+                onChange={e => setAnticipatedCount(Math.max(1, Math.min(parseInt(e.target.value) || 1, activeSchedule.seats_available - tickets.length)))}
+                className="w-20 px-3 py-2 border-2 rounded-lg text-sm text-center font-bold"
+                style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                / {Math.max(0, activeSchedule.seats_available - tickets.length)} disponible(s)
+              </span>
+            </div>
+            <button onClick={generateAnticipatedTickets}
+              disabled={tickets.length >= activeSchedule.seats_available}
+              className="w-full py-2.5 rounded-lg text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: 'var(--primary)' }}>
+              <Ticket className="w-4 h-4" />
+              Charger les tickets ({Math.min(anticipatedCount, Math.max(0, activeSchedule.seats_available - tickets.length))})
+            </button>
+          </div>
+        )}
+
+        {/* Seat map (non-anticipated only) */}
+        {!activeSchedule.is_anticipated && (
         <div className="mb-4">
           {loadingSeatMap ? (
             <div className="flex items-center justify-center py-16">
@@ -1262,9 +1349,10 @@ export default function GroupedSale() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Selected seats summary + generate tickets */}
-        {selectedSeats.length > 0 && (
+        {/* Selected seats summary + generate tickets (non-anticipated only) */}
+        {!activeSchedule.is_anticipated && selectedSeats.length > 0 && (
           <div className="p-4 rounded-xl border-2 mb-4" style={{ borderColor: 'var(--primary)', backgroundColor: 'var(--primary-light)' }}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -1351,7 +1439,7 @@ export default function GroupedSale() {
 
             <div className="mt-4 p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'var(--neutral-50)' }}>
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                {tickets.length} billet(s) - {selectedSeats.map(s => s.label).join(', ')}
+                {tickets.length} billet(s){!activeSchedule.is_anticipated ? ` - ${selectedSeats.map(s => s.label).join(', ')}` : ` - Sieges auto (${tickets.map(t => t.seatLabel).join(', ')})`}
               </span>
               <span className="font-bold" style={{ color: 'var(--primary)' }}>
                 {formatPrice(tickets.reduce((s, t) => s + t.price, 0))}
