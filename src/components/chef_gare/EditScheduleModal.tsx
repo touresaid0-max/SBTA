@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Bus, User, MapPin, Clock, Loader2, AlertTriangle, CheckCircle2, Search } from 'lucide-react'
+import { X, Bus, User, MapPin, Clock, Loader2, AlertTriangle, CheckCircle2, Search, Printer } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import toast from 'react-hot-toast'
 
@@ -13,6 +13,7 @@ interface ScheduleData {
   driver_name: string
   seats_reserved: number
   status: string
+  is_anticipated?: boolean
 }
 
 interface RouteOption {
@@ -150,6 +151,16 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
   const busChanged = busId !== currentBusId
   const seatWarning = busChanged && selectedBus && currentBus &&
     selectedBus.capacity < schedule.seats_reserved
+  const overflowCount = seatWarning && selectedBus
+    ? Math.max(0, schedule.seats_reserved - selectedBus.capacity)
+    : 0
+
+  const [transferResult, setTransferResult] = useState<{
+    nextScheduleId: string
+    nextDeparture: string
+    transferredCount: number
+    transferredReservations: { id: string; passenger_name: string; booking_reference: string; seat_numbers: string[] }[]
+  } | null>(null)
 
   const filteredBuses = useMemo(() => {
     if (!busSearch.trim()) return buses
@@ -184,7 +195,7 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
     }
     if (seatWarning) {
       const confirm = window.confirm(
-        `Attention : le nouveau vehicule n'a que ${selectedBus!.capacity} places mais ${schedule.seats_reserved} reservations existent deja. Les reservations excedentaires devront etre gerees manuellement. Continuer ?`
+        `Attention : le nouveau vehicule n'a que ${selectedBus!.capacity} places mais ${schedule.seats_reserved} reservations existent deja. Les ${overflowCount} reservations excedentaires seront automatiquement transferees en priorite vers le prochain depart de la meme ligne. Les billets actuels seront annules et de nouveaux billets seront generes pour le prochain depart, sans frais supplementaires pour les passagers. Voulez-vous continuer ?`
       )
       if (!confirm) return
     }
@@ -196,20 +207,15 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
 
       if (routeId !== currentRouteId) {
         update.route_id = routeId
-        // arrival_station will be derived from route; update to match
-        const selectedRoute = routes.find(r => r.id === routeId)
-        if (selectedRoute) {
-          // The trigger auto_extract_route_info will update route_name automatically
-        }
       }
 
       if (busId !== currentBusId) {
         update.bus_id = busId
-        // Update seats_available based on new bus capacity
         const newBus = buses.find(b => b.id === busId)
         if (newBus) {
-          const newAvailable = Math.max(0, newBus.capacity - schedule.seats_reserved)
-          update.seats_available = newAvailable
+          const keptCount = Math.min(newBus.capacity, schedule.seats_reserved)
+          update.seats_available = Math.max(0, newBus.capacity - keptCount)
+          update.seats_reserved = keptCount
         }
       }
 
@@ -218,20 +224,18 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
       }
 
       if (departureTime !== formatTimeFromISO(currentDeparture)) {
-        // Reconstruct full datetime from selected date + new time
         const currentDt = new Date(currentDeparture)
         const [hours, minutes] = departureTime.split(':').map(Number)
         currentDt.setHours(hours, minutes, 0, 0)
         update.departure_datetime = currentDt.toISOString()
 
-        // Update arrival based on estimated duration
         const selectedRoute = routes.find(r => r.id === routeId)
         const duration = selectedRoute?.estimated_duration_minutes || 180
         const arrivalDt = new Date(currentDt.getTime() + duration * 60000)
         update.arrival_datetime = arrivalDt.toISOString()
       }
 
-      // Apply the update
+      // Apply the schedule update
       const { error } = await supabase
         .from('schedules')
         .update(update)
@@ -239,16 +243,196 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
 
       if (error) throw error
 
+      // Automatic transfer of overflow reservations to the next departure of the same route
+      let transferredInfo: {
+        nextScheduleId: string
+        nextDeparture: string
+        transferredCount: number
+        transferredReservations: { id: string; passenger_name: string; booking_reference: string; seat_numbers: string[] }[]
+      } | null = null
+
+      if (seatWarning && overflowCount > 0) {
+        // Fetch all reservations on the current schedule (ordered by creation = sale order)
+        const { data: allReservations, error: resError } = await supabase
+          .from('reservations')
+          .select('id, passenger_name, passenger_phone, seat_numbers, total_seats, total_price, status, payment_status, booking_reference, qr_code, booked_by, destination_city_name, created_at')
+          .eq('schedule_id', schedule.id)
+          .in('status', ['confirmee', 'en_attente', 'terminee'])
+          .order('created_at', { ascending: true })
+
+        if (resError) throw resError
+
+        const newBusCapacity = selectedBus!.capacity
+        const keptReservations = (allReservations || []).slice(0, newBusCapacity)
+        const overflowReservations = (allReservations || []).slice(newBusCapacity)
+
+        if (overflowReservations.length > 0) {
+          // Find the next departure of the same route (same route_id, later departure, not cancelled)
+          const { data: currentSched } = await supabase
+            .from('schedules')
+            .select('id, route_id, departure_datetime')
+            .eq('id', schedule.id)
+            .single()
+
+          if (currentSched) {
+            const { data: nextSchedules } = await supabase
+              .from('schedules')
+              .select('id, departure_datetime, seats_available, seats_reserved, bus_id, status')
+              .eq('route_id', currentSched.route_id)
+              .neq('id', schedule.id)
+              .neq('status', 'annule')
+              .gt('departure_datetime', currentSched.departure_datetime)
+              .order('departure_datetime', { ascending: true })
+              .limit(10)
+
+            const nextSchedule = (nextSchedules || []).find(s => (s.seats_available ?? 0) >= overflowReservations.reduce((sum, r) => sum + (r.total_seats || 1), 0)) || (nextSchedules || [])[0]
+
+            if (!nextSchedule) {
+              toast.error('Aucun prochain depart trouve sur la meme ligne pour le transfert. Les reservations excedentaires restent sur le depart actuel.')
+            } else {
+              // Fetch payments for overflow reservations
+              const overflowIds = overflowReservations.map(r => r.id)
+              const { data: payments } = await supabase
+                .from('payments')
+                .select('id, reservation_id, amount, payment_method, payment_reference, status, processed_by')
+                .in('reservation_id', overflowIds)
+
+              // Fetch baggage tickets linked to overflow reservations
+              const { data: baggageTickets } = await supabase
+                .from('baggage_tickets')
+                .select('id, reservation_id, baggage_number, destination, price, seat_number, departure_number, bus_registration, description, owner_name, owner_phone, has_ticket, counter_id, station_id, sold_by')
+                .in('reservation_id', overflowIds)
+
+              // Cancel overflow reservations on the current schedule
+              const { error: cancelError } = await supabase
+                .from('reservations')
+                .update({ status: 'annulee', updated_at: new Date().toISOString() })
+                .in('id', overflowIds)
+
+              if (cancelError) throw cancelError
+
+              // Create new reservations on the next schedule, preserving all info
+              const newReservations = []
+              for (const r of overflowReservations) {
+                const newRef = `TRF-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+                const { data: newRes, error: insertError } = await supabase
+                  .from('reservations')
+                  .insert({
+                    schedule_id: nextSchedule.id,
+                    customer_id: null,
+                    passenger_name: r.passenger_name,
+                    passenger_phone: r.passenger_phone,
+                    seat_numbers: r.seat_numbers,
+                    total_seats: r.total_seats,
+                    total_price: r.total_price,
+                    status: 'confirmee',
+                    payment_status: r.payment_status,
+                    booking_reference: newRef,
+                    qr_code: newRef,
+                    booked_by: r.booked_by,
+                    destination_city_name: r.destination_city_name,
+                  })
+                  .select()
+                  .single()
+
+                if (insertError) throw insertError
+                newReservations.push({ original: r, newRes })
+
+                // Copy payment with new reservation id
+                const origPayment = (payments || []).find(p => p.reservation_id === r.id)
+                if (origPayment) {
+                  await supabase.from('payments').insert({
+                    reservation_id: newRes.id,
+                    amount: origPayment.amount,
+                    payment_method: origPayment.payment_method,
+                    payment_reference: origPayment.payment_reference,
+                    status: origPayment.status,
+                    processed_by: origPayment.processed_by,
+                  })
+                }
+
+                // Copy baggage tickets linked to this reservation
+                const origBaggage = (baggageTickets || []).filter(b => b.reservation_id === r.id)
+                for (const b of origBaggage) {
+                  await supabase.from('baggage_tickets').insert({
+                    baggage_number: `TRF-${b.baggage_number}`,
+                    schedule_id: nextSchedule.id,
+                    reservation_id: newRes.id,
+                    destination: b.destination,
+                    price: b.price,
+                    seat_number: b.seat_number,
+                    departure_number: b.departure_number,
+                    bus_registration: b.bus_registration,
+                    description: b.description,
+                    owner_name: b.owner_name,
+                    owner_phone: b.owner_phone,
+                    has_ticket: b.has_ticket,
+                    counter_id: b.counter_id,
+                    station_id: b.station_id,
+                    sold_by: b.sold_by,
+                  })
+                }
+              }
+
+              // Update next schedule seat counts
+              const transferredSeats = overflowReservations.reduce((sum, r) => sum + (r.total_seats || 1), 0)
+              const nextNewReserved = (nextSchedule.seats_reserved || 0) + transferredSeats
+              const nextCapacity = newBusCapacity // fallback; real capacity fetched below
+              const { data: nextBus } = await supabase
+                .from('buses')
+                .select('capacity, total_seats')
+                .eq('id', nextSchedule.bus_id)
+                .maybeSingle()
+              const nextCap = nextBus?.capacity ?? nextBus?.total_seats ?? 60
+              await supabase.from('schedules').update({
+                seats_reserved: nextNewReserved,
+                seats_available: Math.max(0, nextCap - nextNewReserved),
+              }).eq('id', nextSchedule.id)
+
+              // Update current schedule seat counts (already reduced via update, but ensure consistency)
+              const keptSeats = keptReservations.reduce((sum, r) => sum + (r.total_seats || 1), 0)
+              await supabase.from('schedules').update({
+                seats_reserved: keptSeats,
+                seats_available: Math.max(0, newBusCapacity - keptSeats),
+              }).eq('id', schedule.id)
+
+              // Audit log for the transfer
+              await supabase.from('schedule_change_logs').insert({
+                schedule_id: schedule.id,
+                change_type: 'bus',
+                old_bus_id: currentBusId || null,
+                new_bus_id: busId,
+                reason: `Transfert auto de ${overflowReservations.length} reservation(s) vers le prochain depart (${nextSchedule.id}) suite a reduction de capacite du bus. ${reason.trim()}`,
+                observation: `Reservations transferees: ${overflowReservations.map(r => r.booking_reference).join(', ')}`,
+                changed_by: userId,
+              })
+
+              transferredInfo = {
+                nextScheduleId: nextSchedule.id,
+                nextDeparture: new Date(nextSchedule.departure_datetime).toLocaleString('fr-FR'),
+                transferredCount: overflowReservations.length,
+                transferredReservations: newReservations.map(nr => ({
+                  id: nr.newRes.id,
+                  passenger_name: nr.original.passenger_name,
+                  booking_reference: nr.newRes.booking_reference,
+                  seat_numbers: nr.original.seat_numbers || [],
+                })),
+              }
+            }
+          }
+        }
+      }
+
       // Determine change type for audit log
       let changeType = 'multiple'
       const changes: string[] = []
       if (routeId !== currentRouteId) changes.push('route')
-      if (busId !== currentBusId) changes.push('bus')
+      if (busId !== currentDriverId) changes.push('bus')
       if (driverId !== currentDriverId) changes.push('driver')
       if (departureTime !== formatTimeFromISO(currentDeparture)) changes.push('departure_time')
       if (changes.length === 1) changeType = changes[0]
 
-      // Insert audit log
+      // Insert audit log for the main change
       await supabase.from('schedule_change_logs').insert({
         schedule_id: schedule.id,
         change_type: changeType,
@@ -264,13 +448,48 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
         changed_by: userId,
       })
 
-      toast.success('Depart modifie avec succes')
-      onSaved()
+      if (transferredInfo) {
+        setTransferResult(transferredInfo)
+        toast.success(`Depart modifie. ${transferredInfo.transferredCount} reservation(s) transferee(s) vers le prochain depart.`)
+      } else {
+        toast.success('Depart modifie avec succes')
+        onSaved()
+      }
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors de la modification')
     } finally {
       setSaving(false)
     }
+  }
+
+  function printTransferredTickets() {
+    if (!transferResult) return
+    const win = window.open('', '_blank', 'width=400,height=600')
+    if (!win) {
+      toast.error('Veuillez autoriser les pop-ups pour imprimer les tickets')
+      return
+    }
+    const ticketsHtml = transferResult.transferredReservations.map(r => `
+      <div class="ticket">
+        <h2>SBTA - Ticket Transfere</h2>
+        <p><strong>Passager:</strong> ${r.passenger_name}</p>
+        <p><strong>Reference:</strong> ${r.booking_reference}</p>
+        <p><strong>Sieges:</strong> ${(r.seat_numbers || []).join(', ') || 'N/A'}</p>
+        <p><strong>Nouveau depart:</strong> ${transferResult.nextDeparture}</p>
+        <p class="note">Billet transfere sans frais supplementaire.</p>
+      </div>
+    `).join('')
+    win.document.write(`<html><head><title>Tickets Transfères</title><style>
+      body { font-family: monospace; margin: 0; padding: 8px; }
+      .ticket { border: 1px dashed #333; padding: 10px; margin-bottom: 10px; }
+      .ticket h2 { font-size: 14px; margin: 0 0 8px; }
+      .ticket p { font-size: 12px; margin: 2px 0; }
+      .note { font-style: italic; color: #666; margin-top: 8px; }
+      @media print { .ticket { page-break-after: always; } }
+    </style></head><body>${ticketsHtml}</body></html>`)
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print(); }, 300)
   }
 
   return (
@@ -456,18 +675,70 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50/50">
-          <button onClick={onClose}
-            className="px-5 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:bg-gray-100 transition-colors">
-            Annuler
-          </button>
-          <button onClick={handleSave}
-            disabled={saving || !hasChanges || !reason.trim() || loading}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#0B7439' }}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            Enregistrer les modifications
-          </button>
+          {transferResult ? (
+            <>
+              <button onClick={() => { onSaved() }}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:bg-gray-100 transition-colors">
+                Fermer
+              </button>
+              <button onClick={printTransferredTickets}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
+                style={{ backgroundColor: '#0B7439' }}>
+                <Printer className="w-4 h-4" />
+                Imprimer les {transferResult.transferredCount} ticket(s) transfere(s)
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={onClose}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:bg-gray-100 transition-colors">
+                Annuler
+              </button>
+              <button onClick={handleSave}
+                disabled={saving || !hasChanges || !reason.trim() || loading}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#0B7439' }}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                Enregistrer les modifications
+              </button>
+            </>
+          )}
         </div>
+
+        {/* Transfer result panel */}
+        {transferResult && (
+          <div className="px-6 py-4 border-t border-gray-200 bg-amber-50">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-800">
+                  {transferResult.transferredCount} reservation(s) transferee(s) vers le prochain depart
+                </p>
+                <p className="text-xs text-amber-700 mt-1">
+                  Nouveau depart : {transferResult.nextDeparture}
+                </p>
+                <div className="mt-2 space-y-1">
+                  {transferResult.transferredReservations.map(r => (
+                    <div key={r.id} className="text-xs text-amber-700 flex items-center gap-2">
+                      <span className="font-medium">{r.passenger_name}</span>
+                      <span className="opacity-60">|</span>
+                      <span>{r.booking_reference}</span>
+                      {r.seat_numbers.length > 0 && (
+                        <>
+                          <span className="opacity-60">|</span>
+                          <span>Sieges: {r.seat_numbers.join(', ')}</span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-amber-600 mt-2 italic">
+                  Les billets ont ete annules sur le depart precedent et recrees sur le prochain depart. Aucun frais supplementaire pour les passagers.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

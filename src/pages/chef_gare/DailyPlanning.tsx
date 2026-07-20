@@ -2443,6 +2443,7 @@ export default function DailyPlanning() {
             driver_name: editSchedule.driver_name,
             seats_reserved: editSchedule.seats_reserved,
             status: editSchedule.status,
+            is_anticipated: editSchedule.is_anticipated,
           }}
           stationId={station?.id || ''}
           userId={user?.id || ''}
