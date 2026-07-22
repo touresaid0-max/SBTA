@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  FileText, Search, Download, ChevronDown, Calendar, Filter,
+  FileText, Download, Calendar, Filter,
 } from 'lucide-react'
+import { buildCompanyGroups, resolveCompanyIds } from '@/utils/companyGroups'
+import type { CompanyWithHierarchy } from '@/utils/companyGroups'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees } from '@/services/hr.service'
@@ -27,7 +29,7 @@ const ROLE_LABELS: Record<string, string> = {
   responsable_logistique: 'Resp. Logistique', carburant: 'Carburant', agent_qhse: 'Agent QHSE',
 }
 
-interface Company { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }
+type Company = CompanyWithHierarchy
 interface Station { id: string; name: string; company_id: string | null }
 
 export default function LeaveReportPage() {
@@ -80,7 +82,10 @@ export default function LeaveReportPage() {
     try {
       // Filter employees
       let filtered = employees
-      if (companyFilter) filtered = filtered.filter(e => e.company_id === companyFilter)
+      if (companyFilter) {
+        const matchIds = resolveCompanyIds(companyFilter, companies)
+        filtered = filtered.filter(e => e.company_id && matchIds.includes(e.company_id))
+      }
       if (stationFilter) filtered = filtered.filter(e => e.station_id === stationFilter)
       if (roleFilter) filtered = filtered.filter(e => e.role === roleFilter)
       if (employeeFilter) filtered = filtered.filter(e => e.id === employeeFilter)
@@ -350,7 +355,28 @@ export default function LeaveReportPage() {
             <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm" style={{ borderColor: 'var(--border)' }}>
               <option value="">Toutes les sociétés</option>
-              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {(() => {
+                const { groups, standalone } = buildCompanyGroups(companies)
+                return (
+                  <>
+                    {groups.map(({ group, subsidiaries }) => (
+                      <optgroup key={group.id} label={group.name}>
+                        <option value={group.id}>
+                          {group.name} (groupe + sous-groupes)
+                        </option>
+                        {subsidiaries.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {`\u00A0\u00A0${s.name} (${s.code})`}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {standalone.map(c => (
+                      <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                    ))}
+                  </>
+                )
+              })()}
             </select>
           </div>
           {/* Station */}
@@ -549,3 +575,6 @@ export default function LeaveReportPage() {
     </div>
   )
 }
+
+
+export default LeaveReportPage
