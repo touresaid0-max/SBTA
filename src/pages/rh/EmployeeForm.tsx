@@ -62,7 +62,7 @@ const ROLE_OPTIONS: { value: SBTARole; label: string; group: string }[] = [
   { value: 'carburant',         label: 'Carburant',           group: 'Opérationnel' },
 ]
 
-const LICENSE_CATEGORIES = ['B', 'C', 'D', 'DE', 'C+E']
+const LICENSE_CATEGORIES = ['A', 'B', 'C', 'D', 'E', 'DE', 'C+E']
 
 interface Company { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }
 interface Station  { id: string; name: string }
