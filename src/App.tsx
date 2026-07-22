@@ -152,6 +152,7 @@ import LoansPage from './pages/rh/LoansPage';
 import DeductionsPage from './pages/rh/DeductionsPage';
 import PrimesPage from './pages/rh/PrimesPage';
 import SuspensionsPage from './pages/rh/SuspensionsPage';
+import DeactivatedEmployeesPage from './pages/rh/DeactivatedEmployeesPage';
 import ExplanationsPage from './pages/rh/ExplanationsPage';
 import DeclarationsPage from './pages/rh/DeclarationsPage';
 import AgentColisDashboard from './pages/agent-colis/Dashboard';
@@ -424,6 +425,7 @@ function App() {
             <Route path="rh/deductions"             element={<ProtectedRoute roles={['rh', 'admin']}><DeductionsPage /></ProtectedRoute>} />
             <Route path="rh/primes"                 element={<ProtectedRoute roles={['rh', 'admin']}><PrimesPage /></ProtectedRoute>} />
             <Route path="rh/suspensions"            element={<ProtectedRoute roles={['rh', 'admin']}><SuspensionsPage /></ProtectedRoute>} />
+            <Route path="rh/deactivated"            element={<ProtectedRoute roles={['rh', 'admin']}><DeactivatedEmployeesPage /></ProtectedRoute>} />
             <Route path="rh/explanations"           element={<ProtectedRoute roles={['rh', 'admin']}><ExplanationsPage /></ProtectedRoute>} />
             <Route path="rh/declarations"           element={<ProtectedRoute roles={['rh', 'admin', 'daf']}><DeclarationsPage /></ProtectedRoute>} />
             <Route path="rh/settings"               element={<ProtectedRoute roles={['rh', 'admin']}><RHSettings /></ProtectedRoute>} />

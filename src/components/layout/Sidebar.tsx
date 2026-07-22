@@ -143,6 +143,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
         { label: 'Employés',             path: '/rh/employees',    icon: <Users className="w-5 h-5" /> },
         { label: 'Chauffeurs',           path: '/rh/drivers',      icon: <Bus className="w-5 h-5" /> },
         { label: 'Suspensions',          path: '/rh/suspensions',  icon: <UserX className="w-5 h-5" /> },
+        { label: 'Employés désactivés',  path: '/rh/deactivated',  icon: <UserX className="w-5 h-5" /> },
         { label: "Demandes d'explication", path: '/rh/explanations', icon: <MessageSquareWarning className="w-5 h-5" /> },
       ],
     },

@@ -3,11 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Pencil, Ban, User, Building2,
   MapPin, FileText, Star, Upload, Download,
-  AlertTriangle, ShieldCheck, DollarSign, TrendingUp, Calendar, Camera, CalendarClock, AlertCircle,
+  AlertTriangle, ShieldCheck, DollarSign, TrendingUp, Calendar, Camera, CalendarClock, AlertCircle, RotateCcw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
-import { uploadContract, uploadAvatar, deactivateEmployee, convertToSalaried, fetchEmployeeById } from '@/services/hr.service'
+import { uploadContract, uploadAvatar, deactivateEmployee, reactivateEmployee, convertToSalaried, fetchEmployeeById } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
 import type { Employee } from '@/types/hr.types'
 import { computeAge, monthsUntilRetirement, isNearRetirement, isRetirementReached, RETIREMENT_AGE } from '@/utils/retirement'
@@ -83,6 +83,7 @@ export default function EmployeeDetail() {
   } | null>(null)
   const [newSalary, setNewSalary] = useState('')
   const [isConverting, setIsConverting] = useState(false)
+  const [reactivating, setReactivating] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -160,6 +161,20 @@ export default function EmployeeDetail() {
     }
   }
 
+  const handleReactivate = async () => {
+    if (!id) return
+    setReactivating(true)
+    try {
+      await reactivateEmployee(id)
+      toast.success('Employé réactivé avec succès')
+      setEmployee(prev => prev ? { ...prev, status: 'active', deactivation_reason: null, deactivated_at: null } : null)
+    } catch {
+      toast.error('Erreur lors de la réactivation')
+    } finally {
+      setReactivating(false)
+    }
+  }
+
   const handleConvertToSalaried = async () => {
     if (!employee || !user || !newSalary || parseFloat(newSalary) <= 0) return
     setIsConverting(true)
@@ -217,6 +232,18 @@ export default function EmployeeDetail() {
             >
               <Ban className="w-4 h-4" />
               Désactiver
+            </button>
+          )}
+          {employee.status === 'inactive' && (
+            <button
+              onClick={handleReactivate}
+              disabled={reactivating}
+              className="flex items-center gap-2 px-4 py-2 bg-[#0B7439] text-white rounded-xl text-sm font-semibold hover:bg-[#085c2d] transition-colors disabled:opacity-50"
+            >
+              {reactivating
+                ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <RotateCcw className="w-4 h-4" />}
+              Réactiver
             </button>
           )}
         </div>

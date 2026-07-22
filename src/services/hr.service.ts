@@ -280,6 +280,45 @@ export async function deactivateEmployee(
   if (error) throw error
 }
 
+// ── Réactiver un employé désactivé ────────────────────────────────
+export async function reactivateEmployee(employeeId: string): Promise<void> {
+  const { data: empExists } = await supabase
+    .from('employees')
+    .select('id')
+    .eq('id', employeeId)
+    .maybeSingle()
+
+  if (empExists) {
+    const { error } = await supabase.from('employees').update({
+      account_status:      'active',
+      deactivated_at:      null,
+      deactivated_by:      null,
+      deactivation_reason: null,
+      updated_at:          new Date().toISOString(),
+    }).eq('id', employeeId)
+    if (error) throw error
+    return
+  }
+
+  const { error } = await supabase.from('users').update({
+    status:              'active',
+    deactivated_at:      null,
+    deactivated_by:      null,
+    deactivation_reason: null,
+  }).eq('id', employeeId)
+  if (error) throw error
+}
+
+// ── Suppression définitive d'un employé (admin uniquement) ────────
+export async function deleteEmployeePermanently(
+  employeeId: string,
+  sourceTable: 'employees' | 'users'
+): Promise<void> {
+  const table = sourceTable === 'employees' ? 'employees' : 'users'
+  const { error } = await supabase.from(table).delete().eq('id', employeeId)
+  if (error) throw error
+}
+
 // ── Taux journaliers par itinéraire ──────────────────────────────
 export async function fetchDriverDailyRates(companyId?: string) {
   let q = supabase
