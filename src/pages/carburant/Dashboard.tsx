@@ -6,6 +6,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../services/supabase'
 import { useAuthStore } from '../../store/authStore'
+import { buildCompanyGroups, resolveCompanyIds, type CompanyWithHierarchy } from '../../utils/companyGroups'
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   startOfYear, endOfYear, subDays,
@@ -27,7 +28,7 @@ interface Withdrawal {
   withdrawal_date: string
 }
 
-interface Company { id: string; name: string }
+interface Company extends CompanyWithHierarchy {}
 interface BusStat { registration_number: string; liters: number; amount: number }
 interface StationStat { station_name: string; liters: number; amount: number }
 interface FuelTypeStat { fuel_type: string; liters: number; amount: number }
@@ -121,8 +122,10 @@ export default function CarburantDashboard() {
 
   useEffect(() => { load() }, [load])
 
+  const { groups, standalone } = useMemo(() => buildCompanyGroups(companies), [companies])
+
   useEffect(() => {
-    supabase.from('companies').select('id,name').eq('is_active', true).order('name')
+    supabase.from('companies').select('id,name,code,parent_id,is_group').eq('is_active', true).order('name')
       .then(({ data }) => setCompanies((data as Company[]) || []))
   }, [])
 
@@ -130,8 +133,9 @@ export default function CarburantDashboard() {
 
   const filtered = useMemo(() => {
     if (selectedCompany === 'all') return withdrawals
-    return withdrawals.filter(w => w.company_id === selectedCompany)
-  }, [withdrawals, selectedCompany])
+    const ids = new Set(resolveCompanyIds(selectedCompany, companies))
+    return withdrawals.filter(w => w.company_id && ids.has(w.company_id))
+  }, [withdrawals, selectedCompany, companies])
 
   /* ─── aggregations ─── */
 
@@ -247,12 +251,12 @@ export default function CarburantDashboard() {
           ))}
         </div>
 
-        {/* Company select */}
+        {/* Company select — grouped by sous-groupe */}
         <div className="relative">
           <select
             value={selectedCompany}
             onChange={e => setSelectedCompany(e.target.value)}
-            className="appearance-none pl-3 pr-8 py-2 rounded-xl border text-sm font-semibold transition-colors"
+            className="appearance-none pl-3 pr-8 py-2 rounded-xl border text-sm font-semibold transition-colors max-w-[280px]"
             style={{
               borderColor: 'var(--border)',
               backgroundColor: 'var(--surface)',
@@ -260,9 +264,21 @@ export default function CarburantDashboard() {
             }}
           >
             <option value="all">Toutes les sociétés</option>
-            {companies.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+            {groups.map(({ group, subsidiaries }) => (
+              <optgroup key={group.id} label={`${group.name} — Groupe (${subsidiaries.length} filiales)`}>
+                <option value={group.id}>{group.name} (toutes les filiales)</option>
+                {subsidiaries.map(sub => (
+                  <option key={sub.id} value={sub.id}>↳ {sub.name} ({sub.code})</option>
+                ))}
+              </optgroup>
             ))}
+            {standalone.length > 0 && (
+              <optgroup label="Sociétés autonomes">
+                {standalone.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
             style={{ color: 'var(--text-muted)' }} />
