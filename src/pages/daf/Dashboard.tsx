@@ -473,7 +473,7 @@ export default function DAFDashboard() {
                 <span style={{ color: k.color }}>{k.icon}</span>
                 <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{k.label}</p>
               </div>
-              <p className="text-sm font-bold" style={{ color: k.color }}>{fmtM(k.val)}</p>
+              <p className="text-sm font-bold" style={{ color: k.color }}>{fmt(k.val)}</p>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 {totalExpenses > 0 ? ((k.val / totalExpenses) * 100).toFixed(1) + '%' : '—'}
               </p>
@@ -522,7 +522,7 @@ export default function DAFDashboard() {
               <div key={e.name}>
                 <div className="flex justify-between text-xs mb-0.5">
                   <span style={{ color: 'var(--text-secondary)' }}>{e.name}</span>
-                  <span className="font-semibold" style={{ color: e.color }}>{fmtM(e.val)}</span>
+                  <span className="font-semibold" style={{ color: e.color }}>{fmt(e.val)}</span>
                 </div>
                 <div className="h-1.5 rounded-full" style={{ backgroundColor: 'var(--border)' }}>
                   <div className="h-1.5 rounded-full transition-all"
@@ -698,7 +698,7 @@ export default function DAFDashboard() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold flex items-center gap-0.5" style={{ color: '#10B981' }}>
-                        <ArrowUpRight className="w-3.5 h-3.5" />{fmtM(b.margin)}
+                        <ArrowUpRight className="w-3.5 h-3.5" />{fmt(b.margin)}
                       </p>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{b.revenue > 0 ? ((b.margin / b.revenue) * 100).toFixed(1) + '%' : '—'}</p>
                     </div>
@@ -722,7 +722,7 @@ export default function DAFDashboard() {
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{b.company_name}</p>
                     </div>
                     <p className="text-sm font-bold flex items-center gap-0.5" style={{ color: '#EF4444' }}>
-                      <ArrowDownRight className="w-3.5 h-3.5" />{fmtM(Math.abs(b.margin))}
+                      <ArrowDownRight className="w-3.5 h-3.5" />{fmt(Math.abs(b.margin))}
                     </p>
                   </div>
                 ))}
@@ -810,7 +810,7 @@ export default function DAFDashboard() {
                       <div className="text-xs font-semibold w-16 text-right" style={{ color: e.color }}>
                         {totalExpenses > 0 ? ((e.val / totalExpenses) * 100).toFixed(1) + '%' : '—'}
                       </div>
-                      <div className="text-xs w-24 text-right" style={{ color: 'var(--text-muted)' }}>{fmtM(e.val)}</div>
+                      <div className="text-xs w-24 text-right" style={{ color: 'var(--text-muted)' }}>{fmt(e.val)}</div>
                     </div>
                   ))}
                 </div>
