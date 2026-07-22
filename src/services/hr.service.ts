@@ -41,6 +41,8 @@ export async function fetchEmployees(filters: EmployeeFilters): Promise<Employee
     usersQ = usersQ.eq('status', 'active')
   } else if (filters.status === 'inactive') {
     usersQ = usersQ.eq('status', 'inactive')
+  } else if (filters.status === 'pending_deletion') {
+    usersQ = usersQ.eq('status', 'pending_deletion')
   } else if (filters.status === 'pending') {
     // les users n'ont pas de statut "pending" — exclure de ce filtre
     usersQ = usersQ.eq('id', '00000000-0000-0000-0000-000000000000') // retourne rien
@@ -166,7 +168,11 @@ function mapEmployeeRow(data: any, source: 'employees' | 'users'): Employee {
     : (data.email ?? '')
 
   const status = source === 'employees'
-    ? (data.account_status === 'active' ? 'active' : data.account_status === 'suspended' ? 'suspended' : data.account_status === 'inactive' ? 'inactive' : 'pending')
+    ? (data.account_status === 'active' ? 'active'
+      : data.account_status === 'suspended' ? 'suspended'
+      : data.account_status === 'inactive' ? 'inactive'
+      : data.account_status === 'pending_deletion' ? 'pending_deletion'
+      : 'pending')
     : (data.status ?? (data.is_active ? 'active' : 'inactive'))
 
   return {
@@ -309,7 +315,37 @@ export async function reactivateEmployee(employeeId: string): Promise<void> {
   if (error) throw error
 }
 
-// ── Suppression définitive d'un employé (admin uniquement) ────────
+// ── Demander la suppression définitive (RH → Admin) ───────────────
+export async function requestEmployeeDeletion(
+  employeeId: string,
+  requestedBy: string
+): Promise<void> {
+  const { data: empExists } = await supabase
+    .from('employees')
+    .select('id')
+    .eq('id', employeeId)
+    .maybeSingle()
+
+  if (empExists) {
+    const { error } = await supabase.from('employees').update({
+      account_status:         'pending_deletion',
+      deletion_requested_at:  new Date().toISOString(),
+      deletion_requested_by:  requestedBy,
+      updated_at:             new Date().toISOString(),
+    }).eq('id', employeeId)
+    if (error) throw error
+    return
+  }
+
+  const { error } = await supabase.from('users').update({
+    status:                 'pending_deletion',
+    deletion_requested_at:  new Date().toISOString(),
+    deletion_requested_by:  requestedBy,
+  }).eq('id', employeeId)
+  if (error) throw error
+}
+
+// ── Supprimer définitivement un employé (admin uniquement) ────────
 export async function deleteEmployeePermanently(
   employeeId: string,
   sourceTable: 'employees' | 'users'

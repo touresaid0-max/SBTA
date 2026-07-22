@@ -11,6 +11,7 @@ const STATUS_STYLES: Record<string, { color: string; label: string; bg?: string 
   suspended:            { color: '#AF3029', label: 'Suspendu' },
   repos_obligatoire:    { color: '#D97706', label: 'En repos' },
   pending_confirmation: { color: '#1D6FA4', label: 'En attente' },
+  pending_deletion:     { color: '#92400E', label: 'Suppression demandée' },
 
   disponible:       { color: '#0B7439', label: 'Disponible' },
   en_service:       { color: '#1D6FA4', label: 'En service' },

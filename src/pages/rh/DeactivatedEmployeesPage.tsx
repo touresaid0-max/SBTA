@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Eye, RotateCcw, Trash2, ChevronDown, UserX } from 'lucide-react'
+import { Search, Eye, RotateCcw, ChevronDown, UserX, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
-import { fetchEmployees, reactivateEmployee, deleteEmployeePermanently } from '@/services/hr.service'
+import { fetchEmployees, reactivateEmployee, requestEmployeeDeletion } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
 import { resolveCompanyIds, buildCompanyGroups } from '@/utils/companyGroups'
 import type { Employee, EmployeeFilters } from '@/types/hr.types'
@@ -25,7 +25,6 @@ interface Company { id: string; name: string; code: string; parent_id?: string |
 export default function DeactivatedEmployeesPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const isAdmin = user?.role === 'admin'
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
@@ -33,9 +32,9 @@ export default function DeactivatedEmployeesPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [reactivatingId, setReactivatingId] = useState<string | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deletionTarget, setDeletionTarget] = useState<Employee | null>(null)
+  const [requestingDeletion, setRequestingDeletion] = useState(false)
+  const [deletionConfirmText, setDeletionConfirmText] = useState('')
 
   useEffect(() => {
     supabase.from('companies').select('id, name, code, parent_id, is_group').order('name')
@@ -55,7 +54,7 @@ export default function DeactivatedEmployeesPage() {
       search,
     }
     fetchEmployees(filters)
-      .then(setEmployees)
+      .then(data => setEmployees(data.filter(e => e.status === 'inactive')))
       .catch(() => toast.error('Erreur lors du chargement'))
       .finally(() => setLoading(false))
   }, [companyFilter, companies, search])
@@ -75,21 +74,20 @@ export default function DeactivatedEmployeesPage() {
     }
   }
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return
-    if (deleteConfirmText !== 'SUPPRIMER') return
-    setDeleting(true)
+  const handleRequestDeletion = async () => {
+    if (!deletionTarget || !user) return
+    if (deletionConfirmText !== 'DEMANDER') return
+    setRequestingDeletion(true)
     try {
-      const source = deleteTarget.source_table === 'users' ? 'users' : 'employees'
-      await deleteEmployeePermanently(deleteTarget.id, source)
-      toast.success('Employé supprimé définitivement')
-      setEmployees(prev => prev.filter(e => e.id !== deleteTarget.id))
-      setDeleteTarget(null)
-      setDeleteConfirmText('')
+      await requestEmployeeDeletion(deletionTarget.id, user.id)
+      toast.success(`${deletionTarget.full_name} envoyé vers Admin > Utilisateurs en attente de suppression`)
+      setEmployees(prev => prev.filter(e => e.id !== deletionTarget.id))
+      setDeletionTarget(null)
+      setDeletionConfirmText('')
     } catch {
-      toast.error('Erreur lors de la suppression')
+      toast.error('Erreur lors de la demande de suppression')
     } finally {
-      setDeleting(false)
+      setRequestingDeletion(false)
     }
   }
 
@@ -111,7 +109,7 @@ export default function DeactivatedEmployeesPage() {
         <div className="text-sm text-[#92400E]">
           <strong>Employés hors effectif.</strong> Ces employés sont exclus de la masse salariale, des effectifs actifs et des tableaux de bord RH.
           L'historique et les données sont conservés. La réactivation est possible à tout moment.
-          {isAdmin && ' La suppression définitive est réservée aux administrateurs.'}
+          Pour supprimer définitivement un employé, une demande doit être envoyée à l'Administrateur qui traitera la suppression depuis <strong>Admin &gt; Utilisateurs</strong>.
         </div>
       </div>
 
@@ -238,15 +236,13 @@ export default function DeactivatedEmployeesPage() {
                             ? <div className="w-4 h-4 border-2 border-[#1D6FA4] border-t-transparent rounded-full animate-spin" />
                             : <RotateCcw className="w-4 h-4" />}
                         </button>
-                        {isAdmin && (
-                          <button
-                            onClick={() => { setDeleteTarget(emp); setDeleteConfirmText('') }}
-                            className="p-1.5 rounded-lg hover:bg-[#F8D7D5] text-[#AF3029] transition-colors"
-                            title="Supprimer définitivement"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => { setDeletionTarget(emp); setDeletionConfirmText('') }}
+                          className="p-1.5 rounded-lg hover:bg-[#FEF3C7] text-[#D97706] transition-colors"
+                          title="Demander la suppression définitive"
+                        >
+                          <Send className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -257,48 +253,50 @@ export default function DeactivatedEmployeesPage() {
         )}
       </div>
 
-      {/* Delete confirmation modal */}
-      {deleteTarget && (
+      {/* Request deletion confirmation modal */}
+      {deletionTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#FEE2E2] flex items-center justify-center flex-shrink-0">
-                <Trash2 className="w-5 h-5 text-[#AF3029]" />
+              <div className="w-10 h-10 rounded-xl bg-[#FEF3C7] flex items-center justify-center flex-shrink-0">
+                <Send className="w-5 h-5 text-[#D97706]" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-[#1A2E22]">Suppression définitive</h3>
-                <p className="text-sm text-[#6B7280]">Action irréversible</p>
+                <h3 className="text-lg font-bold text-[#1A2E22]">Demande de suppression définitive</h3>
+                <p className="text-sm text-[#6B7280]">Transmission à l'Administrateur</p>
               </div>
             </div>
-            <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-xl p-4 text-sm text-[#AF3029]">
-              Vous êtes sur le point de <strong>supprimer définitivement</strong> l'employé{' '}
-              <strong>{deleteTarget.full_name}</strong>. Toutes ses données seront perdues,
-              y compris l'historique de paie et les informations contractuelles.
+            <div className="bg-[#FFFBEB] border border-[#FCD34D] rounded-xl p-4 text-sm text-[#92400E]">
+              Vous allez demander la suppression définitive de l'employé{' '}
+              <strong>{deletionTarget.full_name}</strong>. L'employé sera envoyé vers{' '}
+              <strong>Admin &gt; Utilisateurs &gt; Inactifs / Suspendus</strong> avec le statut
+              « En attente de suppression définitive ». Seul l'Administrateur pourra alors procéder
+              à la suppression. Les données sont conservées en attendant.
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1">
-                Pour confirmer, tapez <strong>SUPPRIMER</strong>
+                Pour confirmer, tapez <strong>DEMANDER</strong>
               </label>
               <input
-                value={deleteConfirmText}
-                onChange={e => setDeleteConfirmText(e.target.value)}
+                value={deletionConfirmText}
+                onChange={e => setDeletionConfirmText(e.target.value)}
                 className="w-full border border-[#E2EAE5] rounded-xl px-3 py-2 text-sm text-[#374151]"
-                placeholder="SUPPRIMER"
+                placeholder="DEMANDER"
               />
             </div>
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => { setDeleteTarget(null); setDeleteConfirmText('') }}
+                onClick={() => { setDeletionTarget(null); setDeletionConfirmText('') }}
                 className="px-4 py-2 border border-[#E2EAE5] rounded-xl text-sm text-[#6B7280] hover:bg-[#F8FAF8]"
               >
                 Annuler
               </button>
               <button
-                onClick={handleDelete}
-                disabled={deleteConfirmText !== 'SUPPRIMER' || deleting}
-                className="px-4 py-2 bg-[#AF3029] text-white rounded-xl text-sm font-semibold hover:bg-[#8B1F1A] disabled:opacity-50 transition-colors"
+                onClick={handleRequestDeletion}
+                disabled={deletionConfirmText !== 'DEMANDER' || requestingDeletion}
+                className="px-4 py-2 bg-[#D97706] text-white rounded-xl text-sm font-semibold hover:bg-[#B45309] disabled:opacity-50 transition-colors"
               >
-                {deleting ? 'Suppression...' : 'Supprimer définitivement'}
+                {requestingDeletion ? 'Envoi...' : 'Demander la suppression'}
               </button>
             </div>
           </div>

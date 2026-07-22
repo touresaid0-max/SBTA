@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Pencil, Ban, Key, User as UserIcon,
   Search, AlertCircle, CheckCircle, X, Clock, Users as UsersIcon,
+  Trash2, AlertTriangle, RotateCcw,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import DataTable from '../../components/shared/DataTable';
 import StatusBadge from '../../components/shared/StatusBadge';
 import CreateAccountModal from '../../components/admin/CreateAccountModal';
 import { fetchPendingEmployees, type PendingEmployee } from '../../services/employeeAccount.service';
+import { deleteEmployeePermanently, reactivateEmployee } from '../../services/hr.service';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -88,7 +90,7 @@ const emptyForm = () => ({
   status: 'active',
 });
 
-type TabType = 'pending' | 'active' | 'inactive';
+type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
 
 export default function Users() {
   const [activeTab, setActiveTab] = useState<TabType>('pending');
@@ -109,6 +111,12 @@ export default function Users() {
   const [pendingEmployees, setPendingEmployees] = useState<PendingEmployee[]>([]);
   const [pendingLoading, setPendingLoading] = useState(true);
   const [createAccountTarget, setCreateAccountTarget] = useState<PendingEmployee | null>(null);
+
+  // Suppression définitive (admin uniquement)
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [reactivatingDeletion, setReactivatingDeletion] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -152,6 +160,7 @@ export default function Users() {
           station_id:   e.station_id ?? undefined,
           status:       e.account_status === 'active' ? 'active'
                         : e.account_status === 'inactive' ? 'inactive'
+                        : e.account_status === 'pending_deletion' ? 'pending_deletion'
                         : 'suspended',
           is_active:    e.account_status === 'active',
           employee_id:  e.employee_id ?? undefined,
@@ -313,6 +322,38 @@ export default function Users() {
     }
   };
 
+  const handlePermanentDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleteConfirmText !== 'SUPPRIMER') return;
+    setDeleting(true);
+    try {
+      const isEmployee = !(deleteTarget as any).organizations && !!(deleteTarget as any).companies;
+      const source = isEmployee ? 'employees' : 'users';
+      await deleteEmployeePermanently(deleteTarget.id, source);
+      toast.success('Employé supprimé définitivement');
+      setDeleteTarget(null);
+      setDeleteConfirmText('');
+      loadUsers();
+    } catch {
+      toast.error('Erreur lors de la suppression définitive');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleReactivateFromDeletion = async (user: UserRow) => {
+    setReactivatingDeletion(user.id);
+    try {
+      await reactivateEmployee(user.id);
+      toast.success(`${getUserDisplayName(user)} réactivé avec succès`);
+      loadUsers();
+    } catch {
+      toast.error('Erreur lors de la réactivation');
+    } finally {
+      setReactivatingDeletion(null);
+    }
+  };
+
   const handleResetPassword = async (user: UserRow) => {
     const displayName = user.first_name ? `${user.first_name} ${user.last_name}` : user.full_name;
     const newPassword = prompt(`Nouveau mot de passe pour "${displayName}" (min. 8 caractères) :`);
@@ -340,7 +381,8 @@ export default function Users() {
   const getRoleInfo = (role: UserRole) => ROLES.find(r => r.value === role) ?? ROLES[ROLES.length - 1];
 
   const activeUsers = users.filter(u => u.status === 'active' || u.status === 'repos_obligatoire');
-  const inactiveUsers = users.filter(u => u.status !== 'active' && u.status !== 'repos_obligatoire');
+  const pendingDeletionUsers = users.filter(u => u.status === 'pending_deletion');
+  const inactiveUsers = users.filter(u => u.status !== 'active' && u.status !== 'repos_obligatoire' && u.status !== 'pending_deletion');
 
   const filteredUsers = (activeTab === 'active' ? activeUsers : inactiveUsers).filter(u => {
     const matchRole = roleFilter === 'all' || u.role === roleFilter;
@@ -433,6 +475,7 @@ export default function Users() {
           { key: 'pending', label: 'En attente', count: pendingEmployees.length, icon: Clock, warningColor: '#D97706' },
           { key: 'active',  label: 'Comptes actifs',  count: activeUsers.length,   icon: CheckCircle, warningColor: undefined },
           { key: 'inactive',label: 'Inactifs / Suspendus', count: inactiveUsers.length, icon: Ban, warningColor: undefined },
+          { key: 'pending_deletion', label: 'Suppressions demandées', count: pendingDeletionUsers.length, icon: AlertTriangle, warningColor: '#AF3029' },
         ] as const).map(({ key, label, count, icon: Icon, warningColor }) => (
           <button
             key={key}
@@ -443,13 +486,13 @@ export default function Users() {
               color: activeTab === key ? 'var(--primary)' : 'var(--text-secondary)',
             }}
           >
-            <Icon className="w-4 h-4" style={{ color: warningColor && key === 'pending' && count > 0 ? warningColor : undefined }} />
+            <Icon className="w-4 h-4" style={{ color: warningColor && key === 'pending' && count > 0 ? warningColor : warningColor && key === 'pending_deletion' && count > 0 ? warningColor : undefined }} />
             {label}
             <span
               className="px-2 py-0.5 rounded-full text-xs font-bold"
               style={{
-                backgroundColor: key === 'pending' && count > 0 ? '#FEF3C7' : 'var(--surface-raised)',
-                color: key === 'pending' && count > 0 ? '#92400E' : 'var(--text-secondary)',
+                backgroundColor: key === 'pending' && count > 0 ? '#FEF3C7' : key === 'pending_deletion' && count > 0 ? '#FEE2E2' : 'var(--surface-raised)',
+                color: key === 'pending' && count > 0 ? '#92400E' : key === 'pending_deletion' && count > 0 ? '#AF3029' : 'var(--text-secondary)',
               }}
             >
               {count}
@@ -590,6 +633,103 @@ export default function Users() {
           </div>
 
           <DataTable data={filteredUsers} columns={columns} searchable={false} />
+        </div>
+      )}
+
+      {/* TAB: Suppressions demandées */}
+      {activeTab === 'pending_deletion' && (
+        <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: 'var(--surface)' }}>
+          {pendingDeletionUsers.length === 0 ? (
+            <div className="p-12 text-center">
+              <CheckCircle className="w-16 h-16 mx-auto mb-3" style={{ color: 'var(--success)' }} />
+              <p className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>Aucune demande de suppression</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                Les demandes de suppression définitive envoyées par le RH apparaîtront ici.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: 'var(--border)', backgroundColor: '#FEF2F2' }}>
+                <AlertTriangle className="w-5 h-5" style={{ color: '#AF3029' }} />
+                <div>
+                  <p className="font-semibold text-sm" style={{ color: '#AF3029' }}>
+                    {pendingDeletionUsers.length} demande{pendingDeletionUsers.length > 1 ? 's' : ''} de suppression définitive
+                  </p>
+                  <p className="text-xs" style={{ color: '#991B1B' }}>
+                    Ces employés ont été désactivés par le RH qui a demandé leur suppression. Vous pouvez procéder à la suppression ou réactiver l'employé.
+                  </p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
+                    <tr>
+                      <th className="text-left p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Employé</th>
+                      <th className="text-left p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Société</th>
+                      <th className="text-left p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Rôle</th>
+                      <th className="text-left p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Statut</th>
+                      <th className="text-center p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingDeletionUsers.map((u) => {
+                      const roleInfo = ROLES.find(r => r.value === u.role);
+                      const displayName = u.full_name || `${u.first_name} ${u.last_name}`;
+                      const orgName = u.organizations?.name || u.companies?.name || 'SBTA Holding';
+                      return (
+                        <tr key={u.id} className="border-t hover:bg-gray-50 transition-colors" style={{ borderColor: 'var(--border)' }}>
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0" style={{ backgroundColor: '#FEE2E2', color: '#AF3029' }}>
+                                {(u.first_name?.[0] ?? '').toUpperCase()}{(u.last_name?.[0] ?? '').toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{displayName}</div>
+                                {u.email && <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{u.email}</div>}
+                                {u.employee_id && <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{u.employee_id}</div>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 text-sm" style={{ color: 'var(--text-primary)' }}>{orgName}</td>
+                          <td className="p-4">
+                            {roleInfo && (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `${roleInfo.color}18`, color: roleInfo.color }}>{roleInfo.label}</span>
+                            )}
+                          </td>
+                          <td className="p-4"><StatusBadge status="pending_deletion" /></td>
+                          <td className="p-4">
+                            <div className="flex gap-2 justify-center">
+                              <button
+                                onClick={() => handleReactivateFromDeletion(u)}
+                                disabled={reactivatingDeletion === u.id}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                style={{ color: '#0B7439', border: '1px solid #D4EDDA' }}
+                                title="Réactiver l'employé"
+                              >
+                                {reactivatingDeletion === u.id
+                                  ? <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+                                  : <RotateCcw className="w-4 h-4" />}
+                                Réactiver
+                              </button>
+                              <button
+                                onClick={() => { setDeleteTarget(u); setDeleteConfirmText('') }}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+                                style={{ backgroundColor: '#AF3029' }}
+                                title="Supprimer définitivement"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Supprimer définitivement
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -775,6 +915,63 @@ export default function Users() {
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Statut</span>
                 <StatusBadge status={selectedUser.status || (selectedUser.is_active ? 'active' : 'inactive')} />
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale suppression définitive (admin uniquement) */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl p-6 max-w-md w-full" style={{ backgroundColor: 'var(--surface)' }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#FEE2E2' }}>
+                <Trash2 className="w-6 h-6" style={{ color: '#AF3029' }} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Suppression définitive</h2>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Action irréversible</p>
+              </div>
+            </div>
+            <div className="rounded-lg p-4 mb-4 text-sm" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#AF3029' }}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <div>
+                  Vous allez <strong>supprimer définitivement</strong> l'employé{' '}
+                  <strong>{getUserDisplayName(deleteTarget)}</strong>. Toutes ses données seront
+                  perdues, y compris l'historique de paie et les informations contractuelles.
+                  <div className="mt-2 font-semibold">Cette action ne peut pas être annulée.</div>
+                </div>
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                Pour confirmer, tapez <strong>SUPPRIMER</strong>
+              </label>
+              <input
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border"
+                style={{ borderColor: 'var(--border)' }}
+                placeholder="SUPPRIMER"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setDeleteTarget(null); setDeleteConfirmText('') }}
+                className="flex-1 px-4 py-2 rounded-lg border"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handlePermanentDelete}
+                disabled={deleteConfirmText !== 'SUPPRIMER' || deleting}
+                className="flex-1 px-4 py-2 rounded-lg font-semibold text-white transition-colors disabled:opacity-50"
+                style={{ backgroundColor: '#AF3029' }}
+              >
+                {deleting ? 'Suppression...' : 'Supprimer définitivement'}
+              </button>
             </div>
           </div>
         </div>
