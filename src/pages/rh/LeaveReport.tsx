@@ -576,3 +576,5 @@ export default function LeaveReportPage() {
   )
 }
 
+
+export default LeaveReportPage
