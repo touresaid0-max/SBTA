@@ -227,7 +227,7 @@ export default function Stations() {
 
   const loadData = async () => {
     try {
-      const [stationsRes, agentsRes, managersRes, baggageRes, citiesAssocRes] = await Promise.all([
+      const [stationsRes, agentsRes, managersRes, baggageRes] = await Promise.all([
         supabase
           .from('stations')
           .select('*, cities(name, region), manager:station_manager_id(id, full_name)')
@@ -245,10 +245,6 @@ export default function Stations() {
         supabase
           .from('station_baggage_handlers')
           .select('id, station_id, handler_id, handler:handler_id(full_name, phone)')
-          .order('created_at', { ascending: true }),
-        supabase
-          .from('station_cities')
-          .select('id, station_id, city_id, city:city_id(name, region)')
           .order('created_at', { ascending: true }),
       ]);
 
@@ -279,13 +275,25 @@ export default function Stations() {
       }
       setStationBaggageMap(bagMap);
 
-      const cityAssocMap: Record<string, StationCityRow[]> = {};
-      for (const row of citiesAssocRes.data ?? []) {
-        const sid = (row as any).station_id;
-        if (!cityAssocMap[sid]) cityAssocMap[sid] = [];
-        cityAssocMap[sid].push(row as any);
+      // Load station_cities separately so it can never break the main station load
+      try {
+        const { data: citiesAssocData, error: citiesAssocError } = await supabase
+          .from('station_cities')
+          .select('id, station_id, city_id, city:city_id(name, region)')
+          .order('created_at', { ascending: true });
+
+        if (citiesAssocError) throw citiesAssocError;
+
+        const cityAssocMap: Record<string, StationCityRow[]> = {};
+        for (const row of citiesAssocData ?? []) {
+          const sid = (row as any).station_id;
+          if (!cityAssocMap[sid]) cityAssocMap[sid] = [];
+          cityAssocMap[sid].push(row as any);
+        }
+        setStationCitiesMap(cityAssocMap);
+      } catch (cityErr) {
+        console.error('Erreur chargement villes associées:', cityErr);
       }
-      setStationCitiesMap(cityAssocMap);
     } catch (error: any) {
       toast.error('Erreur de chargement');
     } finally {
