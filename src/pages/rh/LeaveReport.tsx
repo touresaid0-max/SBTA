@@ -575,6 +575,3 @@ export default function LeaveReportPage() {
     </div>
   )
 }
-
-
-export default LeaveReportPage
