@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Fuel, Plus, Pencil, Eye, EyeOff, Search, X, Filter,
-  Phone, CheckCircle, XCircle, Tag, DollarSign, Info,
+  Phone, CheckCircle, XCircle, Tag, DollarSign, Info, MapPin, ChevronDown,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
@@ -20,6 +20,20 @@ interface FuelStation {
   observations: string | null;
   created_at: string;
   updated_at: string;
+  cities?: City[];
+}
+
+interface City {
+  id: string;
+  name: string;
+  region: string;
+  country: string;
+}
+
+interface FuelStationCity {
+  id: string;
+  fuel_station_id: string;
+  city_id: string;
 }
 
 const ALL_FUEL_TYPES = ['essence', 'gasoil'] as const;
@@ -48,29 +62,95 @@ function fmt(n: number | null) {
 
 export default function FuelStations() {
   const [stations, setStations] = useState<FuelStation[]>([]);
+  const [allCities, setAllCities] = useState<City[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailStation, setDetailStation] = useState<FuelStation | null>(null);
 
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
+  const [selectedCities, setSelectedCities] = useState<City[]>([]);
+  const [citySearch, setCitySearch] = useState('');
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const cityDropdownRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = useState('');
   const [filterFuelType, setFilterFuelType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterCity, setFilterCity] = useState('');
 
-  useEffect(() => { loadStations(); }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const loadStations = async () => {
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (cityDropdownRef.current && !cityDropdownRef.current.contains(e.target as Node)) {
+        setShowCityDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const loadData = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('fuel_stations')
-      .select('*')
-      .order('name');
-    if (error) toast.error('Erreur de chargement des stations');
-    else setStations((data as FuelStation[]) || []);
-    setLoading(false);
+    try {
+      const [stationsRes, citiesRes, assocRes] = await Promise.all([
+        supabase.from('fuel_stations').select('*').order('name'),
+        supabase.from('cities').select('id, name, region, country').order('name'),
+        supabase.from('fuel_station_cities').select('id, fuel_station_id, city_id'),
+      ]);
+
+      if (stationsRes.error) throw stationsRes.error;
+      if (citiesRes.error) throw citiesRes.error;
+      if (assocRes.error) throw assocRes.error;
+
+      const cities = (citiesRes.data as City[]) || [];
+      setAllCities(cities);
+
+      const cityById: Record<string, City> = {};
+      cities.forEach(c => { cityById[c.id] = c; });
+
+      const map: Record<string, City[]> = {};
+      (assocRes.data as FuelStationCity[])?.forEach(a => {
+        const city = cityById[a.city_id];
+        if (city) {
+          if (!map[a.fuel_station_id]) map[a.fuel_station_id] = [];
+          map[a.fuel_station_id].push(city);
+        }
+      });
+      const stationsData = ((stationsRes.data as FuelStation[]) || []).map(s => ({
+        ...s,
+        cities: map[s.id] || [],
+      }));
+      setStations(stationsData);
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur de chargement des stations');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ─── city autocomplete helpers ─── */
+
+  const filteredCityOptions = useMemo(() => {
+    const q = citySearch.toLowerCase().trim();
+    return allCities
+      .filter(c => !selectedCities.some(sc => sc.id === c.id))
+      .filter(c => !q || c.name.toLowerCase().includes(q) || c.region.toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [allCities, citySearch, selectedCities]);
+
+  const addCity = (city: City) => {
+    if (selectedCities.some(c => c.id === city.id)) return;
+    setSelectedCities(prev => [...prev, city]);
+    setCitySearch('');
+    setShowCityDropdown(false);
+  };
+
+  const removeCity = (cityId: string) => {
+    setSelectedCities(prev => prev.filter(c => c.id !== cityId));
   };
 
   /* ─── CRUD ─── */
@@ -78,6 +158,9 @@ export default function FuelStations() {
   const openCreate = () => {
     setEditingId(null);
     setFormData({ ...EMPTY_FORM });
+    setSelectedCities([]);
+    setCitySearch('');
+    setShowCityDropdown(false);
     setShowForm(true);
   };
 
@@ -93,6 +176,9 @@ export default function FuelStations() {
       is_active: s.is_active,
       observations: s.observations || '',
     });
+    setSelectedCities(s.cities || []);
+    setCitySearch('');
+    setShowCityDropdown(false);
     setShowForm(true);
     setDetailStation(null);
   };
@@ -100,12 +186,35 @@ export default function FuelStations() {
   const toggleFuelType = (ft: string) => {
     setFormData(prev => {
       const already = prev.fuel_types.includes(ft);
-      if (already && prev.fuel_types.length === 1) return prev; // keep at least one
+      if (already && prev.fuel_types.length === 1) return prev;
       return {
         ...prev,
         fuel_types: already ? prev.fuel_types.filter(t => t !== ft) : [...prev.fuel_types, ft],
       };
     });
+  };
+
+  const syncStationCities = async (stationId: string, cities: City[]) => {
+    const { data: existing } = await supabase
+      .from('fuel_station_cities')
+      .select('id, city_id')
+      .eq('fuel_station_id', stationId);
+
+    const existingCityIds = ((existing as FuelStationCity[]) || []).map(e => e.city_id);
+    const newCityIds = cities.map(c => c.id);
+    const toDelete = existingCityIds.filter(id => !newCityIds.includes(id));
+    const toInsert = newCityIds.filter(id => !existingCityIds.includes(id))
+      .map(city_id => ({ fuel_station_id: stationId, city_id }));
+
+    if (toDelete.length > 0) {
+      await supabase.from('fuel_station_cities')
+        .delete()
+        .eq('fuel_station_id', stationId)
+        .in('city_id', toDelete);
+    }
+    if (toInsert.length > 0) {
+      await supabase.from('fuel_station_cities').insert(toInsert);
+    }
   };
 
   const handleSave = async () => {
@@ -128,18 +237,25 @@ export default function FuelStations() {
         observations: formData.observations.trim() || null,
       };
 
+      let stationId = editingId;
+
       if (editingId) {
         const { error } = await supabase.from('fuel_stations').update(payload).eq('id', editingId);
         if (error) throw error;
         toast.success('Station mise à jour');
       } else {
-        const { error } = await supabase.from('fuel_stations').insert(payload);
+        const { data, error } = await supabase.from('fuel_stations').insert(payload).select('id').single();
         if (error) throw error;
+        stationId = (data as any).id;
         toast.success('Station créée');
       }
 
+      if (stationId) {
+        await syncStationCities(stationId, selectedCities);
+      }
+
       setShowForm(false);
-      loadStations();
+      loadData();
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors de l\'enregistrement');
     } finally { setSaving(false); }
@@ -152,7 +268,7 @@ export default function FuelStations() {
       .eq('id', s.id);
     if (error) { toast.error('Erreur'); return; }
     toast.success(s.is_active ? 'Station désactivée' : 'Station activée');
-    loadStations();
+    loadData();
     if (detailStation?.id === s.id) setDetailStation(prev => prev ? { ...prev, is_active: !prev.is_active } : null);
   };
 
@@ -160,14 +276,16 @@ export default function FuelStations() {
 
   const filtered = stations.filter(s => {
     const q = search.toLowerCase();
-    const matchSearch = !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
+    const matchSearch = !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)
+      || (s.cities || []).some(c => c.name.toLowerCase().includes(q));
     const matchFuel = !filterFuelType || s.fuel_types.includes(filterFuelType);
     const matchStatus = !filterStatus || (filterStatus === 'active' ? s.is_active : !s.is_active);
-    return matchSearch && matchFuel && matchStatus;
+    const matchCity = !filterCity || (s.cities || []).some(c => c.id === filterCity);
+    return matchSearch && matchFuel && matchStatus && matchCity;
   });
 
-  const hasFilters = search || filterFuelType || filterStatus;
-  const clearFilters = () => { setSearch(''); setFilterFuelType(''); setFilterStatus(''); };
+  const hasFilters = search || filterFuelType || filterStatus || filterCity;
+  const clearFilters = () => { setSearch(''); setFilterFuelType(''); setFilterStatus(''); setFilterCity(''); };
 
   const kpis = [
     { label: 'Total stations',  value: stations.length,                           color: '#3B82F6', icon: <Fuel className="w-5 h-5" /> },
@@ -224,11 +342,11 @@ export default function FuelStations() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="relative md:col-span-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
             <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Nom, code…"
+              placeholder="Nom, code, ville…"
               className="w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm outline-none"
               style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
           </div>
@@ -244,6 +362,12 @@ export default function FuelStations() {
             <option value="">Tous statuts</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+          </select>
+          <select value={filterCity} onChange={e => setFilterCity(e.target.value)}
+            className="px-3 py-2.5 border rounded-lg text-sm"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}>
+            <option value="">Toutes les villes</option>
+            {allCities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
       </div>
@@ -264,7 +388,7 @@ export default function FuelStations() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-subtle, #F9FAFB)' }}>
-                {['Station', 'Code', 'Carburants', 'Prix', 'Téléphone', 'Statut', 'Actions'].map(h => (
+                {['Station', 'Code', 'Villes associées', 'Carburants', 'Prix', 'Téléphone', 'Statut', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide"
                     style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
@@ -284,6 +408,18 @@ export default function FuelStations() {
                       style={{ backgroundColor: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
                       {s.code}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {(s.cities && s.cities.length > 0) ? (
+                      <div className="flex flex-wrap gap-1">
+                        {s.cities.map(c => (
+                          <span key={c.id} className="px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{ backgroundColor: '#3B82F618', color: '#3B82F6' }}>
+                            {c.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
@@ -374,6 +510,25 @@ export default function FuelStations() {
             </div>
 
             <div className="px-7 py-6 space-y-4 max-h-[65vh] overflow-y-auto">
+              {/* villes associées */}
+              {detailStation.cities && detailStation.cities.length > 0 && (
+                <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <MapPin className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                    <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Ville(s) associée(s)</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {detailStation.cities.map(c => (
+                      <span key={c.id} className="px-3 py-1 rounded-full text-sm font-medium"
+                        style={{ backgroundColor: '#3B82F618', color: '#3B82F6' }}>
+                        {c.name}
+                        <span className="text-xs ml-1 opacity-70">({c.region})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* fuel types + prices */}
               <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
                 <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>Carburants & Prix</p>
@@ -475,6 +630,67 @@ export default function FuelStations() {
                     className="w-full px-3 py-2.5 border rounded-xl text-sm outline-none font-mono"
                     style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
                 </div>
+              </div>
+
+              {/* villes associées — autocomplete */}
+              <div className="relative" ref={cityDropdownRef}>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                  Ville(s) associée(s)
+                </label>
+
+                {/* selected city chips */}
+                {selectedCities.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {selectedCities.map(c => (
+                      <span key={c.id} className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-sm font-medium"
+                        style={{ backgroundColor: '#3B82F618', color: '#3B82F6' }}>
+                        {c.name}
+                        <button type="button" onClick={() => removeCity(c.id)}
+                          className="w-5 h-5 rounded-full flex items-center justify-center hover:bg-blue-200 transition-colors">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* search input */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                  <input type="text" value={citySearch}
+                    onChange={e => { setCitySearch(e.target.value); setShowCityDropdown(true); }}
+                    onFocus={() => setShowCityDropdown(true)}
+                    placeholder="Rechercher une ville…"
+                    className="w-full pl-9 pr-9 py-2.5 border rounded-xl text-sm outline-none"
+                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                </div>
+
+                {/* dropdown */}
+                {showCityDropdown && (
+                  <div className="absolute z-10 mt-1 w-full rounded-xl border shadow-lg max-h-56 overflow-y-auto"
+                    style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+                    {filteredCityOptions.length === 0 ? (
+                      <div className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
+                        {allCities.length === 0 ? 'Aucune ville disponible. Ajoutez des villes dans Admin > Villes.'
+                          : 'Aucune ville trouvée'}
+                      </div>
+                    ) : (
+                      filteredCityOptions.map(c => (
+                        <button key={c.id} type="button" onClick={() => addCity(c)}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm hover:bg-gray-50 transition-colors border-b last:border-0"
+                          style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
+                          <MapPin className="w-4 h-4 flex-shrink-0" style={{ color: '#3B82F6' }} />
+                          <div>
+                            <span className="font-medium">{c.name}</span>
+                            <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>{c.region}</span>
+                          </div>
+                          <Plus className="w-3.5 h-3.5 ml-auto" style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* types carburant */}
