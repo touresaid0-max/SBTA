@@ -13,12 +13,7 @@ import {
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
-const fmt = (n: number) => new Intl.NumberFormat('fr-CI', { maximumFractionDigits: 0 }).format(n) + ' FCFA';
-const fmtShort = (n: number) => {
-  if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(0) + 'k';
-  return String(Math.round(n));
-};
+const fmt = (n: number) => new Intl.NumberFormat('fr-CI', { maximumFractionDigits: 0 }).format(n) + ' F CFA';
 
 interface KPIs {
   total_revenue: number;
@@ -217,7 +212,7 @@ export default function GestionnaireDashboard() {
           ].map(item => (
             <div key={item.label} className="rounded-xl border p-4" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
               <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{item.label}</p>
-              <p className="text-base font-bold" style={{ color: item.color }}>{fmtShort(item.val)} FCFA</p>
+              <p className="text-base font-bold" style={{ color: item.color }}>{fmt(item.val)}</p>
             </div>
           ))}
         </div>
@@ -237,7 +232,7 @@ export default function GestionnaireDashboard() {
           ].map(item => (
             <div key={item.label} className="rounded-xl border p-4" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
               <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{item.label}</p>
-              <p className="text-sm font-bold" style={{ color: item.color }}>{fmtShort(item.val)} FCFA</p>
+              <p className="text-sm font-bold" style={{ color: item.color }}>{fmt(item.val)}</p>
             </div>
           ))}
         </div>
@@ -285,7 +280,7 @@ export default function GestionnaireDashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => fmtShort(v as number)} width={45} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => new Intl.NumberFormat('fr-CI', { notation: 'compact', maximumFractionDigits: 0 }).format(v as number)} width={50} />
                 <Tooltip formatter={(v: number) => fmt(v)} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="Recettes" stroke="#10B981" fill="url(#rev)" strokeWidth={2} dot={{ r: chartData.length <= 3 ? 4 : false }} />
@@ -302,7 +297,7 @@ export default function GestionnaireDashboard() {
               <div key={e.name}>
                 <div className="flex justify-between text-xs mb-1">
                   <span style={{ color: 'var(--text-secondary)' }}>{e.name}</span>
-                  <span className="font-semibold" style={{ color: e.color }}>{fmtShort(e.value)}</span>
+                  <span className="font-semibold" style={{ color: e.color }}>{fmt(e.value)}</span>
                 </div>
                 <div className="h-1.5 rounded-full" style={{ backgroundColor: 'var(--border)' }}>
                   <div className="h-1.5 rounded-full transition-all"
@@ -333,7 +328,7 @@ export default function GestionnaireDashboard() {
                   <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{r.route_name}</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.trip_count} voyage(s)</p>
                 </div>
-                <span className="text-sm font-bold flex-shrink-0" style={{ color: '#10B981' }}>{fmtShort(r.revenue)}</span>
+                <span className="text-sm font-bold flex-shrink-0" style={{ color: '#10B981' }}>{fmt(r.revenue)}</span>
               </div>
             ))}
             {routes.length === 0 && <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>Aucun voyage sur la période</p>}
@@ -354,11 +349,11 @@ export default function GestionnaireDashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{b.registration_number}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{b.trip_count} voyages · {fmtShort(b.revenue)} recettes</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{b.trip_count} voyages · {fmt(b.revenue)}</p>
                 </div>
                 <span className="text-sm font-bold flex items-center gap-0.5 flex-shrink-0" style={{ color: b.margin >= 0 ? '#10B981' : '#EF4444' }}>
                   {b.margin >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                  {fmtShort(Math.abs(b.margin))}
+                  {fmt(Math.abs(b.margin))}
                 </span>
               </div>
             ))}
