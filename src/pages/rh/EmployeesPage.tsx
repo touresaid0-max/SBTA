@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown } from 'lucide-react'
+import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees, deactivateEmployee } from '@/services/hr.service'
@@ -75,7 +75,7 @@ export default function EmployeesPage() {
       role: activeTab === 'all' ? null : activeTab,
     }
     fetchEmployees(effectiveFilters)
-      .then(setEmployees)
+      .then(data => setEmployees(data.filter(e => e.status !== 'inactive')))
       .catch(() => toast.error('Erreur lors du chargement des employés'))
       .finally(() => setLoading(false))
   }, [filters, activeTab, companies])
@@ -110,6 +110,13 @@ export default function EmployeesPage() {
           </p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => navigate('/rh/deactivated')}
+            className="flex items-center gap-2 px-4 py-2 border border-[#E2EAE5] rounded-xl text-sm font-semibold text-[#6B7280] hover:bg-[#F8FAF8] transition-colors"
+          >
+            <UserX className="w-4 h-4" />
+            Employés désactivés
+          </button>
           <button
             onClick={() => navigate('/rh/employees/new')}
             className="flex items-center gap-2 px-4 py-2 bg-[#0B7439] text-white rounded-xl text-sm font-semibold hover:bg-[#085c2d] transition-colors"
@@ -207,7 +214,6 @@ export default function EmployeesPage() {
               <option value="">Tous les statuts</option>
               <option value="active">Actifs</option>
               <option value="pending">En attente</option>
-              <option value="inactive">Inactifs</option>
               <option value="suspended">Suspendus</option>
             </select>
             <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
@@ -400,7 +406,7 @@ export default function EmployeesPage() {
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-[#1A2E22] mb-1">Désactiver l'employé</h3>
             <p className="text-sm text-[#6B7280] mb-4">
-              Vous allez désactiver <strong>{deactivateModal.employee.full_name}</strong>. Cette action est réversible.
+              Vous allez désactiver <strong>{deactivateModal.employee.full_name}</strong>. L'employé sera retiré de la liste principale et déplacé vers la rubrique « Employés désactivés ». Cette action est réversible.
             </p>
             <label className="block text-sm font-medium text-[#374151] mb-1">Motif de désactivation *</label>
             <textarea
