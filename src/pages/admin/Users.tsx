@@ -111,6 +111,8 @@ export default function Users() {
   const [pendingEmployees, setPendingEmployees] = useState<PendingEmployee[]>([]);
   const [pendingLoading, setPendingLoading] = useState(true);
   const [createAccountTarget, setCreateAccountTarget] = useState<PendingEmployee | null>(null);
+  const [pendingSearch, setPendingSearch] = useState('');
+  const [pendingSearchFocused, setPendingSearchFocused] = useState(false);
 
   // Suppression définitive (admin uniquement)
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
@@ -382,6 +384,38 @@ export default function Users() {
 
   const activeUsers = users.filter(u => u.status === 'active' || u.status === 'repos_obligatoire');
   const pendingDeletionUsers = users.filter(u => u.status === 'pending_deletion');
+
+  // Filtrage des employés en attente par autocomplétion
+  const filteredPendingEmployees = pendingSearch.trim() === ''
+    ? pendingEmployees
+    : pendingEmployees.filter((emp) => {
+        const q = pendingSearch.trim().toLowerCase();
+        return (
+          emp.full_name?.toLowerCase().includes(q) ||
+          `${emp.first_name} ${emp.last_name}`.toLowerCase().includes(q) ||
+          emp.professional_email?.toLowerCase().includes(q) ||
+          emp.personal_email?.toLowerCase().includes(q) ||
+          emp.phone?.toLowerCase().includes(q) ||
+          emp.employee_id?.toLowerCase().includes(q) ||
+          emp.role?.toLowerCase().includes(q) ||
+          emp.company_name?.toLowerCase().includes(q) ||
+          emp.company_code?.toLowerCase().includes(q) ||
+          emp.station_name?.toLowerCase().includes(q)
+        );
+      });
+
+  // Suggestions pour l'autocomplétion (max 6, déduoublonnées par nom)
+  const pendingSuggestions = pendingSearch.trim() === ''
+    ? []
+    : pendingEmployees
+        .filter((emp) => {
+          const q = pendingSearch.trim().toLowerCase();
+          return (
+            `${emp.first_name} ${emp.last_name}`.toLowerCase().startsWith(q) ||
+            emp.full_name?.toLowerCase().startsWith(q)
+          );
+        })
+        .slice(0, 6);
   const inactiveUsers = users.filter(u => u.status !== 'active' && u.status !== 'repos_obligatoire' && u.status !== 'pending_deletion');
 
   const filteredUsers = (activeTab === 'active' ? activeUsers : inactiveUsers).filter(u => {
@@ -518,7 +552,7 @@ export default function Users() {
             <>
               <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: 'var(--border)', backgroundColor: '#FFFBEB' }}>
                 <Clock className="w-5 h-5" style={{ color: '#D97706' }} />
-                <div>
+                <div className="flex-1">
                   <p className="font-semibold text-sm" style={{ color: '#92400E' }}>
                     {pendingEmployees.length} employé{pendingEmployees.length > 1 ? 's' : ''} en attente de compte
                   </p>
@@ -526,6 +560,78 @@ export default function Users() {
                     Ces fiches ont été créées par le RH. Créez leurs identifiants de connexion.
                   </p>
                 </div>
+              </div>
+
+              {/* Barre de recherche avec autocomplétion */}
+              <div className="px-6 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div className="relative max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    value={pendingSearch}
+                    onChange={(e) => setPendingSearch(e.target.value)}
+                    onFocus={() => setPendingSearchFocused(true)}
+                    onBlur={() => setTimeout(() => setPendingSearchFocused(false), 150)}
+                    placeholder="Rechercher par nom, email, matricule, rôle, société..."
+                    className="w-full pl-10 pr-9 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+                  />
+                  {pendingSearch && (
+                    <button
+                      onClick={() => setPendingSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {/* Liste d'autocomplétion */}
+                  {pendingSearchFocused && pendingSuggestions.length > 0 && (
+                    <ul
+                      className="absolute z-20 mt-1 w-full rounded-lg border shadow-lg max-h-60 overflow-y-auto"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+                    >
+                      {pendingSuggestions.map((emp) => (
+                        <li key={emp.id}>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setPendingSearch(`${emp.first_name} ${emp.last_name}`);
+                              setPendingSearchFocused(false);
+                            }}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors"
+                            style={{ color: 'var(--text-primary)' }}
+                          >
+                            <span
+                              className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0"
+                              style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+                            >
+                              {emp.first_name?.[0]}{emp.last_name?.[0]}
+                            </span>
+                            <span className="flex-1 truncate">
+                              {emp.first_name} {emp.last_name}
+                              {emp.role && (
+                                <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                                  · {ROLES.find(r => r.value === emp.role)?.label ?? emp.role}
+                                </span>
+                              )}
+                            </span>
+                            {emp.employee_id && (
+                              <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{emp.employee_id}</span>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {pendingSearch && filteredPendingEmployees.length !== pendingEmployees.length && (
+                  <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                    {filteredPendingEmployees.length} résultat{filteredPendingEmployees.length > 1 ? 's' : ''} sur {pendingEmployees.length}
+                  </p>
+                )}
               </div>
               <table className="w-full">
                 <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
@@ -539,7 +645,7 @@ export default function Users() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingEmployees.map((emp) => {
+                  {filteredPendingEmployees.map((emp) => {
                     const roleInfo = ROLES.find(r => r.value === emp.role);
                     const waitTime = formatDistanceToNow(new Date(emp.created_by_hr_at), { addSuffix: false, locale: fr });
                     return (
