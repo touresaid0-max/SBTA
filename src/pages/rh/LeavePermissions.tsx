@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Clock, Plus, CheckCircle, XCircle, Ban, Settings as SettingsIcon,
-  Search, ChevronDown, AlertTriangle, X, Eye, RotateCcw,
+  Search, ChevronDown, AlertTriangle, X, Eye, RotateCcw, User,
 } from 'lucide-react'
+import { useRef as useReactRef, useEffect as useReactEffect, useState as useReactState } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -641,6 +642,129 @@ function SettingsTab({ settings, onChange, onSave, saving }: {
 }
 
 // ═════════════════════════════════════════════════════════════════════
+// EMPLOYEE AUTOCOMPLETE
+// ═════════════════════════════════════════════════════════════════════
+function EmployeeAutocomplete({ employees, value, onChange }: {
+  employees: Employee[]
+  value: string
+  onChange: (id: string) => void
+}) {
+  const [query, setQuery] = useReactState('')
+  const [open, setOpen] = useReactState(false)
+  const [highlightIdx, setHighlightIdx] = useReactState(0)
+  const containerRef = useReactRef<HTMLDivElement>(null)
+  const inputRef = useReactRef<HTMLInputElement>(null)
+
+  const selected = employees.find(e => e.id === value)
+
+  useReactEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filtered = employees.filter(e => {
+    if (!query) return true
+    const q = query.toLowerCase()
+    return (
+      e.full_name.toLowerCase().includes(q) ||
+      e.email?.toLowerCase().includes(q) ||
+      e.employee_id?.toLowerCase().includes(q) ||
+      (ROLE_LABELS[e.role] ?? e.role).toLowerCase().includes(q) ||
+      e.company_name?.toLowerCase().includes(q)
+    )
+  }).slice(0, 20)
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlightIdx(i => Math.min(i + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlightIdx(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' && open && filtered[highlightIdx]) {
+      e.preventDefault()
+      onChange(filtered[highlightIdx].id)
+      setOpen(false)
+      setQuery('')
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder={selected ? '' : 'Tapez nom, email, poste ou société...'}
+          value={open ? query : (selected ? selected.full_name : '')}
+          onChange={e => { setQuery(e.target.value); setOpen(true); setHighlightIdx(0) }}
+          onFocus={() => { setOpen(true); setQuery(''); setHighlightIdx(0) }}
+          onKeyDown={handleKeyDown}
+          className="w-full border rounded-lg pl-9 pr-8 py-2 text-sm"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+        />
+        {selected && !open && (
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(true); inputRef.current?.focus() }}
+            className="absolute right-2 top-2 p-0.5 rounded hover:bg-gray-100"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-xl border bg-white shadow-lg"
+          style={{ borderColor: 'var(--border)' }}>
+          {filtered.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-center" style={{ color: 'var(--text-muted)' }}>
+              Aucun employé trouvé
+            </div>
+          ) : (
+            filtered.map((emp, idx) => (
+              <button
+                type="button"
+                key={emp.id}
+                onClick={() => { onChange(emp.id); setOpen(false); setQuery('') }}
+                onMouseEnter={() => setHighlightIdx(idx)}
+                className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors"
+                style={{
+                  backgroundColor: idx === highlightIdx ? 'var(--bg-subtle)' : 'transparent',
+                }}
+              >
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: 'var(--primary-light)' }}>
+                  <User className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                    {emp.full_name}
+                  </div>
+                  <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                    {ROLE_LABELS[emp.role] ?? emp.role}
+                    {emp.company_name ? ` — ${emp.company_name}` : ''}
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════════
 // LEAVE FORM MODAL
 // ═════════════════════════════════════════════════════════════════════
 function LeaveFormModal({ employees, settings, onClose, onCreated, creatorId }: {
@@ -716,18 +840,8 @@ function LeaveFormModal({ employees, settings, onClose, onCreated, creatorId }: 
         {/* Employee */}
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Employé *</label>
-          <select value={employeeId} onChange={e => setEmployeeId(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm" style={{ borderColor: 'var(--border)' }}>
-            <option value="">Sélectionner un employé</option>
-            {employees.map(e => (
-              <option key={e.id} value={e.id}>
-                {e.full_name} — {ROLE_LABELS[e.role] ?? e.role} {e.company_name ? `(${e.company_name})` : ''}
-              </option>
-            ))}
-          </select>
+          <EmployeeAutocomplete employees={employees} value={employeeId} onChange={setEmployeeId} />
         </div>
-
-        {/* Balance preview */}
         {selectedEmp && settings && (
           <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
             <span className="font-medium">Solde annuel:</span> {settings.annual_leave_days} jours |
@@ -862,15 +976,7 @@ function PermissionFormModal({ employees, onClose, onCreated, creatorId }: {
 
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Employé *</label>
-          <select value={employeeId} onChange={e => setEmployeeId(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm" style={{ borderColor: 'var(--border)' }}>
-            <option value="">Sélectionner un employé</option>
-            {employees.map(e => (
-              <option key={e.id} value={e.id}>
-                {e.full_name} — {ROLE_LABELS[e.role] ?? e.role} {e.company_name ? `(${e.company_name})` : ''}
-              </option>
-            ))}
-          </select>
+          <EmployeeAutocomplete employees={employees} value={employeeId} onChange={setEmployeeId} />
         </div>
 
         <div>
@@ -922,3 +1028,6 @@ function PermissionFormModal({ employees, onClose, onCreated, creatorId }: {
     </div>
   )
 }
+
+
+export default LeavePermissionsPage
