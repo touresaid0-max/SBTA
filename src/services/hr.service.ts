@@ -320,13 +320,13 @@ export async function requestEmployeeDeletion(
   employeeId: string,
   requestedBy: string
 ): Promise<void> {
-  const { data: empExists } = await supabase
+  const { data: emp } = await supabase
     .from('employees')
-    .select('id')
+    .select('id, auth_user_id')
     .eq('id', employeeId)
     .maybeSingle()
 
-  if (empExists) {
+  if (emp) {
     const { error } = await supabase.from('employees').update({
       account_status:         'pending_deletion',
       deletion_requested_at:  new Date().toISOString(),
@@ -334,6 +334,15 @@ export async function requestEmployeeDeletion(
       updated_at:             new Date().toISOString(),
     }).eq('id', employeeId)
     if (error) throw error
+
+    if (emp.auth_user_id) {
+      const { error: uErr } = await supabase.from('users').update({
+        status:                 'pending_deletion',
+        deletion_requested_at:  new Date().toISOString(),
+        deletion_requested_by:  requestedBy,
+      }).eq('id', emp.auth_user_id)
+      if (uErr) throw uErr
+    }
     return
   }
 
