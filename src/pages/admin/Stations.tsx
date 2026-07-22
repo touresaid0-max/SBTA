@@ -48,13 +48,6 @@ interface Station {
   manager?: { id: string; full_name: string } | null;
 }
 
-interface StationCityRow {
-  id: string;
-  station_id: string;
-  city_id: string;
-  city?: { name: string; region: string };
-}
-
 interface Manager {
   id: string;
   full_name: string;
@@ -94,7 +87,6 @@ export default function Stations() {
   const [stationAgentsMap, setStationAgentsMap] = useState<Record<string, StationAgent[]>>({});
   const [stationManagersMap, setStationManagersMap] = useState<Record<string, StationManager[]>>({});
   const [stationBaggageMap, setStationBaggageMap] = useState<Record<string, StationBaggageHandler[]>>({});
-  const [stationCitiesMap, setStationCitiesMap] = useState<Record<string, StationCityRow[]>>({});
   const [cities, setCities] = useState<City[]>([]);
   const [managers, setManagers] = useState<Manager[]>([]);
   const [agentsColis, setAgentsColis] = useState<AgentColis[]>([]);
@@ -108,9 +100,6 @@ export default function Stations() {
   const [primaryManagerId, setPrimaryManagerId] = useState<string | null>(null);
   const [selectedBaggageIds, setSelectedBaggageIds] = useState<string[]>([]);
   const [destCodes, setDestCodes] = useState<{ id?: string; destination_station_id: string; agency_code: string }[]>([]);
-  const [selectedCityIds, setSelectedCityIds] = useState<string[]>([]);
-  const [citySearch, setCitySearch] = useState('');
-  const [cityFilter, setCityFilter] = useState('all');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -227,7 +216,7 @@ export default function Stations() {
 
   const loadData = async () => {
     try {
-      const [stationsRes, agentsRes, managersRes, baggageRes, citiesAssocRes] = await Promise.all([
+      const [stationsRes, agentsRes, managersRes, baggageRes] = await Promise.all([
         supabase
           .from('stations')
           .select('*, cities(name, region), manager:station_manager_id(id, full_name)')
@@ -245,10 +234,6 @@ export default function Stations() {
         supabase
           .from('station_baggage_handlers')
           .select('id, station_id, handler_id, handler:handler_id(full_name, phone)')
-          .order('created_at', { ascending: true }),
-        supabase
-          .from('station_cities')
-          .select('id, station_id, city_id, city:city_id(name, region)')
           .order('created_at', { ascending: true }),
       ]);
 
@@ -278,14 +263,6 @@ export default function Stations() {
         bagMap[sid].push(row as any);
       }
       setStationBaggageMap(bagMap);
-
-      const cityAssocMap: Record<string, StationCityRow[]> = {};
-      for (const row of citiesAssocRes.data ?? []) {
-        const sid = (row as any).station_id;
-        if (!cityAssocMap[sid]) cityAssocMap[sid] = [];
-        cityAssocMap[sid].push(row as any);
-      }
-      setStationCitiesMap(cityAssocMap);
     } catch (error: any) {
       toast.error('Erreur de chargement');
     } finally {
@@ -361,7 +338,6 @@ export default function Stations() {
         await syncStationManagers(savedStationId, selectedManagerIds, primaryManagerId);
         await syncStationBaggage(savedStationId, selectedBaggageIds);
         await syncDestCodes(savedStationId, filledRows);
-        await syncStationCities(savedStationId, selectedCityIds);
       }
 
       setShowForm(false);
@@ -491,35 +467,6 @@ export default function Stations() {
     }
   };
 
-  const syncStationCities = async (stationId: string, cityIds: string[]) => {
-    const { data: existing } = await supabase
-      .from('station_cities')
-      .select('id, city_id')
-      .eq('station_id', stationId);
-
-    const existingIds = new Set((existing ?? []).map(r => r.city_id));
-    const targetIds = new Set(cityIds);
-
-    const toRemove = (existing ?? []).filter(r => !targetIds.has(r.city_id));
-    const toAdd = cityIds.filter(id => !existingIds.has(id));
-
-    if (toRemove.length > 0) {
-      await supabase
-        .from('station_cities')
-        .delete()
-        .in('id', toRemove.map(r => r.id));
-    }
-
-    if (toAdd.length > 0) {
-      await supabase
-        .from('station_cities')
-        .insert(toAdd.map(cityId => ({
-          station_id: stationId,
-          city_id: cityId,
-        })));
-    }
-  };
-
   const syncDestCodes = async (
     stationId: string,
     rows: { destination_station_id: string; agency_code: string }[],
@@ -589,9 +536,6 @@ export default function Stations() {
     setSelectedManagerIds(mgrIds);
     setPrimaryManagerId(primaryMgr?.manager_id ?? (mgrIds[0] || null));
     setSelectedBaggageIds(bagIds);
-    const assocCities = stationCitiesMap[station.id] ?? [];
-    setSelectedCityIds(assocCities.map(c => c.city_id).filter(cid => cid !== station.city_id));
-    setCitySearch('');
     setEditingId(station.id);
     setShowForm(true);
   };
@@ -639,8 +583,6 @@ export default function Stations() {
     setSelectedManagerIds([]);
     setPrimaryManagerId(null);
     setSelectedBaggageIds([]);
-    setSelectedCityIds([]);
-    setCitySearch('');
     setDestCodes([]);
   };
 
@@ -724,16 +666,9 @@ export default function Stations() {
   }
 
   const filtered = stations.filter((s) => {
-    if (cityFilter !== 'all') {
-      const isPrimary = s.city_id === cityFilter;
-      const assocIds = (stationCitiesMap[s.id] ?? []).map(c => c.city_id);
-      const isAssociated = assocIds.includes(cityFilter);
-      if (!isPrimary && !isAssociated) return false;
-    }
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    const assocCityNames = (stationCitiesMap[s.id] ?? []).map(c => c.city?.name ?? '').join(' ');
-    return [s.name, s.address, s.agency_code, s.cities?.name, s.cities?.region, s.phone, s.email, assocCityNames]
+    return [s.name, s.address, s.agency_code, s.cities?.name, s.cities?.region, s.phone, s.email]
       .some((x) => (x ?? '').toLowerCase().includes(q));
   });
 
@@ -758,47 +693,23 @@ export default function Stations() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <div className="relative flex-1 min-w-[250px] max-w-md">
-          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher une gare, ville, région, code..."
-            className="w-full pl-10 pr-10 py-3 border rounded-lg focus:outline-none focus:ring-2"
-            style={{ borderColor: 'var(--border)' }}
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100"
-              aria-label="Effacer la recherche"
-            >
-              <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-            </button>
-          )}
-        </div>
-
-        <select
-          value={cityFilter}
-          onChange={(e) => setCityFilter(e.target.value)}
-          className="px-3 py-3 border rounded-lg text-sm focus:outline-none focus:ring-2"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-        >
-          <option value="all">Toutes les villes</option>
-          {cities.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-
-        {cityFilter !== 'all' && (
+      <div className="relative mb-6 max-w-md">
+        <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Rechercher une gare, ville, région, code..."
+          className="w-full pl-10 pr-10 py-3 border rounded-lg focus:outline-none focus:ring-2"
+          style={{ borderColor: 'var(--border)' }}
+        />
+        {search && (
           <button
-            onClick={() => setCityFilter('all')}
-            className="text-sm px-3 py-2 rounded-lg border hover:bg-gray-100 transition-colors"
-            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border)' }}
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100"
+            aria-label="Effacer la recherche"
           >
-            <X className="w-4 h-4 inline mr-1" />Effacer le filtre
+            <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
           </button>
         )}
       </div>
@@ -840,88 +751,6 @@ export default function Stations() {
                       </option>
                     ))}
                   </select>
-                </div>
-
-                {/* Ville(s) associée(s) — autocomplete multi-select */}
-                <div>
-                  <label className="block mb-2 font-medium">Ville(s) associée(s)</label>
-
-                  {selectedCityIds.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {selectedCityIds.map(cid => {
-                        const c = cities.find(x => x.id === cid);
-                        if (!c) return null;
-                        return (
-                          <span
-                            key={cid}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
-                            style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}
-                          >
-                            <MapPin className="w-3.5 h-3.5" />
-                            {c.name}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedCityIds(prev => prev.filter(id => id !== cid))}
-                              className="p-0.5 rounded hover:bg-white/50"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {(() => {
-                    const q = citySearch.trim().toLowerCase();
-                    const available = cities.filter(c =>
-                      !selectedCityIds.includes(c.id) &&
-                      c.id !== formData.city_id &&
-                      (!q || c.name.toLowerCase().includes(q) || c.region.toLowerCase().includes(q))
-                    );
-                    return (
-                      <>
-                        <div className="relative">
-                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                          <input
-                            type="text"
-                            value={citySearch}
-                            onChange={(e) => setCitySearch(e.target.value)}
-                            placeholder="Rechercher une ville à associer..."
-                            className="w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2"
-                            style={{ borderColor: 'var(--border)' }}
-                          />
-                        </div>
-                        {citySearch.trim() && available.length > 0 && (
-                          <div className="mt-1 border rounded-lg max-h-48 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                            {available.slice(0, 10).map(c => (
-                              <button
-                                key={c.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCityIds(prev => [...prev, c.id]);
-                                  setCitySearch('');
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors border-b last:border-b-0"
-                                style={{ borderColor: 'var(--neutral-100)' }}
-                              >
-                                <MapPin className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
-                                <span className="font-medium">{c.name}</span>
-                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.region}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {citySearch.trim() && available.length === 0 && (
-                          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Aucune ville trouvée</p>
-                        )}
-                      </>
-                    );
-                  })()}
-
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    Sélectionnez une ou plusieurs villes supplémentaires couvertes par cette gare. La ville principale (ci-dessus) est automatiquement incluse.
-                  </p>
                 </div>
 
                 <div>
@@ -1443,20 +1272,6 @@ export default function Stations() {
                         <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                           {station.cities.region}
                         </div>
-                        {(stationCitiesMap[station.id] ?? []).length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {(stationCitiesMap[station.id] ?? []).map(sc => (
-                              <span
-                                key={sc.id}
-                                className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium"
-                                style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}
-                              >
-                                <MapPin className="w-2.5 h-2.5" />
-                                {sc.city?.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     ) : (
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Non assignée</span>

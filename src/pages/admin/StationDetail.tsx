@@ -27,12 +27,6 @@ interface Station {
   manager?: { id: string; full_name: string; email: string } | null;
 }
 
-interface StationCityRow {
-  id: string;
-  city_id: string;
-  city?: { name: string; region: string };
-}
-
 interface Counter {
   id: string;
   counter_number: string;
@@ -80,7 +74,6 @@ export default function StationDetail() {
   const [station, setStation] = useState<Station | null>(null);
   const [stationManagers, setStationManagers] = useState<StationManagerRow[]>([]);
   const [stationBaggage, setStationBaggage] = useState<StationBaggageRow[]>([]);
-  const [stationCities, setStationCities] = useState<StationCityRow[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
   const [guichetiers, setGuichetiers] = useState<User[]>([]);
   const [showCounterForm, setShowCounterForm] = useState(false);
@@ -97,7 +90,6 @@ export default function StationDetail() {
       loadStationData();
       loadStationManagers();
       loadStationBaggageHandlers();
-      loadStationCities();
       loadCounters();
       loadGuichetiers();
     }
@@ -159,21 +151,6 @@ export default function StationDetail() {
       setStationBaggage((data as any) || []);
     } catch (error: any) {
       console.error('Erreur chargement bagagistes:', error);
-    }
-  };
-
-  const loadStationCities = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('station_cities')
-        .select('id, city_id, city:city_id(name, region)')
-        .eq('station_id', id)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setStationCities((data as any) || []);
-    } catch (error: any) {
-      console.error('Erreur chargement villes associées:', error);
     }
   };
 
@@ -311,12 +288,6 @@ export default function StationDetail() {
         </div>
         <p style={{ color: 'var(--text-secondary)' }}>
           {station.cities?.name}, {station.cities?.region}
-          {stationCities.length > 0 && (
-            <span className="ml-1">
-              {' + '}
-              {stationCities.map(sc => sc.city?.name).filter(Boolean).join(', ')}
-            </span>
-          )}
         </p>
       </div>
 
@@ -455,34 +426,6 @@ export default function StationDetail() {
                       style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}
                     >
                       Non assigné
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <MapPin className="w-5 h-5 mt-1" style={{ color: 'var(--primary)' }} />
-                <div className="flex-1">
-                  <p className="font-medium">Ville(s) associée(s)</p>
-                  {stationCities.length > 0 ? (
-                    <div className="mt-1 flex flex-wrap gap-2">
-                      {stationCities.map(sc => (
-                        <span
-                          key={sc.id}
-                          className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium"
-                          style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}
-                        >
-                          <MapPin className="w-3 h-3" />
-                          {sc.city?.name} <span className="opacity-70">{sc.city?.region}</span>
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span
-                      className="inline-block px-3 py-1 rounded-full text-xs font-medium mt-1"
-                      style={{ backgroundColor: 'var(--neutral-200)', color: 'var(--neutral-600)' }}
-                    >
-                      Aucune ville associée
                     </span>
                   )}
                 </div>
