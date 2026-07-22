@@ -100,6 +100,10 @@ export default function Stations() {
   const [primaryManagerId, setPrimaryManagerId] = useState<string | null>(null);
   const [selectedBaggageIds, setSelectedBaggageIds] = useState<string[]>([]);
   const [destCodes, setDestCodes] = useState<{ id?: string; destination_station_id: string; agency_code: string }[]>([]);
+  const [selectedCityIds, setSelectedCityIds] = useState<string[]>([]);
+  const [stationCitiesMap, setStationCitiesMap] = useState<Record<string, City[]>>({});
+  const [citySearch, setCitySearch] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -216,7 +220,7 @@ export default function Stations() {
 
   const loadData = async () => {
     try {
-      const [stationsRes, agentsRes, managersRes, baggageRes] = await Promise.all([
+      const [stationsRes, agentsRes, managersRes, baggageRes, citiesRes] = await Promise.all([
         supabase
           .from('stations')
           .select('*, cities(name, region), manager:station_manager_id(id, full_name)')
@@ -234,6 +238,10 @@ export default function Stations() {
         supabase
           .from('station_baggage_handlers')
           .select('id, station_id, handler_id, handler:handler_id(full_name, phone)')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('station_cities')
+          .select('id, station_id, city_id, city:city_id(id, name, region)')
           .order('created_at', { ascending: true }),
       ]);
 
@@ -263,6 +271,14 @@ export default function Stations() {
         bagMap[sid].push(row as any);
       }
       setStationBaggageMap(bagMap);
+
+      const cityMap: Record<string, City[]> = {};
+      for (const row of citiesRes.data ?? []) {
+        const sid = (row as any).station_id;
+        if (!cityMap[sid]) cityMap[sid] = [];
+        cityMap[sid].push((row as any).city);
+      }
+      setStationCitiesMap(cityMap);
     } catch (error: any) {
       toast.error('Erreur de chargement');
     } finally {
@@ -337,6 +353,7 @@ export default function Stations() {
         await syncStationAgents(savedStationId, selectedAgentIds, primaryAgentId);
         await syncStationManagers(savedStationId, selectedManagerIds, primaryManagerId);
         await syncStationBaggage(savedStationId, selectedBaggageIds);
+        await syncStationCities(savedStationId, selectedCityIds);
         await syncDestCodes(savedStationId, filledRows);
       }
 
@@ -467,6 +484,36 @@ export default function Stations() {
     }
   };
 
+  const syncStationCities = async (stationId: string, cityIds: string[]) => {
+    const { data: existing } = await supabase
+      .from('station_cities')
+      .select('id, city_id')
+      .eq('station_id', stationId);
+
+    const existingIds = new Set((existing ?? []).map(r => r.city_id));
+    const targetIds = new Set(cityIds);
+
+    const toRemove = (existing ?? []).filter(r => !targetIds.has(r.city_id));
+    const toAdd = cityIds.filter(id => !existingIds.has(id));
+
+    if (toRemove.length > 0) {
+      await supabase
+        .from('station_cities')
+        .delete()
+        .in('id', toRemove.map(r => r.id));
+    }
+
+    if (toAdd.length > 0) {
+      const { error } = await supabase
+        .from('station_cities')
+        .insert(toAdd.map(cityId => ({
+          station_id: stationId,
+          city_id: cityId,
+        })));
+      if (error) throw error;
+    }
+  };
+
   const syncDestCodes = async (
     stationId: string,
     rows: { destination_station_id: string; agency_code: string }[],
@@ -510,6 +557,9 @@ export default function Stations() {
     const bagHandlers = stationBaggageMap[station.id] ?? [];
     const bagIds = bagHandlers.map(b => b.handler_id);
     loadDestCodes(station.id);
+
+    const assocCityIds = (stationCitiesMap[station.id] ?? []).map(c => c.id);
+    setSelectedCityIds(assocCityIds);
 
     setFormData({
       name: station.name,
@@ -583,6 +633,8 @@ export default function Stations() {
     setSelectedManagerIds([]);
     setPrimaryManagerId(null);
     setSelectedBaggageIds([]);
+    setSelectedCityIds([]);
+    setCitySearch('');
     setDestCodes([]);
   };
 
@@ -667,9 +719,14 @@ export default function Stations() {
 
   const filtered = stations.filter((s) => {
     const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return [s.name, s.address, s.agency_code, s.cities?.name, s.cities?.region, s.phone, s.email]
+    const assocCities = stationCitiesMap[s.id] ?? [];
+    const matchesSearch = !q || [s.name, s.address, s.agency_code, s.cities?.name, s.cities?.region, s.phone, s.email,
+      ...assocCities.map(c => c.name), ...assocCities.map(c => c.region)]
       .some((x) => (x ?? '').toLowerCase().includes(q));
+    const matchesCity = !cityFilter ||
+      s.city_id === cityFilter ||
+      assocCities.some(c => c.id === cityFilter);
+    return matchesSearch && matchesCity;
   });
 
   return (
@@ -680,7 +737,7 @@ export default function Stations() {
             Gares
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            {search.trim() ? `${filtered.length} sur ${stations.length} gares` : `${stations.length} gares au total`}
+            {(search.trim() || cityFilter) ? `${filtered.length} sur ${stations.length} gares` : `${stations.length} gares au total`}
           </p>
         </div>
         <button
@@ -693,25 +750,43 @@ export default function Stations() {
         </button>
       </div>
 
-      <div className="relative mb-6 max-w-md">
-        <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Rechercher une gare, ville, région, code..."
-          className="w-full pl-10 pr-10 py-3 border rounded-lg focus:outline-none focus:ring-2"
-          style={{ borderColor: 'var(--border)' }}
-        />
-        {search && (
-          <button
-            onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100"
-            aria-label="Effacer la recherche"
+      <div className="flex gap-4 mb-6 flex-wrap">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher une gare, ville, région, code..."
+            className="w-full pl-10 pr-10 py-3 border rounded-lg focus:outline-none focus:ring-2"
+            style={{ borderColor: 'var(--border)' }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-100"
+              aria-label="Effacer la recherche"
+            >
+              <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+            </button>
+          )}
+        </div>
+
+        <div className="min-w-[200px]">
+          <select
+            value={cityFilter}
+            onChange={(e) => setCityFilter(e.target.value)}
+            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2"
+            style={{ borderColor: 'var(--border)' }}
           >
-            <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-          </button>
-        )}
+            <option value="">Toutes les villes</option>
+            {cities.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}{c.region ? ` (${c.region})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {showForm && (
@@ -751,6 +826,95 @@ export default function Stations() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block mb-2 font-medium">Ville(s) associée(s)</label>
+                  <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                    Associez une ou plusieurs villes supplémentaires à cette gare. Recherchez et sélectionnez parmi les villes existantes.
+                  </p>
+
+                  {selectedCityIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {selectedCityIds.map(cityId => {
+                        const city = cities.find(c => c.id === cityId);
+                        if (!city) return null;
+                        return (
+                          <span
+                            key={cityId}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
+                            style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            {city.name}
+                            {city.region ? ` (${city.region})` : ''}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCityIds(prev => prev.filter(id => id !== cityId))}
+                              className="hover:opacity-70 transition-opacity"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      value={citySearch}
+                      onChange={(e) => setCitySearch(e.target.value)}
+                      placeholder="Rechercher une ville à associer..."
+                      className="w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2"
+                      style={{ borderColor: 'var(--border)' }}
+                    />
+                    {citySearch.trim() && (
+                      <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {cities
+                          .filter(c => {
+                            const q = citySearch.trim().toLowerCase();
+                            return (
+                              c.name.toLowerCase().includes(q) ||
+                              (c.region ?? '').toLowerCase().includes(q)
+                            ) && !selectedCityIds.includes(c.id) && c.id !== formData.city_id;
+                          })
+                          .map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCityIds(prev => [...prev, c.id]);
+                                setCitySearch('');
+                              }}
+                              className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                            >
+                              <MapPin className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                              <span className="font-medium">{c.name}</span>
+                              {c.region && (
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  {c.region}
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        }
+                        {cities.filter(c => {
+                          const q = citySearch.trim().toLowerCase();
+                          return (
+                            c.name.toLowerCase().includes(q) ||
+                            (c.region ?? '').toLowerCase().includes(q)
+                          ) && !selectedCityIds.includes(c.id) && c.id !== formData.city_id;
+                        }).length === 0 && (
+                          <p className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Aucune ville trouvée. Créez d'abord la ville dans Admin &gt; Villes.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -1275,6 +1439,19 @@ export default function Stations() {
                       </div>
                     ) : (
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Non assignée</span>
+                    )}
+                    {(stationCitiesMap[station.id] ?? []).length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {(stationCitiesMap[station.id] ?? []).map(c => (
+                          <span
+                            key={c.id}
+                            className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                            style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}
+                          >
+                            {c.name}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </td>
                   <td className="p-4">
