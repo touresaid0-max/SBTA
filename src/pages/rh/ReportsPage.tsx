@@ -93,7 +93,7 @@ const REPORTS: ReportDef[] = [
     subtitle: 'Effectif complet, postes et rémunérations',
     icon: Users,
     color: '#0B7439',
-    load: () => fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+    load: () => fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
     columns: [
       { header: 'Matricule', cell: (e: Employee) => e.employee_id ?? '—' },
       { header: 'Nom complet', cell: (e: Employee) => e.full_name },
@@ -121,7 +121,7 @@ const REPORTS: ReportDef[] = [
     icon: Bus,
     color: '#1D6FA4',
     load: async () => {
-      const all = await fetchEmployees({ company_id: null, station_id: null, role: 'chauffeur', contract_type: null, status: null, search: '' })
+      const all = await fetchEmployees({ company_id: null, station_id: null, role: 'chauffeur', contract_type: null, contract_nature: null, status: null, search: '' })
       return all
     },
     columns: [

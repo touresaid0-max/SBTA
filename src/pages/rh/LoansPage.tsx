@@ -45,7 +45,7 @@ export default function LoansPage() {
           .select('*, company:companies(id, name, code)')
           .order('created_at', { ascending: false }),
         supabase.from('companies').select('id, name, code').order('name'),
-        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       if (loansRes.data) setLoans(loansRes.data as EmployeeLoan[])
       if (compsRes.data) setCompanies(compsRes.data as CompanyOption[])

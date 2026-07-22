@@ -59,7 +59,7 @@ export default function MasseSalarialePage() {
     setLoading(true)
     try {
       const [emps, compsRes] = await Promise.all([
-        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
         supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
       ])
       const activeEmps = emps.filter(e => e.status !== 'inactive')

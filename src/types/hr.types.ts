@@ -1,6 +1,7 @@
 import type { SBTARole } from '@/store/authStore'
 
-export type ContractType    = 'titulaire' | 'contractuel'
+export type ContractType    = 'titulaire' | 'contractuel' | 'stagiaire'
+export type ContractNature  = 'CDI' | 'CDD'
 export type Gender          = 'M' | 'F'
 export type MaritalStatus   = 'celibataire' | 'marie' | 'divorce' | 'veuf'
 export type SeniorityStatus = 'non_eligible' | 'eligible' | 'converti'
@@ -35,6 +36,7 @@ export interface Employee {
   seniority_text:           string | null
   salary:                   number | null
   contract_type:            ContractType | null
+  contract_nature:          ContractNature | null
   cnps_number:              string | null
   children_count:           number
   marital_status:           MaritalStatus | null
@@ -110,6 +112,7 @@ export interface EmployeeFilters {
   station_id:    string | null
   role:          string | null
   contract_type: ContractType | null
+  contract_nature?: ContractNature | null
   status:        string | null
   search:        string
 }

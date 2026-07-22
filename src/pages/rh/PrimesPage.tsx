@@ -63,7 +63,7 @@ export default function PrimesPage() {
         supabase.from('employee_primes')
           .select('*, rubric:prime_rubrics(*), company:companies(id, name, code)')
           .order('created_at', { ascending: false }),
-        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       setRubrics((rubRes.data as PrimeRubric[]) ?? [])
       setAssignments((assRes.data as EmployeePrime[]) ?? [])

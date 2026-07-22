@@ -6,7 +6,7 @@ import { supabase } from '@/services/supabase'
 import { fetchEmployees, deactivateEmployee } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
 import { resolveCompanyIds, buildCompanyGroups } from '@/utils/companyGroups'
-import type { Employee, EmployeeFilters, ContractType } from '@/types/hr.types'
+import type { Employee, EmployeeFilters, ContractType, ContractNature } from '@/types/hr.types'
 
 const ROLE_LABELS: Record<string, string> = {
   chauffeur: 'Chauffeur', guichetier: 'Guichetier', agent_reservation: 'Agent Réservation', mecanicien: 'Mécanicien',
@@ -48,7 +48,7 @@ export default function EmployeesPage() {
   const [stations,  setStations]      = useState<Station[]>([])
   const [filters, setFilters]         = useState<EmployeeFilters>({
     company_id: null, station_id: null, role: null,
-    contract_type: null, status: null, search: '',
+    contract_type: null, contract_nature: null, status: null, search: '',
   })
   const [activeTab, setActiveTab]     = useState('all')
   const [loading, setLoading]         = useState(true)
@@ -176,8 +176,23 @@ export default function EmployeesPage() {
               className="w-full border border-[#E2EAE5] rounded-lg px-3 py-2 text-sm appearance-none text-[#374151] bg-white pr-8"
             >
               <option value="">Tous les contrats</option>
-              <option value="titulaire">Titulaire</option>
-              <option value="contractuel">Contractuel</option>
+              <option value="titulaire">Titulaires</option>
+              <option value="contractuel">Contractuels</option>
+              <option value="stagiaire">Stagiaires</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
+          </div>
+
+          {/* Contract nature */}
+          <div className="relative">
+            <select
+              value={filters.contract_nature ?? ''}
+              onChange={e => setFilters(p => ({ ...p, contract_nature: (e.target.value || null) as ContractNature | null }))}
+              className="w-full border border-[#E2EAE5] rounded-lg px-3 py-2 text-sm appearance-none text-[#374151] bg-white pr-8"
+            >
+              <option value="">Toutes les natures</option>
+              <option value="CDI">CDI</option>
+              <option value="CDD">CDD</option>
             </select>
             <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
           </div>
@@ -300,13 +315,22 @@ export default function EmployeesPage() {
                     </td>
                     <td className="px-4 py-3">
                       {emp.contract_type ? (
-                        <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
-                          emp.contract_type === 'titulaire'
-                            ? 'bg-[#D4EDDA] text-[#0B7439]'
-                            : 'bg-[#DBEAFE] text-[#1D6FA4]'
-                        }`}>
-                          {emp.contract_type === 'titulaire' ? 'Titulaire' : 'Contractuel'}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`px-2 py-1 rounded-lg text-xs font-medium w-fit ${
+                            emp.contract_type === 'titulaire'
+                              ? 'bg-[#D4EDDA] text-[#0B7439]'
+                              : emp.contract_type === 'stagiaire'
+                                ? 'bg-[#FEF3C7] text-[#D97706]'
+                                : 'bg-[#DBEAFE] text-[#1D6FA4]'
+                          }`}>
+                            {emp.contract_type === 'titulaire' ? 'Titulaire' : emp.contract_type === 'stagiaire' ? 'Stagiaire' : 'Contractuel'}
+                          </span>
+                          {emp.contract_nature && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#F3F4F6] text-[#6B7280] w-fit">
+                              {emp.contract_nature}
+                            </span>
+                          )}
+                        </div>
                       ) : <span className="text-[#9CA3AF]">—</span>}
                     </td>
                     {isDriverTab && (

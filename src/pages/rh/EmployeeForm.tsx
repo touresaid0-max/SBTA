@@ -4,7 +4,7 @@ import { ArrowLeft, Save, User, Building2, Car, Info, ChevronDown, Camera, X, Se
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { uploadAvatar } from '@/services/hr.service'
-import type { ContractType, Gender, MaritalStatus } from '@/types/hr.types'
+import type { ContractType, ContractNature, Gender, MaritalStatus } from '@/types/hr.types'
 import type { SBTARole } from '@/store/authStore'
 import { computeAge, monthsUntilRetirement, RETIREMENT_AGE, RETIREMENT_ALERT_MONTHS } from '@/utils/retirement'
 
@@ -82,6 +82,7 @@ interface FormData {
   company_id:           string
   station_id:           string
   contract_type:        ContractType | ''
+  contract_nature:      ContractNature | ''
   hire_date:            string
   salary:               string
   employee_id:          string
@@ -100,7 +101,7 @@ interface FormData {
 const EMPTY_FORM: FormData = {
   first_name: '', last_name: '', personal_email: '', professional_email: '',
   phone: '', gender: '', nationality: '', date_naissance: '', role: '', company_id: '', station_id: '',
-  contract_type: '', hire_date: '', salary: '', employee_id: '',
+  contract_type: '', contract_nature: '', hire_date: '', salary: '', employee_id: '',
   cnps_number: '', children_count: '0', marital_status: '', bus_id: '',
   license_number: '', license_expiry: '', license_category: '',
   avatar_url: '', daily_rate: '', assigned_route_id: '',
@@ -190,6 +191,7 @@ export default function EmployeeForm() {
           company_id:         data.company_id ?? '',
           station_id:         data.station_id ?? '',
           contract_type:      data.contract_type ?? '',
+          contract_nature:    data.contract_nature ?? '',
           hire_date:          data.hire_date ?? '',
           salary:             data.salary?.toString() ?? '',
           employee_id:        data.employee_id ?? '',
@@ -274,6 +276,7 @@ export default function EmployeeForm() {
     company_id:        form.company_id  || null,
     station_id:        form.station_id  || null,
     contract_type:     form.contract_type || null,
+    contract_nature:   form.contract_nature || null,
     hire_date:         form.hire_date   || null,
     salary:            form.salary      ? parseFloat(form.salary)      : null,
     employee_id:       form.employee_id.trim()  || null,
@@ -579,7 +582,17 @@ export default function EmployeeForm() {
               <select value={form.contract_type} onChange={set('contract_type')} className={selectCls}>
                 <option value="">— Sélectionner —</option>
                 <option value="titulaire">Titulaire (embauché permanent)</option>
-                <option value="contractuel">Contractuel (stagiaire / CDD)</option>
+                <option value="contractuel">Contractuel</option>
+                <option value="stagiaire">Stagiaire</option>
+              </select>
+            </SelectWrap>
+          </FieldGroup>
+          <FieldGroup label="Nature du contrat">
+            <SelectWrap>
+              <select value={form.contract_nature} onChange={set('contract_nature')} className={selectCls}>
+                <option value="">— Sélectionner —</option>
+                <option value="CDI">CDI</option>
+                <option value="CDD">CDD</option>
               </select>
             </SelectWrap>
           </FieldGroup>

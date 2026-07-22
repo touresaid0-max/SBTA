@@ -38,7 +38,7 @@ export default function PayrollBookPage() {
           .order('employee_name'),
         supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
         fetchLiveDeductions(yearFilter, monthFilter),
-        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       const loadedSlips = (slipsRes.data as PaySlip[] | null) ?? []
       if (slipsRes.data) setSlips(loadedSlips)

@@ -53,7 +53,7 @@ export default function SuspensionsPage() {
       const [susRes, compsRes, empsData] = await Promise.all([
         query,
         supabase.from('companies').select('id, name, code').order('name'),
-        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       if (susRes.data) setSuspensions(susRes.data as EmployeeSuspension[])
       if (compsRes.data) setCompanies(compsRes.data as CompanyOption[])

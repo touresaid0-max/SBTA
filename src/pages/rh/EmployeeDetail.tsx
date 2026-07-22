@@ -306,7 +306,9 @@ export default function EmployeeDetail() {
           <InfoRow label="Gare"      value={employee.station_name} />
           <InfoRow label="Poste"     value={ROLE_LABELS[employee.role] ?? employee.role} />
           <InfoRow label="Contrat"
-            value={employee.contract_type === 'titulaire' ? 'Titulaire (embauché)' : employee.contract_type === 'contractuel' ? 'Contractuel' : null} />
+            value={employee.contract_type === 'titulaire' ? 'Titulaire (embauché)' : employee.contract_type === 'contractuel' ? 'Contractuel' : employee.contract_type === 'stagiaire' ? 'Stagiaire' : null} />
+          <InfoRow label="Nature"
+            value={employee.contract_nature ?? null} />
           <InfoRow label="Date entrée"
             value={employee.hire_date
               ? `${new Date(employee.hire_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${employee.years_of_service !== null ? ` — ${employee.years_of_service} an${employee.years_of_service > 1 ? 's' : ''}` : ''}`

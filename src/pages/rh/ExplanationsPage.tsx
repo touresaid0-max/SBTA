@@ -40,7 +40,7 @@ export default function ExplanationsPage() {
           .select('*, company:companies(id, name, code)')
           .order('request_date', { ascending: false }),
         supabase.from('companies').select('id, name, code').order('name'),
-        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       if (reqRes.data) setRequests(reqRes.data as ExplanationRequest[])
       if (compsRes.data) setCompanies(compsRes.data as CompanyOption[])

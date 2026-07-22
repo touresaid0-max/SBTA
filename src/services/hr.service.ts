@@ -10,7 +10,7 @@ export async function fetchEmployees(filters: EmployeeFilters): Promise<Employee
   const SELECT_FIELDS = `
     id, first_name, last_name, phone, gender, nationality, date_naissance, role,
     employee_id, avatar_url, hire_date, salary,
-    contract_type, cnps_number, children_count, marital_status,
+    contract_type, contract_nature, cnps_number, children_count, marital_status,
     contract_url, bus_id, station_id, license_number, license_expiry,
     license_category, driver_average_rating, driver_performance_level,
     driver_total_reviews, daily_rate, days_worked_this_month, current_month_earnings,
@@ -36,6 +36,7 @@ export async function fetchEmployees(filters: EmployeeFilters): Promise<Employee
   if (filters.station_id)    usersQ = usersQ.eq('station_id',    filters.station_id)
   if (filters.role)          usersQ = usersQ.eq('role',          filters.role)
   if (filters.contract_type) usersQ = usersQ.eq('contract_type', filters.contract_type)
+  if (filters.contract_nature) usersQ = usersQ.eq('contract_nature', filters.contract_nature)
   if (filters.status === 'active') {
     usersQ = usersQ.eq('status', 'active')
   } else if (filters.status === 'inactive') {
@@ -67,6 +68,7 @@ export async function fetchEmployees(filters: EmployeeFilters): Promise<Employee
   if (filters.station_id)    empQ = empQ.eq('station_id',    filters.station_id)
   if (filters.role)          empQ = empQ.eq('role',          filters.role)
   if (filters.contract_type) empQ = empQ.eq('contract_type', filters.contract_type)
+  if (filters.contract_nature) empQ = empQ.eq('contract_nature', filters.contract_nature)
   if (filters.status) {
     empQ = empQ.eq('account_status', filters.status)
   }
@@ -111,7 +113,7 @@ export async function fetchEmployeeById(id: string): Promise<Employee | null> {
     .select(`
       id, auth_user_id, first_name, last_name, professional_email, personal_email,
       phone, gender, nationality, date_naissance, role, employee_id, avatar_url, account_status, hire_date, salary,
-      contract_type, cnps_number, children_count, marital_status, contract_url,
+      contract_type, contract_nature, cnps_number, children_count, marital_status, contract_url,
       bus_id, station_id, license_number, license_expiry, license_category,
       driver_average_rating, driver_performance_level, driver_total_reviews,
       daily_rate, days_worked_this_month, current_month_earnings,
@@ -134,7 +136,7 @@ export async function fetchEmployeeById(id: string): Promise<Employee | null> {
     .select(`
       id, first_name, last_name, email, phone, gender, nationality, date_naissance, role,
       employee_id, avatar_url, status, hire_date, salary,
-      contract_type, cnps_number, children_count, marital_status,
+      contract_type, contract_nature, cnps_number, children_count, marital_status,
       contract_url, bus_id, station_id, license_number, license_expiry,
       license_category, driver_average_rating, driver_performance_level,
       driver_total_reviews, deactivated_at, deactivation_reason, created_at,

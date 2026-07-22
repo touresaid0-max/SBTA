@@ -94,7 +94,7 @@ export default function PaySlipsPage() {
         supabase.from('employee_loans')
           .select('id, employee_id, employee_source, loan_type, installment_amount')
           .eq('status', 'en_cours'),
-        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, status: null, search: '' }),
+        fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       const loadedSlips = (slipsRes.data as PaySlip[] | null) ?? []
       if (slipsRes.data) setSlips(loadedSlips)
@@ -191,6 +191,7 @@ export default function PaySlipsPage() {
       if (targetIds.length > 1) {
         const results = await Promise.all(targetIds.map(id => fetchEmployees({
           company_id: id, station_id: null, role: null, contract_type: null,
+          contract_nature: null,
           status: null, search: '',
         })))
         const seen = new Set<string>()
@@ -204,6 +205,7 @@ export default function PaySlipsPage() {
         emps = await fetchEmployees({
           company_id: genCompany || null,
           station_id: null, role: null, contract_type: null,
+          contract_nature: null,
           status: null, search: '',
         })
       }
