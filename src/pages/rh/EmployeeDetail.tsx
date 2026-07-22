@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Pencil, Ban, User, Building2,
   MapPin, FileText, Star, Upload, Download,
-  AlertTriangle, ShieldCheck, DollarSign, TrendingUp, Calendar, Camera, CalendarClock,
+  AlertTriangle, ShieldCheck, DollarSign, TrendingUp, Calendar, Camera, CalendarClock, AlertCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
@@ -27,6 +27,14 @@ const ROLE_LABELS: Record<string, string> = {
 const GENDER_LABELS: Record<string, string> = { M: 'Masculin', F: 'Féminin' }
 const MARITAL_LABELS: Record<string, string> = {
   celibataire: 'Célibataire', marie: 'Marié(e)', divorce: 'Divorcé(e)', veuf: 'Veuf/Veuve',
+}
+
+const SUSPENSION_LABELS: Record<string, string> = {
+  absence_prolongee: 'Absence prolongée',
+  suspension_disciplinaire: 'Suspension disciplinaire',
+  depart: 'Départ',
+  contrat_expire: 'Contrat expiré',
+  autre: 'Autre',
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -69,6 +77,10 @@ export default function EmployeeDetail() {
   const [showDeactivateModal, setShowDeactivateModal] = useState(false)
   const [deactivating, setDeactivating] = useState(false)
   const [showConversionModal, setShowConversionModal] = useState(false)
+  const [activeSuspension, setActiveSuspension] = useState<{
+    suspension_type: string; start_date: string; end_date: string | null;
+    motif: string | null; is_salary_suspended: boolean
+  } | null>(null)
   const [newSalary, setNewSalary] = useState('')
   const [isConverting, setIsConverting] = useState(false)
 
@@ -78,6 +90,17 @@ export default function EmployeeDetail() {
       .then(data => {
         if (!data) { toast.error('Employé introuvable'); return }
         setEmployee(data)
+        // Fetch active suspension
+        const sourceTable = data.source_table === 'users' ? 'users' : 'employees'
+        supabase
+          .from('employee_suspensions')
+          .select('suspension_type, start_date, end_date, motif, is_salary_suspended')
+          .eq('employee_id', data.id)
+          .eq('employee_source', sourceTable)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .then(({ data: susp }) => setActiveSuspension(susp?.[0] ?? null))
       })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
@@ -248,6 +271,11 @@ export default function EmployeeDetail() {
                   }`}>
                     {employee.status === 'active' ? 'Actif' : 'Inactif'}
                   </span>
+                  {activeSuspension && (
+                    <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-[#FEF3C7] text-[#D97706]">
+                      Suspendu{activeSuspension.is_salary_suspended ? ' (salaire suspendu)' : ''}
+                    </span>
+                  )}
                 </div>
                 {employee.employee_id && (
                   <p className="text-xs text-[#8AA898] mt-1 font-mono">Matricule : {employee.employee_id}</p>
@@ -257,6 +285,23 @@ export default function EmployeeDetail() {
             {employee.status === 'inactive' && employee.deactivation_reason && (
               <div className="mt-3 p-3 bg-[#FEF2F2] border border-[#FECACA] rounded-xl text-sm text-[#AF3029]">
                 <strong>Motif de désactivation :</strong> {employee.deactivation_reason}
+              </div>
+            )}
+            {activeSuspension && (
+              <div className="mt-3 p-3 bg-[#FEF3C7] border border-[#FCD34D] rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-[#D97706] flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-[#92400E]">
+                  <strong>Suspension active :</strong>{' '}
+                  {SUSPENSION_LABELS[activeSuspension.suspension_type] ?? activeSuspension.suspension_type}
+                  {' — '}du {new Date(activeSuspension.start_date).toLocaleDateString('fr-FR')}
+                  {activeSuspension.end_date && ` au ${new Date(activeSuspension.end_date).toLocaleDateString('fr-FR')}`}
+                  {activeSuspension.motif && `. Motif : ${activeSuspension.motif}`}
+                  {activeSuspension.is_salary_suspended && (
+                    <span className="block mt-1 text-[#AF3029] font-medium">
+                      Le salaire est suspendu pour cette suspension. Le bulletin de paie reste néanmoins générable.
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             {isNearRetirement(employee.date_naissance) && (

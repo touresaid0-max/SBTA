@@ -212,14 +212,6 @@ export default function PaySlipsPage() {
       const activeEmps = emps.filter(e => e.status !== 'inactive' && e.salary && Number(e.salary) > 0)
       if (activeEmps.length === 0) { toast.error('Aucun employe actif avec salaire'); setGenerating(false); return }
 
-      const { data: suspensions } = await supabase
-        .from('employee_suspensions')
-        .select('employee_id, employee_source')
-        .eq('is_active', true)
-        .eq('is_salary_suspended', true)
-
-      const suspendedKeys = new Set((suspensions ?? []).map(s => `${s.employee_id}_${s.employee_source}`))
-
       const { data: existingSlips } = await supabase
         .from('pay_slips')
         .select('employee_id, employee_source')
@@ -257,7 +249,6 @@ export default function PaySlipsPage() {
         const source = emp.source_table ?? 'employees'
         const key = `${emp.id}_${source}`
         if (existingKeys.has(key)) continue
-        if (suspendedKeys.has(key)) continue
 
         const baseSalary = Number(emp.salary) || 0
 
@@ -600,7 +591,7 @@ export default function PaySlipsPage() {
               </select>
             </div>
             <div className="rounded-lg p-3 text-xs" style={{ backgroundColor: '#D4EDDA', color: '#0B7439' }}>
-              Les employes suspendus et ceux ayant deja un bulletin pour cette periode seront exclus.
+              Seuls les bulletins deja existants pour cette periode seront exclus. Les employes suspendus restent inclus dans la generation.
             </div>
             <div className="flex gap-3">
               <button onClick={() => setShowGenerate(false)} className="flex-1 py-2.5 rounded-xl font-medium"
