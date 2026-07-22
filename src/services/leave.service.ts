@@ -28,7 +28,29 @@ export async function fetchLeaveRequests(filters?: {
     q = q.gte('start_date', yStart).lte('start_date', yEnd)
   }
 
-  const { data, error } = await q
+  let { data, error } = await q
+
+  // Fallback: if the company join fails (schema cache not yet reloaded),
+  // retry without the join so the page still loads.
+  if (error && error.message?.includes('company')) {
+    let q2 = supabase
+      .from('leave_requests')
+      .select('*')
+      .order('start_date', { ascending: false })
+    if (filters?.employeeId) q2 = q2.eq('employee_id', filters.employeeId)
+    if (filters?.status)    q2 = q2.eq('status', filters.status)
+    if (filters?.leaveType) q2 = q2.eq('leave_type', filters.leaveType)
+    if (filters?.companyId) q2 = q2.eq('company_id', filters.companyId)
+    if (filters?.year) {
+      const yStart = `${filters.year}-01-01`
+      const yEnd = `${filters.year}-12-31`
+      q2 = q2.gte('start_date', yStart).lte('start_date', yEnd)
+    }
+    const res2 = await q2
+    data = res2.data
+    error = res2.error
+  }
+
   if (error) throw error
   return (data ?? []) as LeaveRequest[]
 }
@@ -107,7 +129,28 @@ export async function fetchPermissionRequests(filters?: {
     q = q.gte('start_datetime', yStart).lte('start_datetime', yEnd)
   }
 
-  const { data, error } = await q
+  let { data, error } = await q
+
+  // Fallback without join if schema cache not yet reloaded
+  if (error && error.message?.includes('company')) {
+    let q2 = supabase
+      .from('permission_requests')
+      .select('*')
+      .order('start_datetime', { ascending: false })
+    if (filters?.employeeId)    q2 = q2.eq('employee_id', filters.employeeId)
+    if (filters?.status)        q2 = q2.eq('status', filters.status)
+    if (filters?.permissionType) q2 = q2.eq('permission_type', filters.permissionType)
+    if (filters?.companyId)     q2 = q2.eq('company_id', filters.companyId)
+    if (filters?.year) {
+      const yStart = `${filters.year}-01-01T00:00:00`
+      const yEnd = `${filters.year}-12-31T23:59:59`
+      q2 = q2.gte('start_datetime', yStart).lte('start_datetime', yEnd)
+    }
+    const res2 = await q2
+    data = res2.data
+    error = res2.error
+  }
+
   if (error) throw error
   return (data ?? []) as PermissionRequest[]
 }

@@ -82,16 +82,25 @@ export default function LeavePermissionsPage() {
       setSettingsForm(s)
       setAlerts(alertList)
 
-      // Load employees for dropdowns
-      const emps = await fetchEmployees({
-        company_id: null, station_id: null, role: null,
-        contract_type: null, contract_nature: null, status: 'active', search: '',
-      })
-      setEmployees(emps)
+      // Load employees for dropdowns (non-blocking — don't crash page if it fails)
+      try {
+        const emps = await fetchEmployees({
+          company_id: null, station_id: null, role: null,
+          contract_type: null, contract_nature: null, status: 'active', search: '',
+        })
+        setEmployees(emps)
+      } catch {
+        console.error('Failed to load employees for leave module')
+      }
 
-      // Generate alerts
-      await generateAlerts(s)
-    } catch {
+      // Generate alerts (non-blocking — don't crash page if it fails)
+      try {
+        await generateAlerts(s)
+      } catch {
+        console.error('Failed to generate leave alerts')
+      }
+    } catch (err) {
+      console.error('LeavePermissions load error:', err)
       toast.error('Erreur lors du chargement')
     } finally {
       setLoading(false)
@@ -1028,6 +1037,3 @@ function PermissionFormModal({ employees, onClose, onCreated, creatorId }: {
     </div>
   )
 }
-
-
-export default LeavePermissionsPage
