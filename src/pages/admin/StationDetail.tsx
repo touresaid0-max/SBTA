@@ -75,7 +75,6 @@ export default function StationDetail() {
   const [stationManagers, setStationManagers] = useState<StationManagerRow[]>([]);
   const [stationBaggage, setStationBaggage] = useState<StationBaggageRow[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
-  const [associatedCities, setAssociatedCities] = useState<{ id: string; name: string; region: string }[]>([]);
   const [guichetiers, setGuichetiers] = useState<User[]>([]);
   const [showCounterForm, setShowCounterForm] = useState(false);
   const [editingCounterId, setEditingCounterId] = useState<string | null>(null);
@@ -91,7 +90,6 @@ export default function StationDetail() {
       loadStationData();
       loadStationManagers();
       loadStationBaggageHandlers();
-      loadAssociatedCities();
       loadCounters();
       loadGuichetiers();
     }
@@ -153,20 +151,6 @@ export default function StationDetail() {
       setStationBaggage((data as any) || []);
     } catch (error: any) {
       console.error('Erreur chargement bagagistes:', error);
-    }
-  };
-
-  const loadAssociatedCities = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('station_cities')
-        .select('city_id, city:city_id(id, name, region)')
-        .eq('station_id', id);
-
-      if (error) throw error;
-      setAssociatedCities((data ?? []).map((r: any) => r.city));
-    } catch (error: any) {
-      console.error('Erreur chargement villes associées:', error);
     }
   };
 
@@ -364,32 +348,6 @@ export default function StationDetail() {
                   <p style={{ color: 'var(--text-secondary)' }}>
                     {station.address || 'Non renseignée'}
                   </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <MapPin className="w-5 h-5 mt-1" style={{ color: 'var(--primary)' }} />
-                <div className="flex-1">
-                  <p className="font-medium">Villes associées</p>
-                  {associatedCities.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {associatedCities.map(c => (
-                        <span
-                          key={c.id}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium"
-                          style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}
-                        >
-                          <MapPin className="w-3.5 h-3.5" />
-                          {c.name}
-                          {c.region ? ` (${c.region})` : ''}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p style={{ color: 'var(--text-secondary)' }}>
-                      Aucune ville associée
-                    </p>
-                  )}
                 </div>
               </div>
 
