@@ -1,11 +1,13 @@
 import { useEffect, useState, Fragment } from 'react'
-import { Users, Bus, Banknote, UserCheck, TrendingUp, AlertTriangle, ArrowRight, FileText, Wallet, MinusCircle, UserX, MessageSquareWarning, ChevronRight, CalendarClock } from 'lucide-react'
+import { Users, Bus, Banknote, UserCheck, TrendingUp, AlertTriangle, ArrowRight, FileText, Wallet, MinusCircle, UserX, MessageSquareWarning, ChevronRight, CalendarClock, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
   PieChart, Pie, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Cell, Legend,
 } from 'recharts'
 import { fetchPayrollByCompany, fetchSeniorityAlerts, fetchRetirementAlerts, convertToSalaried } from '@/services/hr.service'
+import { fetchLeaveAlerts, fetchLeaveSettings, generateAlerts } from '@/services/leave.service'
+import type { LeaveAlert, LeaveSettings } from '@/types/leave.types'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { CompanyPayroll, EmployeeExtended } from '@/types/hr.types'
@@ -50,6 +52,7 @@ export default function RHDashboard() {
   const [payroll,  setPayroll]  = useState<CompanyPayroll[]>([])
   const [alerts,   setAlerts]   = useState<EmployeeExtended[]>([])
   const [retirementAlerts, setRetirementAlerts] = useState<EmployeeExtended[]>([])
+  const [leaveAlerts, setLeaveAlerts] = useState<LeaveAlert[]>([])
   const [loading,  setLoading]  = useState(true)
   const [showConversionModal, setShowConversionModal] = useState(false)
   const [selectedDriver, setSelectedDriver] = useState<EmployeeExtended | null>(null)
@@ -75,13 +78,14 @@ export default function RHDashboard() {
       fetchPayrollByCompany(),
       fetchSeniorityAlerts(),
       fetchRetirementAlerts(),
+      fetchLeaveSettings().then(s => { generateAlerts(s); return fetchLeaveAlerts() }),
       supabase.from('pay_slips').select('id', { count: 'exact', head: true }).eq('period_year', curYear).eq('period_month', curMonth),
       supabase.from('employee_loans').select('id', { count: 'exact', head: true }).eq('status', 'en_cours'),
       supabase.from('salary_deductions').select('id', { count: 'exact', head: true }).eq('period_year', curYear).eq('period_month', curMonth).eq('status', 'active'),
       supabase.from('employee_suspensions').select('id', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('explanation_requests').select('employee_id').in('status', ['en_attente', 'repondu']),
-    ]).then(([p, a, ra, bRes, lRes, dRes, sRes, eRes]) => {
-      setPayroll(p); setAlerts(a); setRetirementAlerts(ra)
+    ]).then(([p, a, ra, la, bRes, lRes, dRes, sRes, eRes]) => {
+      setPayroll(p); setAlerts(a); setRetirementAlerts(ra); setLeaveAlerts(la)
       const explData = eRes.data ?? []
       const counts: Record<string, number> = {}
       for (const e of explData) counts[e.employee_id] = (counts[e.employee_id] ?? 0) + 1
@@ -216,6 +220,33 @@ export default function RHDashboard() {
                   className="text-xs font-bold bg-[#D97706] hover:bg-[#92400E] text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
                   Convertir <ArrowRight className="w-3 h-3" />
                 </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Leave & Permission alerts */}
+      {leaveAlerts.length > 0 && (
+        <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock className="w-5 h-5 text-[#D97706]" />
+            <h3 className="font-bold text-[#92400E]">
+              {leaveAlerts.length} alerte{leaveAlerts.length > 1 ? 's' : ''} congé{leaveAlerts.length > 1 ? 's' : ''} / permission{leaveAlerts.length > 1 ? 's' : ''}
+            </h3>
+            <button onClick={() => navigate('/rh/leave')}
+              className="ml-auto text-xs text-[#92400E] hover:underline flex items-center gap-1">
+              Gérer <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="space-y-2">
+            {leaveAlerts.slice(0, 5).map(a => (
+              <div key={a.id} className="flex items-center justify-between bg-white rounded-xl p-3 border border-[#FDE68A]">
+                <div className="flex items-center gap-2 text-sm text-[#92400E]">
+                  <Clock className="w-4 h-4 flex-shrink-0" />
+                  <span>{a.message}</span>
+                  <span className="text-xs text-[#6B7280]">— {new Date(a.target_date).toLocaleDateString('fr-FR')}</span>
+                </div>
               </div>
             ))}
           </div>

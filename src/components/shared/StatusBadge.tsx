@@ -42,6 +42,9 @@ const STATUS_STYLES: Record<string, { color: string; label: string; bg?: string 
 
   validee: { color: '#0B7439', label: 'Validée' },
   rejetee: { color: '#AF3029', label: 'Rejetée' },
+
+  valide: { color: '#0B7439', label: 'Validé' },
+  refuse: { color: '#AF3029', label: 'Refusé' },
 };
 
 function hexToRgba(hex: string, alpha: number): string {

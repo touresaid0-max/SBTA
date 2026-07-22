@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MapPin, Building2, Users, Bus, Route, Calendar,
   TicketCheck, CreditCard, Fuel, Receipt, Wrench, Package, Star,
   FileText, Settings, Search, Gift, CircleUser as UserCircle, Gauge,
-  ClipboardList, ClipboardCheck, AlertTriangle, CalendarClock, Droplet,
+  ClipboardList, ClipboardCheck, AlertTriangle, CalendarClock, CalendarDays, Droplet,
   DoorOpen, Shield, Monitor, TrendingUp, UserCog, DollarSign, Banknote,
   PackagePlus, Truck, ChevronLeft, ChevronRight, ChevronDown, X, ShoppingCart, Car, BarChart2,
   Droplets, ArrowDownCircle, ArrowUpCircle, Zap,
@@ -157,6 +157,14 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
         { label: 'Primes & rubriques', path: '/rh/primes',       icon: <Gift className="w-5 h-5" /> },
         { label: 'Retenues',          path: '/rh/deductions',    icon: <MinusCircle className="w-5 h-5" /> },
         { label: 'Déclarations',      path: '/rh/declarations',  icon: <FileCheck className="w-5 h-5" /> },
+      ],
+    },
+    {
+      label: 'Congés et Permissions',
+      icon: <CalendarClock className="w-5 h-5" />,
+      children: [
+        { label: 'Congés & Permissions', path: '/rh/leave',  icon: <CalendarDays className="w-5 h-5" /> },
+        { label: 'Rapport annuel',       path: '/rh/leave-report', icon: <FileText className="w-5 h-5" /> },
       ],
     },
     {
