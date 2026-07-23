@@ -772,6 +772,3 @@ export default function TankReport() {
     </div>
   )
 }
-
-
-export default getRange
