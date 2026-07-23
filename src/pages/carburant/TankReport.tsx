@@ -136,7 +136,6 @@ export default function TankReport() {
         id,enlevement_date,created_at,company_id,license_plate,quantity_liters,unit_price,total_amount,
         pompiste_id,tank_id,product_id,
         tanks:tank_id(name,fuel_type,city),
-        pompiste:pompiste_id(full_name),
         companies:company_id(name)
       `)
       .gte('enlevement_date', from)
@@ -145,6 +144,16 @@ export default function TankReport() {
       .order('created_at', { ascending: false })
 
     if (error) { toast.error('Erreur lors du chargement'); setLoading(false); return }
+
+    const pompisteIds = [...new Set((data || []).map((r: any) => r.pompiste_id).filter(Boolean))]
+    const pompisteMap = new Map<string, string>()
+    if (pompisteIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id,full_name')
+        .in('id', pompisteIds)
+      ;((users || []) as any[]).forEach(u => pompisteMap.set(u.id, u.full_name))
+    }
 
     const mapped = ((data || []) as any[]).map(r => ({
       id: r.id,
@@ -161,7 +170,7 @@ export default function TankReport() {
       tank_name: r.tanks?.name ?? '—',
       tank_fuel_type: r.tanks?.fuel_type ?? '',
       tank_city: r.tanks?.city ?? null,
-      pompiste_name: r.pompiste?.full_name ?? '—',
+      pompiste_name: r.pompiste_id ? (pompisteMap.get(r.pompiste_id) ?? '—') : '—',
       company_name: r.companies?.name ?? '—',
     }))
     setRows(mapped)
@@ -763,3 +772,6 @@ export default function TankReport() {
     </div>
   )
 }
+
+
+export default getRange
