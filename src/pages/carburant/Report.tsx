@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ArrowLeft, Search, FileText, Download, Filter, Fuel, Bus, MapPin, User, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Search, FileText, Download, Filter, Fuel, Bus, MapPin, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../services/supabase'
 import { useAuthStore } from '../../store/authStore'
@@ -110,11 +110,11 @@ export default function CarburantReport() {
 
   const exportExcel = () => {
     const wsData = [
-      ['Date', 'Immatriculation', 'Chauffeur', 'Station', 'Ville', 'Type', 'Litres', 'Prix unitaire', 'Montant total', 'Observations'],
+      ['Date', 'Immatriculation', 'Société', 'Station', 'Ville', 'Type', 'Litres', 'Prix unitaire', 'Montant total', 'Observations'],
       ...filtered.map(r => [
         format(new Date(r.withdrawal_date + 'T00:00:00'), 'dd/MM/yyyy'),
         r.registration_number,
-        r.driver_name ?? '',
+        companies.find(c => c.id === r.company_id)?.name ?? '—',
         r.station_name,
         r.city ?? '',
         FUEL_LABELS[r.fuel_type] ?? r.fuel_type,
@@ -141,7 +141,7 @@ export default function CarburantReport() {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
     const colWidths = [22, 30, 40, 38, 26, 18, 20, 30]
-    const headers = ['Date', 'Immatriculation', 'Chauffeur', 'Station', 'Ville', 'Type', 'Litres', 'Montant']
+    const headers = ['Date', 'Immatriculation', 'Société', 'Station', 'Ville', 'Type', 'Litres', 'Montant']
     const startX = 10
     let y = 10
     const rowH = 7
@@ -179,7 +179,7 @@ export default function CarburantReport() {
       const cells = [
         format(new Date(r.withdrawal_date + 'T00:00:00'), 'dd/MM/yyyy'),
         r.registration_number,
-        r.driver_name ?? '—',
+        companies.find(c => c.id === r.company_id)?.name ?? '—',
         r.station_name,
         r.city ?? '—',
         FUEL_LABELS[r.fuel_type] ?? r.fuel_type,
@@ -367,7 +367,7 @@ export default function CarburantReport() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-subtle)', borderBottom: '1px solid var(--border)' }}>
-                  {['Date', 'Immatriculation', 'Chauffeur', 'Station', 'Ville', 'Type', 'Litres', 'Prix/L', 'Montant'].map(h => (
+                  {['Date', 'Immatriculation', 'Société', 'Station', 'Ville', 'Type', 'Litres', 'Prix/L', 'Montant'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap"
                       style={{ color: 'var(--text-muted)' }}>
                       {h}
@@ -390,10 +390,9 @@ export default function CarburantReport() {
                       </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{r.driver_name ?? '—'}</span>
-                      </div>
+                      <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {companies.find(c => c.id === r.company_id)?.name ?? '—'}
+                      </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-xs" style={{ color: 'var(--text-primary)' }}>{r.station_name}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
