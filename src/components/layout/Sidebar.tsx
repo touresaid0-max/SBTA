@@ -227,6 +227,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Nouveau prélèvement', path: '/carburant/new',       icon: <Fuel className="w-5 h-5" /> },
     { label: 'Rapports',            path: '/carburant/report',    icon: <FileText className="w-5 h-5" /> },
     { label: 'Conso. par client',   path: '/carburant/consommation-client', icon: <Users className="w-5 h-5" /> },
+    { label: 'Stations',            path: '/carburant/stations', icon: <MapPin className="w-5 h-5" /> },
   ],
   responsable_assurance: [
     { label: 'Tableau de bord', path: '/assurance/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },
