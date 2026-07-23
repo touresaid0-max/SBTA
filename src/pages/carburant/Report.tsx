@@ -1,14 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
-import { ArrowLeft, Search, FileText, Download, Filter, Fuel, Bus, MapPin, User } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { ArrowLeft, Search, FileText, Download, Filter, Fuel, Bus, MapPin, User, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../services/supabase'
 import { useAuthStore } from '../../store/authStore'
+import { buildCompanyGroups, resolveCompanyIds, type CompanyWithHierarchy } from '../../utils/companyGroups'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
+interface Company extends CompanyWithHierarchy {}
+
 interface Row {
+  company_id: string | null
   id: string
   withdrawal_date: string
   registration_number: string
@@ -37,24 +41,33 @@ export default function CarburantReport() {
   const { user } = useAuthStore()
   const navigate = useNavigate()
 
-  const [rows, setRows]       = useState<Row[]>([])
-  const [loading, setLoading] = useState(false)
+  const [rows, setRows]           = useState<Row[]>([])
+  const [loading, setLoading]     = useState(false)
+  const [companies, setCompanies] = useState<Company[]>([])
 
   // filters
   const today = format(new Date(), 'yyyy-MM-dd')
-  const [dateFrom,      setDateFrom]      = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'))
-  const [dateTo,        setDateTo]        = useState(today)
-  const [search,        setSearch]        = useState('')
-  const [filterFuel,    setFilterFuel]    = useState('')
-  const [filterStation, setFilterStation] = useState('')
-  const [filterCity,    setFilterCity]    = useState('')
-  const [filterBus,     setFilterBus]     = useState('')
+  const [dateFrom,       setDateFrom]       = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'))
+  const [dateTo,         setDateTo]         = useState(today)
+  const [search,         setSearch]         = useState('')
+  const [filterFuel,     setFilterFuel]     = useState('')
+  const [filterStation,  setFilterStation]  = useState('')
+  const [filterCity,     setFilterCity]     = useState('')
+  const [filterBus,      setFilterBus]      = useState('')
+  const [filterCompany,  setFilterCompany]  = useState('')
+
+  const { groups, standalone } = useMemo(() => buildCompanyGroups(companies), [companies])
+
+  useEffect(() => {
+    supabase.from('companies').select('id,name,code,parent_id,is_group').eq('is_active', true).order('name')
+      .then(({ data }) => setCompanies((data as Company[]) || []))
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('comptable_fuel_withdrawals')
-      .select('id,withdrawal_date,registration_number,driver_name,station_name,station_code,city,fuel_type,liters,unit_price,total_amount,observations')
+      .select('id,company_id,withdrawal_date,registration_number,driver_name,station_name,station_code,city,fuel_type,liters,unit_price,total_amount,observations')
       .eq('created_by', user?.id ?? '')
       .gte('withdrawal_date', dateFrom)
       .lte('withdrawal_date', dateTo)
@@ -66,9 +79,13 @@ export default function CarburantReport() {
 
   useEffect(() => { load() }, [load])
 
+  const companyIds = useMemo(() =>
+    filterCompany ? new Set(resolveCompanyIds(filterCompany, companies)) : null
+  , [filterCompany, companies])
+
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
-    const matchSearch = !q
+    const matchSearch  = !q
       || r.registration_number.toLowerCase().includes(q)
       || (r.driver_name ?? '').toLowerCase().includes(q)
       || r.station_name.toLowerCase().includes(q)
@@ -77,7 +94,8 @@ export default function CarburantReport() {
     const matchStation = !filterStation || r.station_name === filterStation
     const matchCity    = !filterCity    || r.city         === filterCity
     const matchBus     = !filterBus     || r.registration_number === filterBus
-    return matchSearch && matchFuel && matchStation && matchCity && matchBus
+    const matchCompany = !companyIds    || (r.company_id != null && companyIds.has(r.company_id))
+    return matchSearch && matchFuel && matchStation && matchCity && matchBus && matchCompany
   })
 
   const totalLiters = filtered.reduce((s, r) => s + Number(r.liters), 0)
@@ -232,7 +250,7 @@ export default function CarburantReport() {
           <Filter className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
           <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Filtres</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           <div>
             <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Du</label>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -283,9 +301,31 @@ export default function CarburantReport() {
               {cities.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
+          <div className="relative">
+            <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Société / Sous-groupe</label>
+            <select value={filterCompany} onChange={e => setFilterCompany(e.target.value)}
+              className="w-full appearance-none pl-2 pr-6 py-1.5 border rounded-lg text-xs"
+              style={{ borderColor: 'var(--border)' }}>
+              <option value="">Toutes</option>
+              {groups.map(({ group, subsidiaries }) => (
+                <optgroup key={group.id} label={`${group.name} — Groupe (${subsidiaries.length})`}>
+                  <option value={group.id}>{group.name} (toutes)</option>
+                  {subsidiaries.map(sub => (
+                    <option key={sub.id} value={sub.id}>↳ {sub.name} ({sub.code})</option>
+                  ))}
+                </optgroup>
+              ))}
+              {standalone.length > 0 && (
+                <optgroup label="Autonomes">
+                  {standalone.map(c => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+                </optgroup>
+              )}
+            </select>
+            <ChevronDown className="absolute right-1 top-[22px] w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+          </div>
         </div>
-        {(search || filterFuel || filterStation || filterCity || filterBus) && (
-          <button onClick={() => { setSearch(''); setFilterFuel(''); setFilterStation(''); setFilterCity(''); setFilterBus('') }}
+        {(search || filterFuel || filterStation || filterCity || filterBus || filterCompany) && (
+          <button onClick={() => { setSearch(''); setFilterFuel(''); setFilterStation(''); setFilterCity(''); setFilterBus(''); setFilterCompany('') }}
             className="text-xs underline mt-1" style={{ color: 'var(--text-muted)' }}>
             Réinitialiser
           </button>
