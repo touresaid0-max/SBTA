@@ -31,10 +31,10 @@ const FUEL_LABELS: Record<string, string> = { essence: 'Essence', gasoil: 'Gasoi
 const FUEL_COLORS: Record<string, string> = { essence: '#F59E0B', gasoil: '#3B82F6' }
 
 function fmt(n: number) {
-  return new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
+  return new Intl.NumberFormat('fr-FR').format(Math.round(n)).replace(/\u202f|\u00a0/g, ' ') + ' FCFA'
 }
 function fmtL(n: number) {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(n) + ' L'
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(n).replace(/\u202f|\u00a0/g, ' ') + ' L'
 }
 
 export default function CarburantReport() {

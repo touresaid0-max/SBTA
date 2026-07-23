@@ -44,10 +44,10 @@ const PERIODS: { key: PeriodKey; label: string }[] = [
 ]
 
 function fmt(n: number) {
-  return new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' FCFA'
+  return new Intl.NumberFormat('fr-FR').format(Math.round(n)).replace(/\u202f|\u00a0/g, ' ') + ' FCFA'
 }
 function fmtL(n: number) {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(n) + ' L'
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(n).replace(/\u202f|\u00a0/g, ' ') + ' L'
 }
 
 function getRange(period: PeriodKey, customFrom: string, customTo: string) {
@@ -271,7 +271,7 @@ export default function ConsommationClient() {
       const cells = [
         r.companyName,
         fmtL(r.liters),
-        r.avgUnitPrice > 0 ? `${Math.round(r.avgUnitPrice).toLocaleString('fr-FR')} F/L` : '—',
+        r.avgUnitPrice > 0 ? `${Math.round(r.avgUnitPrice).toLocaleString('fr-FR').replace(/\u202f|\u00a0/g, ' ')} F/L` : '—',
         fmt(r.totalAmount),
         fmt(r.margin),
       ]
