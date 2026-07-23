@@ -9,7 +9,7 @@ import {
   PackagePlus, Truck, ChevronLeft, ChevronRight, ChevronDown, X, ShoppingCart, Car, BarChart2,
   Droplets, ArrowDownCircle, ArrowUpCircle, Zap,
   Wallet, MinusCircle, UserX, MessageSquareWarning, BookOpen, FileCheck, Landmark,
-  PieChart, Luggage, ScrollText, Archive, Wifi,
+  PieChart, Luggage, ScrollText, Archive, Wifi, Container,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import type { UserRole } from '../../types';
@@ -228,6 +228,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Rapports',            path: '/carburant/report',    icon: <FileText className="w-5 h-5" /> },
     { label: 'Conso. par client',   path: '/carburant/consommation-client', icon: <Users className="w-5 h-5" /> },
     { label: 'Stations',            path: '/carburant/stations', icon: <MapPin className="w-5 h-5" /> },
+    { label: 'Rapport Cuves',       path: '/carburant/tank-report', icon: <Container className="w-5 h-5" /> },
   ],
   responsable_assurance: [
     { label: 'Tableau de bord', path: '/assurance/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },
