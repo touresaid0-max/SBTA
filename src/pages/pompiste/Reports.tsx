@@ -6,8 +6,11 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { format, startOfWeek, endOfWeek, startOfDay, endOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { usePompisteTanks } from '../../hooks/usePompisteTanks';
+import { Droplets as DropletsIcon } from 'lucide-react';
 
 type ReportTab = 'daily' | 'weekly' | 'by_company' | 'by_bus' | 'by_supplier' | 'by_tank';
+const NIL_TANK = '00000000-0000-0000-0000-000000000000';
 
 interface TankStat {
   tank_id: string; tank_name: string;
@@ -18,6 +21,7 @@ interface BusStat { license_plate: string; company_name: string; total_liters: n
 interface SupplierStat { supplier_name: string; total_liters: number; total_amount: number; depotage_count: number; }
 
 export default function Reports() {
+  const { tanks: myTanks, tankIds, loading: tanksLoading, isPompiste } = usePompisteTanks();
   const [tab, setTab] = useState<ReportTab>('daily');
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
   const [weekFilter, setWeekFilter] = useState(new Date().toISOString().split('T')[0]);
@@ -30,7 +34,7 @@ export default function Reports() {
   const [tankStats, setTankStats] = useState<TankStat[]>([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { loadReport(); }, [tab, dateFilter, weekFilter]);
+  useEffect(() => { if (!tanksLoading) loadReport(); }, [tab, dateFilter, weekFilter, tanksLoading, tankIds.join(',')]);
 
   const loadReport = async () => {
     setLoading(true);
@@ -49,12 +53,15 @@ export default function Reports() {
     const dayStart = startOfDay(new Date(dateFilter)).toISOString();
     const dayEnd = endOfDay(new Date(dateFilter)).toISOString();
 
-    const [depRes, enlRes] = await Promise.all([
-      supabase.from('fuel_depotages').select('quantity_liters, total_amount, supplier_id, tanks:tank_id(name), fuel_suppliers:supplier_id(name)')
-        .gte('created_at', dayStart).lte('created_at', dayEnd),
-      supabase.from('fuel_enlevements').select('quantity_liters, total_amount, license_plate, companies:company_id(name), tanks:tank_id(name)')
-        .gte('created_at', dayStart).lte('created_at', dayEnd),
-    ]);
+    const noTankFilter = isPompiste && tankIds.length === 0;
+    const depSel = 'quantity_liters, total_amount, supplier_id, tanks:tank_id(name), fuel_suppliers:supplier_id(name)';
+    const enlSel = 'quantity_liters, total_amount, license_plate, companies:company_id(name), tanks:tank_id(name)';
+    let depQ = supabase.from('fuel_depotages').select(depSel).gte('created_at', dayStart).lte('created_at', dayEnd);
+    let enlQ = supabase.from('fuel_enlevements').select(enlSel).gte('created_at', dayStart).lte('created_at', dayEnd);
+    if (isPompiste && tankIds.length > 0) { depQ = depQ.in('tank_id', tankIds); enlQ = enlQ.in('tank_id', tankIds); }
+    else if (noTankFilter) { depQ = depQ.eq('tank_id', NIL_TANK); enlQ = enlQ.eq('tank_id', NIL_TANK); }
+
+    const [depRes, enlRes] = await Promise.all([depQ, enlQ]);
 
     const deps = depRes.data || [];
     const enls = enlRes.data || [];
@@ -79,12 +86,15 @@ export default function Reports() {
     const ws = startOfWeek(new Date(weekFilter), { weekStartsOn: 1 });
     const we = endOfWeek(new Date(weekFilter), { weekStartsOn: 1 });
 
-    const [depRes, enlRes] = await Promise.all([
-      supabase.from('fuel_depotages').select('depot_date, quantity_liters, total_amount')
-        .gte('depot_date', ws.toISOString().split('T')[0]).lte('depot_date', we.toISOString().split('T')[0]),
-      supabase.from('fuel_enlevements').select('enlevement_date, quantity_liters, total_amount, companies:company_id(name)')
-        .gte('enlevement_date', ws.toISOString().split('T')[0]).lte('enlevement_date', we.toISOString().split('T')[0]),
-    ]);
+    const noTankFilter = isPompiste && tankIds.length === 0;
+    let depQ = supabase.from('fuel_depotages').select('depot_date, quantity_liters, total_amount')
+      .gte('depot_date', ws.toISOString().split('T')[0]).lte('depot_date', we.toISOString().split('T')[0]);
+    let enlQ = supabase.from('fuel_enlevements').select('enlevement_date, quantity_liters, total_amount, companies:company_id(name)')
+      .gte('enlevement_date', ws.toISOString().split('T')[0]).lte('enlevement_date', we.toISOString().split('T')[0]);
+    if (isPompiste && tankIds.length > 0) { depQ = depQ.in('tank_id', tankIds); enlQ = enlQ.in('tank_id', tankIds); }
+    else if (noTankFilter) { depQ = depQ.eq('tank_id', NIL_TANK); enlQ = enlQ.eq('tank_id', NIL_TANK); }
+
+    const [depRes, enlRes] = await Promise.all([depQ, enlQ]);
 
     const days: Record<string, { in: number; out: number }> = {};
     for (let d = new Date(ws); d <= we; d.setDate(d.getDate() + 1)) {
@@ -97,8 +107,11 @@ export default function Reports() {
   };
 
   const loadCompanyReport = async () => {
-    const { data } = await supabase.from('fuel_enlevements')
+    if (isPompiste && tankIds.length === 0) { setCompanyStats([]); return; }
+    let q = supabase.from('fuel_enlevements')
       .select('quantity_liters, total_amount, bus_id, companies:company_id(name)');
+    if (isPompiste) q = q.in('tank_id', tankIds);
+    const { data } = await q;
     const map: Record<string, { liters: number; amount: number; buses: Set<string> }> = {};
     (data || []).forEach((e: any) => {
       const cn = (e.companies as any)?.name || 'Inconnu';
@@ -112,8 +125,11 @@ export default function Reports() {
   };
 
   const loadBusReport = async () => {
-    const { data } = await supabase.from('fuel_enlevements')
+    if (isPompiste && tankIds.length === 0) { setBusStats([]); return; }
+    let q = supabase.from('fuel_enlevements')
       .select('quantity_liters, total_amount, license_plate, companies:company_id(name)');
+    if (isPompiste) q = q.in('tank_id', tankIds);
+    const { data } = await q;
     const map: Record<string, { liters: number; amount: number; count: number; company: string }> = {};
     (data || []).forEach((e: any) => {
       const plate = e.license_plate || '—';
@@ -127,8 +143,11 @@ export default function Reports() {
   };
 
   const loadSupplierReport = async () => {
-    const { data } = await supabase.from('fuel_depotages')
+    if (isPompiste && tankIds.length === 0) { setSupplierStats([]); return; }
+    let q = supabase.from('fuel_depotages')
       .select('quantity_liters, total_amount, fuel_suppliers:supplier_id(name)');
+    if (isPompiste) q = q.in('tank_id', tankIds);
+    const { data } = await q;
     const map: Record<string, { liters: number; amount: number; count: number }> = {};
     (data || []).forEach((d: any) => {
       const sn = (d.fuel_suppliers as any)?.name || 'Inconnu';
@@ -142,11 +161,13 @@ export default function Reports() {
   };
 
   const loadTankReport = async () => {
-    const [tanksRes, depRes, enlRes] = await Promise.all([
-      supabase.from('fuel_tanks').select('id, name, current_level_liters').order('name'),
-      supabase.from('fuel_depotages').select('tank_id, quantity_liters'),
-      supabase.from('fuel_enlevements').select('tank_id, quantity_liters'),
-    ]);
+    if (isPompiste && tankIds.length === 0) { setTankStats([]); return; }
+    let tq = supabase.from('fuel_tanks').select('id, name, current_level_liters').order('name');
+    if (isPompiste) tq = tq.in('id', tankIds);
+    let depQ = supabase.from('fuel_depotages').select('tank_id, quantity_liters');
+    let enlQ = supabase.from('fuel_enlevements').select('tank_id, quantity_liters');
+    if (isPompiste) { depQ = depQ.in('tank_id', tankIds); enlQ = enlQ.in('tank_id', tankIds); }
+    const [tanksRes, depRes, enlRes] = await Promise.all([tq, depQ, enlQ]);
     const depMap: Record<string, number> = {};
     (depRes.data || []).forEach((d: any) => { depMap[d.tank_id] = (depMap[d.tank_id] || 0) + Number(d.quantity_liters); });
     const enlMap: Record<string, number> = {};
@@ -173,6 +194,18 @@ export default function Reports() {
         <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Rapports Carburant</h1>
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Analyses et récapitulatifs</p>
       </div>
+
+      {isPompiste && !tanksLoading && myTanks.length === 0 && (
+        <div className="rounded-xl border-2 p-6 mb-6 flex items-center gap-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+          <DropletsIcon className="w-8 h-8 flex-shrink-0" style={{ color: '#F59E0B' }} />
+          <div>
+            <p className="font-bold text-sm" style={{ color: '#92400E' }}>Aucune cuve ne vous est affectée</p>
+            <p className="text-xs mt-1" style={{ color: '#92400E' }}>
+              Contactez votre administrateur pour qu'il vous assigne une cuve. Les rapports ne contiendront que les données de votre cuve une fois affectée.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* tabs */}
       <div className="flex flex-wrap gap-2 mb-6">

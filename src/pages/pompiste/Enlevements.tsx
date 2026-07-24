@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, ArrowUpCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Search, X, ArrowUpCircle, AlertTriangle, Droplets as DropletsIcon } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { format } from 'date-fns';
+import { usePompisteTanks } from '../../hooks/usePompisteTanks';
 
 interface Enlevement {
   id: string; enlevement_date: string; license_plate: string | null;
@@ -24,6 +25,7 @@ const EMPTY = {
 };
 
 export default function Enlevements() {
+  const { tanks: myTanks, tankIds, loading: tanksLoading, isPompiste } = usePompisteTanks();
   const [enlevements, setEnlevements] = useState<Enlevement[]>([]);
   const [tanks, setTanks] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -42,13 +44,16 @@ export default function Enlevements() {
 
   const [selectedTankLevel, setSelectedTankLevel] = useState<number | null>(null);
 
-  useEffect(() => { load(); loadRefs(); }, []);
+  useEffect(() => { if (!tanksLoading) { load(); loadRefs(); } }, [tanksLoading, tankIds.join(',')]);
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('fuel_enlevements')
+    let q = supabase.from('fuel_enlevements')
       .select('*, companies:company_id(name), tanks:tank_id(name), fuel_products:product_id(designation), driver:driver_id(full_name)')
       .order('created_at', { ascending: false });
+    if (isPompiste && tankIds.length > 0) q = q.in('tank_id', tankIds);
+    else if (isPompiste) q = q.eq('tank_id', '00000000-0000-0000-0000-000000000000');
+    const { data, error } = await q;
     if (error) toast.error('Erreur de chargement');
     else setEnlevements((data as Enlevement[]) || []);
     setLoading(false);
@@ -56,7 +61,12 @@ export default function Enlevements() {
 
   const loadRefs = async () => {
     const [t, p] = await Promise.all([
-      supabase.from('fuel_tanks').select('id, name, current_level_liters, capacity_liters').eq('is_active', true).order('name'),
+      (async () => {
+        let tq = supabase.from('fuel_tanks').select('id, name, current_level_liters, capacity_liters').eq('is_active', true).order('name');
+        if (isPompiste && tankIds.length > 0) tq = tq.in('id', tankIds);
+        else if (isPompiste) tq = tq.eq('id', '00000000-0000-0000-0000-000000000000');
+        return tq;
+      })(),
       supabase.from('fuel_products').select('id, designation, unit_price').eq('is_active', true).order('designation'),
     ]);
     setTanks(t.data || []);
@@ -181,11 +191,24 @@ export default function Enlevements() {
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Sorties carburant pour les bus</p>
         </div>
         <button onClick={() => { setForm({ ...EMPTY }); setSelectedTankLevel(null); setBusResults([]); setDriverResults([]); setShowForm(true); }}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm"
+          disabled={isPompiste && myTanks.length === 0}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ backgroundColor: '#DC2626' }}>
           <Plus className="w-4 h-4" /> Nouvel enlèvement
         </button>
       </div>
+
+      {isPompiste && !tanksLoading && myTanks.length === 0 && (
+        <div className="rounded-xl border-2 p-6 mb-6 flex items-center gap-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+          <DropletsIcon className="w-8 h-8 flex-shrink-0" style={{ color: '#F59E0B' }} />
+          <div>
+            <p className="font-bold text-sm" style={{ color: '#92400E' }}>Aucune cuve ne vous est affectée</p>
+            <p className="text-xs mt-1" style={{ color: '#92400E' }}>
+              Contactez votre administrateur pour qu'il vous assigne une cuve. Vous pourrez ensuite enregistrer vos enlèvements.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="relative mb-6 max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />

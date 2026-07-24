@@ -9,6 +9,8 @@ import {
 import { formatCurrency } from '../../utils/formatCurrency';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { usePompisteTanks } from '../../hooks/usePompisteTanks';
+import { Droplets as DropletsIcon } from 'lucide-react';
 
 interface KPI {
   totalStock: number;
@@ -43,13 +45,14 @@ function fillColor(pct: number) {
 
 export default function PompisteDashboard() {
   const navigate = useNavigate();
+  const { tanks: myTanks, tankIds, loading: tanksLoading, isPompiste } = usePompisteTanks();
   const [loading, setLoading] = useState(true);
   const [kpi, setKpi] = useState<KPI>({ totalStock: 0, todayIn: 0, todayOut: 0, weekIn: 0, weekOut: 0, lowTanks: [] });
   const [tanks, setTanks] = useState<TankSummary[]>([]);
   const [depotages, setDepotages] = useState<RecentDepotage[]>([]);
   const [enlevements, setEnlevements] = useState<RecentEnlevement[]>([]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (!tanksLoading) load(); }, [tanksLoading, tankIds.join(',')]);
 
   const load = async () => {
     setLoading(true);
@@ -60,17 +63,38 @@ export default function PompisteDashboard() {
       const weekStart = startOfWeek(now, { weekStartsOn: 1 }).toISOString();
       const weekEnd = endOfWeek(now, { weekStartsOn: 1 }).toISOString();
 
-      const [tanksRes, depotTodayRes, enlevTodayRes, depotWeekRes, enlevWeekRes, recentDep, recentEnl] = await Promise.all([
-        supabase.from('fuel_tanks').select('id,name,code,fuel_type,capacity_liters,current_level_liters').eq('is_active', true).order('name'),
-        supabase.from('fuel_depotages').select('quantity_liters').gte('created_at', todayStart).lte('created_at', todayEnd),
-        supabase.from('fuel_enlevements').select('quantity_liters,total_amount').gte('created_at', todayStart).lte('created_at', todayEnd),
-        supabase.from('fuel_depotages').select('quantity_liters').gte('created_at', weekStart).lte('created_at', weekEnd),
-        supabase.from('fuel_enlevements').select('quantity_liters').gte('created_at', weekStart).lte('created_at', weekEnd),
-        supabase.from('fuel_depotages').select('id,depot_date,quantity_liters,total_amount,tanks:tank_id(name),fuel_suppliers:supplier_id(name)').order('created_at', { ascending: false }).limit(6),
-        supabase.from('fuel_enlevements').select('id,enlevement_date,quantity_liters,total_amount,license_plate,tanks:tank_id(name),companies:company_id(name)').order('created_at', { ascending: false }).limit(6),
-      ]);
+      // pompiste: scope to assigned tanks; others: load all
+      const tanksQuery = isPompiste && tankIds.length === 0
+        ? Promise.resolve({ data: [], error: null })
+        : isPompiste
+          ? supabase.from('fuel_tanks').select('id,name,code,fuel_type,capacity_liters,current_level_liters').eq('is_active', true).in('id', tankIds).order('name')
+          : supabase.from('fuel_tanks').select('id,name,code,fuel_type,capacity_liters,current_level_liters').eq('is_active', true).order('name');
 
-      const tankList = (tanksRes.data || []) as TankSummary[];
+      const scopedDepot = (select: string) => {
+        let q = supabase.from('fuel_depotages').select(select);
+        if (isPompiste && tankIds.length > 0) q = q.in('tank_id', tankIds);
+        else if (isPompiste) q = q.eq('tank_id', '00000000-0000-0000-0000-000000000000');
+        return q;
+      };
+      const scopedEnlev = (select: string) => {
+        let q = supabase.from('fuel_enlevements').select(select);
+        if (isPompiste && tankIds.length > 0) q = q.in('tank_id', tankIds);
+        else if (isPompiste) q = q.eq('tank_id', '00000000-0000-0000-0000-000000000000');
+        return q;
+      };
+
+      const [tanksRes, depotTodayRes, enlevTodayRes, depotWeekRes, enlevWeekRes, recentDep, recentEnl] = await Promise.all([
+        tanksQuery as Promise<any>,
+        scopedDepot('quantity_liters').gte('created_at', todayStart).lte('created_at', todayEnd),
+        scopedEnlev('quantity_liters,total_amount').gte('created_at', todayStart).lte('created_at', todayEnd),
+        scopedDepot('quantity_liters').gte('created_at', weekStart).lte('created_at', weekEnd),
+        scopedEnlev('quantity_liters').gte('created_at', weekStart).lte('created_at', weekEnd),
+        scopedDepot('id,depot_date,quantity_liters,total_amount,tanks:tank_id(name),fuel_suppliers:supplier_id(name)').order('created_at', { ascending: false }).limit(6),
+        scopedEnlev('id,enlevement_date,quantity_liters,total_amount,license_plate,tanks:tank_id(name),companies:company_id(name)').order('created_at', { ascending: false }).limit(6),
+      ]);
+      const tanksResp = await tanksRes;
+
+      const tankList = (tanksResp.data || []) as TankSummary[];
       const totalStock = tankList.reduce((s, t) => s + Number(t.current_level_liters), 0);
       const todayIn = (depotTodayRes.data || []).reduce((s: number, d: any) => s + Number(d.quantity_liters), 0);
       const todayOut = (enlevTodayRes.data || []).reduce((s: number, e: any) => s + Number(e.quantity_liters), 0);
@@ -81,8 +105,8 @@ export default function PompisteDashboard() {
 
       setKpi({ totalStock, todayIn, todayOut, weekIn, weekOut, lowTanks });
       setTanks(tankList);
-      setDepotages((recentDep.data || []) as RecentDepotage[]);
-      setEnlevements((recentEnl.data || []) as RecentEnlevement[]);
+      setDepotages(((recentDep.data as unknown) || []) as RecentDepotage[]);
+      setEnlevements(((recentEnl.data as unknown) || []) as RecentEnlevement[]);
     } catch {
       toast.error('Erreur de chargement');
     } finally { setLoading(false); }
@@ -102,6 +126,18 @@ export default function PompisteDashboard() {
           <RefreshCw className="w-4 h-4" /> Actualiser
         </button>
       </div>
+
+      {isPompiste && !tanksLoading && myTanks.length === 0 && (
+        <div className="rounded-xl border-2 p-6 mb-6 flex items-center gap-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+          <DropletsIcon className="w-8 h-8 flex-shrink-0" style={{ color: '#F59E0B' }} />
+          <div>
+            <p className="font-bold text-sm" style={{ color: '#92400E' }}>Aucune cuve ne vous est affectée</p>
+            <p className="text-xs mt-1" style={{ color: '#92400E' }}>
+              Contactez votre administrateur pour qu'il vous assigne une cuve. Vous pourrez ensuite consulter et gérer uniquement celle(s)-ci.
+            </p>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-20">

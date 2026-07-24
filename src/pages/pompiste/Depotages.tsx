@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, ArrowDownCircle } from 'lucide-react';
+import { Plus, Search, X, ArrowDownCircle, Droplets as DropletsIcon } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { format } from 'date-fns';
+import { usePompisteTanks } from '../../hooks/usePompisteTanks';
 
 interface Depotage {
   id: string; depot_date: string; quantity_liters: number; stock_before: number;
@@ -22,6 +23,7 @@ const EMPTY = {
 };
 
 export default function Depotages() {
+  const { tanks: myTanks, tankIds, loading: tanksLoading, isPompiste } = usePompisteTanks();
   const [depotages, setDepotages] = useState<Depotage[]>([]);
   const [tanks, setTanks] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -34,13 +36,16 @@ export default function Depotages() {
   const [search, setSearch] = useState('');
   const [selectedTankLevel, setSelectedTankLevel] = useState<number | null>(null);
 
-  useEffect(() => { load(); loadRefs(); }, []);
+  useEffect(() => { if (!tanksLoading) { load(); loadRefs(); } }, [tanksLoading, tankIds.join(',')]);
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('fuel_depotages')
+    let q = supabase.from('fuel_depotages')
       .select('*, tanks:tank_id(name), fuel_suppliers:supplier_id(name), fuel_products:product_id(designation), fuel_purchase_orders:purchase_order_id(order_number)')
       .order('created_at', { ascending: false });
+    if (isPompiste && tankIds.length > 0) q = q.in('tank_id', tankIds);
+    else if (isPompiste) q = q.eq('tank_id', '00000000-0000-0000-0000-000000000000');
+    const { data, error } = await q;
     if (error) toast.error('Erreur de chargement');
     else setDepotages((data as Depotage[]) || []);
     setLoading(false);
@@ -48,7 +53,12 @@ export default function Depotages() {
 
   const loadRefs = async () => {
     const [t, s, p, po] = await Promise.all([
-      supabase.from('fuel_tanks').select('id, name, current_level_liters, capacity_liters').eq('is_active', true).order('name'),
+      (async () => {
+        let tq = supabase.from('fuel_tanks').select('id, name, current_level_liters, capacity_liters').eq('is_active', true).order('name');
+        if (isPompiste && tankIds.length > 0) tq = tq.in('id', tankIds);
+        else if (isPompiste) tq = tq.eq('id', '00000000-0000-0000-0000-000000000000');
+        return tq;
+      })(),
       supabase.from('fuel_suppliers').select('id, name').eq('is_active', true).order('name'),
       supabase.from('fuel_products').select('id, designation, unit_price').eq('is_active', true).order('designation'),
       supabase.from('fuel_purchase_orders').select('id, order_number').in('status', ['valide', 'livre_partiel']).order('order_number'),
@@ -128,11 +138,24 @@ export default function Depotages() {
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Entrées carburant dans les cuves</p>
         </div>
         <button onClick={() => { setForm({ ...EMPTY }); setSelectedTankLevel(null); setShowForm(true); }}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm"
+          disabled={isPompiste && myTanks.length === 0}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ backgroundColor: '#16A34A' }}>
           <Plus className="w-4 h-4" /> Nouveau dépotage
         </button>
       </div>
+
+      {isPompiste && !tanksLoading && myTanks.length === 0 && (
+        <div className="rounded-xl border-2 p-6 mb-6 flex items-center gap-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+          <DropletsIcon className="w-8 h-8 flex-shrink-0" style={{ color: '#F59E0B' }} />
+          <div>
+            <p className="font-bold text-sm" style={{ color: '#92400E' }}>Aucune cuve ne vous est affectée</p>
+            <p className="text-xs mt-1" style={{ color: '#92400E' }}>
+              Contactez votre administrateur pour qu'il vous assigne une cuve. Vous pourrez ensuite enregistrer vos dépotages.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="relative mb-6 max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
