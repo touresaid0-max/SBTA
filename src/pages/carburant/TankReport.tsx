@@ -106,8 +106,6 @@ export default function TankReport() {
   const [customTo, setCustomTo]       = useState(format(today, 'yyyy-MM-dd'))
   const [filterCompany, setFilterCompany] = useState('')
   const [filterTank, setFilterTank]       = useState('')
-  const [filterCity, setFilterCity]       = useState('')
-  const [filterPompiste, setFilterPompiste] = useState('')
   const [filterFuel, setFilterFuel]       = useState('')
 
   const [rows, setRows]               = useState<EnlevementRow[]>([])
@@ -182,8 +180,6 @@ export default function TankReport() {
   /* ─── filter dropdowns ─── */
 
   const tanks    = useMemo(() => [...new Set(rows.map(r => r.tank_name))].sort(), [rows])
-  const cities   = useMemo(() => [...new Set(rows.map(r => r.tank_city).filter(Boolean) as string[])].sort(), [rows])
-  const pompistes = useMemo(() => [...new Set(rows.map(r => r.pompiste_name).filter(p => p !== '—'))].sort(), [rows])
   const fuelTypes = useMemo(() => [...new Set(rows.map(r => r.tank_fuel_type).filter(Boolean))].sort(), [rows])
 
   /* ─── filtering ─── */
@@ -196,12 +192,10 @@ export default function TankReport() {
     return rows.filter(r => {
       const matchCompany = !companyIds || (r.company_id != null && companyIds.has(r.company_id))
       const matchTank    = !filterTank    || r.tank_name === filterTank
-      const matchCity    = !filterCity    || r.tank_city === filterCity
-      const matchPompiste = !filterPompiste || r.pompiste_name === filterPompiste
       const matchFuel    = !filterFuel    || r.tank_fuel_type === filterFuel
-      return matchCompany && matchTank && matchCity && matchPompiste && matchFuel
+      return matchCompany && matchTank && matchFuel
     })
-  }, [rows, companyIds, filterTank, filterCity, filterPompiste, filterFuel])
+  }, [rows, companyIds, filterTank, filterFuel])
 
   /* ─── aggregations ─── */
 
@@ -238,9 +232,9 @@ export default function TankReport() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, from, to])
 
-  const hasFilters = filterCompany || filterTank || filterCity || filterPompiste || filterFuel
+  const hasFilters = filterCompany || filterTank || filterFuel
   const resetFilters = () => {
-    setFilterCompany(''); setFilterTank(''); setFilterCity(''); setFilterPompiste(''); setFilterFuel('')
+    setFilterCompany(''); setFilterTank(''); setFilterFuel('')
   }
 
   /* ─── Excel export ─────────────────────────────────────────────────────────── */
@@ -312,8 +306,6 @@ export default function TankReport() {
     const filterParts: string[] = []
     if (filterCompany)  filterParts.push(`Société: ${companies.find(c => c.id === filterCompany)?.name ?? filterCompany}`)
     if (filterTank)     filterParts.push(`Cuve: ${filterTank}`)
-    if (filterCity)     filterParts.push(`Ville: ${filterCity}`)
-    if (filterPompiste) filterParts.push(`Pompiste: ${filterPompiste}`)
     if (filterFuel)     filterParts.push(`Carburant: ${FUEL_LABELS[filterFuel] ?? filterFuel}`)
     if (filterParts.length > 0) {
       doc.text(`Filtres : ${filterParts.join('  |  ')}`, startX, y)
@@ -518,7 +510,7 @@ export default function TankReport() {
           <Filter className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
           <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Filtres</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Société */}
           <div className="relative">
             <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Société</label>
@@ -550,26 +542,6 @@ export default function TankReport() {
               style={{ borderColor: 'var(--border)' }}>
               <option value="">Toutes</option>
               {tanks.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          {/* Ville */}
-          <div>
-            <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Ville</label>
-            <select value={filterCity} onChange={e => setFilterCity(e.target.value)}
-              className="w-full px-2 py-1.5 border rounded-lg text-xs"
-              style={{ borderColor: 'var(--border)' }}>
-              <option value="">Toutes</option>
-              {cities.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          {/* Pompiste */}
-          <div>
-            <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Pompiste</label>
-            <select value={filterPompiste} onChange={e => setFilterPompiste(e.target.value)}
-              className="w-full px-2 py-1.5 border rounded-lg text-xs"
-              style={{ borderColor: 'var(--border)' }}>
-              <option value="">Tous</option>
-              {pompistes.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           {/* Type carburant */}
