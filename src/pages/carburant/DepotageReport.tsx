@@ -519,8 +519,8 @@ export default function DepotageReport() {
               <tbody>
                 {filtered.map((r, i) => {
                   const evol = evolutionRate(r.stock_before, r.stock_after)
-                  const fr = fillRate(r.stock_after, r.tank_capacity)
-                  const frColor = fr == null ? '#6B7280' : fr >= 80 ? '#DC2626' : fr >= 50 ? '#F59E0B' : '#16A34A'
+                  const frVal = fillRate(r.stock_after, r.tank_capacity)
+                  const frColor = frVal == null ? '#6B7280' : frVal >= 80 ? '#DC2626' : frVal >= 50 ? '#F59E0B' : '#16A34A'
                   return (
                     <tr key={r.id}
                       className="border-b last:border-0 hover:bg-gray-50 transition-colors"
@@ -570,7 +570,7 @@ export default function DepotageReport() {
                       <td className="px-3 py-3 whitespace-nowrap">
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap"
                           style={{ backgroundColor: `${frColor}18`, color: frColor }}>
-                          {fmtPct(fr)}
+                          {fmtPct(frVal)}
                         </span>
                       </td>
                     </tr>
