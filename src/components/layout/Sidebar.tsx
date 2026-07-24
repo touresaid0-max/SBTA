@@ -224,12 +224,24 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   ],
   carburant: [
     { label: 'Tableau de bord',     path: '/carburant/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
-    { label: 'Nouveau prélèvement', path: '/carburant/new',       icon: <Fuel className="w-5 h-5" /> },
-    { label: 'Rapports',            path: '/carburant/report',    icon: <FileText className="w-5 h-5" /> },
-    { label: 'Conso. par client',   path: '/carburant/consommation-client', icon: <Users className="w-5 h-5" /> },
-    { label: 'Stations',            path: '/carburant/stations', icon: <MapPin className="w-5 h-5" /> },
-    { label: 'Rapport Cuves',       path: '/carburant/tank-report', icon: <Container className="w-5 h-5" /> },
-    { label: 'Rapport Dépotage',    path: '/carburant/depotage-report', icon: <ArrowDownCircle className="w-5 h-5" /> },
+    {
+      label: 'Opérations',
+      icon: <ClipboardList className="w-5 h-5" />,
+      children: [
+        { label: 'Nouveau prélèvement', path: '/carburant/new',      icon: <Fuel className="w-5 h-5" /> },
+        { label: 'Stations',            path: '/carburant/stations', icon: <MapPin className="w-5 h-5" /> },
+      ],
+    },
+    {
+      label: 'Rapports',
+      icon: <FileText className="w-5 h-5" />,
+      children: [
+        { label: 'Rapports',          path: '/carburant/report',             icon: <BarChart2 className="w-5 h-5" /> },
+        { label: 'Conso. par client', path: '/carburant/consommation-client', icon: <Users className="w-5 h-5" /> },
+        { label: 'Rapport Cuves',     path: '/carburant/tank-report',        icon: <Container className="w-5 h-5" /> },
+        { label: 'Rapport Dépotage',  path: '/carburant/depotage-report',    icon: <ArrowDownCircle className="w-5 h-5" /> },
+      ],
+    },
   ],
   responsable_assurance: [
     { label: 'Tableau de bord', path: '/assurance/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },
