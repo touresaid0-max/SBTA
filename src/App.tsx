@@ -198,6 +198,7 @@ import CarburantReport from './pages/carburant/Report';
 import CarburantConsommationClient from './pages/carburant/ConsommationClient';
 import CarburantFuelStations from './pages/carburant/FuelStations';
 import CarburantTankReport from './pages/carburant/TankReport';
+import CarburantDepotageReport from './pages/carburant/DepotageReport';
 import GerantPrincipalDashboard from './pages/gerant_principal/Dashboard';
 import GerantPrincipalArticles from './pages/gerant_principal/Articles';
 import GerantPrincipalEntries from './pages/gerant_principal/StockEntries';
@@ -339,6 +340,7 @@ function App() {
             <Route path="carburant/consommation-client" element={<ProtectedRoute roles={['carburant']}><CarburantConsommationClient /></ProtectedRoute>} />
             <Route path="carburant/stations" element={<ProtectedRoute roles={['carburant']}><CarburantFuelStations /></ProtectedRoute>} />
             <Route path="carburant/tank-report" element={<ProtectedRoute roles={['carburant']}><CarburantTankReport /></ProtectedRoute>} />
+            <Route path="carburant/depotage-report" element={<ProtectedRoute roles={['carburant']}><CarburantDepotageReport /></ProtectedRoute>} />
             <Route path="gestionnaire/dashboard" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDashboard /></ProtectedRoute>} />
             <Route path="gestionnaire/reports" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireReports /></ProtectedRoute>} />
             <Route path="gestionnaire/financial-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireFinancialReport /></ProtectedRoute>} />
