@@ -100,7 +100,7 @@ export default function DepotageReport() {
   const navigate = useNavigate()
   const today = new Date()
 
-  const [period, setPeriod]           = useState<PeriodKey>('month')
+  const [period, setPeriod]           = useState<PeriodKey>('year')
   const [customFrom, setCustomFrom]   = useState(format(subDays(today, 30), 'yyyy-MM-dd'))
   const [customTo, setCustomTo]       = useState(format(today, 'yyyy-MM-dd'))
   const [filterTank, setFilterTank]       = useState('')
@@ -149,7 +149,7 @@ export default function DepotageReport() {
       .order('depot_date', { ascending: false })
       .order('created_at', { ascending: false })
 
-    if (error) { toast.error('Erreur lors du chargement'); setLoading(false); return }
+    if (error) { console.error('[DepotageReport] query error:', error); toast.error('Erreur lors du chargement'); setLoading(false); return }
 
     const mapped = ((data || []) as any[]).map(r => ({
       id: r.id,
