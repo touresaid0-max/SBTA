@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  ArrowLeft, FileText, Download, Filter, Fuel, Droplets, Users, Bus,
+  ArrowLeft, FileText, Download, Filter, Fuel, Droplets, Bus,
   ChevronDown, Calendar, Building2, Container,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -27,13 +27,11 @@ interface EnlevementRow {
   quantity_liters: number
   unit_price: number
   total_amount: number
-  pompiste_id: string | null
   tank_id: string | null
   product_id: string | null
   tank_name: string
   tank_fuel_type: string
   tank_city: string | null
-  pompiste_name: string
   company_name: string
 }
 
@@ -132,7 +130,7 @@ export default function TankReport() {
       .from('fuel_enlevements')
       .select(`
         id,enlevement_date,created_at,company_id,license_plate,quantity_liters,unit_price,total_amount,
-        pompiste_id,tank_id,product_id,
+        tank_id,product_id,
         tanks:tank_id(name,fuel_type,city),
         companies:company_id(name)
       `)
@@ -143,16 +141,6 @@ export default function TankReport() {
 
     if (error) { toast.error('Erreur lors du chargement'); setLoading(false); return }
 
-    const pompisteIds = [...new Set((data || []).map((r: any) => r.pompiste_id).filter(Boolean))]
-    const pompisteMap = new Map<string, string>()
-    if (pompisteIds.length > 0) {
-      const { data: users } = await supabase
-        .from('users')
-        .select('id,full_name')
-        .in('id', pompisteIds)
-      ;((users || []) as any[]).forEach(u => pompisteMap.set(u.id, u.full_name))
-    }
-
     const mapped = ((data || []) as any[]).map(r => ({
       id: r.id,
       enlevement_date: r.enlevement_date,
@@ -162,13 +150,11 @@ export default function TankReport() {
       quantity_liters: Number(r.quantity_liters),
       unit_price: Number(r.unit_price),
       total_amount: Number(r.total_amount),
-      pompiste_id: r.pompiste_id,
       tank_id: r.tank_id,
       product_id: r.product_id,
       tank_name: r.tanks?.name ?? '—',
       tank_fuel_type: r.tanks?.fuel_type ?? '',
       tank_city: r.tanks?.city ?? null,
-      pompiste_name: r.pompiste_id ? (pompisteMap.get(r.pompiste_id) ?? '—') : '—',
       company_name: r.companies?.name ?? '—',
     }))
     setRows(mapped)
@@ -245,11 +231,10 @@ export default function TankReport() {
       ['RAPPORT CONSOMMATION DES CUVES'],
       [`Période: ${periodLabel}`],
       [],
-      ['Date', 'Société', 'Pompiste', 'Cuve', 'Type carburant', 'Immatriculation', 'Qté (L)', 'Prix unit. moy.', 'Montant TTC', 'Date/heure'],
+      ['Date', 'Société', 'Cuve', 'Type carburant', 'Immatriculation', 'Qté (L)', 'Prix unit. moy.', 'Montant TTC', 'Date/heure'],
       ...filtered.map(r => [
         format(new Date(r.enlevement_date + 'T00:00:00'), 'dd/MM/yyyy'),
         r.company_name,
-        r.pompiste_name,
         r.tank_name,
         FUEL_LABELS[r.tank_fuel_type] ?? r.tank_fuel_type,
         r.license_plate ?? '—',
@@ -259,7 +244,7 @@ export default function TankReport() {
         fmtDateTime(r.created_at),
       ]),
       [],
-      ['', '', '', '', '', '', 'TOTAL', '', Math.round(totalAmount), ''],
+      ['', '', '', '', '', 'TOTAL', '', Math.round(totalAmount), ''],
       [],
       ['RÉCAPITULATIF PAR SOCIÉTÉ'],
       ['Client (Société)', 'Qté (L)', 'Montant TTC'],
@@ -272,7 +257,7 @@ export default function TankReport() {
       ['Montant total TTC', Math.round(totalAmount)],
     ]
     const ws = XLSX.utils.aoa_to_sheet(wsData)
-    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Rapport Cuves')
     XLSX.writeFile(wb, `rapport_cuves_${from}_${to}.xlsx`)
@@ -286,8 +271,8 @@ export default function TankReport() {
     const { default: jsPDF } = await import('jspdf')
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
-    const colWidths = [20, 28, 24, 20, 18, 22, 16, 22, 24]
-    const headers = ['Date', 'Société', 'Pompiste', 'Cuve', 'Type', 'Immatric.', 'Qté (L)', 'Prix/L', 'Montant TTC']
+    const colWidths = [20, 32, 22, 20, 24, 16, 22, 24]
+    const headers = ['Date', 'Société', 'Cuve', 'Type', 'Immatric.', 'Qté (L)', 'Prix/L', 'Montant TTC']
     const startX = 8
     const pageW = 297
     let y = 14
@@ -332,7 +317,6 @@ export default function TankReport() {
       const cells = [
         format(new Date(r.enlevement_date + 'T00:00:00'), 'dd/MM/yy'),
         r.company_name,
-        r.pompiste_name,
         r.tank_name,
         FUEL_LABELS[r.tank_fuel_type] ?? r.tank_fuel_type,
         r.license_plate ?? '—',
@@ -361,7 +345,7 @@ export default function TankReport() {
     doc.setFontSize(7.5)
     x = startX
     colWidths.forEach(w => { doc.rect(x, y, w, rowH, 'F'); x += w })
-    const footCells = ['', '', '', '', '', 'TOTAL', fmtL(totalLiters), '', fmt(totalAmount)]
+    const footCells = ['', '', '', '', 'TOTAL', fmtL(totalLiters), '', fmt(totalAmount)]
     x = startX
     footCells.forEach((c, i) => { doc.text(c, x + 1.5, y + 4.2); x += colWidths[i] })
     y += rowH + 4
@@ -455,7 +439,7 @@ export default function TankReport() {
             Rapport Cuves
           </h1>
           <p className="text-sm capitalize" style={{ color: 'var(--text-secondary)' }}>
-            Suivi des consommations de cuves par pompiste — {periodLabel}
+            Suivi des consommations de cuves — {periodLabel}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -601,7 +585,7 @@ export default function TankReport() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-subtle)', borderBottom: '1px solid var(--border)' }}>
-                  {['Date', 'Société', 'Pompiste', 'Cuve', 'Type', 'Immatriculation', 'Qté (L)', 'Prix/L', 'Montant TTC', 'Date/Heure'].map(h => (
+                  {['Date', 'Société', 'Cuve', 'Type', 'Immatriculation', 'Qté (L)', 'Prix/L', 'Montant TTC', 'Date/Heure'].map(h => (
                     <th key={h}
                       className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap"
                       style={{ color: 'var(--text-muted)' }}>
@@ -622,12 +606,6 @@ export default function TankReport() {
                       <div className="flex items-center gap-1.5">
                         <Building2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#1D6FA4' }} />
                         <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{r.company_name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#6B7280' }} />
-                        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{r.pompiste_name}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -665,7 +643,7 @@ export default function TankReport() {
               </tbody>
               <tfoot>
                 <tr style={{ backgroundColor: '#F0FDF4', borderTop: '2px solid #BBF7D0' }}>
-                  <td colSpan={6} className="px-4 py-3 text-xs font-bold text-right" style={{ color: '#0B7439' }}>
+                  <td colSpan={5} className="px-4 py-3 text-xs font-bold text-right" style={{ color: '#0B7439' }}>
                     TOTAUX ({totalCount} prélèvement{totalCount > 1 ? 's' : ''})
                   </td>
                   <td className="px-4 py-3 text-xs font-bold" style={{ color: '#3B82F6' }}>{fmtL(totalLiters)}</td>
