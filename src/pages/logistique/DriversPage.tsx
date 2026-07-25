@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Users, Bus, Plus, Search, X, Pencil, Trash2, UserPlus,
   AlertTriangle, Star, ChevronDown, Car, Phone, Calendar,
-  CheckCircle2, User,
+  CheckCircle2, User, Building2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
+import { resolveCompanyIds } from '@/utils/companyGroups'
 import {
   fetchBusesWithDrivers,
   createDriverFromLogistique,
@@ -49,6 +50,220 @@ function FieldGroup({ label, required, hint, children }: {
       </label>
       {children}
       {hint && <p className="text-xs text-[#8AA898] mt-1">{hint}</p>}
+    </div>
+  )
+}
+
+// ─── Hierarchical Company Picker (same as BusWizard) ─────────────────────────
+function CompanyPicker({
+  companies,
+  value,
+  onChange,
+  placeholder = 'Sélectionner une société',
+}: {
+  companies: Company[]
+  value: string
+  onChange: (id: string) => void
+  placeholder?: string
+}) {
+  const [search, setSearch] = useState('')
+  const [open,   setOpen]   = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const groupCompanies     = companies.filter(c => c.is_group)
+  const selectableCompanies = companies.filter(c => !c.is_group)
+
+  const filterMatch = (c: Company) =>
+    !search ||
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    (c.code ?? '').toLowerCase().includes(search.toLowerCase())
+
+  const selected = companies.find(c => c.id === value)
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 border-2 rounded-xl text-sm text-left transition-colors"
+        style={{
+          borderColor: open ? '#0B7439' : '#E2EAE5',
+          backgroundColor: '#fff',
+          color: selected ? '#1A2E22' : '#9AB4A0',
+        }}
+      >
+        {selected ? (
+          <>
+            <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: '#0B7439' }} />
+            <span className="flex-1 font-medium truncate">{selected.name}</span>
+            {selected.code && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
+                style={{ backgroundColor: '#d4edda', color: '#0B7439' }}>
+                {selected.code}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: '#9AB4A0' }} />
+            <span className="flex-1">{placeholder}</span>
+          </>
+        )}
+        <ChevronDown
+          className="w-4 h-4 flex-shrink-0 transition-transform"
+          style={{ color: '#9AB4A0', transform: open ? 'rotate(180deg)' : 'none' }}
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-50 left-0 right-0 top-full mt-1 rounded-xl shadow-xl overflow-hidden"
+          style={{ backgroundColor: '#fff', border: '1px solid #E2EAE5', maxHeight: 320 }}
+        >
+          <div className="px-3 py-2 border-b" style={{ borderColor: '#E2EAE5' }}>
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ backgroundColor: '#F4F7F5' }}>
+              <Search className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#9AB4A0' }} />
+              <input
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Rechercher une société…"
+                className="flex-1 bg-transparent text-sm outline-none"
+                style={{ color: '#1A2E22' }}
+              />
+              {search && (
+                <button type="button" onClick={() => setSearch('')}>
+                  <X className="w-3.5 h-3.5" style={{ color: '#9AB4A0' }} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-y-auto" style={{ maxHeight: 250 }}>
+            {/* Clear selection */}
+            <button
+              type="button"
+              onMouseDown={() => { onChange(''); setOpen(false); setSearch('') }}
+              className="w-full flex items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-[#F0FBF4]"
+              style={{ borderBottom: '1px solid #E2EAE5' }}
+            >
+              <X className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#9AB4A0' }} />
+              <span className="text-sm" style={{ color: '#6B7280' }}>Toutes les sociétés</span>
+            </button>
+
+            {groupCompanies.map(group => {
+              const subsidiaries = selectableCompanies.filter(
+                c => c.parent_id === group.id && filterMatch(c)
+              )
+              const groupMatch = filterMatch(group)
+              if (!groupMatch && subsidiaries.length === 0) return null
+              return (
+                <div key={group.id}>
+                  <div
+                    className="flex items-center gap-2 px-4 py-2"
+                    style={{ backgroundColor: '#F0FBF4', borderBottom: '1px solid #E2EAE5' }}
+                  >
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#0B7439' }}>
+                      {group.name}
+                    </span>
+                    {group.code && (
+                      <span className="text-xs px-1.5 py-0.5 rounded-full font-bold"
+                        style={{ backgroundColor: '#d4edda', color: '#0B7439' }}>
+                        {group.code}
+                      </span>
+                    )}
+                    <span className="text-xs ml-auto" style={{ color: '#6B9A7B' }}>
+                      {subsidiaries.length} filiale{subsidiaries.length > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {groupMatch && (
+                    <button
+                      type="button"
+                      onMouseDown={() => { onChange(group.id); setOpen(false); setSearch('') }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-[#F0FBF4]"
+                      style={{ backgroundColor: value === group.id ? '#E8F5EC' : undefined }}
+                    >
+                      <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: '#0B7439' }} />
+                      <span className="text-sm font-medium flex-1" style={{ color: '#1A2E22' }}>Sélectionner le groupe</span>
+                      {value === group.id && <CheckCircle2 className="w-4 h-4" style={{ color: '#0B7439' }} />}
+                    </button>
+                  )}
+                  {subsidiaries.map(sub => (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onMouseDown={() => { onChange(sub.id); setOpen(false); setSearch('') }}
+                      className="w-full flex items-center gap-3 pl-8 pr-4 py-2.5 text-left transition-colors hover:bg-[#F0FBF4]"
+                      style={{ backgroundColor: value === sub.id ? '#E8F5EC' : undefined }}
+                    >
+                      <span className="text-xs text-[#9AB4A0] flex-shrink-0">└</span>
+                      <span className="text-sm font-medium flex-1" style={{ color: '#1A2E22' }}>{sub.name}</span>
+                      {sub.code && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: value === sub.id ? '#0B7439' : '#E2EAE5', color: value === sub.id ? '#fff' : '#4A6B55' }}>
+                          {sub.code}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+
+            {(() => {
+              const standalone = selectableCompanies.filter(c => !c.parent_id && filterMatch(c))
+              if (standalone.length === 0) return null
+              return (
+                <div>
+                  <div
+                    className="flex items-center gap-2 px-4 py-2"
+                    style={{ backgroundColor: '#F4F7F5', borderBottom: '1px solid #E2EAE5', borderTop: '1px solid #E2EAE5' }}
+                  >
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#4A6B55' }}>
+                      Autres sociétés
+                    </span>
+                  </div>
+                  {standalone.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={() => { onChange(c.id); setOpen(false); setSearch('') }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-[#F0FBF4]"
+                      style={{ backgroundColor: value === c.id ? '#E8F5EC' : undefined }}
+                    >
+                      <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: '#9AB4A0' }} />
+                      <span className="text-sm font-medium flex-1" style={{ color: '#1A2E22' }}>{c.name}</span>
+                      {c.code && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: value === c.id ? '#0B7439' : '#E2EAE5', color: value === c.id ? '#fff' : '#4A6B55' }}>
+                          {c.code}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+
+            {groupCompanies.every(g => {
+              const subs = selectableCompanies.filter(c => c.parent_id === g.id && filterMatch(c))
+              return !filterMatch(g) && subs.length === 0
+            }) && selectableCompanies.filter(c => !c.parent_id && filterMatch(c)).length === 0 && (
+              <p className="px-4 py-4 text-sm text-center" style={{ color: '#9AB4A0' }}>
+                Aucune société trouvée
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -100,7 +315,10 @@ export default function LogistiqueDriversPage() {
   useEffect(() => { loadData() }, [loadData])
 
   const filteredBuses = buses.filter(b => {
-    if (companyFilter && b.company_id !== companyFilter) return false
+    if (companyFilter) {
+      const ids = resolveCompanyIds(companyFilter, companies)
+      if (!b.company_id || !ids.includes(b.company_id)) return false
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       const matchBus = b.registration_number.toLowerCase().includes(q) ||
@@ -179,18 +397,12 @@ export default function LogistiqueDriversPage() {
               className="w-full border border-[#E2EAE5] rounded-lg pl-9 pr-3 py-2 text-sm text-[#374151]"
             />
           </div>
-          <SelectWrap>
-            <select
-              value={companyFilter}
-              onChange={e => setCompanyFilter(e.target.value)}
-              className={selectCls}
-            >
-              <option value="">Toutes les sociétés</option>
-              {companies.filter(c => !c.parent_id).map(c => (
-                <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-              ))}
-            </select>
-          </SelectWrap>
+          <CompanyPicker
+            companies={companies}
+            value={companyFilter}
+            onChange={setCompanyFilter}
+            placeholder="Toutes les sociétés"
+          />
         </div>
       </div>
 
@@ -770,14 +982,12 @@ function DriverFormModal({ mode, driver, companies, stations, busOptions, routes
             <h3 className="text-sm font-bold text-[#1A2E22] mb-3">Données professionnelles</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FieldGroup label="Société">
-                <SelectWrap>
-                  <select value={form.company_id} onChange={set('company_id')} className={selectCls}>
-                    <option value="">— Sélectionner —</option>
-                    {companies.filter(c => !c.parent_id).map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-                    ))}
-                  </select>
-                </SelectWrap>
+                <CompanyPicker
+                  companies={companies}
+                  value={form.company_id}
+                  onChange={(id) => setForm(p => ({ ...p, company_id: id }))}
+                  placeholder="— Sélectionner —"
+                />
               </FieldGroup>
               <FieldGroup label="Gare d'affectation">
                 <SelectWrap>
