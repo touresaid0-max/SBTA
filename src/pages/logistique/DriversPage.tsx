@@ -333,6 +333,19 @@ export default function LogistiqueDriversPage() {
     return true
   })
 
+  const filteredUnassignedDrivers = unassignedDrivers.filter(d => {
+    if (companyFilter) {
+      const ids = resolveCompanyIds(companyFilter, companies)
+      if (!d.company_id || !ids.includes(d.company_id)) return false
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      if (!d.full_name.toLowerCase().includes(q) &&
+          !(d.employee_id ?? '').toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
   const totalDrivers = buses.reduce((s, b) => s + b.drivers.length, 0) + unassignedDrivers.length
   const assignedCount = buses.reduce((s, b) => s + b.drivers.length, 0)
   const busWithDriversCount = buses.filter(b => b.drivers.length > 0).length
@@ -407,16 +420,16 @@ export default function LogistiqueDriversPage() {
       </div>
 
       {/* Unassigned drivers section */}
-      {unassignedDrivers.length > 0 && (
+      {filteredUnassignedDrivers.length > 0 && (
         <div className="bg-white rounded-2xl border border-[#FEF3C7] overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 bg-[#FEF9E7] border-b border-[#FEF3C7]">
             <AlertTriangle className="w-4 h-4 text-[#D97706]" />
             <h3 className="text-sm font-semibold text-[#92400E]">
-              Chauffeurs sans bus affecté ({unassignedDrivers.length})
+              Chauffeurs sans bus affecté ({filteredUnassignedDrivers.length})
             </h3>
           </div>
           <div className="divide-y divide-[#E2EAE5]">
-            {unassignedDrivers.map(d => (
+            {filteredUnassignedDrivers.map(d => (
               <UnassignedDriverRow
                 key={d.id}
                 driver={d}
@@ -443,11 +456,13 @@ export default function LogistiqueDriversPage() {
           <div className="flex items-center justify-center h-40">
             <div className="w-8 h-8 border-4 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : filteredBuses.length === 0 ? (
+        ) : filteredBuses.length === 0 && filteredUnassignedDrivers.length === 0 ? (
           <div className="bg-white rounded-2xl border border-[#E2EAE5] flex flex-col items-center justify-center h-40 text-[#6B7280]">
-            <Bus className="w-10 h-10 mb-2 opacity-30" />
-            <p className="text-sm">Aucun bus trouvé</p>
+            <Users className="w-10 h-10 mb-2 opacity-30" />
+            <p className="text-sm">Aucun chauffeur trouvé</p>
           </div>
+        ) : filteredBuses.length === 0 ? (
+          null
         ) : (
           filteredBuses.map(bus => (
             <BusDriverRow
