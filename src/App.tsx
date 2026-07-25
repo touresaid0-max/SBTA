@@ -214,6 +214,7 @@ import AssuranceInsurersList from './pages/assurance/InsurersList';
 import AssuranceInsurerForm from './pages/assurance/InsurerForm';
 import LogistiqueDashboard from './pages/logistique/Dashboard';
 import LogistiqueVehiclesList from './pages/logistique/VehiclesList';
+import LogistiqueDriversPage from './pages/logistique/DriversPage';
 import LogistiqueVehicleDetail from './pages/logistique/VehicleDetail';
 import LogistiqueDocumentsList from './pages/logistique/DocumentsList';
 import LogistiqueProviders from './pages/logistique/Providers';
@@ -456,6 +457,7 @@ function App() {
             <Route path="logistique/dashboard"         element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDashboard /></ProtectedRoute>} />
             <Route path="logistique/vehicles"          element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueVehiclesList /></ProtectedRoute>} />
             <Route path="logistique/vehicles/:id"      element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueVehicleDetail /></ProtectedRoute>} />
+            <Route path="logistique/drivers"          element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDriversPage /></ProtectedRoute>} />
             <Route path="logistique/documents"         element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDocumentsList /></ProtectedRoute>} />
             <Route path="logistique/providers"         element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueProviders /></ProtectedRoute>} />
             <Route path="logistique/service-types"     element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueServiceTypes /></ProtectedRoute>} />
