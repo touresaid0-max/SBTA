@@ -86,6 +86,7 @@ import GestionnaireReports from './pages/gestionnaire/Reports';
 import GestionnaireBusPerformance from './pages/gestionnaire/BusPerformance';
 import GestionnaireBusActivity from './pages/gestionnaire/BusActivity';
 import GestionnaireDriversReport from './pages/gestionnaire/DriversReport';
+import GestionnaireDrivers from './pages/gestionnaire/Drivers';
 import GestionnaireFinancialReport from './pages/gestionnaire/FinancialReport';
 import GestionnaireBreakdowns from './pages/gestionnaire/Breakdowns';
 import BreakdownRevenueReport from './pages/reports/BreakdownRevenueReport';
@@ -348,6 +349,7 @@ function App() {
             <Route path="gestionnaire/financial-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireFinancialReport /></ProtectedRoute>} />
             <Route path="gestionnaire/bus-performance" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBusPerformance /></ProtectedRoute>} />
             <Route path="gestionnaire/bus-activity" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBusActivity /></ProtectedRoute>} />
+            <Route path="gestionnaire/drivers" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDrivers /></ProtectedRoute>} />
             <Route path="gestionnaire/drivers-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDriversReport /></ProtectedRoute>} />
             <Route path="gestionnaire/breakdowns" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBreakdowns /></ProtectedRoute>} />
 

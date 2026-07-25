@@ -33,35 +33,73 @@ Deno.serve(async (req: Request) => {
       (caller.user_metadata?.role as string | undefined) ??
       "";
 
-    if (!["responsable_logistique", "admin", "rh"].includes(callerRole)) {
+    if (!["responsable_logistique", "admin", "rh", "gestionnaire"].includes(callerRole)) {
       return new Response(
-        JSON.stringify({ error: "Accès refusé — Responsable Logistique, RH ou Admin uniquement" }),
+        JSON.stringify({ error: "Accès refusé — Responsable Logistique, RH, Admin ou Gestionnaire uniquement" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // Pour le gestionnaire : restreindre aux bus/chauffeurs de SA société (groupe + filiales).
+    // callerCompanyIds = null signifie « aucune restriction » (admin / rh / responsable_logistique).
+    let callerCompanyIds: string[] | null = null;
+    let callerOwnCompanyId: string | null = null;
+    if (callerRole === "gestionnaire") {
+      const { data: callerProfile } = await supabaseAdmin
+        .from("users")
+        .select("company_id")
+        .eq("id", caller.id)
+        .maybeSingle();
+      callerOwnCompanyId = callerProfile?.company_id ?? null;
+      if (!callerOwnCompanyId) {
+        return new Response(
+          JSON.stringify({ error: "Aucune société rattachée à votre compte gestionnaire" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const { data: allCompanies } = await supabaseAdmin
+        .from("companies")
+        .select("id, name, parent_id, is_group");
+      const companiesList = allCompanies ?? [];
+      const selected = companiesList.find((c: any) => c.id === callerOwnCompanyId);
+      if (selected?.is_group) {
+        callerCompanyIds = [callerOwnCompanyId, ...companiesList
+          .filter((c: any) => c.parent_id === callerOwnCompanyId)
+          .map((c: any) => c.id)];
+      } else {
+        callerCompanyIds = [callerOwnCompanyId];
+      }
+    }
+
     // ── GET: fetch all buses with their assigned drivers ──
     if (req.method === "GET") {
-      const { data: buses, error: busErr } = await supabaseAdmin
+      let busesQuery = supabaseAdmin
         .from("buses")
         .select("id, registration_number, brand, manufacturer, model, total_seats, company_id, status, is_active")
         .order("registration_number", { ascending: true });
+      if (callerCompanyIds) busesQuery = busesQuery.in("company_id", callerCompanyIds);
+      const { data: buses, error: busErr } = await busesQuery;
 
       if (busErr) throw busErr;
 
-      const { data: companies } = await supabaseAdmin
+      let companiesQuery = supabaseAdmin
         .from("companies")
         .select("id, name, code")
         .order("name");
+      if (callerCompanyIds) companiesQuery = companiesQuery.in("id", callerCompanyIds);
+      const { data: companies } = await companiesQuery;
 
       // Fetch all chauffeurs (from both employees and users tables)
+      const empQueryBase = supabaseAdmin.from("employees")
+        .select("id, first_name, last_name, role, bus_id, license_number, license_expiry, license_category, company_id, station_id, contract_type, hire_date, employee_id, account_status, phone, avatar_url, probation_end_date, probation_treated_at")
+        .eq("role", "chauffeur");
+      const usrQueryBase = supabaseAdmin.from("users")
+        .select("id, first_name, last_name, role, bus_id, license_number, license_expiry, license_category, company_id, station_id, contract_type, hire_date, employee_id, status, phone, avatar_url")
+        .eq("role", "chauffeur");
+
       const [empRes, usrRes] = await Promise.all([
-        supabaseAdmin.from("employees")
-          .select("id, first_name, last_name, role, bus_id, license_number, license_expiry, license_category, company_id, station_id, contract_type, hire_date, employee_id, account_status, phone, avatar_url, probation_end_date, probation_treated_at")
-          .eq("role", "chauffeur"),
-        supabaseAdmin.from("users")
-          .select("id, first_name, last_name, role, bus_id, license_number, license_expiry, license_category, company_id, station_id, contract_type, hire_date, employee_id, status, phone, avatar_url")
-          .eq("role", "chauffeur"),
+        callerCompanyIds ? empQueryBase.in("company_id", callerCompanyIds) : empQueryBase,
+        callerCompanyIds ? usrQueryBase.in("company_id", callerCompanyIds) : usrQueryBase,
       ]);
 
       const empAuthIds = new Set((empRes.data ?? []).map((e: any) => e.auth_user_id).filter(Boolean));
@@ -121,6 +159,13 @@ Deno.serve(async (req: Request) => {
           probation_treated_at: d.probation_treated_at ?? null,
         }));
 
+      // Filtrer les chauffeurs non affectés par le périmètre société (déjà fait côté requête,
+      // mais on garde une garantie pour les drivers dont company_id serait null mais rattachés
+      // à un bus hors périmètre — déjà exclus via la requête buses).
+      const scopedUnassigned = callerCompanyIds
+        ? unassignedDrivers.filter((d: any) => d.company_id && callerCompanyIds.includes(d.company_id))
+        : unassignedDrivers;
+
       const result = (buses ?? []).map((b: any) => ({
         ...b,
         brand: b.brand ?? b.manufacturer,
@@ -129,7 +174,7 @@ Deno.serve(async (req: Request) => {
       }));
 
       return new Response(
-        JSON.stringify({ buses: result, unassignedDrivers }),
+        JSON.stringify({ buses: result, unassignedDrivers: scopedUnassigned, scopedToCompany: !!callerCompanyIds }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -140,16 +185,32 @@ Deno.serve(async (req: Request) => {
       const {
         first_name, last_name, phone, gender, nationality, date_naissance,
         personal_email, professional_email,
-        company_id, station_id, hire_date, contract_type, contract_nature,
+        company_id: bodyCompanyId, station_id, hire_date, contract_type, contract_nature,
         salary, daily_rate, cnps_number, children_count, marital_status,
         bus_id, license_number, license_expiry, license_category,
         employee_id, assigned_route_id, avatar_url,
       } = body;
 
+      // Le gestionnaire ne peut créer des chauffeurs que pour SA propre société.
+      const company_id = callerOwnCompanyId ?? bodyCompanyId;
+
       if (!first_name?.trim()) throw new Error("Le prénom est obligatoire");
       if (!last_name?.trim()) throw new Error("Le nom est obligatoire");
       if (!hire_date) throw new Error("La date d'entrée est obligatoire");
       if (!contract_type) throw new Error("Le type de contrat est obligatoire");
+      if (!company_id) throw new Error("La société est obligatoire");
+
+      // Vérifier que le bus affecté appartient au périmètre du gestionnaire
+      if (bus_id && callerCompanyIds) {
+        const { data: busRow } = await supabaseAdmin
+          .from("buses").select("company_id").eq("id", bus_id).maybeSingle();
+        if (!busRow || !callerCompanyIds.includes(busRow.company_id)) {
+          return new Response(
+            JSON.stringify({ error: "Ce bus n'appartient pas à votre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
 
       if (contract_type === "titulaire" && !salary) {
         throw new Error("Le salaire est obligatoire pour un titulaire");
@@ -244,10 +305,27 @@ Deno.serve(async (req: Request) => {
       } else {
         const { data: empRow } = await supabaseAdmin
           .from("employees")
-          .select("id")
+          .select("id, company_id")
           .eq("id", id)
           .maybeSingle();
-        if (!empRow) table = "users";
+        if (!empRow) {
+          table = "users";
+        } else if (callerCompanyIds && (!empRow.company_id || !callerCompanyIds.includes(empRow.company_id))) {
+          return new Response(
+            JSON.stringify({ error: "Ce chauffeur n'appartient pas à votre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+      if (table === "users" && callerCompanyIds) {
+        const { data: usrRow } = await supabaseAdmin
+          .from("users").select("company_id").eq("id", id).maybeSingle();
+        if (!usrRow || !usrRow.company_id || !callerCompanyIds.includes(usrRow.company_id)) {
+          return new Response(
+            JSON.stringify({ error: "Ce chauffeur n'appartient pas à votre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       // Only allow safe fields to be updated from logistique
@@ -262,6 +340,29 @@ Deno.serve(async (req: Request) => {
       ];
       for (const key of safeKeys) {
         if (key in fields) allowedFields[key] = fields[key];
+      }
+
+      // Le gestionnaire ne peut pas changer la société d'un chauffeur.
+      if (callerCompanyIds && "company_id" in allowedFields) {
+        const newCid = allowedFields.company_id as string | null;
+        if (newCid && !callerCompanyIds.includes(newCid)) {
+          return new Response(
+            JSON.stringify({ error: "Vous ne pouvez pas réaffecter ce chauffeur à une autre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
+      // Le bus affecté doit appartenir au périmètre du gestionnaire.
+      if (callerCompanyIds && "bus_id" in allowedFields && allowedFields.bus_id) {
+        const { data: busRow } = await supabaseAdmin
+          .from("buses").select("company_id").eq("id", allowedFields.bus_id).maybeSingle();
+        if (!busRow || !callerCompanyIds.includes(busRow.company_id)) {
+          return new Response(
+            JSON.stringify({ error: "Ce bus n'appartient pas à votre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       // Si la date d'embauche change, recalculer la fin de période d'essai
@@ -310,10 +411,27 @@ Deno.serve(async (req: Request) => {
       } else {
         const { data: empRow } = await supabaseAdmin
           .from("employees")
-          .select("id")
+          .select("id, company_id")
           .eq("id", id)
           .maybeSingle();
-        if (!empRow) table = "users";
+        if (!empRow) {
+          table = "users";
+        } else if (callerCompanyIds && (!empRow.company_id || !callerCompanyIds.includes(empRow.company_id))) {
+          return new Response(
+            JSON.stringify({ error: "Ce chauffeur n'appartient pas à votre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+      if (table === "users" && callerCompanyIds) {
+        const { data: usrRow } = await supabaseAdmin
+          .from("users").select("company_id").eq("id", id).maybeSingle();
+        if (!usrRow || !usrRow.company_id || !callerCompanyIds.includes(usrRow.company_id)) {
+          return new Response(
+            JSON.stringify({ error: "Ce chauffeur n'appartient pas à votre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       const now = new Date().toISOString();
