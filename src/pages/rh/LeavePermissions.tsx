@@ -13,7 +13,7 @@ import {
   fetchLeaveRequests, createLeaveRequest, updateLeaveStatus, cancelLeaveRequest,
   fetchPermissionRequests, createPermissionRequest, updatePermissionStatus, cancelPermissionRequest,
   fetchLeaveSettings, updateLeaveSettings, fetchLeaveAlerts, dismissAlert,
-  generateAlerts, calculateLeaveDays, calculatePermissionHours,
+  generateAlerts, calculateLeaveDays, calculatePermissionHours, fetchLeaveBalance,
 } from '@/services/leave.service'
 import {
   LEAVE_TYPE_LABELS, LEAVE_STATUS_LABELS, PERMISSION_TYPE_LABELS, PERMISSION_STATUS_LABELS,
@@ -21,7 +21,7 @@ import {
 } from '@/types/leave.types'
 import type {
   LeaveRequest, PermissionRequest, LeaveSettings, LeaveAlert,
-  LeaveType, LeaveStatus, PermissionType, PermissionStatus,
+  LeaveType, LeaveStatus, PermissionType, PermissionStatus, LeaveBalance,
 } from '@/types/leave.types'
 import type { Employee } from '@/types/hr.types'
 import StatusBadge from '@/components/shared/StatusBadge'
@@ -191,6 +191,7 @@ export default function LeavePermissionsPage() {
         carryover_deadline_month: settingsForm.carryover_deadline_month,
         alert_days_before_return: settingsForm.alert_days_before_return,
         permission_alert_hours_before_end: settingsForm.permission_alert_hours_before_end,
+        block_on_ceiling_exceed: settingsForm.block_on_ceiling_exceed,
       }, user.id)
       toast.success('Paramètres enregistrés')
       loadData()
@@ -620,6 +621,14 @@ function SettingsTab({ settings, onChange, onSave, saving }: {
             Autoriser le report de congés
           </label>
         </div>
+        <div className="flex items-center gap-3 pt-4">
+          <input type="checkbox" id="block_ceiling" checked={settings.block_on_ceiling_exceed ?? false}
+            onChange={e => onChange({ ...settings, block_on_ceiling_exceed: e.target.checked })}
+            className="w-5 h-5 rounded" />
+          <label htmlFor="block_ceiling" className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            Bloquer les demandes dépassant le plafond individuel
+          </label>
+        </div>
         {settings.carryover_enabled && (
           <>
             <div>
@@ -831,8 +840,13 @@ function LeaveFormModal({ employees, settings, onClose, onCreated, creatorId }: 
       })
       toast.success('Demande de congé créée')
       onCreated()
-    } catch {
-      toast.error('Erreur lors de la création')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      if (msg === 'CEILING_EXCEEDED') {
+        toast.error('Le nombre de jours demandés dépasse le plafond disponible pour cet employé')
+      } else {
+        toast.error('Erreur lors de la création')
+      }
     } finally {
       setSaving(false)
     }
@@ -852,9 +866,12 @@ function LeaveFormModal({ employees, settings, onClose, onCreated, creatorId }: 
           <EmployeeAutocomplete employees={employees} value={employeeId} onChange={setEmployeeId} />
         </div>
         {selectedEmp && settings && (
-          <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
-            <span className="font-medium">Solde annuel:</span> {settings.annual_leave_days} jours |
-            <span className="font-medium ml-2">Jours pris cette année:</span> Calculé après validation
+          <div className="rounded-lg p-3 text-sm space-y-1" style={{ backgroundColor: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
+            <div>
+              <span className="font-medium">Solde annuel:</span> {settings.annual_leave_days} jours |
+              <span className="font-medium ml-2">Jours pris cette année:</span> Calculé après validation
+            </div>
+            <LeaveBalanceInfo employeeId={employeeId} year={new Date(startDate || Date.now()).getFullYear()} settings={settings} />
           </div>
         )}
 
@@ -1034,6 +1051,61 @@ function PermissionFormModal({ employees, onClose, onCreated, creatorId }: {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Leave Balance Info (shows ceiling + taken + remaining) ──
+function LeaveBalanceInfo({ employeeId, year, settings }: {
+  employeeId: string
+  year: number
+  settings: LeaveSettings
+}) {
+  const [balance, setBalance] = useState<LeaveBalance | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    fetchLeaveBalance(employeeId, '', null, null, settings, year)
+      .then(b => { if (active) setBalance(b) })
+      .catch(() => {})
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [employeeId, year, settings])
+
+  if (loading) return <div className="text-xs">Calcul du solde...</div>
+  if (!balance) return null
+
+  const hasCeiling = balance.ceiling_days !== null
+
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+      {hasCeiling && (
+        <span>
+          <span className="font-medium">Plafond individuel:</span>{' '}
+          <span style={{ color: 'var(--primary)' }}>{balance.ceiling_days}j</span>
+        </span>
+      )}
+      <span>
+        <span className="font-medium">Droits acquis:</span>{' '}
+        <span style={{ color: 'var(--text-primary)' }}>{balance.annual_entitled}j</span>
+      </span>
+      <span>
+        <span className="font-medium">Jours pris:</span>{' '}
+        <span style={{ color: '#D97706' }}>{balance.days_taken}j</span>
+      </span>
+      <span>
+        <span className="font-medium">Solde disponible:</span>{' '}
+        <span style={{ color: balance.days_remaining < 0 ? '#AF3029' : '#0B7439', fontWeight: 600 }}>
+          {balance.days_remaining}j
+        </span>
+      </span>
+      {settings.block_on_ceiling_exceed && balance.days_remaining <= 0 && (
+        <span style={{ color: '#AF3029', fontWeight: 600 }}>
+          ⚠ Plafond atteint — la demande sera bloquée
+        </span>
+      )}
     </div>
   )
 }

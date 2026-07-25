@@ -164,6 +164,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
       icon: <CalendarClock className="w-5 h-5" />,
       children: [
         { label: 'Congés & Permissions', path: '/rh/leave',  icon: <CalendarDays className="w-5 h-5" /> },
+        { label: 'Plafonds de congés',   path: '/rh/leave-ceiling', icon: <CalendarClock className="w-5 h-5" /> },
         { label: 'Rapport annuel',       path: '/rh/leave-report', icon: <FileText className="w-5 h-5" /> },
       ],
     },

@@ -117,8 +117,12 @@ export default function LeaveReportPage() {
           company_name: emp.company_name ?? 'SBTA Holding',
           station_name: emp.station_name ?? null,
           annual_entitled: bal?.annual_entitled ?? settings.annual_leave_days,
+          ceiling_days: bal?.ceiling_days ?? null,
           days_taken: bal?.days_taken ?? 0,
           days_remaining: bal?.days_remaining ?? settings.annual_leave_days,
+          consumption_pct: bal && bal.annual_entitled > 0
+            ? Math.round((bal.days_taken / bal.annual_entitled) * 100)
+            : 0,
           permissions_count: empPerms.filter(p => p.status === 'valide').length,
           permissions_hours: empPerms
             .filter(p => p.status === 'valide')
@@ -167,9 +171,12 @@ export default function LeaveReportPage() {
         'Poste': r.role,
         'Société': r.company_name,
         'Gare': r.station_name ?? '—',
+        'Plafond annuel': r.ceiling_days ?? '—',
         'Congés attribués': r.annual_entitled,
         'Congés pris': r.days_taken,
         'Congés restants': r.days_remaining,
+        'Consommation (%)': r.consumption_pct,
+        'Solde disponible': r.days_remaining,
         'Permissions (nb)': r.permissions_count,
         'Permissions (heures)': r.permissions_hours,
         'Périodes de congé': r.leave_periods
@@ -231,8 +238,8 @@ export default function LeaveReportPage() {
 
       // Table header
       let y = 30
-      const headers = ['Employé', 'Poste', 'Société', 'Attribués', 'Pris', 'Restants', 'Perm (nb)', 'Perm (h)']
-      const colWidths = [50, 35, 40, 22, 18, 22, 22, 22]
+      const headers = ['Employé', 'Poste', 'Société', 'Plafond', 'Attribués', 'Pris', 'Restants', '% Cons.', 'Perm (nb)', 'Perm (h)']
+      const colWidths = [45, 30, 35, 20, 20, 16, 20, 18, 20, 20]
       let x = 14
       doc.setFillColor(11, 116, 57)
       doc.rect(14, y - 5, pageWidth - 28, 8, 'F')
@@ -259,12 +266,14 @@ export default function LeaveReportPage() {
         }
         x = 14
         const values = [
-          r.employee_name.substring(0, 28),
-          r.role.substring(0, 20),
-          r.company_name.substring(0, 22),
+          r.employee_name.substring(0, 25),
+          r.role.substring(0, 18),
+          r.company_name.substring(0, 20),
+          r.ceiling_days !== null ? String(r.ceiling_days) : '—',
           String(r.annual_entitled),
           String(r.days_taken),
           String(r.days_remaining),
+          `${r.consumption_pct}%`,
           String(r.permissions_count),
           String(r.permissions_hours),
         ]
@@ -474,9 +483,12 @@ export default function LeaveReportPage() {
                   <th className="text-left p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Poste</th>
                   <th className="text-left p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Société</th>
                   <th className="text-left p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Gare</th>
+                  <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Plafond</th>
                   <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Attribués</th>
                   <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Pris</th>
                   <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Restants</th>
+                  <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>% Cons.</th>
+                  <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Solde disp.</th>
                   <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Perm (nb)</th>
                   <th className="text-center p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Perm (h)</th>
                   <th className="text-left p-3 font-semibold" style={{ color: 'var(--text-secondary)' }}>Périodes d'absence</th>
@@ -489,9 +501,20 @@ export default function LeaveReportPage() {
                     <td className="p-3" style={{ color: 'var(--text-secondary)' }}>{r.role}</td>
                     <td className="p-3" style={{ color: 'var(--text-secondary)' }}>{r.company_name}</td>
                     <td className="p-3" style={{ color: 'var(--text-secondary)' }}>{r.station_name ?? '—'}</td>
+                    <td className="p-3 text-center" style={{ color: 'var(--text-primary)' }}>
+                      {r.ceiling_days !== null ? (
+                        <span className="font-medium">{r.ceiling_days}</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
                     <td className="p-3 text-center" style={{ color: 'var(--text-primary)' }}>{r.annual_entitled}</td>
                     <td className="p-3 text-center font-semibold" style={{ color: '#D97706' }}>{r.days_taken}</td>
                     <td className="p-3 text-center font-semibold" style={{ color: '#0B7439' }}>{r.days_remaining}</td>
+                    <td className="p-3 text-center" style={{ color: r.consumption_pct >= 100 ? '#AF3029' : r.consumption_pct >= 80 ? '#D97706' : 'var(--text-secondary)' }}>
+                      {r.consumption_pct}%
+                    </td>
+                    <td className="p-3 text-center font-semibold" style={{ color: r.days_remaining < 0 ? '#AF3029' : '#0B7439' }}>{r.days_remaining}</td>
                     <td className="p-3 text-center" style={{ color: 'var(--text-primary)' }}>{r.permissions_count}</td>
                     <td className="p-3 text-center" style={{ color: 'var(--text-primary)' }}>{r.permissions_hours}h</td>
                     <td className="p-3 max-w-[300px]">
@@ -517,8 +540,11 @@ export default function LeaveReportPage() {
               <tfoot>
                 <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
                   <td colSpan={4} className="p-3 font-bold" style={{ color: 'var(--text-primary)' }}>TOTAUX</td>
+                  <td className="p-3 text-center font-bold" style={{ color: 'var(--text-primary)' }}>{reportRows.reduce((s, r) => s + (r.ceiling_days ?? 0), 0)}</td>
                   <td className="p-3 text-center font-bold" style={{ color: 'var(--text-primary)' }}>{reportRows.reduce((s, r) => s + r.annual_entitled, 0)}</td>
                   <td className="p-3 text-center font-bold" style={{ color: '#D97706' }}>{totalTaken}</td>
+                  <td className="p-3 text-center font-bold" style={{ color: '#0B7439' }}>{totalRemaining}</td>
+                  <td className="p-3 text-center font-bold" style={{ color: 'var(--text-secondary)' }}>—</td>
                   <td className="p-3 text-center font-bold" style={{ color: '#0B7439' }}>{totalRemaining}</td>
                   <td className="p-3 text-center font-bold" style={{ color: 'var(--text-primary)' }}>{totalPerms}</td>
                   <td className="p-3 text-center font-bold" style={{ color: 'var(--text-primary)' }}>{totalHours}h</td>

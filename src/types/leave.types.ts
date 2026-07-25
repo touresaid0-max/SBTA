@@ -75,6 +75,7 @@ export interface LeaveSettings {
   carryover_deadline_month:        number
   alert_days_before_return:        number
   permission_alert_hours_before_end: number
+  block_on_ceiling_exceed:         boolean
   updated_by:                      string | null
   updated_at:                      string
 }
@@ -96,29 +97,32 @@ export interface LeaveAlert {
 
 // ── Balance summary for an employee ──
 export interface LeaveBalance {
-  employee_id:     string
-  employee_name:   string
-  company_id:      string | null
-  company_name:    string | null
-  annual_entitled: number
-  days_taken:      number
-  days_remaining:  number
-  days_pending:    number
-  carryover_days:  number
+  employee_id:      string
+  employee_name:    string
+  company_id:       string | null
+  company_name:     string | null
+  annual_entitled:  number
+  ceiling_days:     number | null
+  days_taken:       number
+  days_remaining:   number
+  days_pending:     number
+  carryover_days:   number
 }
 
 export interface LeaveReportRow {
-  employee_id:      string
-  employee_name:    string
-  role:             string
-  company_name:     string
-  station_name:     string | null
-  annual_entitled:  number
-  days_taken:       number
-  days_remaining:   number
+  employee_id:       string
+  employee_name:     string
+  role:              string
+  company_name:      string
+  station_name:      string | null
+  annual_entitled:   number
+  ceiling_days:      number | null
+  days_taken:        number
+  days_remaining:    number
+  consumption_pct:   number
   permissions_count: number
   permissions_hours: number
-  leave_periods:    Array<{ type: LeaveType; start: string; end: string; days: number; status: LeaveStatus }>
+  leave_periods:     Array<{ type: LeaveType; start: string; end: string; days: number; status: LeaveStatus }>
   permission_periods: Array<{ type: PermissionType; start: string; end: string; hours: number; status: PermissionStatus }>
 }
 
@@ -155,6 +159,45 @@ export const PERMISSION_STATUS_LABELS: Record<PermissionStatus, string> = {
 }
 
 // Exceptional leave reasons and their legal durations (Code Travail CI)
+// ── Leave Ceiling (plafond de congés individuel) ──
+export type CeilingStatus = 'actif' | 'inactif'
+
+export const CEILING_STATUS_LABELS: Record<CeilingStatus, string> = {
+  actif:   'Actif',
+  inactif: 'Inactif',
+}
+
+export interface LeaveCeiling {
+  id:             string
+  employee_id:    string
+  employee_name:  string
+  company_id:     string | null
+  company_name:   string | null
+  motif:          string | null
+  year:           number
+  ceiling_days:   number
+  effective_date: string
+  observations:   string | null
+  status:         CeilingStatus
+  created_by:     string | null
+  created_at:     string
+  updated_at:     string
+}
+
+export interface LeaveCeilingInput {
+  employee_id:    string
+  employee_name:  string
+  company_id:     string | null
+  company_name:   string | null
+  motif?:         string | null
+  year:           number
+  ceiling_days:   number
+  effective_date: string
+  observations?:  string | null
+  status?:        CeilingStatus
+  created_by?:    string | null
+}
+
 export const EXCEPTIONAL_LEAVE_REASONS: Array<{ reason: string; days: number }> = [
   { reason: 'Mariage du travailleur', days: 4 },
   { reason: 'Décès du conjoint ou parent', days: 3 },

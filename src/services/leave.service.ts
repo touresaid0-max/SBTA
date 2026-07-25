@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import type {
   LeaveRequest, PermissionRequest, LeaveSettings, LeaveAlert,
   LeaveBalance, LeaveType, LeaveStatus, PermissionType, PermissionStatus,
+  LeaveCeiling, LeaveCeilingInput,
 } from '@/types/leave.types'
 
 // ── Leave Requests CRUD ────────────────────────────────────────────
@@ -67,6 +68,19 @@ export async function createLeaveRequest(input: {
   reason?: string
   created_by?: string
 }): Promise<LeaveRequest> {
+  // Check ceiling: if block_on_ceiling_exceed is enabled and employee has an active ceiling,
+  // block creation if requested days exceed available balance
+  const settings = await fetchLeaveSettings()
+  if (settings.block_on_ceiling_exceed) {
+    const year = new Date(input.start_date).getFullYear()
+    const balance = await fetchLeaveBalance(
+      input.employee_id, input.employee_name, input.company_id, null, settings, year
+    )
+    if (input.days_count > balance.days_remaining) {
+      throw new Error('CEILING_EXCEEDED')
+    }
+  }
+
   const { data, error } = await supabase
     .from('leave_requests')
     .insert({
@@ -219,7 +233,7 @@ export async function fetchLeaveSettings(): Promise<LeaveSettings> {
   if (!data) {
     const { data: created, error: insErr } = await supabase
       .from('leave_settings')
-      .insert({ annual_leave_days: 26, carryover_enabled: true, carryover_max_days: 10, carryover_deadline_month: 3 })
+      .insert({ annual_leave_days: 26, carryover_enabled: true, carryover_max_days: 10, carryover_deadline_month: 3, block_on_ceiling_exceed: false })
       .select('*')
       .single()
     if (insErr) throw insErr
@@ -420,7 +434,19 @@ export async function fetchLeaveBalance(
     carryover = Math.max(0, Math.min(settings.annual_leave_days - prevTaken, settings.carryover_max_days))
   }
 
-  const annualEntitled = settings.annual_leave_days + carryover
+  // Check for individual ceiling override
+  const { data: ceilingRow } = await supabase
+    .from('leave_ceilings')
+    .select('ceiling_days')
+    .eq('employee_id', employeeId)
+    .eq('year', year)
+    .eq('status', 'actif')
+    .maybeSingle()
+
+  const ceilingDays = ceilingRow?.ceiling_days ?? null
+  const annualEntitled = ceilingDays !== null
+    ? ceilingDays + carryover
+    : settings.annual_leave_days + carryover
 
   return {
     employee_id: employeeId,
@@ -428,6 +454,7 @@ export async function fetchLeaveBalance(
     company_id: companyId,
     company_name: companyName,
     annual_entitled: annualEntitled,
+    ceiling_days: ceilingDays,
     days_taken: daysTaken,
     days_remaining: annualEntitled - daysTaken,
     days_pending: daysPending,
@@ -482,4 +509,106 @@ export function calculatePermissionHours(startIso: string, endIso: string): numb
   const end = new Date(endIso)
   if (start >= end) return 0
   return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60) * 100) / 100
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// LEAVE CEILING CRUD
+// ═════════════════════════════════════════════════════════════════════
+
+export async function fetchLeaveCeilings(filters?: {
+  year?: number
+  employeeId?: string
+  companyId?: string
+  status?: string
+}): Promise<LeaveCeiling[]> {
+  let q = supabase
+    .from('leave_ceilings')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (filters?.year) q = q.eq('year', filters.year)
+  if (filters?.employeeId) q = q.eq('employee_id', filters.employeeId)
+  if (filters?.companyId) q = q.eq('company_id', filters.companyId)
+  if (filters?.status) q = q.eq('status', filters.status)
+
+  const { data, error } = await q
+  if (error) throw error
+  return (data ?? []) as LeaveCeiling[]
+}
+
+export async function createLeaveCeiling(input: LeaveCeilingInput): Promise<LeaveCeiling> {
+  const { data, error } = await supabase
+    .from('leave_ceilings')
+    .insert({
+      employee_id:    input.employee_id,
+      employee_name:  input.employee_name,
+      company_id:     input.company_id,
+      company_name:   input.company_name,
+      motif:          input.motif ?? null,
+      year:           input.year,
+      ceiling_days:   input.ceiling_days,
+      effective_date: input.effective_date,
+      observations:   input.observations ?? null,
+      status:         input.status ?? 'actif',
+      created_by:     input.created_by ?? null,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('UNIQUE_CEILING')
+    }
+    throw error
+  }
+  return data as LeaveCeiling
+}
+
+export async function updateLeaveCeiling(id: string, input: Partial<LeaveCeilingInput>): Promise<LeaveCeiling> {
+  const { data, error } = await supabase
+    .from('leave_ceilings')
+    .update({
+      employee_id:    input.employee_id,
+      employee_name:  input.employee_name,
+      company_id:     input.company_id,
+      company_name:   input.company_name,
+      motif:          input.motif,
+      year:           input.year,
+      ceiling_days:   input.ceiling_days,
+      effective_date: input.effective_date,
+      observations:   input.observations,
+      status:         input.status,
+      updated_at:     new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('UNIQUE_CEILING')
+    }
+    throw error
+  }
+  return data as LeaveCeiling
+}
+
+export async function deleteLeaveCeiling(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('leave_ceilings')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function fetchEmployeeCeiling(employeeId: string, year: number): Promise<LeaveCeiling | null> {
+  const { data, error } = await supabase
+    .from('leave_ceilings')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .eq('year', year)
+    .eq('status', 'actif')
+    .maybeSingle()
+  if (error) throw error
+  return data as LeaveCeiling | null
 }
