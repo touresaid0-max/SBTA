@@ -11,7 +11,6 @@ import {
   fetchBusesWithDrivers,
   createDriverFromLogistique,
   updateDriverFromLogistique,
-  fetchBusesWithDrivers,
   fetchDriverDetail,
   type LogistiqueBusWithDrivers,
   type LogistiqueDriver,
