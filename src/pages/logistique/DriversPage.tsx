@@ -11,6 +11,8 @@ import {
   fetchBusesWithDrivers,
   createDriverFromLogistique,
   updateDriverFromLogistique,
+  fetchBusesWithDrivers,
+  fetchDriverDetail,
   type LogistiqueBusWithDrivers,
   type LogistiqueDriver,
 } from '@/services/logistiqueDrivers.service'
@@ -802,9 +804,8 @@ function DriverFormModal({ mode, driver, companies, stations, busOptions, routes
 
   useEffect(() => {
     if (mode === 'edit' && driver) {
-      supabase.from('employees').select('*').eq('id', driver.id).maybeSingle()
-        .then(async ({ data: emp }) => {
-          const data = emp ?? await supabase.from('users').select('*').eq('id', driver.id).maybeSingle().then(r => r.data)
+      fetchDriverDetail(driver.id)
+        .then((data) => {
           if (data) {
             setForm({
               first_name: data.first_name ?? '',
@@ -834,6 +835,7 @@ function DriverFormModal({ mode, driver, companies, stations, busOptions, routes
             })
           }
         })
+        .catch(() => toast.error('Impossible de charger les informations du chauffeur'))
     }
   }, [mode, driver])
 

@@ -71,8 +71,63 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── GET: fetch all buses with their assigned drivers ──
+    // ── GET: fetch a single chauffeur's full detail (?id=…) or all buses with drivers ──
     if (req.method === "GET") {
+      const url = new URL(req.url);
+      const detailId = url.searchParams.get("id");
+
+      if (detailId) {
+        // Service-role fetch bypasses employees SELECT RLS (admin/rh/daf only),
+        // which otherwise returns empty for gestionnaire/responsable_logistique
+        // and leaves the edit form blank.
+        let source: "employees" | "users" = "employees";
+        let data: any = null;
+
+        const { data: emp } = await supabaseAdmin
+          .from("employees")
+          .select("*")
+          .eq("id", detailId)
+          .maybeSingle();
+        if (emp) {
+          data = emp;
+          source = "employees";
+        } else {
+          const { data: usr } = await supabaseAdmin
+            .from("users")
+            .select("*")
+            .eq("id", detailId)
+            .maybeSingle();
+          if (usr) { data = usr; source = "users"; }
+        }
+
+        if (!data) {
+          return new Response(
+            JSON.stringify({ error: "Chauffeur introuvable" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Respect company scope for gestionnaire.
+        if (callerCompanyIds && (!data.company_id || !callerCompanyIds.includes(data.company_id))) {
+          return new Response(
+            JSON.stringify({ error: "Ce chauffeur n'appartient pas à votre société" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const normalized = {
+          ...data,
+          source_table: source,
+          professional_email: data.professional_email ?? data.email ?? null,
+          status: source === "employees" ? (data.account_status ?? "pending") : (data.status ?? "active"),
+        };
+
+        return new Response(
+          JSON.stringify({ driver: normalized }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       let busesQuery = supabaseAdmin
         .from("buses")
         .select("id, registration_number, brand, manufacturer, model, total_seats, company_id, status, is_active")

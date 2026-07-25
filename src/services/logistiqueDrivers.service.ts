@@ -42,9 +42,10 @@ export interface LogistiqueDriversResponse {
 
 const EDGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/logistique-drivers`
 
-async function callEdge(method: string, body?: Record<string, unknown>): Promise<any> {
+async function callEdge(method: string, body?: Record<string, unknown>, queryId?: string): Promise<any> {
   const { data: { session } } = await supabase.auth.getSession()
-  const res = await fetch(EDGE_URL, {
+  const url = queryId ? `${EDGE_URL}?id=${encodeURIComponent(queryId)}` : EDGE_URL
+  const res = await fetch(url, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -60,6 +61,11 @@ async function callEdge(method: string, body?: Record<string, unknown>): Promise
 export async function fetchBusesWithDrivers(): Promise<LogistiqueDriversResponse> {
   const data = await callEdge('GET')
   return data as LogistiqueDriversResponse
+}
+
+export async function fetchDriverDetail(id: string): Promise<Record<string, unknown> & { source_table: 'employees' | 'users' }> {
+  const data = await callEdge('GET', undefined, id)
+  return data.driver
 }
 
 export async function createDriverFromLogistique(input: {

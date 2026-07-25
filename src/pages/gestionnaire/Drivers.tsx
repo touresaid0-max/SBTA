@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import {
   fetchBusesWithDrivers, createDriverFromLogistique, updateDriverFromLogistique,
+  fetchDriverDetail,
   type LogistiqueDriver, type LogistiqueBusWithDrivers,
 } from '@/services/logistiqueDrivers.service'
 
@@ -525,9 +526,8 @@ function DriverFormModal({ mode, driver, fixedCompanyId, companies, stations, bu
 
   useEffect(() => {
     if (mode === 'edit' && driver) {
-      supabase.from('employees').select('*').eq('id', driver.id).maybeSingle()
-        .then(async ({ data: emp }) => {
-          const data = emp ?? await supabase.from('users').select('*').eq('id', driver.id).maybeSingle().then(r => r.data)
+      fetchDriverDetail(driver.id)
+        .then((data) => {
           if (data) {
             setForm({
               first_name: data.first_name ?? '',
@@ -557,6 +557,7 @@ function DriverFormModal({ mode, driver, fixedCompanyId, companies, stations, bu
             })
           }
         })
+        .catch(() => toast.error('Impossible de charger les informations du chauffeur'))
     }
   }, [mode, driver, fixedCompanyId])
 
