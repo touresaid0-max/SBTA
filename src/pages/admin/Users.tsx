@@ -258,6 +258,23 @@ export default function Users() {
         toast.success(formData.send_invitation ? 'Invitation envoyée' : 'Utilisateur créé');
         await new Promise(r => setTimeout(r, 500));
       } else {
+        // Email change is handled via a service-role edge function so the
+        // login identity (auth.users) and the users row stay in sync. Other
+        // fields go through the normal client update below.
+        const newEmail = formData.email.trim().toLowerCase();
+        const currentEmail = (editingUser.email ?? '').trim().toLowerCase();
+        if (newEmail && newEmail !== currentEmail) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) { toast.error('Session expirée.'); return; }
+          const emailRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-email`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+            body: JSON.stringify({ user_id: editingUser.id, new_email: newEmail }),
+          });
+          const emailResult = await emailRes.json().catch(() => ({ error: `Erreur (${emailRes.status})` }));
+          if (!emailRes.ok) throw new Error(emailResult.error || `Erreur ${emailRes.status}`);
+        }
+
         const updateData: Record<string, unknown> = {
           first_name: formData.first_name,
           last_name: formData.last_name,
@@ -879,7 +896,7 @@ export default function Users() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Email *</label>
-                  <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required disabled={!!editingUser} className="w-full px-3 py-2 rounded-lg border disabled:opacity-50" style={{ borderColor: 'var(--border)' }} />
+                  <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required className="w-full px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border)' }} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Téléphone</label>
