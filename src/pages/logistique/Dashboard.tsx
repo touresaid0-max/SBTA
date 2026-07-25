@@ -10,6 +10,7 @@ import {
   fetchDocuments, fetchVehicles, buildAlerts, effectiveStatus,
 } from '@/services/logistics.service'
 import type { VehicleDocument, Vehicle, DocumentAlert } from '@/types/logistics.types'
+import ProbationAlerts from './ProbationAlerts'
 
 const LEVEL_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   green:  { bg: '#E7F6EC', text: '#0B7439', dot: '#16A34A' },
@@ -118,6 +119,9 @@ export default function LogistiqueDashboard() {
           )
         })}
       </div>
+
+      {/* Périodes d'essai à traiter */}
+      <ProbationAlerts />
 
       <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2EAE5]">

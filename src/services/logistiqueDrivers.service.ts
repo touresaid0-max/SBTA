@@ -17,6 +17,8 @@ export interface LogistiqueDriver {
   status:               string
   phone:                string | null
   avatar_url:           string | null
+  probation_end_date:   string | null
+  probation_treated_at: string | null
 }
 
 export interface LogistiqueBusWithDrivers {
@@ -97,4 +99,11 @@ export async function updateDriverFromLogistique(input: {
   [key: string]: unknown
 }): Promise<void> {
   await callEdge('PUT', input)
+}
+
+export async function treatProbation(input: {
+  id: string
+  source_table?: 'employees' | 'users'
+}): Promise<void> {
+  await callEdge('PATCH', input)
 }

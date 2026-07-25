@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
       // Fetch all chauffeurs (from both employees and users tables)
       const [empRes, usrRes] = await Promise.all([
         supabaseAdmin.from("employees")
-          .select("id, first_name, last_name, role, bus_id, license_number, license_expiry, license_category, company_id, station_id, contract_type, hire_date, employee_id, account_status, phone, avatar_url")
+          .select("id, first_name, last_name, role, bus_id, license_number, license_expiry, license_category, company_id, station_id, contract_type, hire_date, employee_id, account_status, phone, avatar_url, probation_end_date, probation_treated_at")
           .eq("role", "chauffeur"),
         supabaseAdmin.from("users")
           .select("id, first_name, last_name, role, bus_id, license_number, license_expiry, license_category, company_id, station_id, contract_type, hire_date, employee_id, status, phone, avatar_url")
@@ -92,6 +92,8 @@ Deno.serve(async (req: Request) => {
             status: d.status,
             phone: d.phone,
             avatar_url: d.avatar_url,
+            probation_end_date: d.probation_end_date ?? null,
+            probation_treated_at: d.probation_treated_at ?? null,
           });
         }
       }
@@ -115,6 +117,8 @@ Deno.serve(async (req: Request) => {
           status: d.status,
           phone: d.phone,
           avatar_url: d.avatar_url,
+          probation_end_date: d.probation_end_date ?? null,
+          probation_treated_at: d.probation_treated_at ?? null,
         }));
 
       const result = (buses ?? []).map((b: any) => ({
@@ -162,6 +166,12 @@ Deno.serve(async (req: Request) => {
         finalEmployeeId = `EMP-${new Date().getFullYear()}-${String((count ?? 0) + 1).padStart(4, "0")}`;
       }
 
+      // Période d'essai : 3 mois à compter de la date d'embauche
+      const probationEndDate = hire_date
+        ? new Date(new Date(hire_date).setMonth(new Date(hire_date).getMonth() + 3))
+            .toISOString().slice(0, 10)
+        : null;
+
       const { data: newEmployee, error: insertError } = await supabaseAdmin
         .from("employees")
         .insert({
@@ -194,6 +204,7 @@ Deno.serve(async (req: Request) => {
           account_status: "pending",
           auth_user_id: null,
           created_by: null,
+          probation_end_date: probationEndDate,
         })
         .select("id, first_name, last_name, role, employee_id, account_status")
         .single();
@@ -253,6 +264,13 @@ Deno.serve(async (req: Request) => {
         if (key in fields) allowedFields[key] = fields[key];
       }
 
+      // Si la date d'embauche change, recalculer la fin de période d'essai
+      if ("hire_date" in allowedFields && allowedFields.hire_date) {
+        const hd = new Date(allowedFields.hire_date as string);
+        allowedFields.probation_end_date = new Date(hd.setMonth(hd.getMonth() + 3))
+          .toISOString().slice(0, 10);
+      }
+
       const { error } = await supabaseAdmin
         .from(table)
         .update({ ...allowedFields, updated_at: new Date().toISOString() })
@@ -267,6 +285,55 @@ Deno.serve(async (req: Request) => {
         action: "driver_updated_by_logistique",
         description: `Chauffeur mis à jour par logistique`,
         new_values: allowedFields,
+      }).then();
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── PATCH: marquer la période d'essai comme traitée ──
+    if (req.method === "PATCH") {
+      const body = await req.json();
+      const { id, source_table } = body;
+      if (!id) {
+        return new Response(
+          JSON.stringify({ error: "ID chauffeur manquant" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      let table = "employees";
+      if (source_table === "users") {
+        table = "users";
+      } else {
+        const { data: empRow } = await supabaseAdmin
+          .from("employees")
+          .select("id")
+          .eq("id", id)
+          .maybeSingle();
+        if (!empRow) table = "users";
+      }
+
+      const now = new Date().toISOString();
+      const { error } = await supabaseAdmin
+        .from(table)
+        .update({
+          probation_treated_at: now,
+          probation_treated_by: caller.id,
+          updated_at: now,
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      await supabaseAdmin.from("activity_logs").insert({
+        user_id: caller.id,
+        target_id: id,
+        target_type: "employee",
+        action: "probation_treated_by_logistique",
+        description: `Période d'essai traitée par le Responsable Logistique`,
       }).then();
 
       return new Response(
