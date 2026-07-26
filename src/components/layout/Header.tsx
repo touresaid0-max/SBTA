@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, LogOut, User, Clock, Monitor, Menu, ChevronDown, UserCog } from 'lucide-react';
+import { Bell, LogOut, User, Clock, Monitor, Menu, ChevronDown, UserCog, AlertTriangle, Bus, MapPin, Calendar } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { countPendingAccounts } from '../../services/employeeAccount.service';
@@ -40,6 +40,15 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   const [counterStation, setCounterStation] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const [dafAlerts, setDafAlerts] = useState<Array<{
+    id: string; breakdown_id: string; schedule_id: string | null;
+    original_bus_id: string | null; route_id: string | null;
+    station_id: string | null; reason: string | null;
+    breakdown_at: string; is_active: boolean;
+    bus_reg?: string | null; route_name?: string | null; station_name?: string | null;
+  }>>([]);
+  const [dafAlertsOpen, setDafAlertsOpen] = useState(false);
+  const dafAlertsRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -54,10 +63,64 @@ export default function Header({ onMenuToggle }: HeaderProps) {
 
   useEffect(() => {
     setProfileOpen(false);
+    setDafAlertsOpen(false);
   }, [location.pathname]);
 
+  // Close DAF alerts dropdown on outside click
   useEffect(() => {
-    if (user?.role !== 'guichetier') return;
+    function handler(e: MouseEvent) {
+      if (dafAlertsRef.current && !dafAlertsRef.current.contains(e.target as Node)) {
+        setDafAlertsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // DAF breakdown alerts — realtime
+  const activeDafAlerts = dafAlerts.filter(a => a.is_active);
+  useEffect(() => {
+    if (user?.role !== 'daf' && user?.role !== 'admin') return;
+    const load = async () => {
+      const { data } = await supabase
+        .from('daf_breakdown_alerts')
+        .select(`
+          id, breakdown_id, schedule_id, original_bus_id, route_id, station_id,
+          reason, breakdown_at, is_active,
+          bus:buses!daf_breakdown_alerts_original_bus_id_fkey(registration_number),
+          route:routes!daf_breakdown_alerts_route_id_fkey(name),
+          station:stations!daf_breakdown_alerts_station_id_fkey(name)
+        `)
+        .order('breakdown_at', { ascending: false });
+      if (data) {
+        setDafAlerts((data as any[]).map(r => ({
+          id: r.id,
+          breakdown_id: r.breakdown_id,
+          schedule_id: r.schedule_id,
+          original_bus_id: r.original_bus_id,
+          route_id: r.route_id,
+          station_id: r.station_id,
+          reason: r.reason,
+          breakdown_at: r.breakdown_at,
+          is_active: r.is_active,
+          bus_reg: r.bus?.registration_number ?? null,
+          route_name: r.route?.name ?? null,
+          station_name: r.station?.name ?? null,
+        })));
+      }
+    };
+    load();
+    const channel = supabase
+      .channel('header-daf-breakdown-alerts')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'daf_breakdown_alerts' }, () => load())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'daf_breakdown_alerts' }, () => load())
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'daf_breakdown_alerts' }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== 'guichetier' || !user?.id) return;
     supabase
       .from('counters')
       .select('counter_number, stations(name)')
@@ -163,10 +226,87 @@ export default function Header({ onMenuToggle }: HeaderProps) {
           </Link>
         )}
 
+        {/* DAF breakdown alerts badge */}
+        {(user?.role === 'daf' || user?.role === 'admin') && activeDafAlerts.length > 0 && (
+          <div className="relative" ref={dafAlertsRef}>
+            <button
+              onClick={() => setDafAlertsOpen(v => !v)}
+              className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+              style={{ backgroundColor: '#FEE2E2', border: '1px solid #DC2626', color: '#991B1B' }}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden sm:inline">{activeDafAlerts.length} panne{activeDafAlerts.length > 1 ? 's' : ''}</span>
+              <span
+                className="sm:hidden w-4 h-4 rounded-full text-white text-xs font-bold flex items-center justify-center"
+                style={{ backgroundColor: '#DC2626' }}
+              >{activeDafAlerts.length}</span>
+            </button>
+            {dafAlertsOpen && (
+              <div
+                className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl shadow-xl overflow-hidden z-50 max-h-[70vh] flex flex-col"
+                style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)', backgroundColor: '#FEE2E2' }}>
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: '#DC2626' }} />
+                  <span className="text-sm font-semibold" style={{ color: '#991B1B' }}>
+                    {activeDafAlerts.length} panne{activeDafAlerts.length > 1 ? 's' : ''} non traitée{activeDafAlerts.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="overflow-y-auto">
+                  {activeDafAlerts.map(a => (
+                    <Link
+                      key={a.id}
+                      to="/daf/pannes"
+                      onClick={() => setDafAlertsOpen(false)}
+                      className="block px-4 py-3 border-b last:border-0 transition-colors hover:bg-gray-50"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Bus className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#DC2626' }} />
+                        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                          {a.bus_reg ?? 'Bus inconnu'}
+                        </span>
+                        {a.route_name && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}>
+                            {a.route_name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        <MapPin className="w-3 h-3 flex-shrink-0" />
+                        <span>{a.station_name ?? 'Gare non précisée'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        <Calendar className="w-3 h-3 flex-shrink-0" />
+                        <span>{new Date(a.breakdown_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                      </div>
+                      {a.reason && (
+                        <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                          Motif : {a.reason}
+                        </p>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+                <Link
+                  to="/daf/pannes"
+                  onClick={() => setDafAlertsOpen(false)}
+                  className="block px-4 py-2.5 text-center text-xs font-medium border-t transition-colors hover:bg-gray-50"
+                  style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
+                >
+                  Traiter les pannes
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Bell */}
         <button className="relative p-2 rounded-xl hover:bg-gray-100 transition-colors">
           <Bell className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: 'var(--text-secondary)' }} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--secondary)' }} />
+          {(user?.role !== 'daf' && user?.role !== 'admin') || activeDafAlerts.length === 0 ? (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--secondary)' }} />
+          ) : null}
         </button>
 
         {/* Profile dropdown */}
