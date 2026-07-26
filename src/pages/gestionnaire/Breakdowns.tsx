@@ -625,28 +625,26 @@ export default function GestionnaireBreakdowns({ mode = 'gestionnaire' }: { mode
                   <Section title="Bus de remplacement">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Field label="Bus *">
-                        <select
+                        <AutocompleteSelect
+                          options={buses}
                           value={replacementBusId}
-                          onChange={e => setReplacementBusId(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border text-sm"
-                          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-                        >
-                          <option value="">— Choisir —</option>
-                          {buses.filter(b => b.id !== selected.original_bus_id).map(b => (
-                            <option key={b.id} value={b.id}>{b.registration_number} — {b.company_name}</option>
-                          ))}
-                        </select>
+                          onChange={setReplacementBusId}
+                          getLabel={b => `${b.registration_number} — ${b.company_name}`}
+                          getSecondary={b => [b.model, `${b.total_seats} places`].filter(Boolean).join(' · ')}
+                          getSearchText={b => `${b.registration_number} ${b.company_name} ${b.model ?? ''}`}
+                          excludeId={selected.original_bus_id ?? undefined}
+                          placeholder="Rechercher un bus (immatriculation, société…)"
+                        />
                       </Field>
                       <Field label="Chauffeur *">
-                        <select
+                        <AutocompleteSelect
+                          options={drivers}
                           value={replacementDriverId}
-                          onChange={e => setReplacementDriverId(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border text-sm"
-                          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-                        >
-                          <option value="">— Choisir —</option>
-                          {drivers.map(d => <option key={d.id} value={d.id}>{d.first_name} {d.last_name}</option>)}
-                        </select>
+                          onChange={setReplacementDriverId}
+                          getLabel={d => `${d.first_name} ${d.last_name}`}
+                          getSearchText={d => `${d.first_name} ${d.last_name}`}
+                          placeholder="Rechercher un chauffeur par nom…"
+                        />
                       </Field>
                       <div className="md:col-span-2">
                         <Field label="Modification du trajet (optionnel)">
@@ -874,6 +872,103 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{label}</label>
       {children}
+    </div>
+  );
+}
+
+function AutocompleteSelect<T extends { id: string }>({
+  options,
+  value,
+  onChange,
+  getLabel,
+  getSecondary,
+  getSearchText,
+  placeholder,
+  excludeId,
+}: {
+  options: T[];
+  value: string;
+  onChange: (id: string) => void;
+  getLabel: (opt: T) => string;
+  getSecondary?: (opt: T) => string;
+  getSearchText: (opt: T) => string;
+  placeholder: string;
+  excludeId?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const selectedOpt = options.find(o => o.id === value) ?? null;
+  const ql = query.toLowerCase().trim();
+  const filtered = options
+    .filter(o => o.id !== excludeId)
+    .filter(o => !ql || getSearchText(o).toLowerCase().includes(ql))
+    .slice(0, 20);
+
+  if (selectedOpt) {
+    return (
+      <div
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-sm"
+        style={{ borderColor: '#A7F3D0', backgroundColor: '#ECFDF5', color: '#065F46' }}
+      >
+        <span className="flex items-center gap-2 truncate">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span className="truncate font-medium">{getLabel(selectedOpt)}</span>
+          {getSecondary && <span className="text-xs opacity-70">· {getSecondary(selectedOpt)}</span>}
+        </span>
+        <button
+          type="button"
+          onClick={() => { onChange(''); setQuery(''); }}
+          className="p-1 rounded hover:bg-black/5 shrink-0"
+          style={{ color: '#065F46' }}
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+      <input
+        type="text"
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder={placeholder}
+        className="w-full pl-10 pr-4 py-2 rounded-lg border text-sm"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+      />
+      {open && filtered.length > 0 && (
+        <div
+          className="absolute z-30 mt-1 w-full rounded-lg border shadow-lg max-h-60 overflow-y-auto"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+        >
+          {filtered.map(o => (
+            <button
+              key={o.id}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onChange(o.id); setQuery(''); setOpen(false); }}
+              className="w-full px-4 py-2.5 text-left text-sm border-b last:border-0 hover:opacity-80"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{getLabel(o)}</div>
+              {getSecondary && (
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{getSecondary(o)}</div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && filtered.length === 0 && ql && (
+        <div
+          className="absolute z-30 mt-1 w-full rounded-lg border shadow-lg px-4 py-3 text-sm"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}
+        >
+          Aucun résultat pour « {query} »
+        </div>
+      )}
     </div>
   );
 }
