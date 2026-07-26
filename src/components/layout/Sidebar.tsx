@@ -129,7 +129,8 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Guichets',            path: '/chef-gare/counters',     icon: <Monitor className="w-5 h-5" /> },
     { label: 'Bagagistes',          path: '/chef-gare/baggage-handlers', icon: <Luggage className="w-5 h-5" /> },
     { label: 'Ventes guichets',     path: '/chef-gare/sales',        icon: <TicketCheck className="w-5 h-5" /> },
-    { label: 'Rapport convois',     path: '/chef-gare/convoys',      icon: <Truck className="w-5 h-5" /> },
+    { label: 'Convois',           path: '/chef-gare/convoys',      icon: <Truck className="w-5 h-5" /> },
+    { label: 'Rapport convois',     path: '/chef-gare/convoys/report', icon: <FileText className="w-5 h-5" /> },
     { label: 'Rapport journalier',  path: '/chef-gare/daily-report', icon: <FileText className="w-5 h-5" /> },
   ],
   bagagiste: [
