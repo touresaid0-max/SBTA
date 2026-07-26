@@ -38,7 +38,8 @@ interface BusRow {
 
 interface RouteRow {
   route_id: string; route_name: string; trip_count: number; revenue: number;
-  cc_carburant: number; cc_ration: number; cc_peage: number; margin: number;
+  cc_carburant: number; cc_ration: number; cc_peage: number; cc_autres: number;
+  total_expense: number; margin: number;
 }
 interface DriverRow {
   driver_id: string; first_name: string; last_name: string; employee_id: string;
@@ -161,7 +162,8 @@ export default function FinancialReport() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(routes.map(r => ({
       Ligne: r.route_name, Voyages: r.trip_count, Recettes: r.revenue,
       'Carburant compl.': r.cc_carburant, Rations: r.cc_ration,
-      'Péages guichet': r.cc_peage, Marge: r.margin,
+      'Péages guichet': r.cc_peage, 'Autres': r.cc_autres ?? 0,
+      'Total charges': r.total_expense ?? 0, Marge: r.margin,
     }))), 'Par ligne');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(drivers.map(d => ({
       Prénom: d.first_name, Nom: d.last_name, Matricule: d.employee_id,
@@ -419,14 +421,13 @@ export default function FinancialReport() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                      {['Ligne', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Total charges', 'Marge', 'Marge %'].map(h => (
+                      {['Ligne', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Autres', 'Total charges', 'Marge', 'Marge %'].map(h => (
                         <th key={h} className="text-left px-3 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {routes.map((r, i) => {
-                      const totalCharge = (r.cc_carburant ?? 0) + (r.cc_ration ?? 0) + (r.cc_peage ?? 0);
                       const mp = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
                       return (
                         <tr key={r.route_id || i} className="border-t" style={{ borderColor: 'var(--border)' }}>
@@ -436,7 +437,8 @@ export default function FinancialReport() {
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#3B82F6' }}>{fmtCFA(r.cc_carburant ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#F59E0B' }}>{fmtCFA(r.cc_ration ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#10B981' }}>{fmtCFA(r.cc_peage ?? 0)}</td>
-                          <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmtCFA(totalCharge)}</td>
+                          <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtCFA(r.cc_autres ?? 0)}</td>
+                          <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmtCFA(r.total_expense ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs font-bold" style={{ color: r.margin >= 0 ? '#10B981' : '#EF4444' }}>{fmtCFA(r.margin)}</td>
                           <td className="px-3 py-2.5">
                             <span className="text-xs font-semibold" style={{ color: mp >= 0 ? '#10B981' : '#EF4444' }}>{mp.toFixed(1)}%</span>
@@ -444,7 +446,7 @@ export default function FinancialReport() {
                         </tr>
                       );
                     })}
-                    {routes.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                    {routes.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
                   </tbody>
                 </table>
               </div>
