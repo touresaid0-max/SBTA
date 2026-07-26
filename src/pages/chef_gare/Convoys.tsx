@@ -3,10 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
-import {
-  Truck, Plus, Search, X, AlertTriangle, User,
-  Banknote, Edit3, ChevronRight, RotateCcw, Receipt, FileText,
-} from 'lucide-react';
+import { Truck, Plus, Search, X, AlertTriangle, User, Banknote, CreditCard as Edit3, ChevronRight, RotateCcw, Receipt, FileText } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import { formatCurrency, formatNumber } from '../../utils/formatCurrency';
 import ExportButton from '../../components/shared/ExportButton';
