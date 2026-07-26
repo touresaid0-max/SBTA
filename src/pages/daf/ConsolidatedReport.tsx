@@ -58,6 +58,7 @@ interface CompanyKpi {
   cc_carburant: number;
   cc_ration: number;
   cc_peage: number;
+  cc_autres: number;
   fuel_enlev: number;
   expense_reparation: number;
   expense_autres: number;
@@ -93,6 +94,7 @@ interface BusRow {
   cc_carburant: number;
   cc_ration: number;
   cc_peage: number;
+  cc_autres: number;
   fuel_enlev: number;
   expense_reparation: number;
   expense_charge_stock: number;
@@ -187,10 +189,11 @@ export default function DAFConsolidatedReport() {
 
         setKpis(rows(kpiRes).map(r => {
           const cc_carburant = safe(r.cc_carburant), cc_ration = safe(r.cc_ration), cc_peage = safe(r.cc_peage);
+          const cc_autres = safe(r.cc_autres);
           const fuel_enlev = safe(r.fuel_enlev), expense_reparation = safe(r.expense_reparation);
           const expense_autres = safe(r.expense_autres), vehicle_exp = safe(r.vehicle_exp);
           const fuel_carburant_comptable = safe(r.fuel_carburant_comptable);
-          const variable_charges = cc_carburant + cc_ration + cc_peage + fuel_enlev
+          const variable_charges = cc_carburant + cc_ration + cc_peage + cc_autres + fuel_enlev
             + expense_reparation + expense_autres + vehicle_exp + fuel_carburant_comptable;
           return {
             company_id: String(r.company_id ?? ''),
@@ -200,7 +203,7 @@ export default function DAFConsolidatedReport() {
             is_group: Boolean(r.is_group),
             revenue: safe(r.revenue),
             breakdown_received: safe(r.breakdown_received),
-            cc_carburant, cc_ration, cc_peage, fuel_enlev,
+            cc_carburant, cc_ration, cc_peage, cc_autres, fuel_enlev,
             expense_reparation, expense_autres, vehicle_exp, fuel_carburant_comptable,
             variable_charges,
             trip_count: safe(r.trip_count),
@@ -223,10 +226,11 @@ export default function DAFConsolidatedReport() {
 
         setBusRows(rows(busRes).map(r => {
           const cc_carburant = safe(r.cc_carburant), cc_ration = safe(r.cc_ration), cc_peage = safe(r.cc_peage);
+          const cc_autres = safe(r.cc_autres);
           const fuel_enlev = safe(r.fuel_enlev), expense_reparation = safe(r.expense_reparation);
           const expense_charge_stock = safe(r.expense_charge_stock), expense_autres = safe(r.expense_autres);
           const vehicle_exp = safe(r.vehicle_exp), fuel_carburant_comptable = safe(r.fuel_carburant_comptable);
-          const variable_charges = cc_carburant + cc_ration + cc_peage + fuel_enlev
+          const variable_charges = cc_carburant + cc_ration + cc_peage + cc_autres + fuel_enlev
             + expense_reparation + expense_charge_stock + expense_autres + vehicle_exp + fuel_carburant_comptable;
           const revenue = safe(r.revenue);
           return {
@@ -234,7 +238,7 @@ export default function DAFConsolidatedReport() {
             registration_number: String(r.registration_number ?? ''),
             company_name: String(r.company_name ?? ''),
             trip_count: safe(r.trip_count), revenue,
-            cc_carburant, cc_ration, cc_peage, fuel_enlev,
+            cc_carburant, cc_ration, cc_peage, cc_autres, fuel_enlev,
             expense_reparation, expense_charge_stock, expense_autres, vehicle_exp, fuel_carburant_comptable,
             variable_charges, ebe: revenue - variable_charges,
           } as BusRow;
@@ -271,7 +275,7 @@ export default function DAFConsolidatedReport() {
   const results: CompanyResult[] = kpis
     .filter(k => !k.is_group)
     .map(k => {
-      const recettes = k.revenue + k.breakdown_received;
+      const recettes = k.revenue;
       const ebe = recettes - k.variable_charges;
       const fc = fcMap.get(k.company_id);
       const fixed_charges = fc ? fc.salaries + fc.primes + fc.cnps + fc.social + fc.insurance : 0;
@@ -332,7 +336,7 @@ export default function DAFConsolidatedReport() {
     { name: 'Peages', value: kpis.reduce((s, k) => s + k.cc_peage, 0), color: '#14B8A6' },
     { name: 'Rations', value: kpis.reduce((s, k) => s + k.cc_ration, 0), color: '#6366F1' },
     { name: 'Maintenance', value: kpis.reduce((s, k) => s + k.expense_reparation, 0), color: '#EF4444' },
-    { name: 'Autres', value: kpis.reduce((s, k) => s + k.expense_autres + k.vehicle_exp, 0), color: '#8B5CF6' },
+    { name: 'Autres', value: kpis.reduce((s, k) => s + k.cc_autres + k.expense_autres + k.vehicle_exp, 0), color: '#8B5CF6' },
   ].filter(d => d.value > 0);
 
   const fixedPie = fixedBreakdown.filter(f => f.amount > 0);

@@ -31,6 +31,7 @@ interface CompanyRow {
   cc_carburant: number;
   cc_ration: number;
   cc_peage: number;
+  cc_autres: number;
   fuel_enlev: number;
   expense_reparation: number;
   expense_autres: number;
@@ -78,13 +79,14 @@ function parseRow(r: Record<string, unknown>): CompanyRow {
   const cc_carburant = safe(r.cc_carburant);
   const cc_ration = safe(r.cc_ration);
   const cc_peage = safe(r.cc_peage);
+  const cc_autres = safe(r.cc_autres);
   const fuel_enlev = safe(r.fuel_enlev);
   const expense_reparation = safe(r.expense_reparation);
   const expense_autres = safe(r.expense_autres);
   const expense_charge_stock = safe(r.expense_charge_stock);
   const vehicle_exp = safe(r.vehicle_exp);
   const fuel_carburant_comptable = safe(r.fuel_carburant_comptable);
-  const total_expense = cc_carburant + cc_ration + cc_peage + fuel_enlev
+  const total_expense = cc_carburant + cc_ration + cc_peage + cc_autres + fuel_enlev
     + expense_reparation + expense_autres + expense_charge_stock + vehicle_exp + fuel_carburant_comptable;
   return {
     company_id: String(r.company_id ?? ''),
@@ -92,7 +94,7 @@ function parseRow(r: Record<string, unknown>): CompanyRow {
     company_code: String(r.company_code ?? ''),
     parent_id: r.parent_id as string | null,
     is_group: Boolean(r.is_group),
-    revenue, cc_carburant, cc_ration, cc_peage, fuel_enlev,
+    revenue, cc_carburant, cc_ration, cc_peage, cc_autres, fuel_enlev,
     expense_reparation, expense_autres, expense_charge_stock, vehicle_exp, fuel_carburant_comptable,
     total_expense, margin: revenue - total_expense,
     trip_count: safe(r.trip_count),
@@ -228,7 +230,8 @@ export default function DAFFinancialReport() {
     bus_count: acc.bus_count + r.bus_count,
     breakdown_received: acc.breakdown_received + r.breakdown_received,
     breakdown_transferred: acc.breakdown_transferred + r.breakdown_transferred,
-  }), { revenue: 0, total_expense: 0, margin: 0, trip_count: 0, bus_count: 0, breakdown_received: 0, breakdown_transferred: 0 });
+    cc_autres: acc.cc_autres + r.cc_autres,
+  }), { revenue: 0, total_expense: 0, margin: 0, trip_count: 0, bus_count: 0, breakdown_received: 0, breakdown_transferred: 0, cc_autres: 0 });
 
   const kpiCards = [
     { label: 'Total recettes',       val: totals.revenue,        color: '#10B981', icon: TrendingUp },
@@ -237,6 +240,7 @@ export default function DAFFinancialReport() {
     { label: 'Marge globale',        val: totals.revenue > 0 ? (totals.margin / totals.revenue) * 100 : 0, color: totals.margin >= 0 ? '#10B981' : '#EF4444', isPct: true },
     { label: 'Total voyages',        val: totals.trip_count,      color: '#3B82F6' },
     { label: 'Bus actifs',           val: totals.bus_count,       color: '#8B5CF6' },
+    { label: 'Rep. panne recues',    val: totals.breakdown_received, color: '#0EA5E9' },
   ];
 
   const exportExcel = () => {
@@ -254,6 +258,7 @@ export default function DAFFinancialReport() {
       'Carb. BE': c.cc_carburant,
       'Rations': c.cc_ration,
       'Peages': c.cc_peage,
+      'Autres charges': c.cc_autres,
       'Carb. cuve': c.fuel_enlev,
       'Carb. agent': c.fuel_carburant_comptable,
       'Reparations': c.expense_reparation,
@@ -271,7 +276,7 @@ export default function DAFFinancialReport() {
       'Bus actifs': totals.bus_count,
       'Rep. panne recues': totals.breakdown_received,
       'Rep. panne transferees': totals.breakdown_transferred,
-      'Carb. BE': 0, 'Rations': 0, 'Peages': 0, 'Carb. cuve': 0,
+      'Carb. BE': 0, 'Rations': 0, 'Peages': 0, 'Autres charges': 0, 'Carb. cuve': 0,
       'Carb. agent': 0, 'Reparations': 0, 'Ch. achat': 0, 'Art. stock': 0, 'Charge stock': 0,
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetData), 'Rapport financier');
@@ -521,6 +526,7 @@ export default function DAFFinancialReport() {
                   <SortTh label="Carb. BE"            field="cc_carburant" />
                   <SortTh label="Rations"             field="cc_ration" />
                   <SortTh label="Peages"              field="cc_peage" />
+                  <SortTh label="Autres"              field="cc_autres" />
                   <SortTh label="Carb. cuve"          field="fuel_enlev" />
                   <SortTh label="Carb. agent"         field="fuel_carburant_comptable" />
                   <SortTh label="Reparations"         field="expense_reparation" />
@@ -558,6 +564,7 @@ export default function DAFFinancialReport() {
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#3B82F6' }}>{fmtN(c.cc_carburant)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#6366F1' }}>{fmtN(c.cc_ration)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#14B8A6' }}>{fmtN(c.cc_peage)}</td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: '#A855F7' }}>{fmtN(c.cc_autres)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#F97316' }}>{fmtN(c.fuel_enlev)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#D97706' }}>{fmtN(c.fuel_carburant_comptable)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#EF4444' }}>{fmtN(c.expense_reparation)}</td>
@@ -582,7 +589,8 @@ export default function DAFFinancialReport() {
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{totals.bus_count}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#0EA5E9' }}>{fmtN(totals.breakdown_received)}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#F97316' }}>{fmtN(totals.breakdown_transferred)}</td>
-                    <td colSpan={9} />
+                    <td colSpan={9} style={{ color: '#A855F7' }}>{fmtN(totals.cc_autres)}</td>
+                    <td colSpan={8} />
                   </tr>
                 )}
 

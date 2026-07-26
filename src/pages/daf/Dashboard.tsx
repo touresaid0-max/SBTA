@@ -32,6 +32,7 @@ interface KPIs {
   cc_carburant_complement: number;
   cc_ration: number;
   cc_peage: number;
+  cc_autres: number;
   fuel_enlevements_amount: number;
   expense_reparation: number;
   expense_autres: number;
@@ -172,6 +173,7 @@ export default function DAFDashboard() {
         cc_carburant_complement: Number(raw.cc_carburant_complement ?? 0),
         cc_ration: Number(raw.cc_ration ?? 0),
         cc_peage: Number(raw.cc_peage ?? 0),
+        cc_autres: Number(raw.cc_autres ?? 0),
         fuel_enlevements_amount: Number(raw.fuel_enlevements_amount ?? 0),
         expense_reparation: Number(raw.expense_reparation ?? 0),
         expense_autres: Number(raw.expense_autres ?? 0),
@@ -258,7 +260,7 @@ export default function DAFDashboard() {
   useEffect(() => { if (resolvedIds.length > 0) load(); }, [load]); // eslint-disable-line
 
   // ── Derived metrics ────────────────────────────────────────
-  const guichetCharges = kpis ? kpis.cc_carburant_complement + kpis.cc_ration + kpis.cc_peage : 0;
+  const guichetCharges = kpis ? kpis.cc_carburant_complement + kpis.cc_ration + kpis.cc_peage + kpis.cc_autres : 0;
   const guichetResult  = kpis ? kpis.total_revenue - guichetCharges : 0;
   const totalExpenses  = kpis
     ? guichetCharges + kpis.fuel_enlevements_amount + kpis.expense_reparation
@@ -281,6 +283,7 @@ export default function DAFDashboard() {
     { name: 'Carburant compl.', val: kpis.cc_carburant_complement,   color: '#3B82F6' },
     { name: 'Rations',          val: kpis.cc_ration,                  color: '#F59E0B' },
     { name: 'Péages guichet',   val: kpis.cc_peage,                   color: '#10B981' },
+    { name: 'Autres charges',   val: kpis.cc_autres,                  color: '#A855F7' },
     { name: 'Carburant cuve',   val: kpis.fuel_enlevements_amount,    color: '#F97316' },
     { name: 'Autres dép.',      val: kpis.expense_reparation,         color: '#EF4444' },
     { name: 'Articles stock',   val: kpis.expense_autres,             color: '#8B5CF6' },
