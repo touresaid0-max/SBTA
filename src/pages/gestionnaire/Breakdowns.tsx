@@ -6,7 +6,7 @@ import { fr } from 'date-fns/locale';
 import {
   Wrench, RefreshCw, AlertTriangle, Bus, MapPin, User, Banknote,
   Users, X, Loader2, ArrowRight, CheckCircle2, History, Building2,
-  Calculator
+  Calculator, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -87,12 +87,15 @@ const STATUS_STYLE: Record<string, { label: string; bg: string; color: string; b
   annule:    { label: 'Annulé',    bg: '#F3F4F6', color: '#374151', border: '#D1D5DB' },
 };
 
-export default function GestionnaireBreakdowns() {
+export default function GestionnaireBreakdowns({ mode = 'gestionnaire' }: { mode?: 'gestionnaire' | 'daf' } = {}) {
   const { user } = useAuthStore();
+  const isDaf = mode === 'daf';
   const [rows, setRows] = useState<BreakdownRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [selected, setSelected] = useState<BreakdownRow | null>(null);
 
   const [buses, setBuses] = useState<BusOption[]>([]);
@@ -134,14 +137,17 @@ export default function GestionnaireBreakdowns() {
 
       if (error) throw error;
 
-      const filtered = (data ?? []).filter((r: any) =>
-        !myCompanyId ||
-        r.original_company_id === myCompanyId ||
-        r.beneficiary_company_id === myCompanyId ||
-        r.replacement_company_id === myCompanyId
-      ) as BreakdownRow[];
+      const allRows = (data ?? []) as BreakdownRow[];
+      const visible = isDaf
+        ? allRows
+        : allRows.filter((r: any) =>
+            !myCompanyId ||
+            r.original_company_id === myCompanyId ||
+            r.beneficiary_company_id === myCompanyId ||
+            r.replacement_company_id === myCompanyId
+          );
 
-      setRows(filtered);
+      setRows(visible);
     } catch (e: any) {
       console.error(e);
       toast.error(e.message ?? 'Erreur de chargement');
@@ -333,21 +339,39 @@ export default function GestionnaireBreakdowns() {
     }
   };
 
-  const filtered = statusFilter === 'all' ? rows : rows.filter(r => r.status === statusFilter);
+  const statusFiltered = statusFilter === 'all' ? rows : rows.filter(r => r.status === statusFilter);
+  const searchMatch = (r: BreakdownRow, query: string) => {
+    const ql = query.toLowerCase();
+    return [
+      r.original_bus?.registration_number,
+      r.original_bus?.model,
+      r.replacement_bus?.registration_number,
+      r.original_company?.name,
+      r.replacement_company?.name,
+      r.beneficiary_company?.name,
+      r.schedule?.routes?.name,
+      r.station?.name,
+    ].some(v => v != null && v.toLowerCase().includes(ql));
+  };
+  const q = searchQuery.trim();
+  const filtered = q ? statusFiltered.filter(r => searchMatch(r, q)) : statusFiltered;
+  const suggestions = q.length >= 2 ? statusFiltered.filter(r => searchMatch(r, q)).slice(0, 8) : [];
 
   const stats = useMemo(() => {
     const signalees = rows.filter(r => r.status === 'signalee').length;
     const cloturees = rows.filter(r => r.status === 'cloture').length;
     const totalNet = rows.reduce((s, r) => s + Number(r.net_balance ?? r.revenue_amount ?? 0), 0);
-    const myAmount = rows.reduce((s, r) => {
-      if (r.original_company_id === myCompanyId) return s + Number(r.amount_original_company ?? 0);
-      if (r.beneficiary_company_id === myCompanyId || r.replacement_company_id === myCompanyId) {
-        return s + Number(r.amount_replacement_company ?? 0);
-      }
-      return s;
-    }, 0);
+    const myAmount = isDaf
+      ? rows.reduce((s, r) => s + Number(r.amount_replacement_company ?? 0), 0)
+      : rows.reduce((s, r) => {
+          if (r.original_company_id === myCompanyId) return s + Number(r.amount_original_company ?? 0);
+          if (r.beneficiary_company_id === myCompanyId || r.replacement_company_id === myCompanyId) {
+            return s + Number(r.amount_replacement_company ?? 0);
+          }
+          return s;
+        }, 0);
     return { signalees, cloturees, totalNet, myAmount };
-  }, [rows, myCompanyId]);
+  }, [rows, myCompanyId, isDaf]);
 
   if (loading) {
     return (
@@ -366,7 +390,7 @@ export default function GestionnaireBreakdowns() {
             Gestion des pannes
           </h1>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Répartition du solde net (recette − charges) entre sociétés
+            {isDaf ? 'Toutes sociétés — traitement et répartition des recettes' : 'Répartition du solde net (recette − charges) entre sociétés'}
           </p>
         </div>
         <button
@@ -384,7 +408,7 @@ export default function GestionnaireBreakdowns() {
         <KpiCard label="Signalées" value={stats.signalees} icon={<AlertTriangle className="w-5 h-5" />} color="#DC2626" />
         <KpiCard label="Clôturées" value={stats.cloturees} icon={<CheckCircle2 className="w-5 h-5" />} color="#10B981" />
         <KpiCard label="Solde net total" value={fmt(stats.totalNet)} icon={<Banknote className="w-5 h-5" />} color="#1D4ED8" />
-        <KpiCard label="Ma part" value={fmt(stats.myAmount)} icon={<Banknote className="w-5 h-5" />} color="#065F46" />
+        <KpiCard label={isDaf ? 'Transféré inter-soc.' : 'Ma part'} value={fmt(stats.myAmount)} icon={<Banknote className="w-5 h-5" />} color="#065F46" />
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -407,6 +431,43 @@ export default function GestionnaireBreakdowns() {
           </button>
         ))}
       </div>
+
+      {isDaf && (
+        <div className="relative">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              placeholder="Rechercher : immatriculation, société, ligne, gare, destination…"
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+            />
+          </div>
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-20 mt-1 w-full rounded-lg border shadow-lg max-h-72 overflow-y-auto" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+              {suggestions.map(r => (
+                <button
+                  key={r.id}
+                  onMouseDown={(e) => { e.preventDefault(); openHandle(r); setSearchQuery(''); setShowSuggestions(false); }}
+                  className="w-full px-4 py-2.5 text-left text-sm border-b last:border-0 hover:opacity-80"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {r.original_bus?.registration_number ?? '—'} — {r.original_company?.name ?? '—'}
+                  </div>
+                  <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {r.station?.name ?? '—'} · {r.schedule?.routes?.name ?? '—'}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
         <div className="overflow-x-auto">
@@ -448,7 +509,7 @@ export default function GestionnaireBreakdowns() {
                       }}>{style.label}</span>
                     </Td>
                     <Td>
-                      {r.status === 'signalee' && r.original_company_id === myCompanyId ? (
+                      {r.status === 'signalee' && (isDaf || r.original_company_id === myCompanyId) ? (
                         <button
                           onClick={() => openHandle(r)}
                           className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
@@ -559,7 +620,7 @@ export default function GestionnaireBreakdowns() {
                 </Section>
               )}
 
-              {selected.status === 'signalee' && selected.original_company_id === myCompanyId ? (
+              {selected.status === 'signalee' && (isDaf || selected.original_company_id === myCompanyId) ? (
                 <>
                   <Section title="Bus de remplacement">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

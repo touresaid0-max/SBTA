@@ -57,6 +57,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: "Rapport d'exploitation", path: '/daf/consolidated-report', icon: <PieChart className="w-5 h-5" /> },
     { label: 'Compte de résultat', path: '/daf/compte-resultat',    icon: <ScrollText className="w-5 h-5" /> },
     { label: 'Performance bus',    path: '/daf/bus-performance',    icon: <TrendingUp className="w-5 h-5" /> },
+    { label: 'Gestion des pannes', path: '/daf/pannes',             icon: <Wrench className="w-5 h-5" /> },
     { label: 'Pannes & Répartitions', path: '/daf/breakdowns', icon: <Wrench className="w-5 h-5" /> },
     { label: 'Rapports',           path: '/reports',                icon: <FileText className="w-5 h-5" /> },
   ],
