@@ -225,7 +225,7 @@ export default function Convoys() {
         const [routesRes, busesRes, driversRes, stationsRes, companiesRes] = await Promise.all([
           supabase
             .from('routes')
-            .select('id, name, base_price, origin_city_id, destination_city_id, origin_city:origin_city_id(id,name), destination_city:destination_city_id(id,name)')
+            .select('id, name, base_price, estimated_duration_minutes, origin_city_id, destination_city_id, origin_city:origin_city_id(id,name), destination_city:destination_city_id(id,name)')
             .eq('is_active', true)
             .or(`origin_station_id.eq.${stData.id},and(origin_station_id.is.null,origin_city_id.eq.${stData.city_id})`)
             .order('name'),
@@ -454,10 +454,16 @@ export default function Convoys() {
         }).eq('id', editConvoy.id);
         if (cErr) throw cErr;
 
+        const depDate = form.departure_datetime.includes('T') ? form.departure_datetime : `${form.departure_datetime}:00`;
+        const selectedRouteObj = routes.find(r => r.id === form.route_id);
+        const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
+        const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
+
         const { error: sErr } = await supabase.from('schedules').update({
           bus_id: form.bus_id,
           driver_id: form.driver_id,
-          departure_datetime: form.departure_datetime,
+          departure_datetime: depDate,
+          arrival_datetime: arrDate,
           route_id: form.route_id,
           updated_at: new Date().toISOString(),
         }).eq('id', editConvoy.schedule_id);
@@ -467,6 +473,10 @@ export default function Convoys() {
       } else {
         // Create new schedule(s) + convoy(s)
         const depDate = form.departure_datetime.includes('T') ? form.departure_datetime : `${form.departure_datetime}:00`;
+        // arrival must be strictly after departure — use route duration if available, else +1h
+        const selectedRouteObj = routes.find(r => r.id === form.route_id);
+        const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
+        const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
         const baseSchedule: Record<string, any> = {
           route_id: form.route_id,
           departure_station_id: station.id,
@@ -474,7 +484,7 @@ export default function Convoys() {
           bus_id: form.bus_id,
           driver_id: form.driver_id,
           departure_datetime: depDate,
-          arrival_datetime: depDate,
+          arrival_datetime: arrDate,
           status: 'convoi',
           seats_available: 0,
           seats_reserved: passengersCount || busCapacity,
@@ -502,6 +512,7 @@ export default function Convoys() {
         if (form.trip_type === 'aller_retour' && form.retour_route_id) {
           const retDep = form.retour_departure_datetime.includes('T')
             ? form.retour_departure_datetime : `${form.retour_departure_datetime}:00`;
+          const retArr = new Date(new Date(retDep).getTime() + durationMin * 60 * 1000).toISOString();
           const retourArrStation = allStations.find(s => s.city_id === retourRoute?.origin_city_id);
           const { data: retSched, error: rsErr } = await supabase
             .from('schedules').insert([{
@@ -510,7 +521,7 @@ export default function Convoys() {
               departure_station_id: form.arrival_station_id || station.id,
               arrival_station_id: retourArrStation?.id || null,
               departure_datetime: retDep,
-              arrival_datetime: retDep,
+              arrival_datetime: retArr,
             }]).select('id').single();
           if (rsErr) throw rsErr;
 
