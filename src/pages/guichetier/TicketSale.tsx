@@ -101,6 +101,36 @@ const PAYMENT_METHODS = [
   { value: 'virement', label: 'Virement', icon: <RefreshCw className="w-6 h-6" /> },
 ];
 
+// Module-level logo cache — fetched once, reused for every print to avoid ~100ms re-fetch per ticket
+let _logoDataUrl: string | null = null;
+let _logoFetchPromise: Promise<string | null> | null = null;
+
+async function getLogoDataUrl(): Promise<string | null> {
+  if (_logoDataUrl) return _logoDataUrl;
+  if (_logoFetchPromise) return _logoFetchPromise;
+  _logoFetchPromise = (async () => {
+    try {
+      const resp = await fetch('/logo_sbta02.JPG');
+      const blob = await resp.blob();
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      _logoDataUrl = dataUrl;
+      return dataUrl;
+    } catch {
+      return null;
+    } finally {
+      _logoFetchPromise = null;
+    }
+  })();
+  return _logoFetchPromise;
+}
+
+// Preload logo immediately on module load so the first print is also fast
+getLogoDataUrl();
+
 export default function TicketSale() {
   const { user } = useAuthStore();
   const { isOnline, wasOffline } = useOnlineStatus();
@@ -877,35 +907,47 @@ export default function TicketSale() {
 
     if (resError) throw resError;
 
-    await supabase.from('payments').insert({
-      reservation_id: reservation.id,
-      amount: totalAmount,
-      payment_method: payment.method,
-      payment_reference: payment.reference || null,
-      status: payment.method === 'especes' || payment.method === 'carte' ? 'reussie' : 'en_attente',
-      processed_by: user?.id,
-    });
-
-    await supabase
-      .from('schedules')
-      .update({
-        seats_available: Math.max(0, (selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60) - count),
-        seats_reserved: (selectedSchedule.seats_reserved || 0) + count,
-      })
-      .eq('id', selectedSchedule.id);
-
-    // Récupérer le numéro d'ordre défini par le chef de gare (departure_order, unique par gare/date)
+    const paymentStatus = payment.method === 'especes' || payment.method === 'carte' ? 'reussie' : 'en_attente';
+    const scheduleNewAvail = Math.max(0, (selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60) - count);
+    const scheduleNewReserved = (selectedSchedule.seats_reserved || 0) + count;
     let departureNumber: number | null = null;
-    try {
-      const { data: existing } = await supabase
-        .from('departure_sequence')
-        .select('departure_order, departure_number')
-        .eq('schedule_id', selectedSchedule.id)
-        .maybeSingle();
-      if (existing) {
-        departureNumber = existing.departure_order ?? existing.departure_number ?? null;
-      }
-    } catch (_) {}
+
+    // Run payment insert, schedule update, and departure_sequence fetch in parallel
+    await Promise.all([
+      supabase.from('payments').insert({
+        reservation_id: reservation.id,
+        amount: totalAmount,
+        payment_method: payment.method,
+        payment_reference: payment.reference || null,
+        status: paymentStatus,
+        processed_by: user?.id,
+      }),
+      supabase
+        .from('schedules')
+        .update({
+          seats_available: scheduleNewAvail,
+          seats_reserved: scheduleNewReserved,
+        })
+        .eq('id', selectedSchedule.id),
+      (async () => {
+        try {
+          const { data: existing } = await supabase
+            .from('departure_sequence')
+            .select('departure_order, departure_number')
+            .eq('schedule_id', selectedSchedule.id)
+            .maybeSingle();
+          if (existing) {
+            departureNumber = existing.departure_order ?? existing.departure_number ?? null;
+          }
+        } catch (_) {}
+      })(),
+    ]);
+
+    // Update local schedule state immediately so the UI reflects the new seat count without waiting for realtime
+    setSelectedSchedule(prev => prev ? { ...prev, seats_available: scheduleNewAvail, seats_reserved: scheduleNewReserved } : prev);
+    setSchedules(prev => prev.map(s => s.id === selectedSchedule.id
+      ? { ...s, seats_available: scheduleNewAvail, seats_reserved: scheduleNewReserved }
+      : s));
 
     // Bagage avec ticket — associé au même billet, aux mêmes sièges et au même passager
     let baggageData: BaggageTicketData | null = null;
@@ -1136,16 +1178,10 @@ export default function TicketSale() {
     // ── OUTER BORDER drawn after content (placeholder — updated below) ──
 
     // ── HEADER ──────────────────────────────────────────────
-    try {
-      const resp = await fetch('/logo_sbta02.JPG');
-      const blob = await resp.blob();
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-      doc.addImage(dataUrl, 'JPEG', 3, 3, 18, 16);
-    } catch {
+    const logoDataUrl = await getLogoDataUrl();
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, 'JPEG', 3, 3, 18, 16);
+    } else {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
       doc.setTextColor(0, 0, 0);
@@ -1569,7 +1605,7 @@ export default function TicketSale() {
     });
   };
 
-  const continueSale = async () => {
+  const continueSale = () => {
     const schedule = confirmedTicket?.schedule;
     setConfirmedTicket(null);
     clearSeatSelection();
@@ -1584,65 +1620,67 @@ export default function TicketSale() {
       departure_number: '', bus_registration: '', description: '',
       owner_name: '', owner_phone: '',
     });
+    setBoardingStationId(myStationId ?? '');
+    setStep('seats');
 
-    if (!schedule) { resetSale(); return; }
+    if (!schedule) return;
 
-    // Refresh schedule seat availability
-    try {
-      if (schedule.is_anticipated) {
-        const totalReserved = await getSiblingOccupancy(schedule.id);
-        const capacity = schedule.buses?.total_seats ?? 60;
-        const refreshed = { ...schedule, seats_reserved: totalReserved, seats_available: Math.max(0, capacity - totalReserved) };
-        setSelectedSchedule(refreshed);
-        setSchedules(prev => prev.map(s => s.id === refreshed.id ? refreshed : s));
-      } else {
-        const { data } = await supabase
-          .from('schedules')
-          .select('seats_available, seats_reserved')
-          .eq('id', schedule.id)
-          .maybeSingle();
-        if (data) {
-          const refreshed = { ...schedule, seats_available: data.seats_available, seats_reserved: data.seats_reserved };
+    // Refresh schedule seat availability and stations in the background — don't block the UI
+    (async () => {
+      try {
+        if (schedule.is_anticipated) {
+          const totalReserved = await getSiblingOccupancy(schedule.id);
+          const capacity = schedule.buses?.total_seats ?? 60;
+          const refreshed = { ...schedule, seats_reserved: totalReserved, seats_available: Math.max(0, capacity - totalReserved) };
           setSelectedSchedule(refreshed);
           setSchedules(prev => prev.map(s => s.id === refreshed.id ? refreshed : s));
         } else {
-          setSelectedSchedule(schedule);
-        }
-      }
-    } catch (_) {
-      setSelectedSchedule(schedule);
-    }
-
-    // Re-extract transit stops and reload stations
-    if (schedule.transit_stops) {
-      const rawStops = (schedule.transit_stops || [])
-        .filter((s: any) => s.station_id && s.price > 0)
-        .sort((a: any, b: any) => a.position - b.position);
-      let stops: TransitStopDest[] = rawStops.map((s: any) => ({
-        station_id: s.station_id, station_name: s.station_name, city_name: '', price: s.price, position: s.position,
-      }));
-      if (stops.length > 0 && isOnline) {
-        try {
-          const stationIds = stops.map(s => s.station_id);
-          const { data: stData } = await supabase.from('stations').select('id, city_id').in('id', stationIds);
-          if (stData) {
-            const cityIds = [...new Set(stData.map(s => s.city_id).filter(Boolean))];
-            const { data: cityData } = await supabase.from('cities').select('id, name').in('id', cityIds);
-            const cityMap = Object.fromEntries((cityData || []).map(c => [c.id, c.name]));
-            const stationCityMap = Object.fromEntries(stData.map(s => [s.id, cityMap[s.city_id] || '']));
-            stops = stops.map(s => ({ ...s, city_name: stationCityMap[s.station_id] || s.station_name }));
+          const { data } = await supabase
+            .from('schedules')
+            .select('seats_available, seats_reserved')
+            .eq('id', schedule.id)
+            .maybeSingle();
+          if (data) {
+            const refreshed = { ...schedule, seats_available: data.seats_available, seats_reserved: data.seats_reserved };
+            setSelectedSchedule(refreshed);
+            setSchedules(prev => prev.map(s => s.id === refreshed.id ? refreshed : s));
+          } else {
+            setSelectedSchedule(schedule);
           }
-        } catch (_) {}
+        }
+      } catch (_) {
+        setSelectedSchedule(schedule);
       }
-      stops = stops.map(s => ({ ...s, city_name: s.city_name || s.station_name }));
-      setTransitDestinations(stops);
-    }
 
-    if (schedule.route?.origin_city_id && schedule.route?.destination_city_id) {
-      await loadStationsForCities(schedule.route.origin_city_id, schedule.route.destination_city_id);
-    }
-    setBoardingStationId(myStationId ?? '');
-    setStep('seats');
+      // Re-extract transit stops and reload stations
+      if (schedule.transit_stops) {
+        const rawStops = (schedule.transit_stops || [])
+          .filter((s: any) => s.station_id && s.price > 0)
+          .sort((a: any, b: any) => a.position - b.position);
+        let stops: TransitStopDest[] = rawStops.map((s: any) => ({
+          station_id: s.station_id, station_name: s.station_name, city_name: '', price: s.price, position: s.position,
+        }));
+        if (stops.length > 0 && isOnline) {
+          try {
+            const stationIds = stops.map(s => s.station_id);
+            const { data: stData } = await supabase.from('stations').select('id, city_id').in('id', stationIds);
+            if (stData) {
+              const cityIds = [...new Set(stData.map(s => s.city_id).filter(Boolean))];
+              const { data: cityData } = await supabase.from('cities').select('id, name').in('id', cityIds);
+              const cityMap = Object.fromEntries((cityData || []).map(c => [c.id, c.name]));
+              const stationCityMap = Object.fromEntries(stData.map(s => [s.id, cityMap[s.city_id] || '']));
+              stops = stops.map(s => ({ ...s, city_name: stationCityMap[s.station_id] || s.station_name }));
+            }
+          } catch (_) {}
+        }
+        stops = stops.map(s => ({ ...s, city_name: s.city_name || s.station_name }));
+        setTransitDestinations(stops);
+      }
+
+      if (schedule.route?.origin_city_id && schedule.route?.destination_city_id) {
+        await loadStationsForCities(schedule.route.origin_city_id, schedule.route.destination_city_id);
+      }
+    })();
   };
 
   useEffect(() => {
