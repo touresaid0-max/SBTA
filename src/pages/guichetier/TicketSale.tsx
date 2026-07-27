@@ -168,7 +168,7 @@ export default function TicketSale() {
   const [selectedTransitPrice, setSelectedTransitPrice] = useState<number | null>(null);
 
   const [payment, setPayment] = useState({
-    method: '' as 'especes' | 'carte' | 'mobile_money' | 'virement' | '',
+    method: 'especes' as 'especes' | 'carte' | 'mobile_money' | 'virement' | '',
     amount_received: 0,
     reference: '',
     mobile_provider: '',
@@ -707,6 +707,12 @@ export default function TicketSale() {
     : (selectedSchedule ? effectiveUnitPrice * Math.max(1, effectiveSeatCount) : 0);
   const changeAmount = payment.method === 'especes' ? Math.max(0, payment.amount_received - totalAmount) : 0;
 
+  useEffect(() => {
+    if (payment.method === 'especes' && payment.amount_received !== totalAmount) {
+      setPayment(p => ({ ...p, amount_received: totalAmount }));
+    }
+  }, [totalAmount, payment.method]);
+
   const validateSaleInputs = (): boolean => {
     if (!selectedSchedule) return false;
     const available = selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60;
@@ -722,10 +728,6 @@ export default function TicketSale() {
         toast.error(`Seulement ${available} place(s) disponible(s)`);
         return false;
       }
-    }
-    if (!payment.method) { toast.error('Sélectionnez un mode de paiement'); return false; }
-    if (payment.method === 'especes' && payment.amount_received < totalAmount) {
-      toast.error('Montant insuffisant'); return false;
     }
     return true;
   };
@@ -1553,7 +1555,7 @@ export default function TicketSale() {
     clearSeatSelection();
     setSeatCount(1);
     setPassenger({ name: '', phone: '', id_number: '' });
-    setPayment({ method: '', amount_received: 0, reference: '', mobile_provider: '' });
+    setPayment({ method: 'especes', amount_received: 0, reference: '', mobile_provider: '' });
     setConfirmedTicket(null);
     setBoardingStationId('');
     setAlightingStationId('');
@@ -1573,7 +1575,7 @@ export default function TicketSale() {
     clearSeatSelection();
     setSeatCount(1);
     setPassenger({ name: '', phone: '', id_number: '' });
-    setPayment({ method: '', amount_received: 0, reference: '', mobile_provider: '' });
+    setPayment({ method: 'especes', amount_received: 0, reference: '', mobile_provider: '' });
     setAlightingStationId('');
     setSelectedTransitPrice(null);
     setShowBaggage(false);
@@ -1648,7 +1650,7 @@ export default function TicketSale() {
     autoPrintAndResetRef.current = false;
     (async () => {
       await generatePDF();
-      resetSale();
+      continueSale();
     })();
   }, [confirmedTicket]);
 
@@ -2501,129 +2503,43 @@ export default function TicketSale() {
                 )}
               </div>
 
-              {/* Payment method */}
-              <div className="rounded-2xl border p-4 space-y-3" style={{ backgroundColor: 'var(--surface)' }}>
-                <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Mode de paiement</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {PAYMENT_METHODS.map(m => (
-                    <button
-                      key={m.value}
-                      type="button"
-                      onClick={() => setPayment({ ...payment, method: m.value as any })}
-                      className="p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 text-xs font-semibold"
-                      style={{
-                        borderColor: payment.method === m.value ? 'var(--primary)' : 'var(--border)',
-                        backgroundColor: payment.method === m.value ? 'var(--primary-light)' : 'transparent',
-                        color: payment.method === m.value ? 'var(--primary)' : 'var(--text-secondary)',
-                      }}
-                    >
-                      {m.icon}
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-
-                {payment.method === 'especes' && (
-                  <div className="space-y-2 pt-1">
-                    <label className="block text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                      Montant reçu (FCFA) *
-                    </label>
-                    <input
-                      type="number"
-                      value={payment.amount_received || ''}
-                      onChange={e => setPayment({ ...payment, amount_received: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 rounded-lg border text-base font-bold"
-                      style={{ borderColor: 'var(--border)' }}
-                      placeholder="0"
-                    />
-                    {payment.amount_received > 0 && (
-                      <div className="rounded-lg px-3 py-2 flex justify-between items-center"
-                        style={{ backgroundColor: changeAmount >= 0 ? 'var(--success-light)' : 'var(--danger-light)' }}>
-                        <span className="text-xs font-semibold">Monnaie à rendre</span>
-                        <span className="text-lg font-black"
-                          style={{ color: changeAmount >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                          {formatCurrency(Math.max(0, changeAmount))}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {payment.method === 'mobile_money' && (
-                  <div className="space-y-2 pt-1">
-                    <select
-                      value={payment.mobile_provider}
-                      onChange={e => setPayment({ ...payment, mobile_provider: e.target.value })}
-                      className="w-full px-3 py-2 rounded-lg border text-sm"
-                      style={{ borderColor: 'var(--border)' }}
-                    >
-                      <option value="">Sélectionner l'opérateur...</option>
-                      <option value="orange_money">Orange Money</option>
-                      <option value="mtn_momo">MTN MoMo</option>
-                      <option value="wave">Wave</option>
-                      <option value="moov">Moov Money</option>
-                    </select>
-                    <input
-                      type="text"
-                      value={payment.reference}
-                      onChange={e => setPayment({ ...payment, reference: e.target.value })}
-                      className="w-full px-3 py-2 rounded-lg border text-sm"
-                      style={{ borderColor: 'var(--border)' }}
-                      placeholder="Référence transaction"
-                    />
-                  </div>
-                )}
-
-                {(payment.method === 'carte' || payment.method === 'virement') && (
-                  <div className="space-y-2 pt-1">
-                    {payment.method === 'virement' && (
-                      <div className="rounded-lg px-3 py-2 text-xs"
-                        style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}>
-                        Statut "En attente" jusqu'à validation du virement
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      value={payment.reference}
-                      onChange={e => setPayment({ ...payment, reference: e.target.value })}
-                      className="w-full px-3 py-2 rounded-lg border text-sm"
-                      style={{ borderColor: 'var(--border)' }}
-                      placeholder={payment.method === 'carte' ? 'Référence carte' : 'Référence virement'}
-                    />
-                  </div>
-                )}
-              </div>
             </div>
           </div>
 
-          {/* Confirm button — full width below both columns */}
+          {/* Print + Retour buttons — full width below both columns */}
           {(() => {
             const noSeats = hasSeatMap ? enrichedSelectedSeats.length === 0 : seatCount < 1;
-            const noPayment = !payment.method;
-            const insufficientCash = payment.method === 'especes' && payment.amount_received < totalAmount;
-            const disabled = processing || noSeats || noPayment || insufficientCash;
+            const disabled = processing || noSeats;
 
             return (
-              <button
-                type="button"
-                onClick={() => handleConfirmSale()}
-                disabled={disabled}
-                className="w-full py-4 rounded-2xl font-bold text-base text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm mt-3"
-                style={{ backgroundColor: isOnline ? 'var(--success)' : '#D97706' }}
-              >
-                {processing ? (
-                  <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
-                ) : noSeats ? (
-                  <><CheckCircle className="w-5 h-5 opacity-60" />Sélectionnez un siège</>
-                ) : noPayment ? (
-                  <><CheckCircle className="w-5 h-5 opacity-60" />Choisissez le paiement</>
-                ) : insufficientCash ? (
-                  <><CheckCircle className="w-5 h-5 opacity-60" />Montant insuffisant</>
-                ) : isOnline ? (
-                  <><CheckCircle className="w-5 h-5" />Confirmer la vente — {formatCurrency(totalAmount)}</>
-                ) : (
-                  <><WifiOff className="w-5 h-5" />Sauvegarder hors-ligne — {formatCurrency(totalAmount)}</>
-                )}
-              </button>
+              <div className="flex gap-3 mt-3">
+                <button
+                  type="button"
+                  onClick={() => handleConfirmSale(true)}
+                  disabled={disabled}
+                  className="flex-1 py-4 rounded-2xl font-bold text-base text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  style={{ backgroundColor: isOnline ? 'var(--success)' : '#D97706' }}
+                >
+                  {processing ? (
+                    <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
+                  ) : noSeats ? (
+                    <><Printer className="w-5 h-5 opacity-60" />Sélectionnez un siège</>
+                  ) : isOnline ? (
+                    <><Printer className="w-5 h-5" />Imprimer le billet — {formatCurrency(totalAmount)}</>
+                  ) : (
+                    <><WifiOff className="w-5 h-5" />Sauvegarder hors-ligne — {formatCurrency(totalAmount)}</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { resetSale(); setStep('search'); }}
+                  className="px-5 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all hover:opacity-80"
+                  style={{ borderColor: 'var(--text-secondary)', color: 'var(--text-secondary)' }}
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                  Retourner à la vente
+                </button>
+              </div>
             );
           })()}
         </div>
