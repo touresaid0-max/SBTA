@@ -59,7 +59,8 @@ Deno.serve(async (req: Request) => {
     const accountEmail = email || employee.professional_email || employee.personal_email;
     if (!accountEmail) throw new Error("Email requis pour créer le compte");
 
-    // 4. Créer le compte Auth Supabase
+    // 4. Créer le compte Auth Supabase — ou adopter un compte orphelin existant
+    let authUid: string;
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: accountEmail,
       password,
@@ -77,8 +78,61 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    if (authError) throw authError;
-    const authUid = authData.user.id;
+    if (authError) {
+      const msg = authError.message.toLowerCase();
+      if (msg.includes("already") || msg.includes("registered") || msg.includes("exists") || msg.includes("in use")) {
+        // Email already exists in Auth — check if it's an orphan (no public.users row)
+        let page = 1;
+        const perPage = 1000;
+        let existingUser: { id: string } | null = null;
+        while (true) {
+          const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+          if (listError || !listData?.users) break;
+          const found = listData.users.find((u) => u.email?.toLowerCase() === accountEmail.toLowerCase());
+          if (found) { existingUser = { id: found.id }; break; }
+          if (listData.users.length < perPage) break;
+          page++;
+        }
+
+        if (existingUser) {
+          // Check for an existing profile — refuse if the orphan already has one
+          const { data: existingProfile } = await supabaseAdmin
+            .from("users")
+            .select("id")
+            .eq("id", existingUser.id)
+            .maybeSingle();
+
+          if (existingProfile) {
+            throw new Error("Cette adresse e-mail est déjà utilisée par un autre compte");
+          }
+
+          // Adopt the orphan: update password + metadata
+          const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
+            password,
+            email_confirm: true,
+            app_metadata: {
+              role: employee.role,
+              provider: "email",
+              providers: ["email"],
+            },
+            user_metadata: {
+              employee_id: employee.id,
+              first_name: employee.first_name,
+              last_name: employee.last_name,
+              role: employee.role,
+            },
+          });
+          if (updateAuthError) throw updateAuthError;
+          authUid = existingUser.id;
+        } else {
+          throw new Error(authError.message);
+        }
+      } else {
+        throw new Error(authError.message);
+      }
+    } else {
+      authUid = authData.user.id;
+    }
 
     // 5. Insérer le profil dans users (nécessaire pour fetchProfile et toute la session auth)
     const fullName = `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim();

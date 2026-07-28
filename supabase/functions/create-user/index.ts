@@ -14,6 +14,25 @@ const OPERATIONAL_ROLES = [
 
 const REQUIRES_STATION = ["agent_colis", "chef_gare"];
 
+function isAlreadyRegisteredError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return m.includes("already") || m.includes("registered") || m.includes("exists") || m.includes("in use") || m.includes("has already been taken");
+}
+
+// Look up an existing auth user by email to handle orphaned accounts.
+async function findAuthUserByEmail(client: ReturnType<typeof createClient>, email: string): Promise<{ id: string } | null> {
+  let page = 1;
+  const perPage = 1000;
+  while (true) {
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users) return null;
+    const found = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+    if (found) return { id: found.id };
+    if (data.users.length < perPage) return null;
+    page++;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -103,9 +122,38 @@ Deno.serve(async (req: Request) => {
         data: { first_name, last_name, role },
         redirectTo: `${Deno.env.get("APP_URL")}/accept-invitation`,
       });
-      if (inviteError) throw new Error(inviteError.message);
-      authUserId = inviteData.user.id;
-      invitationToken = crypto.randomUUID();
+      if (inviteError) {
+        if (isAlreadyRegisteredError(inviteError.message)) {
+          const existing = await findAuthUserByEmail(supabaseAdmin, email);
+          if (existing) {
+            const { data: existingProfile } = await supabaseAdmin
+              .from("users")
+              .select("id")
+              .eq("id", existing.id)
+              .maybeSingle();
+            if (existingProfile) {
+              return new Response(
+                JSON.stringify({ error: "Cette adresse e-mail est déjà utilisée par un autre compte" }),
+                { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+            await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+              email_confirm: true,
+              app_metadata: { role, provider: "email", providers: ["email"] },
+              user_metadata: { first_name, last_name, role },
+            });
+            authUserId = existing.id;
+            invitationToken = crypto.randomUUID();
+          } else {
+            throw new Error(inviteError.message);
+          }
+        } else {
+          throw new Error(inviteError.message);
+        }
+      } else {
+        authUserId = inviteData.user.id;
+        invitationToken = crypto.randomUUID();
+      }
     } else {
       const { data: authData, error: authError2 } = await supabaseAdmin.auth.admin.createUser({
         email,
@@ -114,8 +162,37 @@ Deno.serve(async (req: Request) => {
         app_metadata: { role, provider: "email", providers: ["email"] },
         user_metadata: { first_name, last_name, role },
       });
-      if (authError2) throw new Error(authError2.message);
-      authUserId = authData.user.id;
+      if (authError2) {
+        if (isAlreadyRegisteredError(authError2.message)) {
+          const existing = await findAuthUserByEmail(supabaseAdmin, email);
+          if (existing) {
+            const { data: existingProfile } = await supabaseAdmin
+              .from("users")
+              .select("id")
+              .eq("id", existing.id)
+              .maybeSingle();
+            if (existingProfile) {
+              return new Response(
+                JSON.stringify({ error: "Cette adresse e-mail est déjà utilisée par un autre compte" }),
+                { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+            await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+              password,
+              email_confirm: true,
+              app_metadata: { role, provider: "email", providers: ["email"] },
+              user_metadata: { first_name, last_name, role },
+            });
+            authUserId = existing.id;
+          } else {
+            throw new Error(authError2.message);
+          }
+        } else {
+          throw new Error(authError2.message);
+        }
+      } else {
+        authUserId = authData.user.id;
+      }
     }
 
     const fullName = `${first_name ?? ""} ${last_name ?? ""}`.trim() || email;
@@ -149,6 +226,7 @@ Deno.serve(async (req: Request) => {
 
     const { error: profileError } = await supabaseAdmin.from("users").insert(profileData);
     if (profileError) {
+      // Only rollback the auth account if we actually created it (not an adopted orphan)
       await supabaseAdmin.auth.admin.deleteUser(authUserId);
       throw new Error(profileError.message ?? profileError.details ?? JSON.stringify(profileError));
     }
