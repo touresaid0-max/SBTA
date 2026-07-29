@@ -240,7 +240,7 @@ Deno.serve(async (req: Request) => {
           employee_id:     body.employee_id ?? null,
           assigned_route_id: body.assigned_route_id ?? null,
           role:            "chauffeur",
-          status:          "actif",
+          account_status:  "actif",
         })
         .select("id")
         .single();

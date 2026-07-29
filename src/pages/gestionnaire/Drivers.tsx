@@ -81,7 +81,6 @@ export default function GestionnaireDriversPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingDriver, setEditingDriver] = useState<LogistiqueDriver | null>(null)
 
-  const [busOptions, setBusOptions] = useState<BusOption[]>([])
   const [stations, setStations] = useState<Station[]>([])
   const [routes, setRoutes] = useState<RouteOption[]>([])
 
@@ -99,22 +98,26 @@ export default function GestionnaireDriversPage() {
   }, [])
 
   const loadOptions = useCallback(async () => {
-    const [busRes, staRes, rteRes] = await Promise.all([
-      supabase.from('buses').select('id, registration_number, brand, model, company_id').order('registration_number'),
+    const [staRes, rteRes] = await Promise.all([
       supabase.from('stations').select('id, name').order('name'),
       supabase.from('routes').select('id, name').order('name'),
     ])
-    if (busRes.data) setBusOptions(busRes.data as BusOption[])
     if (staRes.data) setStations(staRes.data as Station[])
     if (rteRes.data) setRoutes(rteRes.data as RouteOption[])
   }, [])
 
   useEffect(() => { loadData(); loadOptions() }, [loadData, loadOptions])
 
-  // Frontend double-filter as a safety net (server already scopes by company).
-  const scopedBusOptions = useMemo(
-    () => companyId ? busOptions.filter(b => b.company_id === companyId) : busOptions,
-    [busOptions, companyId],
+  // Derive bus options directly from already-loaded buses (edge function data, no RLS issues).
+  const scopedBusOptions = useMemo<BusOption[]>(
+    () => buses.map(b => ({
+      id: b.id,
+      registration_number: b.registration_number,
+      brand: b.brand ?? null,
+      model: b.model ?? null,
+      company_id: b.company_id ?? null,
+    })),
+    [buses],
   )
 
   const companyBuses = companyId ? buses.filter(b => b.company_id === companyId) : buses
