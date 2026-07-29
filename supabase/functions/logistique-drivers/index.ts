@@ -3,11 +3,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Roles allowed to access the drivers endpoint
 const ALLOWED_ROLES = [
   "responsable_logistique",
   "rh",
@@ -16,210 +15,327 @@ const ALLOWED_ROLES = [
   "daf",
 ];
 
+function ok(data: unknown) {
+  return new Response(JSON.stringify(data), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function err(msg: string, status = 400) {
+  return new Response(JSON.stringify({ error: msg }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    const supabaseAdmin = createClient(
+    const admin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { autoRefreshToken: false, persistSession: false } }
+      { auth: { autoRefreshToken: false, persistSession: false } },
     );
 
-    const authHeader = req.headers.get("Authorization");
-    const token = authHeader?.replace("Bearer ", "") ?? "";
+    const token = req.headers.get("Authorization")?.replace("Bearer ", "") ?? "";
+    const { data: { user: caller }, error: authErr } = await admin.auth.getUser(token);
+    if (authErr || !caller) return err("Non authentifié", 401);
 
-    const { data: { user: caller }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !caller) {
-      return new Response(JSON.stringify({ error: "Non authentifié" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Get caller profile to determine role and company
-    const { data: callerProfile } = await supabaseAdmin
+    const { data: profile } = await admin
       .from("users")
       .select("id, role, company_id")
       .eq("id", caller.id)
       .maybeSingle();
 
-    // Also check JWT app_metadata role as fallback
-    const jwtRole = caller.app_metadata?.role ?? callerProfile?.role;
-    const companyId = callerProfile?.company_id ?? null;
+    const callerRole: string = caller.app_metadata?.role ?? profile?.role ?? "";
+    const callerCompanyId: string | null = profile?.company_id ?? null;
 
-    if (!jwtRole || !ALLOWED_ROLES.includes(jwtRole)) {
-      return new Response(
-        JSON.stringify({
-          error: `Accès refusé — ${ALLOWED_ROLES.join(", ")} uniquement`,
-        }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    if (!ALLOWED_ROLES.includes(callerRole)) {
+      return err(
+        `Accès refusé — ${ALLOWED_ROLES.filter(r => r !== "daf").join(", ")} uniquement`,
+        403,
       );
+    }
+
+    // Gestionnaire scope: must have a company
+    const isGestionnaire = callerRole === "gestionnaire";
+    if (isGestionnaire && !callerCompanyId) {
+      return err("Aucune société associée à votre compte gestionnaire", 403);
     }
 
     const url = new URL(req.url);
-    const path = url.pathname.replace("/functions/v1/logistique-drivers", "");
+    const singleId = url.searchParams.get("id");
 
-    // GET: list drivers (chauffeurs) filtered by company for gestionnaire
+    // ── GET ──────────────────────────────────────────────────────────────
     if (req.method === "GET") {
-      let query = supabaseAdmin
+      // Detail fetch for a single driver
+      if (singleId) {
+        const { data: emp } = await admin
+          .from("employees")
+          .select("*")
+          .eq("id", singleId)
+          .maybeSingle();
+
+        if (emp) {
+          if (isGestionnaire && emp.company_id !== callerCompanyId) {
+            return err("Accès refusé à ce chauffeur", 403);
+          }
+          return ok({ driver: { ...emp, source_table: "employees" } });
+        }
+
+        const { data: usr } = await admin
+          .from("users")
+          .select("*")
+          .eq("id", singleId)
+          .maybeSingle();
+
+        if (usr) {
+          if (isGestionnaire && usr.company_id !== callerCompanyId) {
+            return err("Accès refusé à ce chauffeur", 403);
+          }
+          return ok({ driver: { ...usr, source_table: "users" } });
+        }
+
+        return err("Chauffeur introuvable", 404);
+      }
+
+      // ── List buses with their drivers ────────────────────────────────
+      let busQuery = admin
+        .from("buses")
+        .select(`
+          id, registration_number, brand, manufacturer, model,
+          total_seats, company_id, status, is_active,
+          companies!inner(id, name, code)
+        `)
+        .eq("is_active", true)
+        .order("registration_number");
+
+      if (isGestionnaire) busQuery = busQuery.eq("company_id", callerCompanyId!);
+
+      const { data: busRows, error: busErr } = await busQuery;
+      if (busErr) throw busErr;
+
+      // ── Fetch all chauffeurs (from employees table) ─────────────────
+      let empQuery = admin
+        .from("employees")
+        .select(`
+          id, first_name, last_name, phone, avatar_url, employee_id,
+          company_id, contract_type, hire_date, status,
+          license_number, license_expiry, license_category,
+          bus_id, probation_end_date, probation_treated_at,
+          companies(id, name, code)
+        `)
+        .eq("role", "chauffeur")
+        .not("status", "eq", "deleted");
+
+      if (isGestionnaire) empQuery = empQuery.eq("company_id", callerCompanyId!);
+
+      const { data: empRows, error: empErr } = await empQuery;
+      if (empErr) throw empErr;
+
+      // ── Fetch chauffeurs from users table (legacy) ───────────────────
+      let usrQuery = admin
         .from("users")
         .select(`
-          id, email, full_name, first_name, last_name, phone, role,
-          company_id, is_active, status, avatar_url, employee_id,
-          bus_id, license_number, license_expiry, license_category,
-          driver_license_number, driver_license_expiry,
-          driver_total_hours, driver_avg_rating, driver_total_reviews,
-          companies!inner(id, name, code),
-          buses(id, registration_number, model, brand)
+          id, first_name, last_name, phone, avatar_url, employee_id,
+          company_id, contract_type, hire_date, status,
+          license_number, license_expiry, license_category,
+          bus_id,
+          companies(id, name, code)
         `)
-        .eq("role", "chauffeur");
+        .eq("role", "chauffeur")
+        .eq("is_active", true);
 
-      // Gestionnaire only sees drivers from their own company
-      if (jwtRole === "gestionnaire") {
-        if (!companyId) {
-          return new Response(
-            JSON.stringify({ error: "Aucune société associée à votre compte" }),
-            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        query = query.eq("company_id", companyId);
-      }
+      if (isGestionnaire) usrQuery = usrQuery.eq("company_id", callerCompanyId!);
 
-      const { data: drivers, error: driversError } = await query;
+      const { data: usrRows, error: usrErr } = await usrQuery;
+      if (usrErr) throw usrErr;
 
-      if (driversError) throw driversError;
+      // ── Merge drivers ────────────────────────────────────────────────
+      const toDriver = (row: Record<string, unknown>, src: "employees" | "users") => ({
+        id:                   row.id,
+        first_name:           row.first_name ?? "",
+        last_name:            row.last_name ?? "",
+        full_name:            `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+        source_table:         src,
+        license_number:       row.license_number ?? null,
+        license_expiry:       row.license_expiry ?? null,
+        license_category:     row.license_category ?? null,
+        company_id:           row.company_id ?? null,
+        company_name:         (row.companies as any)?.name ?? null,
+        contract_type:        row.contract_type ?? null,
+        hire_date:            row.hire_date ?? null,
+        employee_id:          row.employee_id ?? null,
+        status:               (row.status as string) ?? "actif",
+        phone:                row.phone ?? null,
+        avatar_url:           row.avatar_url ?? null,
+        bus_id:               row.bus_id ?? null,
+        probation_end_date:   row.probation_end_date ?? null,
+        probation_treated_at: row.probation_treated_at ?? null,
+      });
 
-      return new Response(
-        JSON.stringify({ drivers: drivers ?? [] }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      // employee rows take priority; suppress any user row with same id
+      const empIds = new Set((empRows ?? []).map((e: any) => e.id));
+      const allDrivers = [
+        ...(empRows ?? []).map((e: any) => toDriver(e, "employees")),
+        ...(usrRows ?? []).filter((u: any) => !empIds.has(u.id)).map((u: any) => toDriver(u, "users")),
+      ];
+
+      // ── Group buses with their drivers ───────────────────────────────
+      const buses = (busRows ?? []).map((b: any) => ({
+        id:                  b.id,
+        registration_number: b.registration_number,
+        brand:               b.brand ?? null,
+        manufacturer:        b.manufacturer ?? null,
+        model:               b.model ?? null,
+        total_seats:         b.total_seats ?? null,
+        company_id:          b.company_id ?? null,
+        company_name:        b.companies?.name ?? null,
+        status:              b.status ?? null,
+        is_active:           b.is_active ?? null,
+        drivers:             allDrivers.filter(d => d.bus_id === b.id),
+      }));
+
+      const assignedIds = new Set(buses.flatMap((b: any) => b.drivers.map((d: any) => d.id)));
+      const unassignedDrivers = allDrivers.filter(d => !assignedIds.has(d.id));
+
+      return ok({ buses, unassignedDrivers });
     }
 
-    // POST: assign driver to bus
+    // ── POST — create driver (employee record) ────────────────────────
     if (req.method === "POST") {
       const body = await req.json();
-      const { driver_id, bus_id } = body;
 
-      if (!driver_id || !bus_id) {
-        return new Response(
-          JSON.stringify({ error: "driver_id et bus_id sont requis" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      // Force company_id for gestionnaire — never trust the client value
+      const company_id = isGestionnaire ? callerCompanyId : (body.company_id ?? null);
 
-      // Fetch the bus to verify it belongs to the gestionnaire's company
-      const { data: bus } = await supabaseAdmin
-        .from("buses")
-        .select("id, company_id")
-        .eq("id", bus_id)
-        .maybeSingle();
+      const { data: newEmp, error: insErr } = await admin
+        .from("employees")
+        .insert({
+          first_name:      body.first_name,
+          last_name:       body.last_name,
+          phone:           body.phone ?? null,
+          gender:          body.gender ?? null,
+          nationality:     body.nationality ?? null,
+          date_naissance:  body.date_naissance ?? null,
+          personal_email:  body.personal_email ?? null,
+          professional_email: body.professional_email ?? null,
+          company_id,
+          station_id:      body.station_id ?? null,
+          contract_type:   body.contract_type,
+          contract_nature: body.contract_nature ?? null,
+          hire_date:       body.hire_date,
+          salary:          body.salary ?? null,
+          daily_rate:      body.daily_rate ?? null,
+          cnps_number:     body.cnps_number ?? null,
+          children_count:  body.children_count ?? 0,
+          marital_status:  body.marital_status ?? null,
+          bus_id:          body.bus_id ?? null,
+          license_number:  body.license_number ?? null,
+          license_expiry:  body.license_expiry ?? null,
+          license_category: body.license_category ?? null,
+          employee_id:     body.employee_id ?? null,
+          assigned_route_id: body.assigned_route_id ?? null,
+          role:            "chauffeur",
+          status:          "actif",
+        })
+        .select("id")
+        .single();
 
-      if (!bus) {
-        return new Response(
-          JSON.stringify({ error: "Bus introuvable" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (jwtRole === "gestionnaire" && bus.company_id !== companyId) {
-        return new Response(
-          JSON.stringify({ error: "Ce bus n'appartient pas à votre société" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Fetch the driver to verify they belong to the gestionnaire's company
-      const { data: driver } = await supabaseAdmin
-        .from("users")
-        .select("id, company_id, role")
-        .eq("id", driver_id)
-        .maybeSingle();
-
-      if (!driver || driver.role !== "chauffeur") {
-        return new Response(
-          JSON.stringify({ error: "Chauffeur introuvable" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (jwtRole === "gestionnaire" && driver.company_id !== companyId) {
-        return new Response(
-          JSON.stringify({ error: "Ce chauffeur n'appartient pas à votre société" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Assign: update the driver's bus_id
-      const { error: assignError } = await supabaseAdmin
-        .from("users")
-        .update({ bus_id })
-        .eq("id", driver_id);
-
-      if (assignError) throw assignError;
-
-      return new Response(
-        JSON.stringify({ success: true, driver_id, bus_id }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (insErr) throw insErr;
+      return ok({ employee: newEmp });
     }
 
-    // DELETE: unassign driver from bus
+    // ── PUT — update driver ───────────────────────────────────────────
+    if (req.method === "PUT") {
+      const body = await req.json();
+      const { id, source_table, ...fields } = body;
+      if (!id) return err("id est requis");
+
+      const table = source_table === "users" ? "users" : "employees";
+
+      // Security: verify record belongs to gestionnaire's company
+      if (isGestionnaire) {
+        const { data: existing } = await admin
+          .from(table)
+          .select("company_id")
+          .eq("id", id)
+          .maybeSingle();
+        if (!existing || existing.company_id !== callerCompanyId) {
+          return err("Accès refusé à ce chauffeur", 403);
+        }
+        // Force company_id to never be changed
+        delete fields.company_id;
+      }
+
+      // Strip fields that shouldn't be updated directly
+      const { company_id: _cid, role: _role, ...updateFields } = fields;
+
+      const { error: updErr } = await admin.from(table).update(updateFields).eq("id", id);
+      if (updErr) throw updErr;
+      return ok({ success: true });
+    }
+
+    // ── PATCH — treat probation ───────────────────────────────────────
+    if (req.method === "PATCH") {
+      const body = await req.json();
+      const { id, source_table } = body;
+      if (!id) return err("id est requis");
+
+      const table = source_table === "users" ? "users" : "employees";
+
+      if (isGestionnaire) {
+        const { data: existing } = await admin
+          .from(table)
+          .select("company_id")
+          .eq("id", id)
+          .maybeSingle();
+        if (!existing || existing.company_id !== callerCompanyId) {
+          return err("Accès refusé à ce chauffeur", 403);
+        }
+      }
+
+      const { error: patchErr } = await admin
+        .from(table)
+        .update({ probation_treated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (patchErr) throw patchErr;
+      return ok({ success: true });
+    }
+
+    // ── DELETE — unassign bus ─────────────────────────────────────────
     if (req.method === "DELETE") {
       const body = await req.json();
-      const { driver_id } = body;
+      const { id, source_table } = body;
+      if (!id) return err("id est requis");
 
-      if (!driver_id) {
-        return new Response(
-          JSON.stringify({ error: "driver_id est requis" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      const table = source_table === "users" ? "users" : "employees";
+
+      if (isGestionnaire) {
+        const { data: existing } = await admin
+          .from(table)
+          .select("company_id")
+          .eq("id", id)
+          .maybeSingle();
+        if (!existing || existing.company_id !== callerCompanyId) {
+          return err("Accès refusé à ce chauffeur", 403);
+        }
       }
 
-      const { data: driver } = await supabaseAdmin
-        .from("users")
-        .select("id, company_id, role, bus_id")
-        .eq("id", driver_id)
-        .maybeSingle();
-
-      if (!driver || driver.role !== "chauffeur") {
-        return new Response(
-          JSON.stringify({ error: "Chauffeur introuvable" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (jwtRole === "gestionnaire" && driver.company_id !== companyId) {
-        return new Response(
-          JSON.stringify({ error: "Ce chauffeur n'appartient pas à votre société" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const { error: unassignError } = await supabaseAdmin
-        .from("users")
-        .update({ bus_id: null })
-        .eq("id", driver_id);
-
-      if (unassignError) throw unassignError;
-
-      return new Response(
-        JSON.stringify({ success: true, driver_id }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const { error: delErr } = await admin.from(table).update({ bus_id: null }).eq("id", id);
+      if (delErr) throw delErr;
+      return ok({ success: true });
     }
 
+    return err("Méthode non supportée", 405);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     return new Response(
-      JSON.stringify({ error: "Méthode non supportée" }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: msg }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
