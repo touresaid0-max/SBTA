@@ -117,7 +117,10 @@ export default function GestionnaireDriversPage() {
     [busOptions, companyId],
   )
 
-  const filteredBuses = buses.filter(b => {
+  const companyBuses = companyId ? buses.filter(b => b.company_id === companyId) : buses
+  const companyUnassigned = companyId ? unassignedDrivers.filter(d => d.company_id === companyId) : unassignedDrivers
+
+  const filteredBuses = companyBuses.filter(b => {
     if (search.trim()) {
       const q = search.toLowerCase()
       const matchBus = b.registration_number.toLowerCase().includes(q) ||
@@ -132,7 +135,7 @@ export default function GestionnaireDriversPage() {
     return true
   })
 
-  const filteredUnassigned = unassignedDrivers.filter(d => {
+  const filteredUnassigned = companyUnassigned.filter(d => {
     if (search.trim()) {
       const q = search.toLowerCase()
       if (!d.full_name.toLowerCase().includes(q) &&
@@ -141,9 +144,9 @@ export default function GestionnaireDriversPage() {
     return true
   })
 
-  const totalDrivers = buses.reduce((s, b) => s + b.drivers.length, 0) + unassignedDrivers.length
-  const assignedCount = buses.reduce((s, b) => s + b.drivers.length, 0)
-  const expiringLicenses = [...unassignedDrivers, ...buses.flatMap(b => b.drivers)]
+  const totalDrivers = companyBuses.reduce((s, b) => s + b.drivers.length, 0) + companyUnassigned.length
+  const assignedCount = companyBuses.reduce((s, b) => s + b.drivers.length, 0)
+  const expiringLicenses = [...companyUnassigned, ...companyBuses.flatMap(b => b.drivers)]
     .filter(d => isExpiringSoon(d.license_expiry)).length
 
   if (loading) {
@@ -184,8 +187,8 @@ export default function GestionnaireDriversPage() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total bus', value: buses.length, color: '#3B82F6', icon: Bus },
-          { label: 'Bus avec chauffeur', value: buses.filter(b => b.drivers.length > 0).length, color: '#10B981', icon: UserCheck },
+          { label: 'Total bus', value: companyBuses.length, color: '#3B82F6', icon: Bus },
+          { label: 'Bus avec chauffeur', value: companyBuses.filter(b => b.drivers.length > 0).length, color: '#10B981', icon: UserCheck },
           { label: 'Total chauffeurs', value: totalDrivers, color: '#F59E0B', icon: Users },
           {
             label: expiringLicenses > 0 ? `Permis < ${WARNING_DAYS}j` : 'Affectés',
