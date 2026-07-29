@@ -82,16 +82,11 @@ Deno.serve(async (req: Request) => {
       const msg = authError.message.toLowerCase();
       if (msg.includes("already") || msg.includes("registered") || msg.includes("exists") || msg.includes("in use")) {
         // Email already exists in Auth — check if it's an orphan (no public.users row)
-        let page = 1;
-        const perPage = 1000;
+        // Use the fast RPC lookup instead of paginating through all auth users
+        const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("get_auth_user_id_by_email", { p_email: accountEmail });
         let existingUser: { id: string } | null = null;
-        while (true) {
-          const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
-          if (listError || !listData?.users) break;
-          const found = listData.users.find((u) => u.email?.toLowerCase() === accountEmail.toLowerCase());
-          if (found) { existingUser = { id: found.id }; break; }
-          if (listData.users.length < perPage) break;
-          page++;
+        if (!rpcError && rpcData && rpcData.length > 0) {
+          existingUser = { id: rpcData[0].id as string };
         }
 
         if (existingUser) {

@@ -19,18 +19,12 @@ function isAlreadyRegisteredError(msg: string): boolean {
   return m.includes("already") || m.includes("registered") || m.includes("exists") || m.includes("in use") || m.includes("has already been taken");
 }
 
-// Look up an existing auth user by email to handle orphaned accounts.
+// Fast lookup of an existing auth user by email via a SECURITY DEFINER RPC.
+// Avoids paginating through auth.users which is slow and unreliable at scale.
 async function findAuthUserByEmail(client: ReturnType<typeof createClient>, email: string): Promise<{ id: string } | null> {
-  let page = 1;
-  const perPage = 1000;
-  while (true) {
-    const { data, error } = await client.auth.admin.listUsers({ page, perPage });
-    if (error || !data?.users) return null;
-    const found = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-    if (found) return { id: found.id };
-    if (data.users.length < perPage) return null;
-    page++;
-  }
+  const { data, error } = await client.rpc("get_auth_user_id_by_email", { p_email: email });
+  if (error || !data || data.length === 0) return null;
+  return { id: data[0].id as string };
 }
 
 Deno.serve(async (req: Request) => {
