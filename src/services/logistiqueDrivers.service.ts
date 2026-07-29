@@ -54,7 +54,11 @@ async function callEdge(method: string, body?: Record<string, unknown>, queryId?
     body: body ? JSON.stringify(body) : undefined,
   })
   const json = await res.json()
-  if (!res.ok) throw new Error(json.error ?? `Erreur ${res.status}`)
+  if (!res.ok) {
+    const errMsg = typeof json.error === 'string' ? json.error
+      : (json.error?.message ?? JSON.stringify(json.error ?? `Erreur ${res.status}`))
+    throw new Error(errMsg)
+  }
   return json
 }
 

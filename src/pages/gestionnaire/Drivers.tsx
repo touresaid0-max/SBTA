@@ -164,8 +164,7 @@ export default function GestionnaireDriversPage() {
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Chauffeurs</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            Gérez les chauffeurs de votre société{user?.company_id ? '' : ' — '}
-            {buses[0]?.company_name ?? 'Ma société'}
+            Gérez les chauffeurs de {buses[0]?.company_name ?? 'votre société'}
           </p>
         </div>
         <div className="flex items-center gap-2">

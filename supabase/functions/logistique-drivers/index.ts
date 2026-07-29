@@ -108,7 +108,7 @@ Deno.serve(async (req: Request) => {
         .select(`
           id, registration_number, brand, manufacturer, model,
           total_seats, company_id, status, is_active,
-          companies!inner(id, name, code)
+          companies(id, name, code)
         `)
         .eq("is_active", true)
         .order("registration_number");
@@ -332,7 +332,8 @@ Deno.serve(async (req: Request) => {
 
     return err("Méthode non supportée", 405);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = e instanceof Error ? e.message
+      : (e as any)?.message ?? JSON.stringify(e);
     return new Response(
       JSON.stringify({ error: msg }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
