@@ -292,20 +292,17 @@ export default function NewParcelForm() {
                 {NATURE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            <div>
-              <label className={labelCls} style={labelStyle}>Désignation / Contenu *</label>
-              <input
-                className={inputCls} style={inputStyle}
-                placeholder="ex: 01 SHT BLC (HABIT)"
-                value={form.content_description}
-                onChange={e => set('content_description', e.target.value)}
-                required
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={labelCls} style={labelStyle}>Notes (optionnel)</label>
-              <textarea className={inputCls} style={inputStyle} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} />
-            </div>
+          </div>
+          <div>
+            <label className={labelCls} style={labelStyle}>Désignation / Contenu *</label>
+            <textarea
+              className={inputCls} style={inputStyle}
+              rows={3}
+              placeholder="ex: 01 SHT BLC (HABIT)"
+              value={form.content_description}
+              onChange={e => set('content_description', e.target.value)}
+              required
+            />
           </div>
         </section>
 
