@@ -129,7 +129,6 @@ export default function SuperviseurParcelsList() {
     supabase
       .from('buses')
       .select('id, registration_number')
-      .eq('is_active', true)
       .order('registration_number')
       .then(({ data }) => {
         setBuses((data ?? []).map((b: any) => ({ id: b.id, registration_number: b.registration_number })))

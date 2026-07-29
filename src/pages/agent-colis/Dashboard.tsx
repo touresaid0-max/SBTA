@@ -108,7 +108,7 @@ export default function AgentColisDashboard() {
     dest: string; ids: string[]
   } | null>(null)
   const [expBusSearch, setExpBusSearch] = useState('')
-  const [expBusResults, setExpBusResults] = useState<{ id: string; registration_number: string; brand: string | null }[]>([])
+  const [expAllBuses, setExpAllBuses] = useState<{ id: string; registration_number: string; brand: string | null }[]>([])
   const [expBusLoading, setExpBusLoading] = useState(false)
   const [expSelectedBus, setExpSelectedBus] = useState<{ id: string; registration_number: string; brand: string | null } | null>(null)
   const [expBusOpen, setExpBusOpen] = useState(false)
@@ -191,25 +191,29 @@ export default function AgentColisDashboard() {
   }, [stationId, loadParcels])
 
   // ── Expedition modal: bus search ──────────────────────────────────────────
+  // ── Expedition modal: load all buses once when modal opens ────────────────
   useEffect(() => {
     if (!expeditionModal) return
-    if (expBusSearch.length < 2) { setExpBusResults([]); return }
-    const t = setTimeout(async () => {
+    let cancelled = false
+    ;(async () => {
       setExpBusLoading(true)
       try {
         const { data } = await supabase
           .from('buses')
           .select('id, registration_number, brand')
-          .ilike('registration_number', `%${expBusSearch}%`)
-          .in('status', ['disponible', 'en_service'])
           .order('registration_number')
-          .limit(10)
-        setExpBusResults(data ?? [])
-      } catch { setExpBusResults([]) }
-      finally { setExpBusLoading(false) }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [expBusSearch, expeditionModal])
+        if (!cancelled) setExpAllBuses(data ?? [])
+      } catch { if (!cancelled) setExpAllBuses([]) }
+      finally { if (!cancelled) setExpBusLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [expeditionModal])
+
+  const expFilteredBuses = useMemo(() => {
+    const q = expBusSearch.trim().toLowerCase()
+    const list = q ? expAllBuses.filter(b => b.registration_number.toLowerCase().includes(q)) : expAllBuses
+    return list.slice(0, 50)
+  }, [expAllBuses, expBusSearch])
 
   // ── Expedition modal: driver search ───────────────────────────────────────
   useEffect(() => {
@@ -283,7 +287,7 @@ export default function AgentColisDashboard() {
 
   function resetExpeditionState() {
     setExpBusSearch('')
-    setExpBusResults([])
+    setExpAllBuses([])
     setExpSelectedBus(null)
     setExpBusOpen(false)
     setExpDriverSearch('')
@@ -1382,17 +1386,17 @@ export default function AgentColisDashboard() {
                     placeholder="Rechercher par plaque..."
                     value={expBusSearch}
                     onChange={e => { setExpBusSearch(e.target.value); setExpBusOpen(true) }}
-                    onFocus={() => expBusSearch.length >= 2 && setExpBusOpen(true)}
+                    onFocus={() => setExpBusOpen(true)}
                   />
                 </div>
               )}
               {expBusOpen && !expSelectedBus && (
                 <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border overflow-hidden shadow-lg" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', maxHeight: 180, overflowY: 'auto' }}>
-                  {expBusLoading && <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Recherche...</div>}
-                  {!expBusLoading && expBusSearch.length >= 2 && expBusResults.length === 0 && (
+                  {expBusLoading && <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Chargement des bus...</div>}
+                  {!expBusLoading && expFilteredBuses.length === 0 && (
                     <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun bus trouvé</div>
                   )}
-                  {expBusResults.map(b => (
+                  {expFilteredBuses.map(b => (
                     <button
                       key={b.id}
                       type="button"
