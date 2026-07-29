@@ -123,13 +123,13 @@ Deno.serve(async (req: Request) => {
         .from("employees")
         .select(`
           id, first_name, last_name, phone, avatar_url, employee_id,
-          company_id, contract_type, hire_date, status,
+          company_id, contract_type, hire_date, account_status,
           license_number, license_expiry, license_category,
           bus_id, probation_end_date, probation_treated_at,
           companies(id, name, code)
         `)
         .eq("role", "chauffeur")
-        .not("status", "eq", "deleted");
+        .not("account_status", "eq", "deleted");
 
       if (isGestionnaire) empQuery = empQuery.eq("company_id", callerCompanyId!);
 
@@ -169,7 +169,7 @@ Deno.serve(async (req: Request) => {
         contract_type:        row.contract_type ?? null,
         hire_date:            row.hire_date ?? null,
         employee_id:          row.employee_id ?? null,
-        status:               (row.status as string) ?? "actif",
+        status:               (row.account_status as string) ?? (row.status as string) ?? "actif",
         phone:                row.phone ?? null,
         avatar_url:           row.avatar_url ?? null,
         bus_id:               row.bus_id ?? null,
