@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", caller.id)
       .maybeSingle();
 
-    const callerRole: string = caller.app_metadata?.role ?? profile?.role ?? "";
+    const callerRole: string = profile?.role ?? caller.app_metadata?.role ?? "";
     const callerCompanyId: string | null = profile?.company_id ?? null;
 
     if (!ALLOWED_ROLES.includes(callerRole)) {
