@@ -6,7 +6,7 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
-import { fetchTrackingEvents, updateParcelStatus, updateParcelNames, fetchParcelAgentInfo } from '@/services/parcel.service'
+import { fetchTrackingEvents, updateParcelStatus, updateParcelNames, fetchParcelAgentInfo, markTicketPrinted } from '@/services/parcel.service'
 import { fetchSmsLogs, resendSms } from '@/services/emisSms.service'
 import type { SmsLog } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
@@ -206,6 +206,8 @@ export default function ParcelDetail() {
     if (!parcel) return
     const agentInfo = await fetchParcelAgentInfo(parcel.origin_station_id, parcel.destination_station_id).catch(() => null)
     await printParcelTicket(buildReceiptData(parcel, parcel.origin_station_name, stationPhone, null, null, agentInfo))
+    await markTicketPrinted(parcel.id)
+    setParcel(p => p ? { ...p, ticket_printed: true } : p)
   }
 
   const actionPerm = parcel && stationId
@@ -278,14 +280,25 @@ export default function ParcelDetail() {
             </div>
           </div>
         </div>
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg border text-xs sm:text-sm flex-shrink-0"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-        >
-          <Printer className="w-4 h-4" />
-          <span className="hidden xs:inline">Ticket</span>
-        </button>
+        {isOriginStation && !parcel.ticket_printed && (
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg border text-xs sm:text-sm flex-shrink-0"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden xs:inline">Ticket</span>
+          </button>
+        )}
+        {isOriginStation && parcel.ticket_printed && (
+          <span
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm flex-shrink-0"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden xs:inline">Ticket imprimé</span>
+          </span>
+        )}
       </div>
 
       {/* Workflow */}

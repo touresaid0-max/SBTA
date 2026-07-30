@@ -18,6 +18,7 @@ import {
   fetchScheduleDriverName,
   fetchScheduleTransportInfo,
   fetchParcelAgentInfo,
+  markTicketPrinted,
   type ParcelPeriod,
 } from '@/services/parcel.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
@@ -427,6 +428,8 @@ export default function AgentColisDashboard() {
     const receiptData = buildReceiptData(parcel, stationName, stationPhone, null, driverName, agentInfo)
     if (departureTime) receiptData.departure_time = departureTime
     await printParcelTicket(receiptData)
+    await markTicketPrinted(parcel.id)
+    setOutgoing(prev => prev.map(p => p.id === parcel.id ? { ...p, ticket_printed: true } : p))
   }
 
   // ── Bordereau courrier ─────────────────────────────────────────────────────
@@ -977,14 +980,16 @@ export default function AgentColisDashboard() {
                         <Eye className="w-3.5 h-3.5" />
                         Voir
                       </button>
-                      <button
-                        onClick={() => handlePrint(parcel)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-medium"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Ticket</span>
-                      </button>
+                      {tab === 'sortants' && !parcel.ticket_printed && (
+                        <button
+                          onClick={() => handlePrint(parcel)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-medium"
+                          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Ticket</span>
+                        </button>
+                      )}
                       {perm.allowed ? (
                         <button
                           onClick={() => handleAdvance(parcel, perm.nextStatus)}
@@ -1077,12 +1082,14 @@ export default function AgentColisDashboard() {
                             >
                               <Eye className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             </button>
-                            <button
-                              onClick={() => handlePrint(parcel)}
-                              className="p-1.5 rounded hover:bg-gray-100" title="Imprimer ticket"
-                            >
-                              <Printer className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                            </button>
+                            {tab === 'sortants' && !parcel.ticket_printed && (
+                              <button
+                                onClick={() => handlePrint(parcel)}
+                                className="p-1.5 rounded hover:bg-gray-100" title="Imprimer ticket"
+                              >
+                                <Printer className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                              </button>
+                            )}
                             {perm.allowed ? (
                               <button
                                 onClick={() => handleAdvance(parcel, perm.nextStatus)}

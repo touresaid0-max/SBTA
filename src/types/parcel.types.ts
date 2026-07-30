@@ -49,6 +49,7 @@ export interface Parcel {
   sms_sent_at:              string | null
   company_id:               string | null
   company_name:             string | null
+  ticket_printed:           boolean
 }
 
 export interface ParcelTrackingEvent {

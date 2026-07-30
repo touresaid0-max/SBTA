@@ -4,7 +4,7 @@ import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, A
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
-import { createParcel, fetchParcelAgentInfo } from '@/services/parcel.service'
+import { createParcel, fetchParcelAgentInfo, markTicketPrinted } from '@/services/parcel.service'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import type { ParcelNature, ParcelPriority, Parcel } from '@/types/parcel.types'
@@ -141,6 +141,7 @@ export default function NewParcelForm() {
         null,
         agentInfo,
       ))
+      await markTicketPrinted(parcel.id)
 
       try {
         const smsResult = await sendCourierCreatedSms({

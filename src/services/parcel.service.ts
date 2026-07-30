@@ -186,6 +186,14 @@ export async function updateParcelNames(
   if (error) throw error
 }
 
+export async function markTicketPrinted(parcelId: string): Promise<void> {
+  const { error } = await supabase
+    .from('parcels')
+    .update({ ticket_printed: true, updated_at: new Date().toISOString() })
+    .eq('id', parcelId)
+  if (error) throw error
+}
+
 export async function deleteParcel(parcelId: string): Promise<void> {
   const { error: evtErr } = await supabase
     .from('parcel_tracking_events')
