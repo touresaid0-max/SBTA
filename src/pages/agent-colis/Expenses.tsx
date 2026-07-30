@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, CreditCard as Edit2, X, Loader2, Receipt, Wallet, TrendingDown } from 'lucide-react'
+import { Plus, Trash2, CreditCard as Edit2, X, Loader2, Receipt, Wallet, TrendingDown, Building2, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
-import { fr } from 'date-fns/locale'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 
@@ -20,6 +19,9 @@ interface ParcelExpense {
   created_at: string
 }
 
+interface Station { id: string; name: string }
+interface Company { id: string; name: string }
+
 const PAYMENT_METHODS = [
   { value: 'especes', label: 'Especes' },
   { value: 'mobile_money', label: 'Mobile Money' },
@@ -31,13 +33,27 @@ const PAYMENT_METHODS = [
 export default function AgentColisExpenses() {
   const { user } = useAuthStore()
   const isSuperviseur = user?.role === 'superviseur_colis' || user?.role === 'admin' || user?.role === 'daf'
+
   const [expenses, setExpenses] = useState<ParcelExpense[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [stations, setStations] = useState<{ id: string; name: string }[]>([])
-  const [selectedStation, setSelectedStation] = useState<string>(user?.station_id || '')
+
+  // Station / company picker for superviseur
+  const [companies, setCompanies] = useState<Company[]>([])
+  const [allStations, setAllStations] = useState<Station[]>([])
+  const [companyFilter, setCompanyFilter] = useState('')
+  const [selectedStation, setSelectedStation] = useState<string>('')
+
+  // For non-superviseur, station comes from profile
+  const stationId = isSuperviseur ? selectedStation : (user?.station_id || '')
+
+  const filteredStations = companyFilter
+    ? allStations.filter(s => s.name.toLowerCase().includes(companyFilter.toLowerCase()))
+    : allStations
+
+  const selectedStationName = allStations.find(s => s.id === stationId)?.name || ''
 
   // Form state
   const [formType, setFormType] = useState<'depense' | 'ratio'>('depense')
@@ -48,12 +64,15 @@ export default function AgentColisExpenses() {
   const [formDescription, setFormDescription] = useState('')
   const [formReceipt, setFormReceipt] = useState<File | null>(null)
 
-  const stationId = isSuperviseur ? selectedStation : user?.station_id
-
+  // Load stations & companies for superviseur
   useEffect(() => {
     if (!isSuperviseur) return
-    supabase.from('stations').select('id, name').eq('is_active', true).order('name').then(({ data }) => {
-      setStations(data || [])
+    Promise.all([
+      supabase.from('stations').select('id, name').eq('is_active', true).order('name'),
+      supabase.from('companies').select('id, name').eq('is_active', true).order('name'),
+    ]).then(([stRes, coRes]) => {
+      setAllStations(stRes.data || [])
+      setCompanies(coRes.data || [])
     })
   }, [isSuperviseur])
 
@@ -66,15 +85,15 @@ export default function AgentColisExpenses() {
       .eq('station_id', stationId)
       .order('expense_date', { ascending: false })
       .order('created_at', { ascending: false })
-    if (error) {
-      toast.error('Erreur chargement des depenses')
-    } else {
-      setExpenses(data || [])
-    }
+    if (error) toast.error('Erreur chargement des depenses')
+    else setExpenses(data || [])
     setLoading(false)
   }, [stationId])
 
-  useEffect(() => { fetchExpenses() }, [fetchExpenses])
+  useEffect(() => {
+    if (stationId) fetchExpenses()
+    else setExpenses([])
+  }, [stationId, fetchExpenses])
 
   const resetForm = () => {
     setFormType('depense')
@@ -112,9 +131,7 @@ export default function AgentColisExpenses() {
     if (formReceipt) {
       const ext = formReceipt.name.split('.').pop()
       const path = `parcel-expenses/${stationId}/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage
-        .from('parcel-photos')
-        .upload(path, formReceipt)
+      const { error: upErr } = await supabase.storage.from('parcel-photos').upload(path, formReceipt)
       if (!upErr) {
         const { data: urlData } = supabase.storage.from('parcel-photos').getPublicUrl(path)
         receiptUrl = urlData.publicUrl
@@ -136,16 +153,11 @@ export default function AgentColisExpenses() {
     if (editingId) {
       const updatePayload: Record<string, unknown> = { ...payload }
       if (!receiptUrl) delete updatePayload.receipt_url
-      const { error } = await supabase
-        .from('parcel_service_expenses')
-        .update(updatePayload)
-        .eq('id', editingId)
+      const { error } = await supabase.from('parcel_service_expenses').update(updatePayload).eq('id', editingId)
       if (error) toast.error('Erreur modification')
       else { toast.success('Depense modifiee'); resetForm(); fetchExpenses() }
     } else {
-      const { error } = await supabase
-        .from('parcel_service_expenses')
-        .insert(payload)
+      const { error } = await supabase.from('parcel_service_expenses').insert(payload)
       if (error) toast.error('Erreur enregistrement')
       else { toast.success('Depense enregistree'); resetForm(); fetchExpenses() }
     }
@@ -163,90 +175,131 @@ export default function AgentColisExpenses() {
   const totalRatios = expenses.filter(e => e.expense_type === 'ratio').reduce((s, e) => s + e.amount, 0)
   const fmt = (n: number) => n.toLocaleString('fr-FR') + ' FCFA'
 
-  if (!stationId) {
-    return (
-      <div className="p-6 text-center text-gray-500">
-        {isSuperviseur
-          ? 'Veuillez selectionner une gare.'
-          : 'Vous n\'etes affecte a aucune gare. Contactez l\'administrateur.'}
-      </div>
-    )
-  }
-
   return (
     <div className="p-4 md:p-6 space-y-6">
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Depenses & Ratios - Service Courrier</h1>
-          <p className="text-sm text-gray-500 mt-1">Suivi interne des depenses et ratios du service courrier</p>
+          <h1 className="text-xl font-bold text-gray-900">Depenses & Ratios — Service Courrier</h1>
+          <p className="text-sm text-gray-500 mt-1">Saisie et suivi des depenses operationnelles courrier par gare</p>
         </div>
-        <div className="flex items-center gap-3">
-          {isSuperviseur && (
-            <select
-              value={selectedStation}
-              onChange={e => setSelectedStation(e.target.value)}
-              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
-            >
-              <option value="" disabled>Choisir une gare</option>
-              {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          )}
+        {stationId && (
           <button
             onClick={() => { resetForm(); setShowForm(true) }}
-            disabled={isSuperviseur && !selectedStation}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-lg hover:bg-[#095e2e] transition font-medium disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-lg hover:bg-[#095e2e] transition font-medium shrink-0"
           >
             <Plus className="w-4 h-4" /> Nouvelle depense
           </button>
-        </div>
+        )}
       </div>
 
+      {/* Station selector (superviseur only) */}
+      {isSuperviseur && (
+        <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+          <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-[#0B7439]" /> Selectionner une gare
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">
+                <Building2 className="w-3 h-3" /> Filtrer par societe
+              </label>
+              <select
+                value={companyFilter}
+                onChange={e => setCompanyFilter(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
+              >
+                <option value="">Toutes les societes</option>
+                {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> Gare *
+              </label>
+              <select
+                value={selectedStation}
+                onChange={e => setSelectedStation(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
+              >
+                <option value="">— Choisir une gare —</option>
+                {filteredStations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
+          {selectedStation && (
+            <p className="text-xs text-[#0B7439] font-medium">
+              Gare active : {selectedStationName}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Empty state: no station chosen yet */}
+      {!stationId && isSuperviseur && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center text-amber-700 text-sm">
+          Veuillez choisir une gare ci-dessus pour afficher et saisir les depenses.
+        </div>
+      )}
+      {!stationId && !isSuperviseur && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center text-red-600 text-sm">
+          Vous n'etes affecte a aucune gare. Contactez l'administrateur.
+        </div>
+      )}
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
-            <Wallet className="w-5 h-5 text-red-600" />
+      {stationId && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
+              <Wallet className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Total Depenses</p>
+              <p className="text-lg font-bold text-red-600">{fmt(totalDepenses)}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-gray-500">Total Depenses</p>
-            <p className="text-lg font-bold text-red-600">{fmt(totalDepenses)}</p>
+          <div className="bg-white rounded-xl border p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center">
+              <TrendingDown className="w-5 h-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Total Ratios</p>
+              <p className="text-lg font-bold text-orange-600">{fmt(totalRatios)}</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+              <Receipt className="w-5 h-5 text-gray-700" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Total Deductions</p>
+              <p className="text-lg font-bold text-gray-900">{fmt(totalDepenses + totalRatios)}</p>
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center">
-            <TrendingDown className="w-5 h-5 text-orange-600" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Total Ratios</p>
-            <p className="text-lg font-bold text-orange-600">{fmt(totalRatios)}</p>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-            <Receipt className="w-5 h-5 text-gray-700" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Total Deductions</p>
-            <p className="text-lg font-bold text-gray-900">{fmt(totalDepenses + totalRatios)}</p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Modal Form */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between p-5 border-b">
-              <h2 className="text-lg font-semibold">
-                {editingId ? 'Modifier la depense' : 'Nouvelle depense / ratio'}
-              </h2>
+              <div>
+                <h2 className="text-lg font-semibold">
+                  {editingId ? 'Modifier la depense' : 'Nouvelle depense / ratio'}
+                </h2>
+                {selectedStationName && (
+                  <p className="text-xs text-gray-500 mt-0.5">Gare : {selectedStationName}</p>
+                )}
+              </div>
               <button onClick={resetForm} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
               {/* Type */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
                 <div className="flex gap-3">
                   <label className={`flex-1 text-center py-2 rounded-lg border cursor-pointer transition ${formType === 'depense' ? 'bg-red-50 border-red-300 text-red-700 font-medium' : 'hover:bg-gray-50'}`}>
                     <input type="radio" className="sr-only" checked={formType === 'depense'} onChange={() => setFormType('depense')} />
@@ -333,7 +386,6 @@ export default function AgentColisExpenses() {
                 />
               </div>
 
-              {/* Submit */}
               <button
                 type="submit"
                 disabled={submitting}
@@ -348,69 +400,88 @@ export default function AgentColisExpenses() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-[#0B7439]" />
-            </div>
-          ) : expenses.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              Aucune depense enregistree
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Nature</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">Montant</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Paiement</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Description</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {expenses.map(exp => (
-                  <tr key={exp.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {format(new Date(exp.expense_date), 'dd/MM/yyyy')}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${exp.expense_type === 'depense' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
-                        {exp.expense_type === 'depense' ? 'Depense' : 'Ratio'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{exp.nature}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                      {exp.amount.toLocaleString('fr-FR')}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {PAYMENT_METHODS.find(m => m.value === exp.payment_method)?.label || exp.payment_method}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">
-                      {exp.description || '-'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => handleEdit(exp)} className="p-1.5 hover:bg-blue-50 rounded text-blue-600" title="Modifier">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        {(isSuperviseur || user?.role === 'admin') && (
-                          <button onClick={() => handleDelete(exp.id)} className="p-1.5 hover:bg-red-50 rounded text-red-600" title="Supprimer">
-                            <Trash2 className="w-4 h-4" />
+      {stationId && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <h2 className="text-sm font-semibold text-gray-700">
+              Operations — {selectedStationName || 'Ma gare'}
+              <span className="ml-2 text-xs font-normal text-gray-400">({expenses.length} entree{expenses.length !== 1 ? 's' : ''})</span>
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-[#0B7439]" />
+              </div>
+            ) : expenses.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 text-sm">
+                Aucune depense enregistree pour cette gare
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Nature</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Montant (FCFA)</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Paiement</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Description</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {expenses.map(exp => (
+                    <tr key={exp.id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-700">
+                        {format(new Date(exp.expense_date), 'dd/MM/yyyy')}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${exp.expense_type === 'depense' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                          {exp.expense_type === 'depense' ? 'Depense' : 'Ratio'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{exp.nature}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                        {exp.amount.toLocaleString('fr-FR')}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {PAYMENT_METHODS.find(m => m.value === exp.payment_method)?.label || exp.payment_method}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">
+                        {exp.description || '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => handleEdit(exp)} className="p-1.5 hover:bg-blue-50 rounded text-blue-600" title="Modifier">
+                            <Edit2 className="w-4 h-4" />
                           </button>
-                        )}
-                      </div>
+                          {isSuperviseur && (
+                            <button onClick={() => handleDelete(exp.id)} className="p-1.5 hover:bg-red-50 rounded text-red-600" title="Supprimer">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                  <tr>
+                    <td colSpan={3} className="px-4 py-3 text-sm font-semibold text-gray-700">TOTAL</td>
+                    <td className="px-4 py-3 text-right font-bold text-gray-900">
+                      {(totalDepenses + totalRatios).toLocaleString('fr-FR')}
+                    </td>
+                    <td colSpan={3} className="px-4 py-3 text-xs text-gray-500">
+                      Depenses: {totalDepenses.toLocaleString('fr-FR')} &nbsp;|&nbsp; Ratios: {totalRatios.toLocaleString('fr-FR')}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </tfoot>
+              </table>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
