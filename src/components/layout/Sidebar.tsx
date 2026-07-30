@@ -201,14 +201,32 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Mon profil',       path: '/client/profile',      icon: <UserCircle className="w-5 h-5" /> },
   ],
   superviseur_colis: [
-    { label: 'Dashboard',   path: '/superviseur-colis/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
-    { label: 'Tous les courriers',path: '/superviseur-colis/parcels', icon: <Package className="w-5 h-5" /> },
-    { label: 'Recettes par gare', path: '/superviseur-colis/revenue', icon: <Banknote className="w-5 h-5" /> },
-    { label: 'Frais SMS par gare', path: '/superviseur-colis/sms-fees', icon: <MessageSquareWarning className="w-5 h-5" /> },
-    { label: 'Depenses par gare', path: '/superviseur-colis/expenses', icon: <Wallet className="w-5 h-5" /> },
-    { label: 'Saisie Depenses & Ratios', path: '/superviseur-colis/expense-entry', icon: <Wallet className="w-5 h-5" /> },
-    { label: 'Rapport depenses', path: '/superviseur-colis/expense-report', icon: <BarChart2 className="w-5 h-5" /> },
-    { label: 'Rapport consolide', path: '/superviseur-colis/consolidated', icon: <BarChart2 className="w-5 h-5" /> },
+    { label: 'Tableau de bord', path: '/superviseur-colis/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+    {
+      label: 'Gestion des courriers',
+      icon: <Package className="w-5 h-5" />,
+      children: [
+        { label: 'Tous les courriers', path: '/superviseur-colis/parcels', icon: <Package className="w-5 h-5" /> },
+      ],
+    },
+    {
+      label: 'Gestion financière',
+      icon: <Wallet className="w-5 h-5" />,
+      children: [
+        { label: 'Saisie Dépenses & Ratios', path: '/superviseur-colis/expense-entry', icon: <Wallet className="w-5 h-5" /> },
+        { label: 'Dépenses par gare', path: '/superviseur-colis/expenses', icon: <Wallet className="w-5 h-5" /> },
+        { label: 'Recettes par gare', path: '/superviseur-colis/revenue', icon: <Banknote className="w-5 h-5" /> },
+        { label: 'Frais SMS par gare', path: '/superviseur-colis/sms-fees', icon: <MessageSquareWarning className="w-5 h-5" /> },
+      ],
+    },
+    {
+      label: 'Rapports',
+      icon: <FileText className="w-5 h-5" />,
+      children: [
+        { label: 'Rapport dépenses', path: '/superviseur-colis/expense-report', icon: <BarChart2 className="w-5 h-5" /> },
+        { label: 'Rapport consolidé', path: '/superviseur-colis/consolidated', icon: <BarChart2 className="w-5 h-5" /> },
+      ],
+    },
   ],
   agent_colis: [
     { label: 'Dashboard',     path: '/agent-colis/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
