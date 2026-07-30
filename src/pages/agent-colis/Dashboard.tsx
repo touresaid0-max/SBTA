@@ -17,11 +17,8 @@ import {
   bulkUpdateParcelStatus,
   fetchScheduleDriverName,
   fetchScheduleTransportInfo,
-  fetchParcelAgentInfo,
-  markTicketPrinted,
   type ParcelPeriod,
 } from '@/services/parcel.service'
-import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import { getParcelActionPermission } from '@/utils/parcelPermissions'
 import { printBordereauCourrier } from '@/utils/printBordereau'
 import type { Parcel, ParcelStatus } from '@/types/parcel.types'
@@ -396,40 +393,6 @@ export default function AgentColisDashboard() {
     } finally {
       setActionLoading(null)
     }
-  }
-
-  async function handlePrint(parcel: Parcel) {
-    // If parcel has a schedule, fetch the driver name before printing
-    let driverName: string | null = null
-    let departureTime: string | null = null
-
-    if (parcel.schedule_id) {
-      try {
-        // Fetch driver + departure time from schedule
-        const { data: schedRow } = await supabase
-          .from('schedules')
-          .select('departure_datetime, users!driver_id(full_name)')
-          .eq('id', parcel.schedule_id)
-          .maybeSingle()
-
-        if (schedRow) {
-          driverName    = (schedRow as any).users?.full_name ?? null
-          const dep     = schedRow.departure_datetime
-          departureTime = dep
-            ? format(new Date(dep), 'HH:mm — dd/MM/yyyy', { locale: fr })
-            : null
-        }
-      } catch {
-        // Non-blocking — print without transport info
-      }
-    }
-
-    const agentInfo = await fetchParcelAgentInfo(parcel.origin_station_id, parcel.destination_station_id).catch(() => null)
-    const receiptData = buildReceiptData(parcel, stationName, stationPhone, null, driverName, agentInfo)
-    if (departureTime) receiptData.departure_time = departureTime
-    await printParcelTicket(receiptData)
-    await markTicketPrinted(parcel.id)
-    setOutgoing(prev => prev.map(p => p.id === parcel.id ? { ...p, ticket_printed: true } : p))
   }
 
   // ── Bordereau courrier ─────────────────────────────────────────────────────
@@ -980,16 +943,7 @@ export default function AgentColisDashboard() {
                         <Eye className="w-3.5 h-3.5" />
                         Voir
                       </button>
-                      {tab === 'sortants' && !parcel.ticket_printed && (
-                        <button
-                          onClick={() => handlePrint(parcel)}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-medium"
-                          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Ticket</span>
-                        </button>
-                      )}
+
                       {perm.allowed ? (
                         <button
                           onClick={() => handleAdvance(parcel, perm.nextStatus)}
@@ -1082,14 +1036,7 @@ export default function AgentColisDashboard() {
                             >
                               <Eye className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             </button>
-                            {tab === 'sortants' && !parcel.ticket_printed && (
-                              <button
-                                onClick={() => handlePrint(parcel)}
-                                className="p-1.5 rounded hover:bg-gray-100" title="Imprimer ticket"
-                              >
-                                <Printer className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                              </button>
-                            )}
+
                             {perm.allowed ? (
                               <button
                                 onClick={() => handleAdvance(parcel, perm.nextStatus)}
