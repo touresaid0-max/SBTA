@@ -484,8 +484,8 @@ function App() {
             <Route path="agent-colis/new" element={<ProtectedRoute roles={['agent_colis']}><NewParcelForm /></ProtectedRoute>} />
             <Route path="agent-colis/parcels/:id" element={<ProtectedRoute roles={['agent_colis']}><ParcelDetail /></ProtectedRoute>} />
             <Route path="agent-colis/scan" element={<ProtectedRoute roles={['agent_colis']}><QrScanner /></ProtectedRoute>} />
-            <Route path="agent-colis/expenses" element={<ProtectedRoute roles={['agent_colis', 'superviseur_colis']}><AgentColisExpenses /></ProtectedRoute>} />
-            <Route path="agent-colis/expense-report" element={<ProtectedRoute roles={['agent_colis', 'superviseur_colis']}><AgentColisExpenseReport /></ProtectedRoute>} />
+            <Route path="superviseur-colis/expense-entry" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><AgentColisExpenses /></ProtectedRoute>} />
+            <Route path="superviseur-colis/expense-report" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><AgentColisExpenseReport /></ProtectedRoute>} />
             <Route path="agent-colis/sms-fees" element={<ProtectedRoute roles={['agent_colis', 'superviseur_colis']}><AgentColisSmsFeesReport /></ProtectedRoute>} />
             <Route path="superviseur-colis/dashboard" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurColisDashboard /></ProtectedRoute>} />
             <Route path="superviseur-colis/parcels" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><SuperviseurParcelsList /></ProtectedRoute>} />

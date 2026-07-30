@@ -206,14 +206,14 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Recettes par gare', path: '/superviseur-colis/revenue', icon: <Banknote className="w-5 h-5" /> },
     { label: 'Frais SMS par gare', path: '/superviseur-colis/sms-fees', icon: <MessageSquareWarning className="w-5 h-5" /> },
     { label: 'Depenses par gare', path: '/superviseur-colis/expenses', icon: <Wallet className="w-5 h-5" /> },
+    { label: 'Saisie Depenses & Ratios', path: '/superviseur-colis/expense-entry', icon: <Wallet className="w-5 h-5" /> },
+    { label: 'Rapport depenses', path: '/superviseur-colis/expense-report', icon: <BarChart2 className="w-5 h-5" /> },
     { label: 'Rapport consolide', path: '/superviseur-colis/consolidated', icon: <BarChart2 className="w-5 h-5" /> },
   ],
   agent_colis: [
     { label: 'Dashboard',     path: '/agent-colis/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Nouveau courrier', path: '/agent-colis/new',       icon: <PackagePlus className="w-5 h-5" /> },
     { label: 'Suivi courrier',   path: '/track',                 icon: <Truck className="w-5 h-5" /> },
-    { label: 'Depenses & Ratios', path: '/agent-colis/expenses', icon: <Wallet className="w-5 h-5" /> },
-    { label: 'Rapport depenses', path: '/agent-colis/expense-report', icon: <BarChart2 className="w-5 h-5" /> },
     { label: 'Rapport Frais SMS', path: '/agent-colis/sms-fees', icon: <MessageSquareWarning className="w-5 h-5" /> },
   ],
   charge_achat: [

@@ -32,11 +32,21 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 export default function AgentColisExpenseReport() {
   const { user } = useAuthStore()
-  const stationId = user?.station_id
+  const isSuperviseur = user?.role === 'superviseur_colis' || user?.role === 'admin' || user?.role === 'daf'
+  const [stations, setStations] = useState<{ id: string; name: string }[]>([])
+  const [selectedStation, setSelectedStation] = useState<string>(user?.station_id || '')
+  const stationId = isSuperviseur ? selectedStation : user?.station_id
 
   const [expenses, setExpenses] = useState<ParcelExpense[]>([])
   const [loading, setLoading] = useState(true)
   const [parcelRevenue, setParcelRevenue] = useState(0)
+
+  useEffect(() => {
+    if (!isSuperviseur) return
+    supabase.from('stations').select('id, name').eq('is_active', true).order('name').then(({ data }) => {
+      setStations(data || [])
+    })
+  }, [isSuperviseur])
 
   // Filters
   const [periodMode, setPeriodMode] = useState<PeriodMode>('jour')
@@ -170,7 +180,7 @@ export default function AgentColisExpenseReport() {
   }
 
   if (!stationId) {
-    return <div className="p-6 text-center text-gray-500">Aucune gare affectee.</div>
+    return <div className="p-6 text-center text-gray-500">{isSuperviseur ? 'Veuillez selectionner une gare.' : 'Aucune gare affectee.'}</div>
   }
 
   return (
@@ -182,6 +192,16 @@ export default function AgentColisExpenseReport() {
           <p className="text-sm text-gray-500 mt-1">Bilan financier interne du service courrier</p>
         </div>
         <div className="flex items-center gap-2">
+          {isSuperviseur && (
+            <select
+              value={selectedStation}
+              onChange={e => setSelectedStation(e.target.value)}
+              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
+            >
+              <option value="" disabled>Choisir une gare</option>
+              {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
           <button onClick={exportPDF} className="inline-flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
             <Download className="w-4 h-4" /> PDF
           </button>

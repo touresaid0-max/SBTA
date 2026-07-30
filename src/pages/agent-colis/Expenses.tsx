@@ -30,11 +30,14 @@ const PAYMENT_METHODS = [
 
 export default function AgentColisExpenses() {
   const { user } = useAuthStore()
+  const isSuperviseur = user?.role === 'superviseur_colis' || user?.role === 'admin' || user?.role === 'daf'
   const [expenses, setExpenses] = useState<ParcelExpense[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [stations, setStations] = useState<{ id: string; name: string }[]>([])
+  const [selectedStation, setSelectedStation] = useState<string>(user?.station_id || '')
 
   // Form state
   const [formType, setFormType] = useState<'depense' | 'ratio'>('depense')
@@ -45,7 +48,14 @@ export default function AgentColisExpenses() {
   const [formDescription, setFormDescription] = useState('')
   const [formReceipt, setFormReceipt] = useState<File | null>(null)
 
-  const stationId = user?.station_id
+  const stationId = isSuperviseur ? selectedStation : user?.station_id
+
+  useEffect(() => {
+    if (!isSuperviseur) return
+    supabase.from('stations').select('id, name').eq('is_active', true).order('name').then(({ data }) => {
+      setStations(data || [])
+    })
+  }, [isSuperviseur])
 
   const fetchExpenses = useCallback(async () => {
     if (!stationId) return
@@ -156,7 +166,9 @@ export default function AgentColisExpenses() {
   if (!stationId) {
     return (
       <div className="p-6 text-center text-gray-500">
-        Vous n'etes affecte a aucune gare. Contactez l'administrateur.
+        {isSuperviseur
+          ? 'Veuillez selectionner une gare.'
+          : 'Vous n\'etes affecte a aucune gare. Contactez l\'administrateur.'}
       </div>
     )
   }
@@ -169,12 +181,25 @@ export default function AgentColisExpenses() {
           <h1 className="text-xl font-bold text-gray-900">Depenses & Ratios - Service Courrier</h1>
           <p className="text-sm text-gray-500 mt-1">Suivi interne des depenses et ratios du service courrier</p>
         </div>
-        <button
-          onClick={() => { resetForm(); setShowForm(true) }}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-lg hover:bg-[#095e2e] transition font-medium"
-        >
-          <Plus className="w-4 h-4" /> Nouvelle depense
-        </button>
+        <div className="flex items-center gap-3">
+          {isSuperviseur && (
+            <select
+              value={selectedStation}
+              onChange={e => setSelectedStation(e.target.value)}
+              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]"
+            >
+              <option value="" disabled>Choisir une gare</option>
+              {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <button
+            onClick={() => { resetForm(); setShowForm(true) }}
+            disabled={isSuperviseur && !selectedStation}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-lg hover:bg-[#095e2e] transition font-medium disabled:opacity-50"
+          >
+            <Plus className="w-4 h-4" /> Nouvelle depense
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -372,7 +397,7 @@ export default function AgentColisExpenses() {
                         <button onClick={() => handleEdit(exp)} className="p-1.5 hover:bg-blue-50 rounded text-blue-600" title="Modifier">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        {(user?.role === 'superviseur_colis' || user?.role === 'admin') && (
+                        {(isSuperviseur || user?.role === 'admin') && (
                           <button onClick={() => handleDelete(exp.id)} className="p-1.5 hover:bg-red-50 rounded text-red-600" title="Supprimer">
                             <Trash2 className="w-4 h-4" />
                           </button>
