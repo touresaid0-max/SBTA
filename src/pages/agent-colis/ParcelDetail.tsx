@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Printer, Package, User, MapPin, Clock, MessageCircle, AlertTriangle, Bus, Navigation, Camera, ZoomIn, X, Pencil, Check, Loader2 as Loader2Icon } from 'lucide-react'
+import { ArrowLeft, Package, User, MapPin, Clock, MessageCircle, AlertTriangle, Bus, Navigation, Camera, ZoomIn, X, Pencil, Check, Loader2 as Loader2Icon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
-import { fetchTrackingEvents, updateParcelStatus, updateParcelNames, fetchParcelAgentInfo, markTicketPrinted } from '@/services/parcel.service'
+import { fetchTrackingEvents, updateParcelStatus, updateParcelNames } from '@/services/parcel.service'
 import { fetchSmsLogs, resendSms } from '@/services/emisSms.service'
 import type { SmsLog } from '@/services/emisSms.service'
-import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import ParcelStatusStepper from '@/components/parcel/ParcelStatusStepper'
 import { getParcelActionPermission } from '@/utils/parcelPermissions'
 import type { Parcel, ParcelTrackingEvent, ParcelStatus } from '@/types/parcel.types'
@@ -79,7 +78,6 @@ export default function ParcelDetail() {
   }
 
   const stationId    = user?.station_id    ?? null
-  const stationPhone = user?.station_phone ?? ''
 
   useEffect(() => {
     if (!id) return
@@ -202,14 +200,6 @@ export default function ParcelDetail() {
     }
   }
 
-  async function handlePrint() {
-    if (!parcel) return
-    const agentInfo = await fetchParcelAgentInfo(parcel.origin_station_id, parcel.destination_station_id).catch(() => null)
-    await printParcelTicket(buildReceiptData(parcel, parcel.origin_station_name, stationPhone, null, null, agentInfo))
-    await markTicketPrinted(parcel.id)
-    setParcel(p => p ? { ...p, ticket_printed: true } : p)
-  }
-
   const actionPerm = parcel && stationId
     ? getParcelActionPermission(
         parcel.status,
@@ -280,25 +270,7 @@ export default function ParcelDetail() {
             </div>
           </div>
         </div>
-        {isOriginStation && !parcel.ticket_printed && (
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg border text-xs sm:text-sm flex-shrink-0"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-          >
-            <Printer className="w-4 h-4" />
-            <span className="hidden xs:inline">Ticket</span>
-          </button>
-        )}
-        {isOriginStation && parcel.ticket_printed && (
-          <span
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm flex-shrink-0"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-          >
-            <Printer className="w-4 h-4" />
-            <span className="hidden xs:inline">Ticket imprimé</span>
-          </span>
-        )}
+
       </div>
 
       {/* Workflow */}
