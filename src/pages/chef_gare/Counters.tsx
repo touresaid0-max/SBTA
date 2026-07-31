@@ -25,7 +25,7 @@ interface SessionInfo {
 
 interface Counter {
   id: string;
-  counter_number: number;
+  counter_number: string | number;
   is_active: boolean;
   assigned_user_id: string | null;
   station_id: string;
@@ -87,7 +87,6 @@ export default function ChefGareCounters() {
         supabase
           .from('routes')
           .select('id, name')
-          .eq('origin_station_id', sid)
           .eq('is_active', true)
           .order('name'),
         supabase
@@ -176,12 +175,6 @@ export default function ChefGareCounters() {
 
   const toggleActive = async (counter: Counter) => {
     const willActivate = !counter.is_active;
-
-    if (willActivate && !counter.assigned_user_id) {
-      toast.error('Aucun guichetier assigne a ce guichet');
-      return;
-    }
-
     try {
       const { error } = await supabase
         .from('counters')
@@ -189,10 +182,7 @@ export default function ChefGareCounters() {
         .eq('id', counter.id);
       if (error) throw error;
 
-      toast.success(willActivate
-        ? `Guichet ${counter.counter_number} active`
-        : `Guichet ${counter.counter_number} desactive`
-      );
+      toast.success(willActivate ? 'Guichet active' : 'Guichet desactive');
       load();
     } catch (err: any) {
       toast.error(err.message || 'Erreur de mise a jour');
@@ -339,13 +329,13 @@ export default function ChefGareCounters() {
                 borderColor: 'var(--border)',
               }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xl"
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs"
                   style={{ backgroundColor: counter.is_active ? 'var(--primary)' : '#9CA3AF', color: 'white' }}>
-                  {counter.counter_number}
+                  {String(counter.counter_number).split('-').pop()}
                 </div>
                 <div>
                   <p className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
-                    Guichet {counter.counter_number}
+                    {counter.counter_number}
                   </p>
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${counter.is_active ? 'text-green-700 bg-green-100' : 'text-gray-500 bg-gray-100'}`}>
                     {counter.is_active ? 'Actif' : 'Inactif'}
@@ -526,14 +516,15 @@ export default function ChefGareCounters() {
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg text-white"
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs text-white"
                   style={{ backgroundColor: 'var(--primary)' }}>
-                  {routeModal.counter_number}
+                  {String(routeModal.counter_number).split('-').pop()}
                 </div>
                 <div>
                   <p className="font-bold" style={{ color: 'var(--text-primary)' }}>
                     Lignes du Guichet {routeModal.counter_number}
                   </p>
+
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                     {routeModal.user?.full_name || 'Non assigne'}
                   </p>
