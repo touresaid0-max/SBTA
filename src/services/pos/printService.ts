@@ -126,7 +126,7 @@ function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string
   <div class="dash">-</div>
   <div class="row"><span class="label">N° Ticket:</span><span>${escapeHtml(ticket.ticket_number)}</span></div>
   <div class="row"><span class="label">Date:</span><span>${formatDateTime(depart.departure_datetime)}</span></div>
-  <div class="row"><span class="label">Départ N°:</span><span>${depart.departure_number}</span></div>
+  <div class="row"><span class="label">Départ N°:</span><span>${depart.route_number} (${escapeHtml(depart.route_name ?? '')})</span></div>
   <div class="dash">-</div>
   <div class="qr">${makeQRText(ticket.ticket_number)}</div>
   ${footerHtml}
@@ -169,7 +169,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   ${bagage.owner_phone ? `<div class="row"><span class="label">Contact:</span><span>${escapeHtml(bagage.owner_phone)}</span></div>` : ''}
   <div class="dash">-</div>
   <div class="row"><span class="label">Date:</span><span>${formatDateTime(bagage.created_at)}</span></div>
-  <div class="row"><span class="label">Départ N°:</span><span>${depart.departure_number}</span></div>
+  <div class="row"><span class="label">Départ N°:</span><span>${depart.route_number} (${escapeHtml(depart.route_name ?? '')})</span></div>
   <div class="dash">-</div>
   <div class="qr">${makeQRText(bagage.bagage_number)}</div>
   ${footerHtml}

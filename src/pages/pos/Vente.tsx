@@ -282,7 +282,7 @@ export default function POSVente() {
   }
 
   return (
-    <POSLayout showBack stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.departure_number}`}>
+    <POSLayout showBack stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${depart.route_name ?? ''})`}>
       <div className="max-w-5xl mx-auto">
         {/* Cloture warning banner */}
         {depart.cloture && (
@@ -304,7 +304,7 @@ export default function POSVente() {
             </div>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>N° Départ</p>
-              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>#{depart.departure_number}</p>
+              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>#{depart.route_number}</p>
             </div>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tarif Climatisé</p>

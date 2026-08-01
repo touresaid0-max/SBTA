@@ -155,7 +155,7 @@ export default function POSCloture() {
             <option value="">Sélectionner...</option>
             {departs.map(d => (
               <option key={d.id} value={d.id}>
-                #{d.departure_number} — {d.route_name} — {d.departure_date} {d.departure_time}
+                #{d.route_number} — {d.route_name} — {d.departure_date} {d.departure_time}
                 {d.cloture ? ' [CLÔTURÉ]' : ''}
               </option>
             ))}
@@ -168,7 +168,7 @@ export default function POSCloture() {
             <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                  Départ #{selected.departure_number} — {selected.route_name}
+                  Départ #{selected.route_number} — {selected.route_name}
                 </h3>
                 {selected.cloture && (
                   <span className="px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>

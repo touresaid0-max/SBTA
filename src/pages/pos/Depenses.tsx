@@ -166,7 +166,7 @@ export default function POSDepenses() {
               <option value="">Sélectionner un départ...</option>
               {departs.map(d => (
                 <option key={d.id} value={d.id}>
-                  #{d.departure_number} — {d.route_name} — {d.departure_date} {d.departure_time}
+                  #{d.route_number} — {d.route_name} — {d.departure_date} {d.departure_time}
                 </option>
               ))}
             </select>

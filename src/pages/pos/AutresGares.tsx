@@ -140,7 +140,7 @@ export default function POSAutresGares() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>
-                        {s.depart.station_name ?? 'Gare'} — #{s.depart.departure_number}
+                        {s.depart.station_name ?? 'Gare'} — #{s.depart.route_number}
                       </p>
                       <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
                         {s.depart.route_name} · {s.depart.departure_date} {s.depart.departure_time}

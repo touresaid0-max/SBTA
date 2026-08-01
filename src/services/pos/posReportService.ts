@@ -48,7 +48,7 @@ export function departToSummary(d: DepartRecord): DepartSummary {
 }
 
 const COLUMNS: { key: keyof DepartSummary; label: string; width: number }[] = [
-  { key: 'departure_number', label: 'N° Départ', width: 20 },
+  { key: 'route_number', label: 'N° Départ/Ligne', width: 20 },
   { key: 'route_name', label: 'Ligne', width: 55 },
   { key: 'departure_date', label: 'Date', width: 28 },
   { key: 'departure_time', label: 'Heure', width: 18 },
@@ -69,8 +69,7 @@ function fmt(n: number): string {
 
 export function exportToExcel(summaries: DepartSummary[], fileName: string): void {
   const rows = summaries.map(s => ({
-    'N° Départ': s.departure_number,
-    'N° Ligne': s.route_number,
+    'N° Départ/Ligne': s.route_number,
     'Ligne': s.route_name,
     'Date': s.departure_date,
     'Heure': s.departure_time,
@@ -90,8 +89,7 @@ export function exportToExcel(summaries: DepartSummary[], fileName: string): voi
   }));
 
   const totals = {
-    'N° Départ': '',
-    'N° Ligne': '',
+    'N° Départ/Ligne': '',
     'Ligne': 'TOTAL',
     'Date': '',
     'Heure': '',
@@ -247,7 +245,7 @@ export function printDeparturesList(summaries: DepartSummary[], stationName?: st
 function buildPrintHTML(summaries: DepartSummary[], stationName?: string): string {
   const dateStr = new Date().toLocaleString('fr-FR');
   const rows = summaries.map(s => `<tr>
-    <td style="text-align:center">${s.departure_number}</td>
+    <td style="text-align:center">${s.route_number}</td>
     <td>${escapeHtml(s.route_name)}</td>
     <td style="text-align:center">${s.departure_date} ${s.departure_time}</td>
     <td style="text-align:center">${s.bus_plate}</td>
@@ -289,7 +287,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
   <table>
     <thead>
       <tr>
-        <th>N° Dép</th><th>Ligne</th><th>Date/Heure</th><th>Matricule</th><th>Chauffeur</th>
+        <th>N° Ligne</th><th>Ligne</th><th>Date/Heure</th><th>Matricule</th><th>Chauffeur</th>
         <th>Sièges</th><th>Vendus</th><th>Libres</th><th>MT Ticket</th><th>MT Bagage</th>
         <th>Tot Dépense</th><th>Solde</th><th>Statut</th>
       </tr>

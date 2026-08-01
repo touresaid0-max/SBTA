@@ -258,9 +258,8 @@ export default function POSDeparts() {
             <table className="w-full" style={{ borderCollapse: 'collapse' }}>
               <thead style={{ backgroundColor: 'var(--surface-raised)' }}>
                 <tr style={{ color: 'var(--text-secondary)' }}>
-                  <th className={th} onClick={() => handleSort('departure_number')}>N°Départ {sortIcon('departure_number')}</th>
+                  <th className={th} onClick={() => handleSort('route_number')}>N°Départ/Ligne {sortIcon('route_number')}</th>
                   <th className={th} onClick={() => handleSort('departure_datetime')}>Date {sortIcon('departure_datetime')}</th>
-                  <th className={th} onClick={() => handleSort('route_number')}>N°/Ligne {sortIcon('route_number')}</th>
                   <th className={th} onClick={() => handleSort('route_name')}>Ligne {sortIcon('route_name')}</th>
                   <th className={th} onClick={() => handleSort('bus_plate')}>Matricule {sortIcon('bus_plate')}</th>
                   <th className={th} onClick={() => handleSort('bus_name')}>Nom Car {sortIcon('bus_name')}</th>
@@ -291,10 +290,9 @@ export default function POSDeparts() {
                         opacity: d.cancelled ? 0.6 : 1,
                       }}
                     >
-                      <td className={td} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>#{d.departure_number}</td>
+                      <td className={td} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>#{d.route_number}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.departure_date} {d.departure_time}</td>
-                      <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.route_number}</td>
-                      <td className={td} style={{ color: 'var(--text-primary)' }}>{d.route_name}</td>
+                      <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.route_name}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_plate}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_name}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.driver_name}</td>
@@ -350,7 +348,7 @@ export default function POSDeparts() {
               </button>
             </div>
             <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Confirmer l'annulation du départ #{showCancelConfirm.departure_number} ({showCancelConfirm.route_name}) ?
+              Confirmer l'annulation du départ #{showCancelConfirm.route_number} ({showCancelConfirm.route_name}) ?
             </p>
             <div className="flex gap-3">
               <button onClick={() => setShowCancelConfirm(null)} className="flex-1 py-3 rounded-xl font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>

@@ -7,6 +7,7 @@ import {
   getLignes, getVehicules, getChauffeurs, getGares,
   getAssignedRouteIds,
   nextDepartureNumber,
+  nextRouteNumber,
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
 } from '@/services/pos/departService';
 import { AlertCircle, CheckCircle, Loader2, X } from 'lucide-react';
@@ -75,10 +76,12 @@ export default function POSDepartNouveau() {
   }, [loadRefs]);
 
   useEffect(() => {
-    if (session?.station_id) {
+    if (session?.station_id && ligneId) {
+      nextRouteNumber(session.station_id, ligneId).then(setDepartureNo);
+    } else if (session?.station_id) {
       nextDepartureNumber(session.station_id).then(setDepartureNo);
     }
-  }, [session?.station_id]);
+  }, [session?.station_id, ligneId]);
 
   const selectedBus = vehicules.find(v => v.id === busId);
 
@@ -165,7 +168,7 @@ export default function POSDepartNouveau() {
         <div className="max-w-2xl mx-auto">
           {/* Auto departure number */}
           <div className="rounded-xl p-3 mb-5 flex items-center justify-between" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
-            <span className="text-sm font-bold">N° Départ</span>
+            <span className="text-sm font-bold">N° Départ {ligneId ? `(${lignes.find(l => l.id === ligneId)?.name ?? ''})` : ''}</span>
             <span className="text-lg font-bold">#{departureNo}</span>
           </div>
 

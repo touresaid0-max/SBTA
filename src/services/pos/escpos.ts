@@ -148,7 +148,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 
   // Date/time
   parts.push(text(`${padRight('Date:', 12)}${formatDateTime(depart.departure_datetime)}`), lineFeed());
-  parts.push(text(`${padRight('Départ N°:', 12)}${depart.departure_number}`), lineFeed());
+  parts.push(text(`${padRight('Départ N°:', 12)}${depart.route_number} (${depart.route_name ?? ''})`), lineFeed());
 
   parts.push(text(dashLine(w)), lineFeed());
 
@@ -207,7 +207,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
 
   parts.push(text(dashLine(w)), lineFeed());
   parts.push(text(`${padRight('Date:', 14)}${formatDateTime(bagage.created_at)}`), lineFeed());
-  parts.push(text(`${padRight('Départ N°:', 14)}${depart.departure_number}`), lineFeed());
+  parts.push(text(`${padRight('Départ N°:', 14)}${depart.route_number} (${depart.route_name ?? ''})`), lineFeed());
 
   parts.push(text(dashLine(w)), lineFeed());
 

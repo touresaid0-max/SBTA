@@ -188,7 +188,7 @@ export default function POSBagages() {
   }
 
   return (
-    <POSLayout showBack stationName={session?.station_name} activeRoute={`Bagages — Départ #${depart.departure_number}`}>
+    <POSLayout showBack stationName={session?.station_name} activeRoute={`Bagages — Départ #${depart.route_number} (${depart.route_name ?? ''})`}>
       <div className="max-w-5xl mx-auto">
         {/* Cloture warning banner */}
         {depart.cloture && (
@@ -200,7 +200,7 @@ export default function POSBagages() {
         {/* Departure header */}
         <div className="rounded-xl p-3 mb-4 flex items-center justify-between" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="flex items-center gap-4 text-sm">
-            <span style={{ color: 'var(--text-muted)' }}>Départ #{depart.departure_number}</span>
+            <span style={{ color: 'var(--text-muted)' }}>Départ #{depart.route_number}</span>
             <span style={{ color: 'var(--text-secondary)' }}>·</span>
             <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{depart.route_name}</span>
             <span style={{ color: 'var(--text-secondary)' }}>·</span>
