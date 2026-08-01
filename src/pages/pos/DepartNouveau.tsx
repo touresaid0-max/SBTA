@@ -10,6 +10,7 @@ import {
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
 } from '@/services/pos/departService';
 import { AlertCircle, CheckCircle, Loader2, X } from 'lucide-react';
+import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 
 export default function POSDepartNouveau() {
   const navigate = useNavigate();
@@ -229,19 +230,37 @@ export default function POSDepartNouveau() {
             {/* Car */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Car *</label>
-              <select value={busId} onChange={e => handleBusChange(e.target.value)} className={fieldInput} style={fieldStyle}>
-                <option value="">Sélectionner...</option>
-                {vehicules.map(v => <option key={v.id} value={v.id}>{v.plate_number} ({v.capacity} pl.)</option>)}
-              </select>
+              <AutocompleteSelect
+                options={vehicules.map(v => ({
+                  id: v.id,
+                  label: v.plate_number,
+                  sublabel: [v.brand, v.model, `${v.capacity} places`].filter(Boolean).join(' · '),
+                  keywords: `${v.plate_number} ${v.brand ?? ''} ${v.model ?? ''} ${v.capacity}`,
+                }))}
+                value={busId}
+                onChange={handleBusChange}
+                placeholder="Rechercher par immatriculation, marque, modèle..."
+                required
+                emptyText="Aucun bus trouvé"
+              />
             </div>
 
             {/* Chauffeur */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Chauffeur *</label>
-              <select value={driverId} onChange={e => setDriverId(e.target.value)} className={fieldInput} style={fieldStyle}>
-                <option value="">Sélectionner...</option>
-                {chauffeurs.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-              </select>
+              <AutocompleteSelect
+                options={chauffeurs.map(c => ({
+                  id: c.id,
+                  label: c.full_name,
+                  sublabel: [c.employee_id, c.phone].filter(Boolean).join(' · '),
+                  keywords: `${c.full_name} ${c.employee_id ?? ''} ${c.phone ?? ''} ${c.email}`,
+                }))}
+                value={driverId}
+                onChange={setDriverId}
+                placeholder="Rechercher par nom, matricule, téléphone..."
+                required
+                emptyText="Aucun chauffeur trouvé"
+              />
             </div>
 
             {/* Charger dans une autre gare */}

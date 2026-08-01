@@ -6,8 +6,8 @@ import { supabase } from '@/services/supabase';
 export type { DepartRecord };
 
 export interface LigneRef { id: string; name: string; origin_station_id: string; is_active: boolean }
-export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string }
-export interface ChauffeurRef { id: string; full_name: string; email: string; role: string }
+export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string; brand?: string; model?: string }
+export interface ChauffeurRef { id: string; full_name: string; email: string; role: string; employee_id?: string; phone?: string }
 export interface GareRef { id: string; name: string; city: string; agency_code: string; is_active: boolean }
 
 export async function getLignes(): Promise<LigneRef[]> {

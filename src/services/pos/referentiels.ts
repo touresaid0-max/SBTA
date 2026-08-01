@@ -12,12 +12,12 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
     return data ?? [];
   },
   vehicules: async () => {
-    const { data, error } = await supabase.from('buses').select('id, plate_number, capacity, company_id, status').order('plate_number');
+    const { data, error } = await supabase.from('buses').select('id, registration_number, capacity, company_id, status, brand, model').order('registration_number');
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map((b: any) => ({ id: b.id, plate_number: b.registration_number, capacity: b.capacity, company_id: b.company_id, status: b.status, brand: b.brand, model: b.model }));
   },
   chauffeurs: async () => {
-    const { data, error } = await supabase.from('users').select('id, full_name, email, role').eq('role', 'chauffeur').eq('status', 'active').order('full_name');
+    const { data, error } = await supabase.from('users').select('id, full_name, email, role, employee_id, phone').eq('role', 'chauffeur').eq('status', 'active').order('full_name');
     if (error) throw error;
     return data ?? [];
   },
