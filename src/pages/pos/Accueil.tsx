@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, Ticket, Package, Building2, Receipt, Lock, Settings as SettingsIcon } from 'lucide-react';
+import { PlusCircle, Ticket, Package, Building2, Receipt, Lock, Settings as SettingsIcon, Wifi, WifiOff, UploadCloud, RefreshCw, LogOut } from 'lucide-react';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
+import { usePOSSession } from '@/services/pos/POSSessionContext';
+import { useSyncStatus } from '@/services/pos/useSyncStatus';
 
 interface TileConfig {
   label: string;
@@ -21,6 +23,8 @@ const tiles: TileConfig[] = [
 
 export default function POSAccueil() {
   const navigate = useNavigate();
+  const { session, logout } = usePOSSession();
+  const { isOnline, pendingCount, syncing, triggerSync } = useSyncStatus();
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--bg-subtle)' }}>
@@ -29,17 +33,47 @@ export default function POSAccueil() {
         style={{ backgroundColor: 'var(--primary)', color: 'white' }}
       >
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold leading-tight">Gare d'Abidjan — Adjamé</p>
-            <p className="text-xs opacity-80 leading-tight">Terminal de vente</p>
+          <div className="min-w-0">
+            <p className="text-sm font-bold leading-tight truncate">
+              {session?.station_name ?? 'Gare'}
+            </p>
+            <p className="text-xs opacity-80 leading-tight truncate">
+              {session?.full_name ?? 'Terminal de vente'}
+              {session?.offline && ' · Hors ligne'}
+            </p>
           </div>
-          <button
-            onClick={() => navigate('/guichet/parametres')}
-            className="flex items-center justify-center w-11 h-11 rounded-xl transition-colors hover:bg-white/15"
-            aria-label="Paramètres"
-          >
-            <SettingsIcon className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {pendingCount > 0 && (
+              <button
+                onClick={() => triggerSync()}
+                disabled={syncing || !isOnline}
+                className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
+                title={`${pendingCount} opération(s) en attente`}
+              >
+                {syncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+                {pendingCount}
+              </button>
+            )}
+            <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-white/20">
+              {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+              {isOnline ? 'En ligne' : 'Hors ligne'}
+            </span>
+            <button
+              onClick={() => navigate('/guichet/parametres')}
+              className="flex items-center justify-center w-11 h-11 rounded-xl transition-colors hover:bg-white/15"
+              aria-label="Paramètres"
+            >
+              <SettingsIcon className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => { logout(); navigate('/guichet/connexion'); }}
+              className="flex items-center justify-center w-11 h-11 rounded-xl transition-colors hover:bg-white/15"
+              aria-label="Déconnexion"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </header>
 

@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Wifi, WifiOff, MapPin } from 'lucide-react';
-import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { Wifi, WifiOff, MapPin, RefreshCw, UploadCloud } from 'lucide-react';
+import { useSyncStatus } from '@/services/pos/useSyncStatus';
 
 interface POSLayoutProps {
   children: ReactNode;
@@ -12,7 +12,7 @@ interface POSLayoutProps {
 
 export default function POSLayout({ children, stationName, activeRoute, showBack }: POSLayoutProps) {
   const navigate = useNavigate();
-  const { isOnline } = useOnlineStatus();
+  const { isOnline, pendingCount, syncing, triggerSync } = useSyncStatus();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -54,6 +54,18 @@ export default function POSLayout({ children, stationName, activeRoute, showBack
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {pendingCount > 0 && (
+            <button
+              onClick={() => triggerSync()}
+              disabled={syncing || !isOnline}
+              className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full transition-colors disabled:opacity-50"
+              style={{ backgroundColor: isOnline ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)' }}
+              title={`${pendingCount} opération(s) en attente${isOnline ? ' — cliquer pour synchroniser' : ''}`}
+            >
+              {syncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+              {pendingCount}
+            </button>
+          )}
           {isOnline ? (
             <span className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-white/20">
               <Wifi className="w-3.5 h-3.5" /> En ligne

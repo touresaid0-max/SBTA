@@ -245,6 +245,7 @@ import POSDepenses from './pages/pos/Depenses';
 import POSAutresGares from './pages/pos/AutresGares';
 import POSCloture from './pages/pos/Cloture';
 import POSParametres from './pages/pos/Parametres';
+import { POSSessionProvider } from './services/pos/POSSessionContext';
 
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
@@ -541,17 +542,19 @@ function App() {
             <Route path="stock/movements" element={<ProtectedRoute roles={['admin', 'chef_garage', 'mecanicien']}><Movements /></ProtectedRoute>} />
           </Route>
 
-          {/* POS /guichet module — LOT 0: additive, standalone layout, no auth gate yet */}
+          {/* POS /guichet module — LOT 0+1: additive, standalone layout, offline-first */}
           <Route path="/guichet/connexion" element={<POSConnexion />} />
-          <Route path="/guichet/accueil" element={<POSAccueil />} />
-          <Route path="/guichet/depart/nouveau" element={<POSDepartNouveau />} />
-          <Route path="/guichet/departs" element={<POSDeparts />} />
-          <Route path="/guichet/depart/:id/vente" element={<POSVente />} />
-          <Route path="/guichet/depart/:id/bagages" element={<POSBagages />} />
-          <Route path="/guichet/depenses" element={<POSDepenses />} />
-          <Route path="/guichet/autres-gares" element={<POSAutresGares />} />
-          <Route path="/guichet/cloture" element={<POSCloture />} />
-          <Route path="/guichet/parametres" element={<POSParametres />} />
+          <Route path="/guichet" element={<POSSessionProvider />}>
+            <Route path="accueil" element={<POSAccueil />} />
+            <Route path="depart/nouveau" element={<POSDepartNouveau />} />
+            <Route path="departs" element={<POSDeparts />} />
+            <Route path="depart/:id/vente" element={<POSVente />} />
+            <Route path="depart/:id/bagages" element={<POSBagages />} />
+            <Route path="depenses" element={<POSDepenses />} />
+            <Route path="autres-gares" element={<POSAutresGares />} />
+            <Route path="cloture" element={<POSCloture />} />
+            <Route path="parametres" element={<POSParametres />} />
+          </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
