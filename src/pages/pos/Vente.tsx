@@ -59,7 +59,6 @@ export default function POSVente() {
   // Bagage form state
   type BagMode = 'avec' | 'sans' | null;
   const [bagMode, setBagMode] = useState<BagMode>(null);
-  const [bagLinkedTicketNumber, setBagLinkedTicketNumber] = useState('');
   const [bagPrice, setBagPrice] = useState(0);
   const [bagDescription, setBagDescription] = useState('');
   const [bagOwnerName, setBagOwnerName] = useState('');
@@ -150,14 +149,9 @@ export default function POSVente() {
     generateTicketNumber(session?.station_name ?? 'SBTA').then(setTicketPreview).catch(() => setTicketPreview(''));
   }, [depart, session, tickets.length]);
 
-  // When mode switches to "avec", auto-fill ticket number from latest ticket
+  // Reset bagage form when mode is cleared
   useEffect(() => {
-    if (bagMode === 'avec' && tickets.length > 0) {
-      const latest = [...tickets].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-      setBagLinkedTicketNumber(latest.ticket_number);
-    }
     if (bagMode === null) {
-      setBagLinkedTicketNumber('');
       setBagPrice(0);
       setBagDescription('');
       setBagOwnerName('');
@@ -165,7 +159,7 @@ export default function POSVente() {
       setBagError('');
       setBagSuccess('');
     }
-  }, [bagMode, tickets]);
+  }, [bagMode]);
 
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
@@ -174,12 +168,6 @@ export default function POSVente() {
 
   const ticketTotal = useMemo(() => tickets.reduce((sum, t) => sum + t.price, 0), [tickets]);
   const bagageTotal = useMemo(() => bagages.reduce((sum, b) => sum + b.price, 0), [bagages]);
-
-  // Derived: linked ticket details for "avec" mode
-  const linkedTicket = useMemo(() => {
-    if (bagMode !== 'avec' || !bagLinkedTicketNumber) return null;
-    return tickets.find(t => t.ticket_number === bagLinkedTicketNumber) ?? null;
-  }, [bagMode, bagLinkedTicketNumber, tickets]);
 
   // Destination name for display
   const destStationName = useMemo(() => {
@@ -243,6 +231,9 @@ export default function POSVente() {
     setBagError(''); setBagSuccess('');
 
     if (bagPrice <= 0) { setBagError('Veuillez saisir un prix de bagage valide'); return; }
+    if (bagMode === 'avec' && !seatNumber) {
+      setBagError('Veuillez sélectionner un siège dans le formulaire de ticket ci-dessus'); return;
+    }
     if (bagMode === 'sans') {
       if (!bagOwnerName.trim()) { setBagError('Veuillez saisir le nom du propriétaire'); return; }
       if (!bagOwnerPhone.trim()) { setBagError('Veuillez saisir le contact du propriétaire'); return; }
@@ -250,27 +241,18 @@ export default function POSVente() {
 
     setBagSelling(true);
     try {
-      // Resolve owner + seat from linked ticket when "avec"
-      const resolvedOwnerName = bagMode === 'avec'
-        ? (linkedTicket?.loyalty_name ?? bagOwnerName)
-        : bagOwnerName;
-      const resolvedOwnerPhone = bagMode === 'avec'
-        ? (linkedTicket ? '' : bagOwnerPhone)
-        : bagOwnerPhone;
-      const resolvedSeat = bagMode === 'avec' && linkedTicket
-        ? String(linkedTicket.seat_number)
-        : '';
+      const resolvedSeat = bagMode === 'avec' ? seatNumber : '';
 
       const bagage = await registerBagage({
         departId,
         withTicket: bagMode === 'avec',
         withTicketReport: false,
-        ticketNumber: bagMode === 'avec' ? bagLinkedTicketNumber : undefined,
+        ticketNumber: bagMode === 'avec' ? ticketPreview : undefined,
         price: bagPrice,
-        destination: linkedTicket?.destination ?? destStationName,
+        destination: destStationName,
         description: bagDescription,
-        ownerName: resolvedOwnerName || bagOwnerName || 'N/A',
-        ownerPhone: resolvedOwnerPhone || bagOwnerPhone || '',
+        ownerName: bagOwnerName || 'N/A',
+        ownerPhone: bagOwnerPhone || '',
         printBagage: true,
       });
 
@@ -298,13 +280,8 @@ export default function POSVente() {
       });
 
       setBagSuccess(`Bagage enregistré — N° ${bagage.bagage_number}`);
-      // Reset bagage form
       setBagPrice(0); setBagDescription('');
       setBagOwnerName(''); setBagOwnerPhone('');
-      if (bagMode === 'avec' && tickets.length > 0) {
-        const latest = [...tickets].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-        setBagLinkedTicketNumber(latest.ticket_number);
-      }
       setTimeout(() => setBagSuccess(''), 4000);
     } catch (err: any) {
       setBagError(err?.message ?? 'Erreur lors de l\'enregistrement du bagage');
@@ -655,26 +632,20 @@ export default function POSVente() {
                     <p className="text-xs font-bold mb-2" style={{ color: 'var(--text-muted)' }}>Informations du billet lié</p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket</label>
-                        <select
-                          value={bagLinkedTicketNumber}
-                          onChange={e => setBagLinkedTicketNumber(e.target.value)}
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket (auto)</label>
+                        <input
+                          type="text"
+                          value={ticketPreview || '...'}
+                          disabled
                           className={fieldInput}
-                          style={fieldStyle}
-                        >
-                          <option value="">Sélectionner un ticket...</option>
-                          {tickets.map(t => (
-                            <option key={t.id} value={t.ticket_number}>
-                              {t.ticket_number} — Siège {t.seat_number}
-                            </option>
-                          ))}
-                        </select>
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
                       </div>
                       <div>
                         <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Siège</label>
                         <input
                           type="text"
-                          value={linkedTicket ? String(linkedTicket.seat_number) : '—'}
+                          value={seatNumber || '—'}
                           disabled
                           className={fieldInput}
                           style={{ ...fieldStyle, opacity: 0.6 }}
@@ -684,7 +655,7 @@ export default function POSVente() {
                         <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Destination</label>
                         <input
                           type="text"
-                          value={linkedTicket?.destination ?? destStationName}
+                          value={destStationName}
                           disabled
                           className={fieldInput}
                           style={{ ...fieldStyle, opacity: 0.6 }}
@@ -852,7 +823,7 @@ export default function POSVente() {
               {bagMode && (
                 <button
                   onClick={handleSellBagage}
-                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim()))}
+                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && !seatNumber)}
                   className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                   style={{ backgroundColor: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)' }}
                 >
