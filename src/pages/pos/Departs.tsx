@@ -169,7 +169,7 @@ export default function POSDeparts() {
 
   if (loading) {
     return (
-      <POSLayout showBack stationName={session?.station_name} activeRoute="D\u00e9parts">
+      <POSLayout showBack stationName={session?.station_name} activeRoute="Départs">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary)' }} />
         </div>
@@ -178,7 +178,7 @@ export default function POSDeparts() {
   }
 
   return (
-    <POSLayout showBack stationName={session?.station_name} activeRoute="D\u00e9parts">
+    <POSLayout showBack stationName={session?.station_name} activeRoute="Départs">
       {/* Action bar */}
       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <div className="flex gap-2 flex-wrap">
@@ -250,7 +250,7 @@ export default function POSDeparts() {
 
       {departs.length === 0 ? (
         <div className="text-center py-20">
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Aucun d\u00e9part. Cliquez sur \u00ab Nouveau \u00bb pour en cr\u00e9er un.</p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Aucun départ. Cliquez sur « Nouveau » pour en créer un.</p>
         </div>
       ) : (
         <>
@@ -258,21 +258,21 @@ export default function POSDeparts() {
             <table className="w-full" style={{ borderCollapse: 'collapse' }}>
               <thead style={{ backgroundColor: 'var(--surface-raised)' }}>
                 <tr style={{ color: 'var(--text-secondary)' }}>
-                  <th className={th} onClick={() => handleSort('departure_number')}>N\u00b0D\u00e9part {sortIcon('departure_number')}</th>
+                  <th className={th} onClick={() => handleSort('departure_number')}>N°Départ {sortIcon('departure_number')}</th>
                   <th className={th} onClick={() => handleSort('departure_datetime')}>Date {sortIcon('departure_datetime')}</th>
-                  <th className={th} onClick={() => handleSort('route_number')}>N\u00b0/Ligne {sortIcon('route_number')}</th>
+                  <th className={th} onClick={() => handleSort('route_number')}>N°/Ligne {sortIcon('route_number')}</th>
                   <th className={th} onClick={() => handleSort('route_name')}>Ligne {sortIcon('route_name')}</th>
                   <th className={th} onClick={() => handleSort('bus_plate')}>Matricule {sortIcon('bus_plate')}</th>
                   <th className={th} onClick={() => handleSort('bus_name')}>Nom Car {sortIcon('bus_name')}</th>
                   <th className={th} onClick={() => handleSort('driver_name')}>Chauffeur {sortIcon('driver_name')}</th>
-                  <th className={th + ' text-right'} onClick={() => handleSort('seats_total')}>Nbre Si\u00e8ge {sortIcon('seats_total')}</th>
-                  <th className={th + ' text-right'}>Si\u00e8ge \u00e0 vendre</th>
-                  <th className={th + ' text-right'} onClick={() => handleSort('seats_sold')}>Si\u00e8ge vendu {sortIcon('seats_sold')}</th>
-                  <th className={th + ' text-right'} onClick={() => handleSort('seats_libres')}>Si\u00e8ge libre {sortIcon('seats_libres')}</th>
-                  <th className={th} onClick={() => handleSort('cloture')}>Cl\u00f4ture {sortIcon('cloture')}</th>
+                  <th className={th + ' text-right'} onClick={() => handleSort('seats_total')}>Nbre Siège {sortIcon('seats_total')}</th>
+                  <th className={th + ' text-right'}>Siège à vendre</th>
+                  <th className={th + ' text-right'} onClick={() => handleSort('seats_sold')}>Siège vendu {sortIcon('seats_sold')}</th>
+                  <th className={th + ' text-right'} onClick={() => handleSort('seats_libres')}>Siège libre {sortIcon('seats_libres')}</th>
+                  <th className={th} onClick={() => handleSort('cloture')}>Clôture {sortIcon('cloture')}</th>
                   <th className={th + ' text-right'} onClick={() => handleSort('mt_ticket')}>MT Ticket {sortIcon('mt_ticket')}</th>
                   <th className={th + ' text-right'} onClick={() => handleSort('mt_bagage')}>MT Bagage {sortIcon('mt_bagage')}</th>
-                  <th className={th + ' text-right'} onClick={() => handleSort('tot_depense')}>Tot D\u00e9pense {sortIcon('tot_depense')}</th>
+                  <th className={th + ' text-right'} onClick={() => handleSort('tot_depense')}>Tot Dépense {sortIcon('tot_depense')}</th>
                   <th className={th + ' text-right'} onClick={() => handleSort('solde')}>Solde {sortIcon('solde')}</th>
                   <th className={th + ' text-right'} onClick={() => handleSort('caisse')}>Caisse {sortIcon('caisse')}</th>
                 </tr>
@@ -303,7 +303,7 @@ export default function POSDeparts() {
                       <td className={td + ' text-right'} style={{ color: 'var(--info)', fontWeight: 600 }}>{d.seats_sold}</td>
                       <td className={td + ' text-right'} style={{ color: 'var(--success)', fontWeight: 700 }}>{d.seats_libres}</td>
                       <td className={td}>
-                        {d.cloture ? <span style={{ color: 'var(--danger)' }}>Cl\u00f4tur\u00e9</span> : d.confirmed ? <span style={{ color: 'var(--success)' }}>Confirm\u00e9</span> : <span style={{ color: 'var(--text-muted)' }}>En attente</span>}
+                        {d.cloture ? <span style={{ color: 'var(--danger)' }}>Clôturé</span> : d.confirmed ? <span style={{ color: 'var(--success)' }}>Confirmé</span> : <span style={{ color: 'var(--text-muted)' }}>En attente</span>}
                       </td>
                       <td className={td + ' text-right'}>{formatCurrency(d.mt_ticket)}</td>
                       <td className={td + ' text-right'}>{formatCurrency(d.mt_bagage)}</td>
@@ -334,7 +334,7 @@ export default function POSDeparts() {
           </div>
 
           <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-            {visibleDeparts.length} d\u00e9part(s) {showAll ? '(toutes dates)' : "(aujourd'hui)"} · Cliquez sur une ligne pour la s\u00e9lectionner et voir les actions
+            {visibleDeparts.length} départ(s) {showAll ? '(toutes dates)' : "(aujourd'hui)"} · Cliquez sur une ligne pour la sélectionner et voir les actions
           </p>
         </>
       )}
@@ -344,13 +344,13 @@ export default function POSDeparts() {
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="rounded-2xl shadow-2xl max-w-sm w-full p-6" style={{ backgroundColor: 'var(--surface)' }}>
             <div className="flex items-start justify-between mb-4">
-              <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Annuler le d\u00e9part</h3>
+              <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Annuler le départ</h3>
               <button onClick={() => setShowCancelConfirm(null)} className="p-1 rounded-lg" style={{ color: 'var(--text-muted)' }}>
                 <X className="w-5 h-5" />
               </button>
             </div>
             <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Confirmer l'annulation du d\u00e9part #{showCancelConfirm.departure_number} ({showCancelConfirm.route_name}) ?
+              Confirmer l'annulation du départ #{showCancelConfirm.departure_number} ({showCancelConfirm.route_name}) ?
             </p>
             <div className="flex gap-3">
               <button onClick={() => setShowCancelConfirm(null)} className="flex-1 py-3 rounded-xl font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>

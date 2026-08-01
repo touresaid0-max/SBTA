@@ -77,7 +77,7 @@ export default function POSDepartNouveau() {
   const handleSubmit = () => {
     setError('');
     if (!canSubmit) {
-      setError('Veuillez renseigner tous les champs obligatoires (date, heure, ligne, car, chauffeur, nombre de si\u00e8ges).');
+      setError('Veuillez renseigner tous les champs obligatoires (date, heure, ligne, car, chauffeur, nombre de sièges).');
       return;
     }
     setShowConfirm(true);
@@ -123,7 +123,7 @@ export default function POSDepartNouveau() {
       setSuccess(true);
       setTimeout(() => navigate('/guichet/departs'), 800);
     } catch (err: any) {
-      setError(err?.message ?? 'Erreur lors de la cr\u00e9ation du d\u00e9part');
+      setError(err?.message ?? 'Erreur lors de la création du départ');
       setSaving(false);
       setShowConfirm(false);
     }
@@ -134,7 +134,7 @@ export default function POSDepartNouveau() {
   const fieldStyle = { borderColor: 'var(--border)', backgroundColor: 'var(--surface)' as const };
 
   return (
-    <POSLayout showBack stationName={session?.station_name} activeRoute="Nouveau d\u00e9part">
+    <POSLayout showBack stationName={session?.station_name} activeRoute="Nouveau départ">
       {loadingRefs ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary)' }} />
@@ -143,7 +143,7 @@ export default function POSDepartNouveau() {
         <div className="max-w-2xl mx-auto">
           {/* Auto departure number */}
           <div className="rounded-xl p-3 mb-5 flex items-center justify-between" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
-            <span className="text-sm font-bold">N\u00b0 D\u00e9part</span>
+            <span className="text-sm font-bold">N° Départ</span>
             <span className="text-lg font-bold">#{departureNo}</span>
           </div>
 
@@ -156,14 +156,14 @@ export default function POSDepartNouveau() {
 
           {success && (
             <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-medium" style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}>
-              <CheckCircle className="w-4 h-4" /> D\u00e9part cr\u00e9\u00e9 avec succ\u00e8s
+              <CheckCircle className="w-4 h-4" /> Départ créé avec succès
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            {/* Date d\u00e9part */}
+            {/* Date départ */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Date d\u00e9part *</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Date départ *</label>
               <input type="date" value={departureDate} onChange={e => setDepartureDate(e.target.value)} className={fieldInput} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
@@ -177,14 +177,14 @@ export default function POSDepartNouveau() {
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Ligne *</label>
               <select value={ligneId} onChange={e => setLigneId(e.target.value)} className={fieldInput} style={fieldStyle}>
-                <option value="">S\u00e9lectionner...</option>
+                <option value="">Sélectionner...</option>
                 {lignes.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
 
-            {/* Climatis\u00e9 */}
+            {/* Climatisé */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Climatis\u00e9</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Climatisé</label>
               <button
                 type="button"
                 onClick={() => setIsAc(!isAc)}
@@ -199,7 +199,7 @@ export default function POSDepartNouveau() {
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Car *</label>
               <select value={busId} onChange={e => handleBusChange(e.target.value)} className={fieldInput} style={fieldStyle}>
-                <option value="">S\u00e9lectionner...</option>
+                <option value="">Sélectionner...</option>
                 {vehicules.map(v => <option key={v.id} value={v.id}>{v.plate_number} ({v.capacity} pl.)</option>)}
               </select>
             </div>
@@ -208,7 +208,7 @@ export default function POSDepartNouveau() {
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Chauffeur *</label>
               <select value={driverId} onChange={e => setDriverId(e.target.value)} className={fieldInput} style={fieldStyle}>
-                <option value="">S\u00e9lectionner...</option>
+                <option value="">Sélectionner...</option>
                 {chauffeurs.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
               </select>
             </div>
@@ -240,15 +240,15 @@ export default function POSDepartNouveau() {
               </select>
             </div>
 
-            {/* Nbre si\u00e8ge */}
+            {/* Nbre siège */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nbre si\u00e8ge *</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nbre siège *</label>
               <input type="number" min={1} value={seatsTotal || ''} onChange={e => setSeatsTotal(parseInt(e.target.value) || 0)} className={fieldInput} style={fieldStyle} placeholder={selectedBus ? `${selectedBus.capacity}` : '0'} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
-            {/* Si\u00e8ge \u00e0 partir de */}
+            {/* Siège à partir de */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Si\u00e8ge \u00e0 partir de</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Siège à partir de</label>
               <input type="number" min={0} value={seatsFrom} onChange={e => setSeatsFrom(parseInt(e.target.value) || 0)} className={fieldInput} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
           </div>
@@ -268,7 +268,7 @@ export default function POSDepartNouveau() {
               className="flex-1 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 transition-opacity"
               style={{ backgroundColor: 'var(--primary)' }}
             >
-              {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Cr\u00e9er le d\u00e9part'}
+              {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Créer le départ'}
             </button>
           </div>
         </div>
@@ -285,7 +285,7 @@ export default function POSDepartNouveau() {
               </button>
             </div>
             <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Voulez-vous cr\u00e9er un nouveau d\u00e9part ? Veuillez renseigner la date de d\u00e9part SVP.
+              Voulez-vous créer un nouveau départ ? Veuillez renseigner la date de départ SVP.
             </p>
             <div className="flex gap-3">
               <button
