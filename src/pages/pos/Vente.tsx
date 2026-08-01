@@ -151,7 +151,7 @@ export default function POSVente() {
       });
 
       if (printTicket) {
-        PrintService.print({ ticket, depart, stationName: session?.station_name });
+        PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
       }
 
       // Refresh data
@@ -193,7 +193,7 @@ export default function POSVente() {
 
   const handlePrintTicket = (ticket: TicketRecord) => {
     if (depart) {
-      PrintService.print({ ticket, depart, stationName: session?.station_name });
+      PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
     }
   };
   void handlePrintTicket;

@@ -122,7 +122,7 @@ export default function POSBagages() {
       });
 
       if (printBagage && depart) {
-        PrintService.print({ ticket: bagage as any, depart, stationName: session?.station_name });
+        PrintService.printBagage({ bagage, depart, stationName: session?.station_name });
       }
 
       // Refresh

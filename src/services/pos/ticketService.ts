@@ -44,7 +44,8 @@ export async function getSoldSeats(departId: string): Promise<number[]> {
   return tickets.map(t => t.seat_number).sort((a, b) => a - b);
 }
 
-export async function generateTicketNumber(stationAgencyCode?: string): Promise<string> {
+export async function generateTicketNumber(_stationAgencyCode?: string): Promise<string> {
+  void _stationAgencyCode;
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');

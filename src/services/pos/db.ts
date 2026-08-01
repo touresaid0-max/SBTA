@@ -132,6 +132,20 @@ export interface SessionRecord {
   password_hash?: string;
 }
 
+export type PrintBackend = 'webserial' | 'webusb' | 'qztray' | 'browser';
+
+export interface PrintSettings {
+  id: string;
+  backend: PrintBackend;
+  printer_name?: string;
+  width_mm: 58 | 80;
+  header_lines: string[];
+  footer_lines: string[];
+  auto_cut: boolean;
+  qz_host: string;
+  qz_port: number;
+}
+
 class POSDatabase extends Dexie {
   departs!: Table<DepartRecord, string>;
   tickets!: Table<TicketRecord, string>;
@@ -140,6 +154,7 @@ class POSDatabase extends Dexie {
   referentiels!: Table<ReferentielRecord, string>;
   sync_queue!: Table<SyncQueueItem, number>;
   session!: Table<SessionRecord, string>;
+  print_settings!: Table<PrintSettings, string>;
 
   constructor() {
     super('pos_guichet_db');
@@ -151,6 +166,7 @@ class POSDatabase extends Dexie {
       referentiels: 'key, type, updated_at',
       sync_queue: '++id, entity, status, created_at, tries',
       session: 'id, user_id, station_id',
+      print_settings: 'id',
     });
   }
 }
