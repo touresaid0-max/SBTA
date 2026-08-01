@@ -26,10 +26,6 @@ export async function loginOnline(email: string, password: string): Promise<POSL
       return { success: false, offline: false, error: 'Profil introuvable. Contactez votre administrateur.' };
     }
 
-    if (!user.station_id) {
-      return { success: false, offline: false, error: 'Aucune gare assignée à ce compte.' };
-    }
-
     const hash = await hashPassword(password);
     const session: SessionRecord = {
       id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -50,7 +46,7 @@ export async function loginOnline(email: string, password: string): Promise<POSL
     try {
       const { data: counter } = await supabase
         .from('counters')
-        .select('id, counter_number')
+        .select('id, counter_number, station_id, stations!inner(name)')
         .eq('assigned_user_id', user.id)
         .eq('is_active', true)
         .maybeSingle();
@@ -58,10 +54,28 @@ export async function loginOnline(email: string, password: string): Promise<POSL
       if (counter) {
         session.counter_id = counter.id;
         session.counter_number = counter.counter_number as string;
+
+        if (!session.station_id && counter.station_id) {
+          session.station_id = counter.station_id;
+          const stationName = (counter.stations as { name?: string } | null)?.name;
+          if (stationName) session.station_name = stationName;
+
+          await supabase
+            .from('users')
+            .update({ station_id: counter.station_id })
+            .eq('id', user.id)
+            .then(() => {});
+        }
+
         await db.session.put(session);
       }
     } catch {
       // non-critical
+    }
+
+    if (!session.station_id) {
+      await db.session.delete(session.id);
+      return { success: false, offline: false, error: 'Aucune gare assignée à ce compte.' };
     }
 
     return { success: true, offline: false, session };
