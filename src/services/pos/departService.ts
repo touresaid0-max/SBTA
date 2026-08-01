@@ -1,6 +1,7 @@
 import { type DepartRecord } from './db';
 import { localInsert, localUpdate, getAll } from './offlineStore';
 import { getReferentiel } from './referentiels';
+import { supabase } from '@/services/supabase';
 
 export type { DepartRecord };
 
@@ -11,6 +12,19 @@ export interface GareRef { id: string; name: string; city: string; agency_code: 
 
 export async function getLignes(): Promise<LigneRef[]> {
   return getReferentiel<LigneRef>('lignes');
+}
+
+export async function getAssignedRouteIds(counterId: string): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from('counter_routes')
+      .select('route_id')
+      .eq('counter_id', counterId);
+    if (error) throw error;
+    return (data ?? []).map(r => r.route_id as string);
+  } catch {
+    return [];
+  }
 }
 export async function getVehicules(): Promise<VehiculeRef[]> {
   return getReferentiel<VehiculeRef>('vehicules');

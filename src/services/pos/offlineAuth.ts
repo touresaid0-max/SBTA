@@ -67,6 +67,18 @@ export async function loginOnline(email: string, password: string): Promise<POSL
             .then(() => {});
         }
 
+        try {
+          const { data: routes } = await supabase
+            .from('counter_routes')
+            .select('route_id')
+            .eq('counter_id', counter.id);
+          if (routes && routes.length > 0) {
+            session.assigned_route_ids = routes.map(r => r.route_id as string);
+          }
+        } catch {
+          // non-critical
+        }
+
         await db.session.put(session);
       }
     } catch {

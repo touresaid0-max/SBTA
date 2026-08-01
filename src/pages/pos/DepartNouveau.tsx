@@ -5,6 +5,7 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
   createDepart,
   getLignes, getVehicules, getChauffeurs, getGares,
+  getAssignedRouteIds,
   nextDepartureNumber,
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
 } from '@/services/pos/departService';
@@ -19,6 +20,7 @@ export default function POSDepartNouveau() {
   const [chauffeurs, setChauffeurs] = useState<ChauffeurRef[]>([]);
   const [gares, setGares] = useState<GareRef[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
+  const [noLinesAssigned, setNoLinesAssigned] = useState(false);
 
   const [departureDate, setDepartureDate] = useState('');
   const [departureTime, setDepartureTime] = useState('');
@@ -41,7 +43,22 @@ export default function POSDepartNouveau() {
   const loadRefs = useCallback(async () => {
     try {
       const [l, v, c, g] = await Promise.all([getLignes(), getVehicules(), getChauffeurs(), getGares()]);
-      setLignes(l);
+
+      let routeIds = session?.assigned_route_ids ?? [];
+      if (navigator.onLine && session?.counter_id) {
+        const fresh = await getAssignedRouteIds(session.counter_id);
+        if (fresh.length > 0) routeIds = fresh;
+      }
+
+      if (routeIds.length > 0) {
+        const allowed = new Set(routeIds);
+        setLignes(l.filter(ligne => allowed.has(ligne.id)));
+        setNoLinesAssigned(false);
+      } else {
+        setLignes([]);
+        setNoLinesAssigned(true);
+      }
+
       setVehicules(v);
       setChauffeurs(c);
       setGares(g);
@@ -50,7 +67,7 @@ export default function POSDepartNouveau() {
     } finally {
       setLoadingRefs(false);
     }
-  }, []);
+  }, [session?.counter_id, session?.assigned_route_ids]);
 
   useEffect(() => {
     loadRefs();
@@ -76,6 +93,10 @@ export default function POSDepartNouveau() {
 
   const handleSubmit = () => {
     setError('');
+    if (noLinesAssigned) {
+      setError('Aucune ligne n\'est affectée à votre compte. Veuillez contacter votre Chef de Gare ou l\'Administrateur.');
+      return;
+    }
     if (!canSubmit) {
       setError('Veuillez renseigner tous les champs obligatoires (date, heure, ligne, car, chauffeur, nombre de sièges).');
       return;
@@ -176,10 +197,20 @@ export default function POSDepartNouveau() {
             {/* Ligne */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Ligne *</label>
-              <select value={ligneId} onChange={e => setLigneId(e.target.value)} className={fieldInput} style={fieldStyle}>
-                <option value="">Sélectionner...</option>
-                {lignes.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              {noLinesAssigned ? (
+                <div
+                  className="rounded-xl px-4 py-3 text-sm flex items-start gap-2"
+                  style={{ backgroundColor: 'var(--warning-light)', color: '#92400E' }}
+                >
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>Aucune ligne n'est affectée à votre compte. Veuillez contacter votre Chef de Gare ou l'Administrateur.</span>
+                </div>
+              ) : (
+                <select value={ligneId} onChange={e => setLigneId(e.target.value)} className={fieldInput} style={fieldStyle}>
+                  <option value="">Sélectionner...</option>
+                  {lignes.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              )}
             </div>
 
             {/* Climatisé */}

@@ -132,6 +132,7 @@ export interface SessionRecord {
   station_name: string;
   counter_id?: string;
   counter_number?: string;
+  assigned_route_ids?: string[];
   login_at: string;
   offline: boolean;
   password_hash?: string;
