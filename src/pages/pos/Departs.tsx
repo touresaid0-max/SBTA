@@ -6,10 +6,14 @@ import {
   getAllDeparts, updateDepart, type DepartRecord,
   seatsLibres, computeSolde,
 } from '@/services/pos/departService';
+import {
+  departToSummary, exportToExcel, exportToPDF, printDeparturesList,
+} from '@/services/pos/posReportService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
   Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
   ChevronUp, ChevronDown, Eye, Loader2, X,
+  FileText, FileSpreadsheet, Copy,
 } from 'lucide-react';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
@@ -129,7 +133,8 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'imprimer') {
-        // Future: print bordereau
+        const summaries = visibleDeparts.map(departToSummary);
+        printDeparturesList(summaries, session?.station_name);
         return;
       }
       await loadDeparts();
@@ -184,13 +189,34 @@ export default function POSDeparts() {
           >
             <Plus className="w-4 h-4" /> Nouveau
           </button>
+          <button
+            onClick={() => printDeparturesList(visibleDeparts.map(departToSummary), session?.station_name)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+          >
+            <Copy className="w-4 h-4" /> Imprimer liste
+          </button>
+          <button
+            onClick={() => exportToPDF(visibleDeparts.map(departToSummary), `recap-departs-${todayStr}.pdf`, 'Récapitulatif des départs')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+          >
+            <FileText className="w-4 h-4" /> Export PDF
+          </button>
+          <button
+            onClick={() => exportToExcel(visibleDeparts.map(departToSummary), `recap-departs-${todayStr}.xlsx`)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Export Excel
+          </button>
           {selectedRow && (
             <>
               <button onClick={() => handleAction('modifier', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
                 <Pencil className="w-4 h-4" /> Modifier
               </button>
               <button onClick={() => handleAction('imprimer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-                <Printer className="w-4 h-4" /> Imprimer
+                <Printer className="w-4 h-4" /> Imprimer sélection
               </button>
               <button onClick={() => handleAction('vente', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--info)' }}>
                 <Ticket className="w-4 h-4" /> Vente tickets

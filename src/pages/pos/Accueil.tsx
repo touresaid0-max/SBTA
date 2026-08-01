@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, Ticket, Package, Building2, Receipt, Lock, Settings as SettingsIcon, Wifi, WifiOff, UploadCloud, RefreshCw, LogOut } from 'lucide-react';
+import { PlusCircle, Ticket, Package, Building2, Receipt, Lock, FileText, Settings as SettingsIcon, Wifi, WifiOff, UploadCloud, RefreshCw, LogOut } from 'lucide-react';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { useSyncStatus } from '@/services/pos/useSyncStatus';
@@ -19,6 +19,7 @@ const tiles: TileConfig[] = [
   { label: 'Gestion autres gares', icon: Building2, path: '/guichet/autres-gares', color: '#7C3AED', bgColor: '#EDE9FE' },
   { label: 'Nouvelles dépenses', icon: Receipt, path: '/guichet/depenses', color: '#AF3029', bgColor: '#f8d7d5' },
   { label: 'Clôture', icon: Lock, path: '/guichet/cloture', color: '#4A6B55', bgColor: '#E2EAE5' },
+  { label: 'États & exports', icon: FileText, path: '/guichet/departs', color: '#2563EB', bgColor: '#DBEAFE' },
 ];
 
 export default function POSAccueil() {
