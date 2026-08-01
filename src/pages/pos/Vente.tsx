@@ -563,6 +563,3 @@ export default function POSVente() {
     </POSLayout>
   );
 }
-
-
-export default POSVente

@@ -71,12 +71,18 @@ export interface TicketRecord {
 export interface BagageRecord {
   id: string;
   depart_id: string;
+  bagage_number: string;
   ticket_id?: string;
-  description: string;
-  weight: number;
+  ticket_number?: string;
+  with_ticket: boolean;
+  with_ticket_report: boolean;
   price: number;
+  destination: string;
+  description: string;
+  car_plate: string;
   owner_name: string;
   owner_phone: string;
+  print_bagage: boolean;
   created_at: string;
   updated_at: string;
   synced?: boolean;
