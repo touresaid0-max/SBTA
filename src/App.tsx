@@ -234,6 +234,18 @@ import AgentReservationSettings from './pages/agent-reservation/Settings';
 import AgentReservationFaq from './pages/agent-reservation/Faq';
 import AgentReservationPolicies from './pages/agent-reservation/CancellationPolicies';
 
+// POS module (LOT 0 — additive, no existing route modified)
+import POSConnexion from './pages/pos/Connexion';
+import POSAccueil from './pages/pos/Accueil';
+import POSDepartNouveau from './pages/pos/DepartNouveau';
+import POSDeparts from './pages/pos/Departs';
+import POSVente from './pages/pos/Vente';
+import POSBagages from './pages/pos/Bagages';
+import POSDepenses from './pages/pos/Depenses';
+import POSAutresGares from './pages/pos/AutresGares';
+import POSCloture from './pages/pos/Cloture';
+import POSParametres from './pages/pos/Parametres';
+
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-subtle)' }}>
@@ -528,6 +540,18 @@ function App() {
             <Route path="stock/purchase-orders/:id" element={<ProtectedRoute roles={['admin', 'chef_garage']}><PurchaseOrderDetail /></ProtectedRoute>} />
             <Route path="stock/movements" element={<ProtectedRoute roles={['admin', 'chef_garage', 'mecanicien']}><Movements /></ProtectedRoute>} />
           </Route>
+
+          {/* POS /guichet module — LOT 0: additive, standalone layout, no auth gate yet */}
+          <Route path="/guichet/connexion" element={<POSConnexion />} />
+          <Route path="/guichet/accueil" element={<POSAccueil />} />
+          <Route path="/guichet/depart/nouveau" element={<POSDepartNouveau />} />
+          <Route path="/guichet/departs" element={<POSDeparts />} />
+          <Route path="/guichet/depart/:id/vente" element={<POSVente />} />
+          <Route path="/guichet/depart/:id/bagages" element={<POSBagages />} />
+          <Route path="/guichet/depenses" element={<POSDepenses />} />
+          <Route path="/guichet/autres-gares" element={<POSAutresGares />} />
+          <Route path="/guichet/cloture" element={<POSCloture />} />
+          <Route path="/guichet/parametres" element={<POSParametres />} />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
