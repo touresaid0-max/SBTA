@@ -46,12 +46,23 @@ export interface DepartRecord {
 export interface TicketRecord {
   id: string;
   depart_id: string;
+  ticket_number: string;
+  seat_number: number;
   seat_numbers: string[];
+  destination: string;
+  destination_id?: string;
   passenger_name: string;
   passenger_phone: string;
   price: number;
+  original_price: number;
+  is_reduced: boolean;
+  is_reported: boolean;
+  is_ac: boolean;
+  print_ticket: boolean;
   payment_method: string;
   status: string;
+  loyalty_card_number?: string;
+  loyalty_name?: string;
   created_at: string;
   updated_at: string;
   synced?: boolean;
