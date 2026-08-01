@@ -2,23 +2,23 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import {
-  getDepartById,
-} from '@/services/pos/departService';
+import { getDepartById } from '@/services/pos/departService';
 import {
   sellTicket, getTicketsForDepart, getSoldSeats,
-  calculatePrice, getStations, generateTicketNumber,
-  type TicketRecord, type StationRef,
+  calculatePrice, getStations, generateTicketNumber, getTarifs,
+  type TicketRecord, type StationRef, type TarifRef,
 } from '@/services/pos/ticketService';
-import { getTarifs, type TarifRef } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
+import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
+import { printBaggageTicket } from '@/utils/printBaggageTicket';
 import { formatCurrency } from '@/utils/formatCurrency';
 import type { DepartRecord } from '@/services/pos/departService';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Printer, X, Lock,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
+  Package,
 } from 'lucide-react';
 
 export default function POSVente() {
@@ -28,6 +28,7 @@ export default function POSVente() {
 
   const [depart, setDepart] = useState<DepartRecord | null>(null);
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
+  const [bagages, setBagages] = useState<BagageRecord[]>([]);
   const [soldSeats, setSoldSeats] = useState<number[]>([]);
   const [stations, setStations] = useState<StationRef[]>([]);
   const [tarifs, setTarifs] = useState<TarifRef[]>([]);
@@ -55,6 +56,18 @@ export default function POSVente() {
   const [loyaltyPhone, setLoyaltyPhone] = useState('');
   const [loyaltyTrips, setLoyaltyTrips] = useState(0);
 
+  // Bagage form state
+  type BagMode = 'avec' | 'sans' | null;
+  const [bagMode, setBagMode] = useState<BagMode>(null);
+  const [bagLinkedTicketNumber, setBagLinkedTicketNumber] = useState('');
+  const [bagPrice, setBagPrice] = useState(0);
+  const [bagDescription, setBagDescription] = useState('');
+  const [bagOwnerName, setBagOwnerName] = useState('');
+  const [bagOwnerPhone, setBagOwnerPhone] = useState('');
+  const [bagSelling, setBagSelling] = useState(false);
+  const [bagError, setBagError] = useState('');
+  const [bagSuccess, setBagSuccess] = useState('');
+
   const loadData = useCallback(async () => {
     if (!departId) return;
     try {
@@ -66,18 +79,20 @@ export default function POSVente() {
       }
       setDepart(d);
 
-      const [t, s, st, ta, li] = await Promise.all([
+      const [t, s, st, ta, li, bg] = await Promise.all([
         getTicketsForDepart(departId),
         getSoldSeats(departId),
         getStations(),
         getTarifs(),
         getLignes(),
+        getBagagesForDepart(departId),
       ]);
       setTickets(t);
       setSoldSeats(s);
       setStations(st);
       setTarifs(ta);
       setLignes(li);
+      setBagages(bg);
     } catch {
       // non-critical
     } finally {
@@ -85,28 +100,20 @@ export default function POSVente() {
     }
   }, [departId]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   // Auto-select destination and compute tarif when depart/stations/lignes load
   useEffect(() => {
     if (!depart || stations.length === 0) return;
-
-    // Find the line's destination station
     const ligne = lignes.find(l => l.id === depart.route_id);
     let destStationId = '';
-
     if (ligne?.destination_station_id) {
       destStationId = ligne.destination_station_id;
     } else if (ligne?.origin_station_id && depart.station_id) {
-      // If origin is the depart station, destination is the other end
       destStationId = ligne.origin_station_id === depart.station_id
         ? ligne.destination_station_id
         : ligne.origin_station_id;
     }
-
-    // Fallback: parse route name to match station by city name
     if (!destStationId) {
       const routeCities = (depart.route_name ?? '')
         .split(/\s*[\-–——]\s*/)
@@ -123,7 +130,6 @@ export default function POSVente() {
         if (match) destStationId = match.id;
       }
     }
-
     if (destStationId && destStationId !== depart.station_id) {
       setDestination(destStationId);
     }
@@ -131,113 +137,93 @@ export default function POSVente() {
 
   // Auto-calculate tarif when destination changes
   useEffect(() => {
-    if (!depart || !destination) {
-      setTarif(0);
-      return;
-    }
-    const tarifRef = tarifs.find(
-      t => t.route_id === depart.route_id && t.station_id === destination,
-    );
+    if (!depart || !destination) { setTarif(0); return; }
+    const tarifRef = tarifs.find(t => t.route_id === depart.route_id && t.station_id === destination);
     const ligne = lignes.find(l => l.id === depart.route_id);
     const basePrice = tarifRef?.price ?? ligne?.base_price ?? 0;
-    const finalPrice = calculatePrice(basePrice, depart.is_ac, isReduced);
-    setTarif(finalPrice);
+    setTarif(calculatePrice(basePrice, depart.is_ac, isReduced));
   }, [destination, depart, tarifs, lignes, isReduced]);
 
-  // Preview ticket number when depart loads
+  // Preview ticket number
   useEffect(() => {
     if (!depart) return;
     generateTicketNumber(session?.station_name ?? 'SBTA').then(setTicketPreview).catch(() => setTicketPreview(''));
   }, [depart, session, tickets.length]);
+
+  // When mode switches to "avec", auto-fill ticket number from latest ticket
+  useEffect(() => {
+    if (bagMode === 'avec' && tickets.length > 0) {
+      const latest = [...tickets].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+      setBagLinkedTicketNumber(latest.ticket_number);
+    }
+    if (bagMode === null) {
+      setBagLinkedTicketNumber('');
+      setBagPrice(0);
+      setBagDescription('');
+      setBagOwnerName('');
+      setBagOwnerPhone('');
+      setBagError('');
+      setBagSuccess('');
+    }
+  }, [bagMode, tickets]);
 
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
     return depart.seats_total - depart.seats_sold;
   }, [depart]);
 
-  const ticketTotal = useMemo(() => {
-    return tickets.reduce((sum, t) => sum + t.price, 0);
-  }, [tickets]);
+  const ticketTotal = useMemo(() => tickets.reduce((sum, t) => sum + t.price, 0), [tickets]);
+  const bagageTotal = useMemo(() => bagages.reduce((sum, b) => sum + b.price, 0), [bagages]);
+
+  // Derived: linked ticket details for "avec" mode
+  const linkedTicket = useMemo(() => {
+    if (bagMode !== 'avec' || !bagLinkedTicketNumber) return null;
+    return tickets.find(t => t.ticket_number === bagLinkedTicketNumber) ?? null;
+  }, [bagMode, bagLinkedTicketNumber, tickets]);
+
+  // Destination name for display
+  const destStationName = useMemo(() => {
+    const s = stations.find(st => st.id === destination);
+    return s?.name ?? depart?.route_name ?? '';
+  }, [stations, destination, depart]);
 
   const handleSell = async () => {
     if (!depart || !departId) return;
-    if (depart.cloture) {
-      setError('Ce départ est clôturé — vente impossible');
-      return;
-    }
-    setError('');
-    setSuccess('');
-
+    if (depart.cloture) { setError('Ce départ est clôturé — vente impossible'); return; }
+    setError(''); setSuccess('');
     const seat = parseInt(seatNumber);
-    if (!seat || isNaN(seat)) {
-      setError('Veuillez saisir un numéro de siège valide');
-      return;
-    }
+    if (!seat || isNaN(seat)) { setError('Veuillez saisir un numéro de siège valide'); return; }
     if (seat < depart.seats_from || seat > depart.seats_total) {
-      setError(`Le siège doit être entre ${depart.seats_from} et ${depart.seats_total}`);
-      return;
+      setError(`Le siège doit être entre ${depart.seats_from} et ${depart.seats_total}`); return;
     }
-    if (!destination) {
-      setError('Veuillez sélectionner une destination');
-      return;
-    }
-    if (tarif <= 0) {
-      setError('Tarif invalide — vérifiez la destination');
-      return;
-    }
+    if (!destination) { setError('Veuillez sélectionner une destination'); return; }
+    if (tarif <= 0) { setError('Tarif invalide — vérifiez la destination'); return; }
 
     setSelling(true);
     try {
       const station = stations.find(s => s.id === destination);
       const ticket = await sellTicket({
-        departId,
-        seatNumber: seat,
+        departId, seatNumber: seat,
         destination: station?.name ?? destination,
         destinationId: destination,
-        price: tarif,
-        originalPrice: tarif,
-        isReduced,
-        isReported,
-        isAc: depart.is_ac,
-        printTicket,
+        price: tarif, originalPrice: tarif,
+        isReduced, isReported, isAc: depart.is_ac, printTicket,
         loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
         loyaltyName: loyaltyEnabled ? loyaltyName : undefined,
         stationAgencyCode: session?.station_name,
       });
+      if (printTicket) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
 
-      if (printTicket) {
-        PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
-      }
-
-      // Refresh data
-      const [t, s] = await Promise.all([
-        getTicketsForDepart(departId),
-        getSoldSeats(departId),
-      ]);
-      setTickets(t);
-      setSoldSeats(s);
-
-      // Update depart locally for counter display
+      const [t, s] = await Promise.all([getTicketsForDepart(departId), getSoldSeats(departId)]);
+      setTickets(t); setSoldSeats(s);
       const updatedDepart = await getDepartById(departId);
       if (updatedDepart) setDepart(updatedDepart);
 
       setSuccess(`Siège ${seat} vendu — Ticket ${ticket.ticket_number}`);
-
-      // Reset form but keep destination if "Même destination" is checked
-      setSeatNumber('');
-      setIsReduced(false);
-      setIsReported(false);
-      if (!sameDestination) {
-        setDestination('');
-        setTarif(0);
-      }
-      setLoyaltyEnabled(false);
-      setLoyaltyNewCard(false);
-      setLoyaltyCardNumber('');
-      setLoyaltyName('');
-      setLoyaltyPhone('');
-      setLoyaltyTrips(0);
-
+      setSeatNumber(''); setIsReduced(false); setIsReported(false);
+      if (!sameDestination) { setDestination(''); setTarif(0); }
+      setLoyaltyEnabled(false); setLoyaltyNewCard(false);
+      setLoyaltyCardNumber(''); setLoyaltyName(''); setLoyaltyPhone(''); setLoyaltyTrips(0);
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
       setError(err?.message ?? 'Erreur lors de la vente');
@@ -247,11 +233,85 @@ export default function POSVente() {
   };
 
   const handlePrintTicket = (ticket: TicketRecord) => {
-    if (depart) {
-      PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
-    }
+    if (depart) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
   };
   void handlePrintTicket;
+
+  const handleSellBagage = async () => {
+    if (!depart || !departId || !bagMode) return;
+    if (depart.cloture) { setBagError('Ce départ est clôturé — opération impossible'); return; }
+    setBagError(''); setBagSuccess('');
+
+    if (bagPrice <= 0) { setBagError('Veuillez saisir un prix de bagage valide'); return; }
+    if (bagMode === 'sans') {
+      if (!bagOwnerName.trim()) { setBagError('Veuillez saisir le nom du propriétaire'); return; }
+      if (!bagOwnerPhone.trim()) { setBagError('Veuillez saisir le contact du propriétaire'); return; }
+    }
+
+    setBagSelling(true);
+    try {
+      // Resolve owner + seat from linked ticket when "avec"
+      const resolvedOwnerName = bagMode === 'avec'
+        ? (linkedTicket?.loyalty_name ?? bagOwnerName)
+        : bagOwnerName;
+      const resolvedOwnerPhone = bagMode === 'avec'
+        ? (linkedTicket ? '' : bagOwnerPhone)
+        : bagOwnerPhone;
+      const resolvedSeat = bagMode === 'avec' && linkedTicket
+        ? String(linkedTicket.seat_number)
+        : '';
+
+      const bagage = await registerBagage({
+        departId,
+        withTicket: bagMode === 'avec',
+        withTicketReport: false,
+        ticketNumber: bagMode === 'avec' ? bagLinkedTicketNumber : undefined,
+        price: bagPrice,
+        destination: linkedTicket?.destination ?? destStationName,
+        description: bagDescription,
+        ownerName: resolvedOwnerName || bagOwnerName || 'N/A',
+        ownerPhone: resolvedOwnerPhone || bagOwnerPhone || '',
+        printBagage: true,
+      });
+
+      // Reload bagages + depart totals
+      const [bg, updatedDepart] = await Promise.all([
+        getBagagesForDepart(departId),
+        getDepartById(departId),
+      ]);
+      setBagages(bg);
+      if (updatedDepart) setDepart(updatedDepart);
+
+      // Print bagage ticket
+      printBaggageTicket({
+        baggage_number: bagage.bagage_number,
+        destination: bagage.destination,
+        price: bagage.price,
+        seat_number: resolvedSeat || null,
+        departure_number: depart.route_number,
+        bus_registration: bagage.car_plate || depart.bus_plate || null,
+        description: bagage.description,
+        owner_name: bagage.owner_name,
+        owner_phone: bagage.owner_phone,
+        station_name: session?.station_name ?? 'Gare SBTA',
+        mode_label: bagMode === 'avec' ? 'Avec Ticket' : 'Sans Ticket',
+      });
+
+      setBagSuccess(`Bagage enregistré — N° ${bagage.bagage_number}`);
+      // Reset bagage form
+      setBagPrice(0); setBagDescription('');
+      setBagOwnerName(''); setBagOwnerPhone('');
+      if (bagMode === 'avec' && tickets.length > 0) {
+        const latest = [...tickets].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        setBagLinkedTicketNumber(latest.ticket_number);
+      }
+      setTimeout(() => setBagSuccess(''), 4000);
+    } catch (err: any) {
+      setBagError(err?.message ?? 'Erreur lors de l\'enregistrement du bagage');
+    } finally {
+      setBagSelling(false);
+    }
+  };
 
   const fieldLabel = 'block text-xs font-bold mb-1';
   const fieldInput = 'w-full px-3 py-2.5 rounded-lg border-2 text-sm outline-none transition-colors';
@@ -319,11 +379,9 @@ export default function POSVente() {
 
         {error && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-start gap-2 text-sm" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <span>{error}</span>
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /><span>{error}</span>
           </div>
         )}
-
         {success && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-medium" style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}>
             <CheckCircle className="w-4 h-4" /> {success}
@@ -331,7 +389,7 @@ export default function POSVente() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Left: Ticket list */}
+          {/* Left: Ticket + Bagage list */}
           <div className="lg:col-span-1 order-2 lg:order-1">
             <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="px-3 py-2.5" style={{ backgroundColor: 'var(--surface-raised)' }}>
@@ -350,7 +408,7 @@ export default function POSVente() {
                         <th className="px-2 py-1.5 text-xs font-bold text-right">Tarif</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-center">N°Siège</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-center">Report</th>
-                        <th className="px-2 py-1.5 text-xs font-bold text-right">Date reçue</th>
+                        <th className="px-2 py-1.5 text-xs font-bold text-right">Date</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -366,26 +424,53 @@ export default function POSVente() {
                     </tbody>
                     <tfoot>
                       <tr style={{ borderTop: '2px solid var(--border)' }}>
-                        <td className="px-2 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Somme</td>
+                        <td className="px-2 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Somme tickets</td>
                         <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(ticketTotal)}</td>
-                        <td className="px-2 py-2"></td>
-                        <td className="px-2 py-2"></td>
-                        <td className="px-2 py-2"></td>
+                        <td colSpan={3} className="px-2 py-2"></td>
                       </tr>
                     </tfoot>
                   </table>
+                )}
+                {/* Bagages summary */}
+                {bagages.length > 0 && (
+                  <>
+                    <div className="px-3 py-1.5" style={{ backgroundColor: 'var(--surface-raised)', borderTop: '1px solid var(--border)' }}>
+                      <p className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
+                        <Package className="w-3 h-3" /> Bagages ({bagages.length})
+                      </p>
+                    </div>
+                    <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                      <tbody>
+                        {bagages.filter(b => b.description !== '__deleted__').map(b => (
+                          <tr key={b.id} style={{ borderTop: '1px solid var(--border)' }}>
+                            <td className="px-2 py-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                              <span className="font-bold" style={{ color: b.with_ticket ? 'var(--info)' : 'var(--warning)' }}>
+                                {b.with_ticket ? 'Avec ticket' : 'Sans ticket'}
+                              </span>
+                              {b.ticket_number && <span className="ml-1 text-xs" style={{ color: 'var(--text-muted)' }}>#{b.ticket_number}</span>}
+                            </td>
+                            <td className="px-2 py-1.5 text-xs text-right font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(b.price)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop: '2px solid var(--border)' }}>
+                          <td className="px-2 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Somme bagages</td>
+                          <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--warning)' }}>{formatCurrency(bagageTotal)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Right: Ticket form + loyalty */}
+          {/* Right: Ticket form + Bagage + Loyalty */}
           <div className="lg:col-span-2 order-1 lg:order-2 space-y-4">
-            {/* Ticket block */}
+            {/* ── Ticket block ── */}
             <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>Nouveau Ticket</h3>
-
-              {/* Checkboxes row */}
               <div className="flex flex-wrap gap-4 mb-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={isReduced} onChange={e => setIsReduced(e.target.checked)} className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
@@ -421,16 +506,10 @@ export default function POSVente() {
                       const departStation = stations.find(s => s.id === depart.station_id);
                       const destStation = stations.find(s => s.id === destination);
                       if (departStation && destStation) {
-                        return (
-                          <option value={destination}>
-                            {`${departStation.name} → ${destStation.name}`}
-                          </option>
-                        );
+                        return <option value={destination}>{`${departStation.name} → ${destStation.name}`}</option>;
                       }
                       if (departStation && destination) {
-                        return (
-                          <option value={destination}>{departStation.name} → {destination}</option>
-                        );
+                        return <option value={destination}>{departStation.name} → {destination}</option>;
                       }
                       return null;
                     })()}
@@ -490,7 +569,7 @@ export default function POSVente() {
                   )}
                 </div>
 
-                {/* N° Ticket (auto, read-only) */}
+                {/* N° Ticket preview */}
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket (auto)</label>
                   <input
@@ -503,7 +582,6 @@ export default function POSVente() {
                 </div>
               </div>
 
-              {/* Sell button */}
               <button
                 onClick={handleSell}
                 disabled={selling || !seatNumber || !destination || tarif <= 0 || depart.cloture}
@@ -515,7 +593,276 @@ export default function POSVente() {
               </button>
             </div>
 
-            {/* Loyalty block */}
+            {/* ── Bagage block ── */}
+            <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              {/* Header + mode selectors */}
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                  <Package className="w-4 h-4" /> Bagage
+                </h3>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bagMode === 'avec'}
+                      onChange={e => setBagMode(e.target.checked ? 'avec' : null)}
+                      className="w-4 h-4"
+                      style={{ accentColor: 'var(--info)' }}
+                    />
+                    <span className="text-xs font-bold" style={{ color: bagMode === 'avec' ? 'var(--info)' : 'var(--text-secondary)' }}>Avec ticket</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bagMode === 'sans'}
+                      onChange={e => setBagMode(e.target.checked ? 'sans' : null)}
+                      className="w-4 h-4"
+                      style={{ accentColor: 'var(--warning)' }}
+                    />
+                    <span className="text-xs font-bold" style={{ color: bagMode === 'sans' ? 'var(--warning)' : 'var(--text-secondary)' }}>Sans ticket</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Mode badge */}
+              {bagMode && (
+                <div className="rounded-lg px-3 py-1.5 mb-3 text-xs font-bold inline-flex items-center gap-2"
+                  style={{
+                    backgroundColor: bagMode === 'avec' ? 'var(--info-light)' : 'var(--warning-light)',
+                    color: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)',
+                  }}>
+                  <Package className="w-3 h-3" />
+                  {bagMode === 'avec' ? 'AVEC TICKET — bagage lié à un billet passager' : 'SANS TICKET — aucun siège réservé'}
+                </div>
+              )}
+
+              {bagError && (
+                <div className="rounded-lg px-3 py-2 mb-3 flex items-start gap-2 text-xs" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span>{bagError}</span>
+                </div>
+              )}
+              {bagSuccess && (
+                <div className="rounded-lg px-3 py-2 mb-3 flex items-center gap-2 text-xs font-medium" style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}>
+                  <CheckCircle className="w-3.5 h-3.5" /> {bagSuccess}
+                </div>
+              )}
+
+              {/* ── AVEC TICKET form ── */}
+              {bagMode === 'avec' && (
+                <div className="space-y-3">
+                  {/* Auto-filled ticket info */}
+                  <div className="rounded-lg p-3 space-y-2" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)' }}>
+                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--text-muted)' }}>Informations du billet lié</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket</label>
+                        <select
+                          value={bagLinkedTicketNumber}
+                          onChange={e => setBagLinkedTicketNumber(e.target.value)}
+                          className={fieldInput}
+                          style={fieldStyle}
+                        >
+                          <option value="">Sélectionner un ticket...</option>
+                          {tickets.map(t => (
+                            <option key={t.id} value={t.ticket_number}>
+                              {t.ticket_number} — Siège {t.seat_number}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Siège</label>
+                        <input
+                          type="text"
+                          value={linkedTicket ? String(linkedTicket.seat_number) : '—'}
+                          disabled
+                          className={fieldInput}
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Destination</label>
+                        <input
+                          type="text"
+                          value={linkedTicket?.destination ?? destStationName}
+                          disabled
+                          className={fieldInput}
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Car / Immatriculation</label>
+                        <input
+                          type="text"
+                          value={depart.bus_plate ?? '—'}
+                          disabled
+                          className={fieldInput}
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Départ</label>
+                        <input
+                          type="text"
+                          value={`#${depart.route_number}`}
+                          disabled
+                          className={fieldInput}
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Editable fields */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Prix bagage</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={bagPrice || ''}
+                          onChange={e => setBagPrice(parseInt(e.target.value) || 0)}
+                          className={fieldInput}
+                          style={fieldStyle}
+                          placeholder="0"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--text-muted)' }}>FCFA</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Propriétaire (optionnel)</label>
+                      <input
+                        type="text"
+                        value={bagOwnerName}
+                        onChange={e => setBagOwnerName(e.target.value)}
+                        className={fieldInput}
+                        style={fieldStyle}
+                        placeholder="Nom du client"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
+                      <input
+                        type="text"
+                        value={bagDescription}
+                        onChange={e => setBagDescription(e.target.value)}
+                        className={fieldInput}
+                        style={fieldStyle}
+                        placeholder="Ex: 2 valises, sac de riz..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── SANS TICKET form ── */}
+              {bagMode === 'sans' && (
+                <div className="space-y-3">
+                  {/* Auto-filled depart info */}
+                  <div className="rounded-lg p-3 space-y-2" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)' }}>
+                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--text-muted)' }}>Informations du voyage</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Destination</label>
+                        <input
+                          type="text"
+                          value={destStationName}
+                          disabled
+                          className={fieldInput}
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Départ</label>
+                        <input
+                          type="text"
+                          value={`#${depart.route_number}`}
+                          disabled
+                          className={fieldInput}
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Car / Immatriculation</label>
+                        <input
+                          type="text"
+                          value={depart.bus_plate ?? '—'}
+                          disabled
+                          className={fieldInput}
+                          style={{ ...fieldStyle, opacity: 0.6 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Editable fields */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Prix bagage *</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={bagPrice || ''}
+                          onChange={e => setBagPrice(parseInt(e.target.value) || 0)}
+                          className={fieldInput}
+                          style={fieldStyle}
+                          placeholder="0"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--text-muted)' }}>FCFA</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Propriétaire *</label>
+                      <input
+                        type="text"
+                        value={bagOwnerName}
+                        onChange={e => setBagOwnerName(e.target.value)}
+                        className={fieldInput}
+                        style={fieldStyle}
+                        placeholder="Nom et prénoms"
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact *</label>
+                      <input
+                        type="tel"
+                        value={bagOwnerPhone}
+                        onChange={e => setBagOwnerPhone(e.target.value)}
+                        className={fieldInput}
+                        style={fieldStyle}
+                        placeholder="Numéro de téléphone"
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
+                      <input
+                        type="text"
+                        value={bagDescription}
+                        onChange={e => setBagDescription(e.target.value)}
+                        className={fieldInput}
+                        style={fieldStyle}
+                        placeholder="Ex: 3 valises..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Print button — only shown when a mode is active */}
+              {bagMode && (
+                <button
+                  onClick={handleSellBagage}
+                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim()))}
+                  className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
+                  style={{ backgroundColor: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)' }}
+                >
+                  {bagSelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                  Imprimer ticket bagage — {bagMode === 'avec' ? 'Avec ticket' : 'Sans ticket'}
+                </button>
+              )}
+            </div>
+
+            {/* ── Loyalty block ── */}
             <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
@@ -533,55 +880,24 @@ export default function POSVente() {
                     <input type="checkbox" checked={loyaltyNewCard} onChange={e => setLoyaltyNewCard(e.target.checked)} className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
                     <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Nouvelle carte</span>
                   </label>
-
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Fidélité</label>
-                      <input
-                        type="text"
-                        value={loyaltyCardNumber}
-                        onChange={e => setLoyaltyCardNumber(e.target.value)}
-                        className={fieldInput}
-                        style={fieldStyle}
-                        placeholder={loyaltyNewCard ? 'Auto-généré' : 'Ex: SBTA-00123'}
-                        disabled={loyaltyNewCard}
-                      />
+                      <input type="text" value={loyaltyCardNumber} onChange={e => setLoyaltyCardNumber(e.target.value)} className={fieldInput} style={fieldStyle} placeholder={loyaltyNewCard ? 'Auto-généré' : 'Ex: SBTA-00123'} disabled={loyaltyNewCard} />
                     </div>
                     <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nbre voyages</label>
-                      <input
-                        type="number"
-                        value={loyaltyTrips}
-                        onChange={e => setLoyaltyTrips(parseInt(e.target.value) || 0)}
-                        className={fieldInput}
-                        style={fieldStyle}
-                        disabled
-                      />
+                      <input type="number" value={loyaltyTrips} onChange={e => setLoyaltyTrips(parseInt(e.target.value) || 0)} className={fieldInput} style={fieldStyle} disabled />
                     </div>
                     <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nom et prénoms</label>
-                      <input
-                        type="text"
-                        value={loyaltyName}
-                        onChange={e => setLoyaltyName(e.target.value)}
-                        className={fieldInput}
-                        style={fieldStyle}
-                        placeholder="Nom du client"
-                      />
+                      <input type="text" value={loyaltyName} onChange={e => setLoyaltyName(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Nom du client" />
                     </div>
                     <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
-                      <input
-                        type="tel"
-                        value={loyaltyPhone}
-                        onChange={e => setLoyaltyPhone(e.target.value)}
-                        className={fieldInput}
-                        style={fieldStyle}
-                        placeholder="Téléphone"
-                      />
+                      <input type="tel" value={loyaltyPhone} onChange={e => setLoyaltyPhone(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Téléphone" />
                     </div>
                   </div>
-
                   <div className="flex gap-2">
                     <button
                       onClick={() => { setLoyaltyEnabled(false); setLoyaltyNewCard(false); setLoyaltyCardNumber(''); setLoyaltyName(''); setLoyaltyPhone(''); setLoyaltyTrips(0); }}
@@ -611,7 +927,7 @@ export default function POSVente() {
           </div>
         </div>
 
-        {/* Bottom counters — real-time */}
+        {/* Bottom counters */}
         <div className="grid grid-cols-3 gap-3 mt-4 sticky bottom-0 z-20">
           <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--surface-raised)', border: '2px solid var(--border)' }}>
             <div className="flex items-center justify-center gap-1.5 mb-1">
