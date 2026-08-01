@@ -15,7 +15,7 @@ import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import type { DepartRecord } from '@/services/pos/departService';
 import {
-  AlertCircle, CheckCircle, Loader2, Plus, Printer, X,
+  AlertCircle, CheckCircle, Loader2, Plus, Printer, X, Lock,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
 } from 'lucide-react';
 
@@ -110,6 +110,10 @@ export default function POSVente() {
 
   const handleSell = async () => {
     if (!depart || !departId) return;
+    if (depart.cloture) {
+      setError('Ce départ est clôturé — vente impossible');
+      return;
+    }
     setError('');
     setSuccess('');
 
@@ -229,6 +233,13 @@ export default function POSVente() {
   return (
     <POSLayout showBack stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.departure_number}`}>
       <div className="max-w-5xl mx-auto">
+        {/* Cloture warning banner */}
+        {depart.cloture && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+            <Lock className="w-4 h-4" /> Ce départ est clôturé — vente verrouillée
+          </div>
+        )}
+
         {/* Departure header */}
         <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -430,7 +441,7 @@ export default function POSVente() {
               {/* Sell button */}
               <button
                 onClick={handleSell}
-                disabled={selling || !seatNumber || !destination || tarif <= 0}
+                disabled={selling || !seatNumber || !destination || tarif <= 0 || depart.cloture}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
               >

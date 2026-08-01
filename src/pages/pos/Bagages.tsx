@@ -11,7 +11,7 @@ import {
 import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
-  AlertCircle, CheckCircle, Loader2, Plus,
+  AlertCircle, CheckCircle, Loader2, Plus, Lock,
   Package, Link2, Search,
   Ticket as TicketIcon,
 } from 'lucide-react';
@@ -89,6 +89,10 @@ export default function POSBagages() {
 
   const handleSubmit = async () => {
     if (!depart || !departId) return;
+    if (depart.cloture) {
+      setError('Ce départ est clôturé — bagage impossible');
+      return;
+    }
     setError('');
     setSuccess('');
 
@@ -186,6 +190,13 @@ export default function POSBagages() {
   return (
     <POSLayout showBack stationName={session?.station_name} activeRoute={`Bagages — Départ #${depart.departure_number}`}>
       <div className="max-w-5xl mx-auto">
+        {/* Cloture warning banner */}
+        {depart.cloture && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+            <Lock className="w-4 h-4" /> Ce départ est clôturé — bagages verrouillés
+          </div>
+        )}
+
         {/* Departure header */}
         <div className="rounded-xl p-3 mb-4 flex items-center justify-between" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="flex items-center gap-4 text-sm">
@@ -416,7 +427,7 @@ export default function POSBagages() {
               {/* Submit button */}
               <button
                 onClick={handleSubmit}
-                disabled={saving || price <= 0 || !destination}
+                disabled={saving || price <= 0 || !destination || depart.cloture}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
               >

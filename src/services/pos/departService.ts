@@ -83,3 +83,19 @@ export function seatsLibres(d: DepartRecord): number {
 export function computeSolde(d: DepartRecord): number {
   return d.mt_ticket + d.mt_bagage - d.tot_depense;
 }
+
+export async function cloturerDepart(
+  departId: string,
+  userName?: string,
+): Promise<DepartRecord | null> {
+  return localUpdate<DepartRecord>('departs', departId, {
+    cloture: true,
+    cloture_at: new Date().toISOString(),
+    cloture_by: userName,
+  });
+}
+
+export async function getDepartsForOtherStations(currentStationId: string): Promise<DepartRecord[]> {
+  const all = await getAll<DepartRecord>('departs');
+  return all.filter(d => d.station_id !== currentStationId && !d.cancelled);
+}

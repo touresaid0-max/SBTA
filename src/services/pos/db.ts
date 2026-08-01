@@ -31,6 +31,8 @@ export interface DepartRecord {
   other_station_id?: string;
   other_station_name?: string;
   cloture: boolean;
+  cloture_at?: string;
+  cloture_by?: string;
   mt_ticket: number;
   mt_bagage: number;
   tot_depense: number;
@@ -90,10 +92,13 @@ export interface BagageRecord {
 
 export interface DepenseRecord {
   id: string;
+  depart_id: string;
   type: string;
+  label: string;
   amount: number;
   description: string;
   station_id: string;
+  expense_date: string;
   created_at: string;
   updated_at: string;
   synced?: boolean;
@@ -162,7 +167,7 @@ class POSDatabase extends Dexie {
       departs: 'id, route_id, bus_id, driver_id, station_id, departure_datetime, status, synced',
       tickets: 'id, depart_id, status, created_at, synced',
       bagages: 'id, depart_id, ticket_id, created_at, synced',
-      depenses: 'id, station_id, type, created_at, synced',
+      depenses: 'id, station_id, depart_id, type, created_at, synced',
       referentiels: 'key, type, updated_at',
       sync_queue: '++id, entity, status, created_at, tries',
       session: 'id, user_id, station_id',
