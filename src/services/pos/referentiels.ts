@@ -7,9 +7,9 @@ const CACHE_TTL_MS = 1000 * 60 * 30;
 
 const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   lignes: async () => {
-    const { data, error } = await supabase.from('routes').select('id, name, origin_station_id, destination_station_id, is_active').eq('is_active', true).order('name');
+    const { data, error } = await supabase.from('routes').select('id, name, origin_station_id, destination_station_id, base_price, is_active').eq('is_active', true).order('name');
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map((r: any) => ({ id: r.id, name: r.name, origin_station_id: r.origin_station_id, destination_station_id: r.destination_station_id, base_price: Number(r.base_price ?? 0), is_active: r.is_active }));
   },
   vehicules: async () => {
     const { data, error } = await supabase.from('buses').select('id, registration_number, capacity, company_id, status, brand, model').order('registration_number');

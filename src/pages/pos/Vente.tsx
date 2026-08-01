@@ -7,7 +7,7 @@ import {
 } from '@/services/pos/departService';
 import {
   sellTicket, getTicketsForDepart, getSoldSeats,
-  calculatePrice, getStations,
+  calculatePrice, getStations, generateTicketNumber,
   type TicketRecord, type StationRef,
 } from '@/services/pos/ticketService';
 import { getTarifs, type TarifRef } from '@/services/pos/ticketService';
@@ -45,6 +45,7 @@ export default function POSVente() {
   const [sameDestination, setSameDestination] = useState(false);
   const [printTicket, setPrintTicket] = useState(true);
   const [selling, setSelling] = useState(false);
+  const [ticketPreview, setTicketPreview] = useState('');
 
   // Loyalty state
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -88,21 +89,66 @@ export default function POSVente() {
     loadData();
   }, [loadData]);
 
+  // Auto-select destination and compute tarif when depart/stations/lignes load
+  useEffect(() => {
+    if (!depart || stations.length === 0) return;
+
+    // Find the line's destination station
+    const ligne = lignes.find(l => l.id === depart.route_id);
+    let destStationId = '';
+
+    if (ligne?.destination_station_id) {
+      destStationId = ligne.destination_station_id;
+    } else if (ligne?.origin_station_id && depart.station_id) {
+      // If origin is the depart station, destination is the other end
+      destStationId = ligne.origin_station_id === depart.station_id
+        ? ligne.destination_station_id
+        : ligne.origin_station_id;
+    }
+
+    // Fallback: parse route name to match station by city name
+    if (!destStationId) {
+      const routeCities = (depart.route_name ?? '')
+        .split(/\s*[\-–——]\s*/)
+        .map(p => p.trim().toLowerCase())
+        .filter(Boolean);
+      const guichetStation = stations.find(s => s.id === depart.station_id);
+      const guichetCity = (guichetStation?.city ?? '').toLowerCase().trim();
+      const destCityName = [...routeCities].reverse().find(c => c !== guichetCity);
+      if (destCityName) {
+        const match = stations.find(s =>
+          (s.city ?? '').toLowerCase().trim() === destCityName ||
+          (s.name ?? '').toLowerCase().includes(destCityName)
+        );
+        if (match) destStationId = match.id;
+      }
+    }
+
+    if (destStationId && destStationId !== depart.station_id) {
+      setDestination(destStationId);
+    }
+  }, [depart, stations, lignes]);
+
   // Auto-calculate tarif when destination changes
   useEffect(() => {
     if (!depart || !destination) {
       setTarif(0);
       return;
     }
-    const station = stations.find(s => s.id === destination);
-    if (!station) return;
     const tarifRef = tarifs.find(
       t => t.route_id === depart.route_id && t.station_id === destination,
     );
-    const basePrice = tarifRef?.price ?? 0;
+    const ligne = lignes.find(l => l.id === depart.route_id);
+    const basePrice = tarifRef?.price ?? ligne?.base_price ?? 0;
     const finalPrice = calculatePrice(basePrice, depart.is_ac, isReduced);
     setTarif(finalPrice);
-  }, [destination, depart, stations, tarifs, isReduced]);
+  }, [destination, depart, tarifs, lignes, isReduced]);
+
+  // Preview ticket number when depart loads
+  useEffect(() => {
+    if (!depart) return;
+    generateTicketNumber(session?.station_name ?? 'SBTA').then(setTicketPreview).catch(() => setTicketPreview(''));
+  }, [depart, session, tickets.length]);
 
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
@@ -373,47 +419,20 @@ export default function POSVente() {
                     <option value="">Sélectionner...</option>
                     {(() => {
                       const departStation = stations.find(s => s.id === depart.station_id);
-
-                      // Strategy 1: use route_stops (tarifs) if populated
-                      const routeStopIds = new Set(
-                        tarifs.filter(t => t.route_id === depart.route_id).map(t => t.station_id)
-                      );
-
-                      // Strategy 2: use route's origin/destination station IDs
-                      const ligne = lignes.find(l => l.id === depart.route_id);
-                      const routeStationIds = new Set<string>();
-                      if (ligne?.origin_station_id) routeStationIds.add(ligne.origin_station_id);
-                      if (ligne?.destination_station_id) routeStationIds.add(ligne.destination_station_id);
-
-                      // Strategy 3: parse route name to match stations by city name
-                      const routeCities = (depart.route_name ?? ligne?.name ?? '')
-                        .split(/\s*[\-–—]\s*/)
-                        .map(p => p.trim().toLowerCase())
-                        .filter(Boolean);
-                      const stationsByCityName = stations.filter(s =>
-                        routeCities.some(city => {
-                          const stationCity = (s.city ?? '').toLowerCase().trim();
-                          const stationName = (s.name ?? '').toLowerCase().trim();
-                          return stationCity === city || stationName.includes(city);
-                        })
-                      );
-
-                      let destinationStations: StationRef[];
-                      if (routeStopIds.size > 0) {
-                        destinationStations = stations.filter(s => routeStopIds.has(s.id) && s.id !== depart.station_id);
-                      } else if (routeStationIds.size > 0) {
-                        destinationStations = stations.filter(s => routeStationIds.has(s.id) && s.id !== depart.station_id);
-                      } else if (stationsByCityName.length > 0) {
-                        destinationStations = stationsByCityName.filter(s => s.id !== depart.station_id);
-                      } else {
-                        destinationStations = stations.filter(s => s.id !== depart.station_id);
+                      const destStation = stations.find(s => s.id === destination);
+                      if (departStation && destStation) {
+                        return (
+                          <option value={destination}>
+                            {`${departStation.name} → ${destStation.name}`}
+                          </option>
+                        );
                       }
-
-                      return destinationStations.map(s => (
-                        <option key={s.id} value={s.id}>
-                          {departStation ? `${departStation.name} → ${s.name}` : s.name}
-                        </option>
-                      ));
+                      if (departStation && destination) {
+                        return (
+                          <option value={destination}>{departStation.name} → {destination}</option>
+                        );
+                      }
+                      return null;
                     })()}
                   </select>
                 </div>
@@ -476,7 +495,7 @@ export default function POSVente() {
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket (auto)</label>
                   <input
                     type="text"
-                    value="Auto-généré"
+                    value={ticketPreview || '...'}
                     disabled
                     className={fieldInput}
                     style={{ ...fieldStyle, opacity: 0.6 }}
