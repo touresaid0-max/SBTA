@@ -141,6 +141,7 @@ export default function POSDepartNouveau() {
         seats_from: seatsFrom,
         station_id: stationId,
         station_name: session?.station_name ?? '',
+        counter_id: session?.counter_id,
         other_station_id: otherStationId || undefined,
         other_station_name: otherStation?.name,
       });

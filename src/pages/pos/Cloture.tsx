@@ -37,7 +37,7 @@ export default function POSCloture() {
 
   const loadData = useCallback(async () => {
     try {
-      const all = await getAllDeparts();
+      const all = await getAllDeparts(session?.station_id, session?.counter_id);
       const active = all.filter(d => !d.cancelled);
       setDeparts(active);
       if (active.length > 0 && !selectedId) setSelectedId(active[0].id);

@@ -40,7 +40,7 @@ export default function POSDepenses() {
 
   const loadData = useCallback(async () => {
     try {
-      const all = await getAllDeparts();
+      const all = await getAllDeparts(session?.station_id, session?.counter_id);
       const active = all.filter(d => !d.cancelled && !d.cloture);
       setDeparts(active);
       if (active.length > 0 && !selectedDepartId) {

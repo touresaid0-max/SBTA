@@ -62,7 +62,7 @@ export default function POSDeparts() {
   const [showCancelConfirm, setShowCancelConfirm] = useState<DepartRow | null>(null);
 
   const loadDeparts = useCallback(async () => {
-    const all = await getAllDeparts(session?.station_id);
+    const all = await getAllDeparts(session?.station_id, session?.counter_id);
     setDeparts(all.map(toRow));
     setLoading(false);
   }, [session?.station_id]);
