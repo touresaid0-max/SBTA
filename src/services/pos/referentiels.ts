@@ -7,7 +7,7 @@ const CACHE_TTL_MS = 1000 * 60 * 30;
 
 const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   lignes: async () => {
-    const { data, error } = await supabase.from('routes').select('id, name, origin_station_id, is_active').eq('is_active', true).order('name');
+    const { data, error } = await supabase.from('routes').select('id, name, origin_station_id, destination_station_id, is_active').eq('is_active', true).order('name');
     if (error) throw error;
     return data ?? [];
   },
@@ -22,14 +22,14 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
     return data ?? [];
   },
   tarifs: async () => {
-    const { data, error } = await supabase.from('route_stops').select('id, route_id, station_id, price, stop_order').order('route_id');
+    const { data, error } = await supabase.from('route_stops').select('id, route_id, station_id, price, position').order('route_id');
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map((t: any) => ({ id: t.id, route_id: t.route_id, station_id: t.station_id, price: Number(t.price ?? 0), stop_order: t.position }));
   },
   gares: async () => {
-    const { data, error } = await supabase.from('stations').select('id, name, city, agency_code, is_active').eq('is_active', true).order('name');
+    const { data, error } = await supabase.from('stations').select('id, name, city_id, agency_code, is_active, cities(name)').eq('is_active', true).order('name');
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map((s: any) => ({ id: s.id, name: s.name, city: s.cities?.name ?? '', agency_code: s.agency_code, is_active: s.is_active }));
   },
 };
 

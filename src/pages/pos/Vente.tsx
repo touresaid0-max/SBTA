@@ -11,6 +11,8 @@ import {
   type TicketRecord, type StationRef,
 } from '@/services/pos/ticketService';
 import { getTarifs, type TarifRef } from '@/services/pos/ticketService';
+import { getLignes } from '@/services/pos/departService';
+import type { LigneRef } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import type { DepartRecord } from '@/services/pos/departService';
@@ -29,6 +31,7 @@ export default function POSVente() {
   const [soldSeats, setSoldSeats] = useState<number[]>([]);
   const [stations, setStations] = useState<StationRef[]>([]);
   const [tarifs, setTarifs] = useState<TarifRef[]>([]);
+  const [lignes, setLignes] = useState<LigneRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -62,16 +65,18 @@ export default function POSVente() {
       }
       setDepart(d);
 
-      const [t, s, st, ta] = await Promise.all([
+      const [t, s, st, ta, li] = await Promise.all([
         getTicketsForDepart(departId),
         getSoldSeats(departId),
         getStations(),
         getTarifs(),
+        getLignes(),
       ]);
       setTickets(t);
       setSoldSeats(s);
       setStations(st);
       setTarifs(ta);
+      setLignes(li);
     } catch {
       // non-critical
     } finally {
@@ -368,12 +373,42 @@ export default function POSVente() {
                     <option value="">Sélectionner...</option>
                     {(() => {
                       const departStation = stations.find(s => s.id === depart.station_id);
+
+                      // Strategy 1: use route_stops (tarifs) if populated
                       const routeStopIds = new Set(
                         tarifs.filter(t => t.route_id === depart.route_id).map(t => t.station_id)
                       );
-                      const destinationStations = routeStopIds.size > 0
-                        ? stations.filter(s => routeStopIds.has(s.id))
-                        : stations.filter(s => s.id !== depart.station_id);
+
+                      // Strategy 2: use route's origin/destination station IDs
+                      const ligne = lignes.find(l => l.id === depart.route_id);
+                      const routeStationIds = new Set<string>();
+                      if (ligne?.origin_station_id) routeStationIds.add(ligne.origin_station_id);
+                      if (ligne?.destination_station_id) routeStationIds.add(ligne.destination_station_id);
+
+                      // Strategy 3: parse route name to match stations by city name
+                      const routeCities = (depart.route_name ?? ligne?.name ?? '')
+                        .split(/\s*[\-–—]\s*/)
+                        .map(p => p.trim().toLowerCase())
+                        .filter(Boolean);
+                      const stationsByCityName = stations.filter(s =>
+                        routeCities.some(city => {
+                          const stationCity = (s.city ?? '').toLowerCase().trim();
+                          const stationName = (s.name ?? '').toLowerCase().trim();
+                          return stationCity === city || stationName.includes(city);
+                        })
+                      );
+
+                      let destinationStations: StationRef[];
+                      if (routeStopIds.size > 0) {
+                        destinationStations = stations.filter(s => routeStopIds.has(s.id) && s.id !== depart.station_id);
+                      } else if (routeStationIds.size > 0) {
+                        destinationStations = stations.filter(s => routeStationIds.has(s.id) && s.id !== depart.station_id);
+                      } else if (stationsByCityName.length > 0) {
+                        destinationStations = stationsByCityName.filter(s => s.id !== depart.station_id);
+                      } else {
+                        destinationStations = stations.filter(s => s.id !== depart.station_id);
+                      }
+
                       return destinationStations.map(s => (
                         <option key={s.id} value={s.id}>
                           {departStation ? `${departStation.name} → ${s.name}` : s.name}
