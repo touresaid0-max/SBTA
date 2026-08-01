@@ -90,48 +90,148 @@ async function sendQzTray(data: Uint8Array, settings: PrintSettings): Promise<bo
 
 function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string {
   const { ticket, depart, stationName } = data;
-  const widthPx = settings.width_mm === 80 ? 320 : 224;
-  const headerHtml = settings.header_lines.map(l => `<div class="hdr">${escapeHtml(l)}</div>`).join('');
-  const footerHtml = settings.footer_lines.map(l => `<div class="ftr">${escapeHtml(l)}</div>`).join('');
+  const w = settings.width_mm === 80 ? 302 : 216; // usable px inside 80mm / 58mm
+
+  // Derive display values
+  const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
+  const originCity  = (routeParts[0] ?? stationName ?? 'ABIDJAN').toUpperCase();
+  const destCity    = (routeParts[routeParts.length - 1] ?? ticket.destination).toUpperCase();
+  const gareDepart  = escapeHtml(stationName ?? 'GARE SBTA').toUpperCase();
+  const gareArrivee = escapeHtml(ticket.destination).toUpperCase();
+  const seatStr     = ticket.seat_number ? String(ticket.seat_number) : '—';
+  const tarifStr    = ticket.price.toLocaleString('fr-FR') + ' f';
+  const carPlate    = escapeHtml(depart.bus_plate ?? '—').toUpperCase();
+  const ticketNum   = escapeHtml(ticket.ticket_number);
+  const depNum      = String(depart.route_number ?? '—');
+
+  // Date/time from departure_datetime or departure_date + departure_time
+  let dateStr = '—';
+  let timeStr = '—';
+  try {
+    const rawDate = depart.departure_datetime ?? `${depart.departure_date}T${depart.departure_time ?? '00:00'}`;
+    const d = new Date(rawDate);
+    if (!isNaN(d.getTime())) {
+      dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+      timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+  } catch { /* leave defaults */ }
+
+  const nowD = new Date();
+  const printedAt = `${String(nowD.getDate()).padStart(2,'0')}/${String(nowD.getMonth()+1).padStart(2,'0')}/${nowD.getFullYear()} ${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}:${String(nowD.getSeconds()).padStart(2,'0')}`;
+
+  const reducedBadge = ticket.is_reduced ? `<div class="center bold" style="font-size:11px;">** REDUCTION APPLIQUEE **</div>` : '';
+  const reportedBadge = ticket.is_reported ? `<div class="center bold" style="font-size:11px;">** TICKET REPORTE **</div>` : '';
+
+  const ticketBody = (isSouche: boolean) => `
+    <!-- Header -->
+    ${!isSouche ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:3px;">
+      <tr>
+        <td width="30%" valign="middle">
+          <img src="/LOGO_SBTA_-1.png" style="width:100%;max-width:60px;" alt="SBTA"/>
+        </td>
+        <td width="70%" valign="middle" style="text-align:right;line-height:1.3;">
+          <span style="font-size:${w > 270 ? 22 : 18}px;font-weight:900;letter-spacing:1px;">SBTA</span><br/>
+          <span style="font-size:8px;">Societe Bonkoungou Transport de L&apos;Agneby</span><br/>
+          <span style="font-size:8px;">Tel 01 14 34 60 / 01 14 34 87</span>
+        </td>
+      </tr>
+    </table>
+    ` : `<div class="center" style="font-size:${w > 270 ? 15 : 13}px;font-weight:900;font-style:italic;margin:4px 0 3px;">SOUCHE</div>`}
+
+    <!-- DEPART + N° -->
+    <div class="dash"></div>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="font-size:${isSouche ? (w > 270 ? 16 : 14) : (w > 270 ? 18 : 15)}px;font-weight:900;">DEPART</td>
+        <td style="text-align:center;font-size:${isSouche ? 14 : 16}px;font-weight:400;">|</td>
+        <td style="text-align:right;font-size:${isSouche ? (w > 270 ? 16 : 14) : (w > 270 ? 18 : 15)}px;font-weight:900;">${escapeHtml(depNum)}</td>
+      </tr>
+    </table>
+    <div class="dash"></div>
+
+    <!-- Route arrow -->
+    <div style="font-size:${isSouche ? (w > 270 ? 13 : 11) : (w > 270 ? 14 : 12)}px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+      ${escapeHtml(originCity)} &nbsp;=&gt;&nbsp; ${escapeHtml(destCity)}
+    </div>
+    <div class="dash"></div>
+
+    <!-- Gare départ / arrivée -->
+    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${isSouche ? 9 : 10}px;">
+      <tr>
+        <td style="width:45%;">GARE DEPART</td>
+        <td style="text-align:right;font-weight:bold;">${gareDepart}</td>
+      </tr>
+      <tr>
+        <td>GARE ARRIVEE</td>
+        <td style="text-align:right;font-weight:bold;">${gareArrivee}</td>
+      </tr>
+    </table>
+    <div class="dash"></div>
+
+    <!-- Siège + Tarif -->
+    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${isSouche ? 9 : 10}px;">
+      <tr>
+        <td style="width:40%;">SIEGE &nbsp;<b>${escapeHtml(seatStr)}</b></td>
+        <td style="text-align:right;">TARIF &nbsp;<b style="font-size:${isSouche ? 11 : 12}px;">${escapeHtml(tarifStr)}</b></td>
+      </tr>
+    </table>
+    <div class="dash"></div>
+
+    <!-- CAR + N°TICKET -->
+    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${isSouche ? 9 : 10}px;">
+      <tr>
+        <td style="width:42%;">CAR &nbsp;<b>${carPlate}</b></td>
+        <td style="text-align:right;">N°TICKET &nbsp;<b>${ticketNum}</b></td>
+      </tr>
+    </table>
+    <div class="dash"></div>
+
+    <!-- Date + Heure -->
+    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${isSouche ? 9 : 10}px;">
+      <tr>
+        <td style="width:50%;">DATE : &nbsp;<b>${escapeHtml(dateStr)}</b></td>
+        <td style="text-align:right;">HEURE: &nbsp;<b>${escapeHtml(timeStr)}</b></td>
+      </tr>
+    </table>
+
+    ${reducedBadge}${reportedBadge}
+
+    ${!isSouche ? `
+    <div class="dash"></div>
+    <div class="center" style="font-size:9px;">NB. Tout ticket encaisse n est plus remboursable</div>
+    <div class="dash"></div>
+    <div class="center" style="font-size:9px;">SBTA pas responsable ces bagages sans ticket</div>
+    <div class="dash"></div>
+    <div class="center" style="font-size:9px;">VEUILLEZ CONSERVER LES TICKETS JUSQU&apos;A DESTINATION</div>
+    ` : ''}
+
+    <div class="dash"></div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:8px;">
+      <tr>
+        <td>V10&nbsp; Imprimer le :</td>
+        <td style="text-align:right;">${escapeHtml(printedAt)}</td>
+      </tr>
+    </table>
+  `;
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-  @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 12px; }
-  body { width: ${widthPx}px; margin: 0 auto; padding: 4px; }
+  @page { size: ${settings.width_mm}mm auto; margin: 2mm; }
+  * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; }
+  body { width: ${w}px; margin: 0 auto; padding: 2px; font-size: 10px; }
   .center { text-align: center; }
   .bold { font-weight: bold; }
-  .large { font-size: 16px; font-weight: bold; }
-  .hdr { text-align: center; }
-  .ftr { text-align: center; margin-top: 4px; }
-  .dash { border-top: 1px dashed #000; margin: 4px 0; text-align:center; }
-  .row { display:flex; justify-content:space-between; }
-  .label { font-weight:bold; }
-  .qr { text-align:center; margin: 4px 0; }
-  .tag { display:inline-block; border:1px solid #000; padding:0 4px; font-size:10px; margin:1px; }
+  .dash { border: none; border-top: 1px dashed #000; margin: 3px 0; }
+  table { border-collapse: collapse; }
 </style></head><body>
-  ${headerHtml}
-  <div class="center bold">SBTA TRANSPORT</div>
-  <div class="center">${escapeHtml(stationName ?? 'Gare')}</div>
-  <div class="dash">-</div>
-  <div class="center bold">TICKET PASSAGER</div>
-  <div class="dash">-</div>
-  <div class="row"><span class="label">Gare:</span><span>${escapeHtml(stationName ?? '-')}</span></div>
-  <div class="row"><span class="label">Ligne:</span><span>${escapeHtml(depart.route_name ?? '-')}</span></div>
-  <div class="row"><span class="label">Destination:</span><span>${escapeHtml(ticket.destination)}</span></div>
-  <div class="row"><span class="label">N° Siège:</span><span>${ticket.seat_number}</span></div>
-  <div class="row"><span class="label">Climatisé:</span><span>${ticket.is_ac ? 'OUI' : 'NON'}</span></div>
-  ${ticket.is_reduced ? '<div class="center bold">** REDUCTION **</div>' : ''}
-  ${ticket.is_reported ? '<div class="center bold">** TICKET REPORTE **</div>' : ''}
-  <div class="dash">-</div>
-  <div class="center large">${ticket.price} FCFA</div>
-  <div class="dash">-</div>
-  <div class="row"><span class="label">N° Ticket:</span><span>${escapeHtml(ticket.ticket_number)}</span></div>
-  <div class="row"><span class="label">Date:</span><span>${formatDateTime(depart.departure_datetime)}</span></div>
-  <div class="row"><span class="label">Départ N°:</span><span>${depart.route_number} (${escapeHtml(depart.route_name ?? '')})</span></div>
-  <div class="dash">-</div>
-  <div class="qr">${makeQRText(ticket.ticket_number)}</div>
-  ${footerHtml}
-  <div class="center">Bon voyage!</div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
+  ${ticketBody(false)}
+
+  <!-- Coupon separator -->
+  <div style="margin:6px 0;border-top:2px dashed #000;text-align:center;font-size:9px;padding-top:2px;">✂</div>
+
+  ${ticketBody(true)}
+
+  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
 </body></html>`;
 }
 
