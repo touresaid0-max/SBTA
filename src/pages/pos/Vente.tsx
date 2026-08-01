@@ -366,9 +366,20 @@ export default function POSVente() {
                     disabled={sameDestination && destination !== ''}
                   >
                     <option value="">Sélectionner...</option>
-                    {stations
-                      .filter(s => s.id !== depart.station_id)
-                      .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {(() => {
+                      const departStation = stations.find(s => s.id === depart.station_id);
+                      const routeStopIds = new Set(
+                        tarifs.filter(t => t.route_id === depart.route_id).map(t => t.station_id)
+                      );
+                      const destinationStations = routeStopIds.size > 0
+                        ? stations.filter(s => routeStopIds.has(s.id))
+                        : stations.filter(s => s.id !== depart.station_id);
+                      return destinationStations.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {departStation ? `${departStation.name} → ${s.name}` : s.name}
+                        </option>
+                      ));
+                    })()}
                   </select>
                 </div>
 
