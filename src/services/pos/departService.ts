@@ -79,17 +79,10 @@ export async function updateDepart(
   return localUpdate<DepartRecord>('departs', id, patch);
 }
 
-export async function getAllDeparts(stationId?: string, counterId?: string): Promise<DepartRecord[]> {
+export async function getAllDeparts(stationId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
-  let result = all;
-  if (stationId) result = result.filter(d => d.station_id === stationId);
-  if (counterId) result = result.filter(d => d.counter_id === counterId);
-  return result;
-}
-
-export async function getDepartsForCounter(counterId: string): Promise<DepartRecord[]> {
-  const all = await getAll<DepartRecord>('departs');
-  return all.filter(d => d.counter_id === counterId);
+  if (stationId) return all.filter(d => d.station_id === stationId);
+  return all;
 }
 
 export async function getDepartById(id: string): Promise<DepartRecord | undefined> {
@@ -116,14 +109,7 @@ export async function cloturerDepart(
   });
 }
 
-export async function getDepartsForOtherStations(currentStationId: string, currentCounterId?: string): Promise<DepartRecord[]> {
+export async function getDepartsForOtherStations(currentStationId: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
-  return all.filter(d => {
-    if (d.station_id === currentStationId) {
-      // Same station: exclude this counter's departs, show other counters' departs
-      if (currentCounterId && d.counter_id === currentCounterId) return false;
-      return !d.cancelled;
-    }
-    return !d.cancelled;
-  });
+  return all.filter(d => d.station_id !== currentStationId && !d.cancelled);
 }

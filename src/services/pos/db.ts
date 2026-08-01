@@ -28,8 +28,6 @@ export interface DepartRecord {
   seats_sold: number;
   station_id: string;
   station_name?: string;
-  counter_id?: string;
-  counter_number?: string;
   other_station_id?: string;
   other_station_name?: string;
   cloture: boolean;
@@ -168,16 +166,6 @@ class POSDatabase extends Dexie {
     super('pos_guichet_db');
     this.version(1).stores({
       departs: 'id, route_id, bus_id, driver_id, station_id, departure_datetime, status, synced',
-      tickets: 'id, depart_id, status, created_at, synced',
-      bagages: 'id, depart_id, ticket_id, created_at, synced',
-      depenses: 'id, station_id, depart_id, type, created_at, synced',
-      referentiels: 'key, type, updated_at',
-      sync_queue: '++id, entity, status, created_at, tries',
-      session: 'id, user_id, station_id',
-      print_settings: 'id',
-    });
-    this.version(2).stores({
-      departs: 'id, route_id, bus_id, driver_id, station_id, counter_id, departure_datetime, status, synced',
       tickets: 'id, depart_id, status, created_at, synced',
       bagages: 'id, depart_id, ticket_id, created_at, synced',
       depenses: 'id, station_id, depart_id, type, created_at, synced',

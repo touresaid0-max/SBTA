@@ -76,11 +76,6 @@ export default function POSVente() {
         setLoading(false);
         return;
       }
-      if (session?.counter_id && d.counter_id && d.counter_id !== session.counter_id) {
-        setError("Ce départ appartient à un autre guichet — accès non autorisé");
-        setLoading(false);
-        return;
-      }
       setDepart(d);
 
       const [t, s, st, ta, li, bg] = await Promise.all([
