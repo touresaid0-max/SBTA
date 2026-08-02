@@ -77,11 +77,11 @@ export default function POSDepartNouveau() {
 
   useEffect(() => {
     if (session?.station_id && ligneId) {
-      nextRouteNumber(session.station_id, ligneId).then(setDepartureNo);
+      nextRouteNumber(session.station_id, ligneId, session?.counter_id).then(setDepartureNo);
     } else if (session?.station_id) {
-      nextDepartureNumber(session.station_id).then(setDepartureNo);
+      nextDepartureNumber(session.station_id, session?.counter_id).then(setDepartureNo);
     }
-  }, [session?.station_id, ligneId]);
+  }, [session?.station_id, session?.counter_id, ligneId]);
 
   const selectedBus = vehicules.find(v => v.id === busId);
 

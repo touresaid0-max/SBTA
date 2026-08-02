@@ -36,16 +36,22 @@ export async function getGares(): Promise<GareRef[]> {
   return getReferentiel<GareRef>('gares');
 }
 
-export async function nextDepartureNumber(stationId: string): Promise<number> {
+export async function nextDepartureNumber(stationId: string, counterId?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
-  const stationDeparts = all.filter(d => d.station_id === stationId);
+  let stationDeparts = all.filter(d => d.station_id === stationId);
+  if (counterId) {
+    stationDeparts = stationDeparts.filter(d => d.counter_id === counterId);
+  }
   if (stationDeparts.length === 0) return 1;
   return Math.max(...stationDeparts.map(d => d.departure_number ?? 0)) + 1;
 }
 
-export async function nextRouteNumber(stationId: string, routeId: string): Promise<number> {
+export async function nextRouteNumber(stationId: string, routeId: string, counterId?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
-  const routeDeparts = all.filter(d => d.station_id === stationId && d.route_id === routeId);
+  let routeDeparts = all.filter(d => d.station_id === stationId && d.route_id === routeId);
+  if (counterId) {
+    routeDeparts = routeDeparts.filter(d => d.counter_id === counterId);
+  }
   if (routeDeparts.length === 0) return 1;
   return Math.max(...routeDeparts.map(d => d.route_number ?? 0)) + 1;
 }
@@ -53,8 +59,8 @@ export async function nextRouteNumber(stationId: string, routeId: string): Promi
 export async function createDepart(
   data: Omit<DepartRecord, 'id' | 'created_at' | 'updated_at' | 'synced' | 'departure_number' | 'route_number' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse' | 'confirmed' | 'cancelled'>,
 ): Promise<DepartRecord> {
-  const departureNumber = await nextDepartureNumber(data.station_id);
-  const routeNumber = await nextRouteNumber(data.station_id, data.route_id);
+  const departureNumber = await nextDepartureNumber(data.station_id, data.counter_id);
+  const routeNumber = await nextRouteNumber(data.station_id, data.route_id, data.counter_id);
 
   return localInsert<DepartRecord>('departs', {
     ...data,
