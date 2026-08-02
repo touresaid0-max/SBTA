@@ -36,15 +36,9 @@ export async function getGares(): Promise<GareRef[]> {
   return getReferentiel<GareRef>('gares');
 }
 
-function isToday(iso: string): boolean {
-  const d = new Date(iso);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
-
-export async function nextDepartureNumber(stationId: string, counterId?: string): Promise<number> {
+export async function nextDepartureNumber(stationId: string, counterId?: string, departureDate?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
-  let stationDeparts = all.filter(d => d.station_id === stationId && isToday(d.created_at));
+  let stationDeparts = all.filter(d => d.station_id === stationId && d.departure_date === departureDate);
   if (counterId) {
     stationDeparts = stationDeparts.filter(d => d.counter_id === counterId);
   }
@@ -52,9 +46,9 @@ export async function nextDepartureNumber(stationId: string, counterId?: string)
   return Math.max(...stationDeparts.map(d => d.departure_number ?? 0)) + 1;
 }
 
-export async function nextRouteNumber(stationId: string, routeId: string, counterId?: string): Promise<number> {
+export async function nextRouteNumber(stationId: string, routeId: string, counterId?: string, departureDate?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
-  let routeDeparts = all.filter(d => d.station_id === stationId && d.route_id === routeId && isToday(d.created_at));
+  let routeDeparts = all.filter(d => d.station_id === stationId && d.route_id === routeId && d.departure_date === departureDate);
   if (counterId) {
     routeDeparts = routeDeparts.filter(d => d.counter_id === counterId);
   }
@@ -65,8 +59,8 @@ export async function nextRouteNumber(stationId: string, routeId: string, counte
 export async function createDepart(
   data: Omit<DepartRecord, 'id' | 'created_at' | 'updated_at' | 'synced' | 'departure_number' | 'route_number' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse' | 'confirmed' | 'cancelled'>,
 ): Promise<DepartRecord> {
-  const departureNumber = await nextDepartureNumber(data.station_id, data.counter_id);
-  const routeNumber = await nextRouteNumber(data.station_id, data.route_id, data.counter_id);
+  const departureNumber = await nextDepartureNumber(data.station_id, data.counter_id, data.departure_date);
+  const routeNumber = await nextRouteNumber(data.station_id, data.route_id, data.counter_id, data.departure_date);
 
   return localInsert<DepartRecord>('departs', {
     ...data,
