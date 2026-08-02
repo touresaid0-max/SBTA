@@ -36,9 +36,15 @@ export async function getGares(): Promise<GareRef[]> {
   return getReferentiel<GareRef>('gares');
 }
 
+function isToday(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
 export async function nextDepartureNumber(stationId: string, counterId?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
-  let stationDeparts = all.filter(d => d.station_id === stationId);
+  let stationDeparts = all.filter(d => d.station_id === stationId && isToday(d.created_at));
   if (counterId) {
     stationDeparts = stationDeparts.filter(d => d.counter_id === counterId);
   }
@@ -48,7 +54,7 @@ export async function nextDepartureNumber(stationId: string, counterId?: string)
 
 export async function nextRouteNumber(stationId: string, routeId: string, counterId?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
-  let routeDeparts = all.filter(d => d.station_id === stationId && d.route_id === routeId);
+  let routeDeparts = all.filter(d => d.station_id === stationId && d.route_id === routeId && isToday(d.created_at));
   if (counterId) {
     routeDeparts = routeDeparts.filter(d => d.counter_id === counterId);
   }
