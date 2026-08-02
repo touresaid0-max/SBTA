@@ -93,7 +93,7 @@ export default function POSDepartNouveau() {
     }
   };
 
-  const canSubmit = departureDate && departureTime && ligneId && busId && driverId && seatsTotal > 0;
+  const canSubmit = departureDate && ligneId && busId && driverId && seatsTotal > 0;
 
   const handleSubmit = () => {
     setError('');
@@ -102,7 +102,7 @@ export default function POSDepartNouveau() {
       return;
     }
     if (!canSubmit) {
-      setError('Veuillez renseigner tous les champs obligatoires (date, heure, ligne, car, chauffeur, nombre de sièges).');
+      setError('Veuillez renseigner tous les champs obligatoires (date, ligne, car, chauffeur, nombre de sièges).');
       return;
     }
     setShowConfirm(true);
@@ -132,9 +132,9 @@ export default function POSDepartNouveau() {
         convoyeur_name: convoyeur?.full_name || undefined,
         apprenti_id: apprentiId || undefined,
         apprenti_name: apprenti?.full_name || undefined,
-        departure_datetime: `${departureDate}T${departureTime}:00`,
+        departure_datetime: `${departureDate}T${departureTime || '00:00'}:00`,
         departure_date: departureDate,
-        departure_time: departureTime,
+        departure_time: departureTime || '',
         is_ac: isAc,
         status: 'planned',
         seats_total: seatsTotal,
@@ -195,7 +195,7 @@ export default function POSDepartNouveau() {
 
             {/* Heure */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Heure *</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Heure</label>
               <input type="time" value={departureTime} onChange={e => setDepartureTime(e.target.value)} className={fieldInput} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
