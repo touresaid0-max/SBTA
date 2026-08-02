@@ -32,8 +32,8 @@ export default function POSAutresGares() {
 
   const loadData = useCallback(async () => {
     try {
-      const otherDeparts = await getDepartsForOtherStations(session?.station_id ?? '');
-      const allDeparts = otherDeparts.length > 0 ? otherDeparts : await getAllDeparts();
+      const otherDeparts = await getDepartsForOtherStations(session?.station_id ?? '', session?.counter_id);
+      const allDeparts = otherDeparts.length > 0 ? otherDeparts : await getAllDeparts(session?.station_id, session?.counter_id);
       const filtered = allDeparts.filter(d => d.station_id !== (session?.station_id ?? ''));
 
       const results: OtherGareSummary[] = [];

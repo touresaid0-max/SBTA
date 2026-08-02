@@ -79,10 +79,14 @@ export async function updateDepart(
   return localUpdate<DepartRecord>('departs', id, patch);
 }
 
-export async function getAllDeparts(stationId?: string): Promise<DepartRecord[]> {
+export async function getAllDeparts(stationId?: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
-  if (stationId) return all.filter(d => d.station_id === stationId);
-  return all;
+  let result = all;
+  if (stationId) result = result.filter(d => d.station_id === stationId);
+  if (counterId) {
+    result = result.filter(d => d.counter_id === counterId);
+  }
+  return result;
 }
 
 export async function getDepartById(id: string): Promise<DepartRecord | undefined> {
@@ -109,7 +113,11 @@ export async function cloturerDepart(
   });
 }
 
-export async function getDepartsForOtherStations(currentStationId: string): Promise<DepartRecord[]> {
+export async function getDepartsForOtherStations(currentStationId: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
-  return all.filter(d => d.station_id !== currentStationId && !d.cancelled);
+  let result = all.filter(d => d.station_id !== currentStationId && !d.cancelled);
+  if (counterId) {
+    result = result.filter(d => d.counter_id === counterId);
+  }
+  return result;
 }

@@ -50,6 +50,11 @@ export default function POSBagages() {
         setLoading(false);
         return;
       }
+      if (session?.counter_id && d.counter_id && d.counter_id !== session.counter_id) {
+        setError('Ce départ n\'est pas affecté à votre guichet.');
+        setLoading(false);
+        return;
+      }
       setDepart(d);
       const [b, s] = await Promise.all([
         getBagagesForDepart(departId),
