@@ -308,10 +308,6 @@ export default function Routes() {
       toast.error('La ville d\'origine ne peut pas être une destination intermédiaire');
       return;
     }
-    if (cityId === formData.destination_city_id) {
-      toast.error('La ville de destination ne peut pas être une destination intermédiaire');
-      return;
-    }
     setIntermediateStops([...intermediateStops, { city_id: cityId, city_name: cityName, price: 0 }]);
   };
 
@@ -539,7 +535,6 @@ export default function Routes() {
                     cities={cities}
                     excludedIds={[
                       formData.origin_city_id,
-                      formData.destination_city_id,
                       ...intermediateStops.map(s => s.city_id),
                     ]}
                     onSelect={addIntermediateStop}
