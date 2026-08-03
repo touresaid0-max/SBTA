@@ -32,6 +32,7 @@ export default function POSDepartNouveau() {
   const [isAc, setIsAc] = useState(false);
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
+  const [enableOtherStation, setEnableOtherStation] = useState(false);
   const [otherStationId, setOtherStationId] = useState('');
   const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
   const [newAllocStationId, setNewAllocStationId] = useState('');
@@ -126,7 +127,8 @@ export default function POSDepartNouveau() {
       const driver = chauffeurs.find(c => c.id === driverId);
       const convoyeur = chauffeurs.find(c => c.id === convoyeurId);
       const apprenti = chauffeurs.find(c => c.id === apprentiId);
-      const otherStation = otherStationId ? gares.find(g => g.id === otherStationId) : undefined;
+      const firstAllocStationId = seatAllocations.length > 0 ? seatAllocations[0].station_id : '';
+      const otherStation = firstAllocStationId ? gares.find(g => g.id === firstAllocStationId) : undefined;
 
       const allAllocations: SeatAllocation[] = [];
       const primaryStationName = session?.station_name ?? 'Gare principale';
@@ -163,7 +165,7 @@ export default function POSDepartNouveau() {
         station_id: stationId,
         station_name: session?.station_name ?? '',
         counter_id: session?.counter_id,
-        other_station_id: otherStationId || undefined,
+        other_station_id: (seatAllocations.length > 0 ? seatAllocations[0].station_id : '') || undefined,
         other_station_name: otherStation?.name,
       });
 
@@ -291,18 +293,32 @@ export default function POSDepartNouveau() {
             {/* Charger dans une autre gare */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Charger dans une autre gare</label>
-              <AutocompleteSelect
-                options={gares.filter(g => g.id !== session?.station_id).map(g => ({
-                  id: g.id,
-                  label: g.name,
-                  sublabel: [g.city, g.agency_code].filter(Boolean).join(' · '),
-                  keywords: `${g.name} ${g.city ?? ''} ${g.agency_code ?? ''}`,
-                }))}
-                value={otherStationId}
-                onChange={(id) => { setOtherStationId(id); setSeatAllocations([]); setAllocError(''); }}
-                placeholder="Rechercher une gare..."
-                emptyText="Aucune gare trouvée"
-              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setEnableOtherStation(false); setOtherStationId(''); setSeatAllocations([]); setAllocError(''); }}
+                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors"
+                  style={{
+                    borderColor: !enableOtherStation ? 'var(--primary)' : 'var(--border)',
+                    color: !enableOtherStation ? 'var(--primary)' : 'var(--text-secondary)',
+                    backgroundColor: !enableOtherStation ? 'var(--primary-light)' : 'var(--surface)',
+                  }}
+                >
+                  Non
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEnableOtherStation(true)}
+                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors"
+                  style={{
+                    borderColor: enableOtherStation ? 'var(--primary)' : 'var(--border)',
+                    color: enableOtherStation ? 'var(--primary)' : 'var(--text-secondary)',
+                    backgroundColor: enableOtherStation ? 'var(--primary-light)' : 'var(--surface)',
+                  }}
+                >
+                  Oui
+                </button>
+              </div>
             </div>
 
             {/* Convoyeur */}
@@ -337,7 +353,7 @@ export default function POSDepartNouveau() {
           </div>
 
           {/* Seat allocation section */}
-          {otherStationId && seatsTotal > 0 && (
+          {enableOtherStation && seatsTotal > 0 && (
             <div className="mt-5 rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)' }}>
               <h3 className="text-sm font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--primary)' }}>
                 <Armchair className="w-4 h-4" /> Répartition des sièges
@@ -419,7 +435,7 @@ export default function POSDepartNouveau() {
                 <div className="col-span-2">
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Gare de vente secondaire</label>
                   <AutocompleteSelect
-                    options={gares.filter(g => g.id !== session?.station_id && g.id !== otherStationId && !seatAllocations.some(a => a.station_id === g.id)).map(g => ({
+                    options={gares.filter(g => g.id !== session?.station_id && !seatAllocations.some(a => a.station_id === g.id)).map(g => ({
                       id: g.id,
                       label: g.name,
                       sublabel: [g.city, g.agency_code].filter(Boolean).join(' · '),
