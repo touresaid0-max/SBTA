@@ -1,4 +1,5 @@
 import { db, type SyncOp, type SyncQueueItem } from './db';
+import { syncNow, checkOnlineStatus } from './syncService';
 
 function uuid(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -17,7 +18,38 @@ const storeToEntity: Record<StoreName, string> = {
   depenses: 'depenses',
 };
 
-async function enqueueSync(entity: string, op: SyncOp, payload: Record<string, unknown>): Promise<void> {
+async function enqueueSync(
+  entity: string,
+  op: SyncOp,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const id = (payload.id as string) ?? '';
+
+  if (id && (op === 'insert' || op === 'update')) {
+    const existing = await db.sync_queue
+      .where('status')
+      .anyOf(['pending', 'error'])
+      .toArray();
+
+    const dupe = existing.find(
+      (e) =>
+        e.entity === entity &&
+        (e.payload.id as string) === id &&
+        (e.op === 'insert' || e.op === 'update'),
+    );
+
+    if (dupe) {
+      await db.sync_queue.update(dupe.id!, {
+        payload,
+        tries: 0,
+        status: 'pending',
+        last_error: undefined,
+        created_at: nowIso(),
+      });
+      return;
+    }
+  }
+
   const item: SyncQueueItem = {
     entity,
     op,
@@ -29,7 +61,15 @@ async function enqueueSync(entity: string, op: SyncOp, payload: Record<string, u
   await db.sync_queue.add(item);
 }
 
-export async function localInsert<T extends { id: string; created_at: string; updated_at: string; synced?: boolean }>(
+async function tryImmediateSync(): Promise<void> {
+  if (!navigator.onLine) return;
+  const online = await checkOnlineStatus();
+  if (online) syncNow().catch(() => {});
+}
+
+export async function localInsert<
+  T extends { id: string; created_at: string; updated_at: string; synced?: boolean },
+>(
   store: StoreName,
   record: Omit<T, 'id' | 'created_at' | 'updated_at' | 'synced'> & Partial<T>,
 ): Promise<T> {
@@ -45,10 +85,13 @@ export async function localInsert<T extends { id: string; created_at: string; up
 
   await (db[store] as any).put(full);
   await enqueueSync(storeToEntity[store], 'insert', full as unknown as Record<string, unknown>);
+  tryImmediateSync();
   return full;
 }
 
-export async function localUpdate<T extends { id: string; updated_at: string; synced?: boolean }>(
+export async function localUpdate<
+  T extends { id: string; updated_at: string; synced?: boolean },
+>(
   store: StoreName,
   id: string,
   patch: Partial<T>,
@@ -65,20 +108,29 @@ export async function localUpdate<T extends { id: string; updated_at: string; sy
   } as unknown as T;
 
   await (db[store] as any).put(updated);
-  await enqueueSync(storeToEntity[store], 'update', { id, ...patch } as unknown as Record<string, unknown>);
+  await enqueueSync(
+    storeToEntity[store],
+    'update',
+    { id, ...patch } as unknown as Record<string, unknown>,
+  );
+  tryImmediateSync();
   return updated;
 }
 
 export async function localDelete(store: StoreName, id: string): Promise<void> {
   await (db[store] as any).delete(id);
   await enqueueSync(storeToEntity[store], 'delete', { id });
+  tryImmediateSync();
 }
 
 export async function getAll<T>(store: StoreName): Promise<T[]> {
   return await (db[store] as any).toArray();
 }
 
-export async function getById<T extends { id: string }>(store: StoreName, id: string): Promise<T | undefined> {
+export async function getById<T extends { id: string }>(
+  store: StoreName,
+  id: string,
+): Promise<T | undefined> {
   return await (db[store] as any).get(id);
 }
 

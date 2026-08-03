@@ -1,22 +1,52 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from './db';
-import { syncNow, onSyncEvent, isSyncing } from './syncService';
+import {
+  syncNow,
+  onSyncEvent,
+  isSyncing,
+  checkOnlineStatus,
+  getErrorItems,
+  type SyncErrorDetail,
+} from './syncService';
 
 export function useSyncStatus() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
+  const [errorCount, setErrorCount] = useState(0);
+  const [syncErrors, setSyncErrors] = useState<SyncErrorDetail[]>([]);
   const [syncing, setSyncing] = useState(isSyncing());
   const [lastSync, setLastSync] = useState(0);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMounted = useRef(true);
 
   const refreshPending = useCallback(async () => {
+    if (!isMounted.current) return;
     const count = await db.sync_queue.where('status').anyOf(['pending', 'error']).count();
+    const errors = await getErrorItems();
     setPendingCount(count);
+    setErrorCount(errors.length);
+    setSyncErrors(errors);
   }, []);
 
+  const tryAutoSync = useCallback(async () => {
+    if (!isMounted.current) return;
+    if (isSyncing()) return;
+    const online = await checkOnlineStatus();
+    if (!online) return;
+    const pending = await db.sync_queue.where('status').anyOf(['pending', 'error']).count();
+    if (pending > 0) {
+      await syncNow();
+      await refreshPending();
+    }
+  }, [refreshPending]);
+
   useEffect(() => {
+    isMounted.current = true;
+
     const goOnline = () => {
       setIsOnline(true);
-      setTimeout(() => syncNow().then(() => refreshPending()), 500);
+      if (syncTimer.current) clearTimeout(syncTimer.current);
+      syncTimer.current = setTimeout(() => tryAutoSync(), 500);
     };
     const goOffline = () => setIsOnline(false);
 
@@ -25,7 +55,8 @@ export function useSyncStatus() {
 
     refreshPending();
 
-    const unsub = onSyncEvent((event, detail) => {
+    const unsub = onSyncEvent((event) => {
+      if (!isMounted.current) return;
       if (event === 'start') setSyncing(true);
       if (event === 'done' || event === 'idle') {
         setSyncing(false);
@@ -35,23 +66,34 @@ export function useSyncStatus() {
       if (event === 'item-ok' || event === 'item-error') {
         refreshPending();
       }
-      void detail;
+      if (event === 'errors-updated') {
+        refreshPending();
+      }
     });
 
-    if (navigator.onLine && !isSyncing()) {
-      const pending = db.sync_queue.where('status').anyOf(['pending', 'error']).count();
-      pending.then(c => { if (c > 0) syncNow().then(() => refreshPending()); });
-    }
+    checkOnlineStatus().then((online) => {
+      if (!isMounted.current) return;
+      setIsOnline(online);
+      if (online) tryAutoSync();
+    });
 
-    const interval = setInterval(refreshPending, 5000);
+    const interval = setInterval(async () => {
+      if (!isMounted.current) return;
+      if (isSyncing()) return;
+      const online = await checkOnlineStatus();
+      setIsOnline(online);
+      if (online) tryAutoSync();
+    }, 15000);
 
     return () => {
+      isMounted.current = false;
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
       unsub();
       clearInterval(interval);
+      if (syncTimer.current) clearTimeout(syncTimer.current);
     };
-  }, [refreshPending]);
+  }, [refreshPending, tryAutoSync]);
 
   const triggerSync = useCallback(async () => {
     const result = await syncNow();
@@ -59,5 +101,14 @@ export function useSyncStatus() {
     return result;
   }, [refreshPending]);
 
-  return { isOnline, pendingCount, syncing, lastSync, triggerSync, refreshPending };
+  return {
+    isOnline,
+    pendingCount,
+    errorCount,
+    syncErrors,
+    syncing,
+    lastSync,
+    triggerSync,
+    refreshPending,
+  };
 }
