@@ -270,10 +270,18 @@ export default function POSDepartNouveau() {
             {/* Charger dans une autre gare */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Charger dans une autre gare</label>
-              <select value={otherStationId} onChange={e => setOtherStationId(e.target.value)} className={fieldInput} style={fieldStyle}>
-                <option value="">Aucune</option>
-                {gares.filter(g => g.id !== session?.station_id).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
+              <AutocompleteSelect
+                options={gares.filter(g => g.id !== session?.station_id).map(g => ({
+                  id: g.id,
+                  label: g.name,
+                  sublabel: [g.city, g.agency_code].filter(Boolean).join(' · '),
+                  keywords: `${g.name} ${g.city ?? ''} ${g.agency_code ?? ''}`,
+                }))}
+                value={otherStationId}
+                onChange={setOtherStationId}
+                placeholder="Rechercher une gare..."
+                emptyText="Aucune gare trouvée"
+              />
             </div>
 
             {/* Convoyeur */}
