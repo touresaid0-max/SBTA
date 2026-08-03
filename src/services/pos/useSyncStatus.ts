@@ -77,20 +77,29 @@ export function useSyncStatus() {
       if (online) tryAutoSync();
     });
 
-    const interval = setInterval(async () => {
-      if (!isMounted.current) return;
-      if (isSyncing()) return;
-      const online = await checkOnlineStatus();
-      setIsOnline(online);
-      if (online) tryAutoSync();
-    }, 15000);
+    let tickCount = 0;
+    let intervalId: ReturnType<typeof setTimeout>;
+    const scheduleNext = () => {
+      const delay = tickCount < 4 ? 5000 : 15000;
+      intervalId = setTimeout(async () => {
+        if (!isMounted.current) return;
+        if (!isSyncing()) {
+          const online = await checkOnlineStatus();
+          setIsOnline(online);
+          if (online) tryAutoSync();
+        }
+        tickCount++;
+        scheduleNext();
+      }, delay);
+    };
+    scheduleNext();
 
     return () => {
       isMounted.current = false;
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
       unsub();
-      clearInterval(interval);
+      clearTimeout(intervalId);
       if (syncTimer.current) clearTimeout(syncTimer.current);
     };
   }, [refreshPending, tryAutoSync]);
