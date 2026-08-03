@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
@@ -9,19 +8,15 @@ import {
 import { getTicketsForDepart, type TicketRecord } from '@/services/pos/ticketService';
 import { getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
-import { syncNow } from '@/services/pos/syncService';
-import { db } from '@/services/pos/db';
-import { useSyncStatus } from '@/services/pos/useSyncStatus';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
-  AlertCircle, CheckCircle, Loader2, Lock, UploadCloud,
+  AlertCircle, CheckCircle, Loader2, Lock,
   Ticket as TicketIcon, Package, Wallet,
   TrendingDown,
 } from 'lucide-react';
 
 export default function POSCloture() {
   const { session } = usePOSSession();
-  const { isOnline, pendingCount, syncing } = useSyncStatus();
 
   const [departs, setDeparts] = useState<DepartRecord[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -33,7 +28,6 @@ export default function POSCloture() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [syncResult, setSyncResult] = useState<{ synced: number; failed: number } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -70,7 +64,7 @@ export default function POSCloture() {
 
   const solde = useMemo(() => selected ? computeSolde(selected) : 0, [selected]);
 
-  const handleClotureOnly = async () => {
+  const handleCloture = async () => {
     if (!selectedId) return;
     setActionLoading(true);
     setError('');
@@ -81,39 +75,6 @@ export default function POSCloture() {
       setDeparts(prev => prev.map(x => x.id === selectedId ? { ...x, cloture: true } : x));
       setSuccess('Départ clôturé — verrouillé en lecture seule');
       setTimeout(() => setSuccess(''), 3000);
-    } catch (err: any) {
-      setError(err?.message ?? 'Erreur');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleClotureAndSync = async () => {
-    if (!selectedId) return;
-    setActionLoading(true);
-    setError('');
-    setSyncResult(null);
-    try {
-      await cloturerDepart(selectedId, session?.full_name);
-      const d = await getDepartById(selectedId);
-      setSelected(d ?? null);
-      setDeparts(prev => prev.map(x => x.id === selectedId ? { ...x, cloture: true } : x));
-
-      if (!isOnline) {
-        setSuccess('Départ clôturé. Synchro en attente — réseau coupé. Les opérations seront poussées automatiquement à la reconnexion.');
-        setTimeout(() => setSuccess(''), 4000);
-        return;
-      }
-
-      const result = await syncNow();
-      setSyncResult(result);
-      const remaining = await db.sync_queue.where('status').anyOf(['pending', 'error']).count();
-      if (result.failed === 0) {
-        setSuccess(`Départ clôturé et ${result.synced} opération(s) synchronisée(s). File vide.`);
-      } else {
-        setSuccess(`Départ clôturé. ${result.synced} synchronisée(s), ${result.failed} échec(s). ${remaining} en attente.`);
-      }
-      setTimeout(() => setSuccess(''), 5000);
     } catch (err: any) {
       setError(err?.message ?? 'Erreur');
     } finally {
@@ -212,48 +173,17 @@ export default function POSCloture() {
               </div>
             </div>
 
-            {/* Sync status */}
-            <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <UploadCloud className="w-5 h-5" style={{ color: pendingCount > 0 ? 'var(--warning)' : 'var(--success)' }} />
-                  <div>
-                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>File de synchronisation</p>
-                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {pendingCount > 0 ? `${pendingCount} opération(s) en attente` : 'File vide — tout est synchronisé'}
-                      {!isOnline && ' · Hors ligne'}
-                    </p>
-                  </div>
-                </div>
-                {syncing && <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--primary)' }} />}
-              </div>
-              {syncResult && (
-                <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  Dernière synchro: {syncResult.synced} réussie(s), {syncResult.failed} échec(s)
-                </div>
-              )}
-            </div>
-
             {/* Actions */}
             {!selected.cloture ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-4">
+              <div className="pb-4">
                 <button
-                  onClick={handleClotureOnly}
+                  onClick={handleCloture}
                   disabled={actionLoading}
-                  className="py-4 rounded-xl font-bold text-base border-2 disabled:opacity-60 flex items-center justify-center gap-2"
-                  style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
-                >
-                  {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
-                  Clôture départ
-                </button>
-                <button
-                  onClick={handleClotureAndSync}
-                  disabled={actionLoading}
-                  className="py-4 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="w-full py-4 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2"
                   style={{ backgroundColor: 'var(--primary)' }}
                 >
-                  {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
-                  Clôture + mise à jour web
+                  {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
+                  Clôturer le départ
                 </button>
               </div>
             ) : (
@@ -263,17 +193,6 @@ export default function POSCloture() {
                 <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
                   Vente et bagages verrouillés. {selected.cloture_at && `Clôturé le ${new Date(selected.cloture_at).toLocaleString('fr-FR')}`}
                 </p>
-                {!isOnline && pendingCount > 0 && (
-                  <button
-                    onClick={handleClotureAndSync}
-                    disabled={actionLoading || !isOnline}
-                    className="mt-3 px-4 py-2 rounded-lg font-bold text-sm text-white disabled:opacity-60 flex items-center gap-2 mx-auto"
-                    style={{ backgroundColor: 'var(--primary)' }}
-                  >
-                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
-                    Mettre à jour web maintenant
-                  </button>
-                )}
               </div>
             )}
           </>

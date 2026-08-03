@@ -1,33 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Loader2, WifiOff, AlertCircle, CheckCircle } from 'lucide-react';
-import { login, hasOfflineCredentials, type POSLoginResult } from '@/services/pos/offlineAuth';
-import { useSyncStatus } from '@/services/pos/useSyncStatus';
+import { Lock, User, LogIn, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { login, type POSLoginResult } from '@/services/pos/offlineAuth';
 import { refreshAllReferentiels } from '@/services/pos/referentiels';
 
 export default function POSConnexion() {
   const navigate = useNavigate();
-  const { isOnline } = useSyncStatus();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [offlineAvailable, setOfflineAvailable] = useState(false);
-  const [loginMode, setLoginMode] = useState<'online' | 'offline' | null>(null);
-
-  const checkOfflineCreds = useCallback(async () => {
-    if (email.trim().length > 2) {
-      const has = await hasOfflineCredentials(email.trim());
-      setOfflineAvailable(has);
-    } else {
-      setOfflineAvailable(false);
-    }
-  }, [email]);
-
-  useEffect(() => {
-    const t = setTimeout(checkOfflineCreds, 300);
-    return () => clearTimeout(t);
-  }, [checkOfflineCreds]);
+  const [loginMode, setLoginMode] = useState<boolean | null>(null);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -49,12 +32,8 @@ export default function POSConnexion() {
     const result: POSLoginResult = await login(email.trim(), password);
 
     if (result.success) {
-      setLoginMode(result.offline ? 'offline' : 'online');
-
-      if (!result.offline && navigator.onLine) {
-        try { await refreshAllReferentiels(); } catch { /* non-critical */ }
-      }
-
+      setLoginMode(true);
+      try { await refreshAllReferentiels(); } catch { /* non-critical */ }
       setTimeout(() => navigate('/guichet/accueil'), 400);
     } else {
       setError(result.error ?? 'Erreur de connexion');
@@ -72,24 +51,19 @@ export default function POSConnexion() {
           >
             <TicketIcon />
           </div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Guichet Eafribus</h1>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Guichet SBTA</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>Terminal de vente</p>
         </div>
 
-        {/* Network status banner */}
         <div
           className="rounded-xl px-3 py-2 mb-4 flex items-center gap-2 text-xs font-medium"
           style={{
-            backgroundColor: isOnline ? 'var(--primary-light)' : 'var(--warning-light)',
-            color: isOnline ? 'var(--primary)' : '#92400E',
+            backgroundColor: 'var(--primary-light)',
+            color: 'var(--primary)',
           }}
         >
-          {isOnline ? <CheckCircle className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
-          {isOnline
-            ? 'En ligne — connexion au serveur'
-            : offlineAvailable
-              ? 'Hors ligne — connexion via identifiants en cache'
-              : 'Hors ligne — identifiants non disponibles pour cet utilisateur'}
+          <CheckCircle className="w-4 h-4" />
+          En ligne — connexion au serveur
         </div>
 
         {error && (
@@ -108,7 +82,7 @@ export default function POSConnexion() {
             style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}
           >
             <CheckCircle className="w-4 h-4 flex-shrink-0" />
-            {loginMode === 'online' ? 'Connexion réussie — en ligne' : 'Connexion réussie — mode hors ligne'}
+            Connexion réussie
           </div>
         )}
 

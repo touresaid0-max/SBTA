@@ -197,13 +197,3 @@ class POSDatabase extends Dexie {
 }
 
 export const db = new POSDatabase();
-
-export async function resetOperationalData(): Promise<void> {
-  await db.transaction('rw', [db.departs, db.tickets, db.bagages, db.depenses, db.sync_queue], async () => {
-    await db.departs.clear();
-    await db.tickets.clear();
-    await db.bagages.clear();
-    await db.depenses.clear();
-    await db.sync_queue.clear();
-  });
-}

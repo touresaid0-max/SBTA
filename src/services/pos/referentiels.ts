@@ -3,8 +3,6 @@ import { supabase } from '@/services/supabase';
 
 type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops';
 
-const CACHE_TTL_MS = 1000 * 60 * 30;
-
 const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   lignes: async () => {
     const { data, error } = await supabase.from('routes').select('id, name, origin_station_id, destination_station_id, base_price, is_active').eq('is_active', true).order('name');
@@ -50,18 +48,14 @@ export async function refreshReferentiel(type: RefType): Promise<unknown[]> {
   return data;
 }
 
-export async function getReferentiel<T = unknown>(type: RefType, opts?: { force?: boolean }): Promise<T[]> {
-  if (navigator.onLine && !opts?.force) {
-    try {
-      return (await refreshReferentiel(type)) as T[];
-    } catch {
-      // fall through to cache
-    }
+export async function getReferentiel<T = unknown>(type: RefType): Promise<T[]> {
+  try {
+    return (await refreshReferentiel(type)) as T[];
+  } catch {
+    const cached = await db.referentiels.get(type);
+    if (cached) return cached.data as T[];
+    return [];
   }
-
-  const cached = await db.referentiels.get(type);
-  if (cached) return cached.data as T[];
-  return [];
 }
 
 export async function refreshAllReferentiels(): Promise<void> {
@@ -70,5 +64,5 @@ export async function refreshAllReferentiels(): Promise<void> {
 }
 
 export function isReferentielStale(updated_at: string): boolean {
-  return Date.now() - new Date(updated_at).getTime() > CACHE_TTL_MS;
+  return Date.now() - new Date(updated_at).getTime() > 1000 * 60 * 30;
 }

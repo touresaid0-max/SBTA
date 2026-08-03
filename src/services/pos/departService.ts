@@ -1,4 +1,4 @@
-import { type DepartRecord } from './db';
+import { type DepartRecord, type SeatAllocation } from './db';
 import { localInsert, localUpdate, getAll } from './offlineStore';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
