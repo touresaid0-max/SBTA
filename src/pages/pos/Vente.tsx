@@ -201,7 +201,7 @@ export default function POSVente() {
       return stop?.city_name ?? '';
     }
     const s = stations.find(st => st.id === destination);
-    return s?.name ?? depart?.route_name ?? '';
+    return (s?.city || s?.name) ?? depart?.route_name ?? '';
   }, [stations, destination, depart, currentRouteStops]);
 
   const handleSell = async () => {
@@ -227,7 +227,7 @@ export default function POSVente() {
         destId = cityId;
       } else {
         const station = stations.find(s => s.id === destination);
-        destName = station?.name ?? destination;
+        destName = (station?.city || station?.name) ?? destination;
       }
       const ticket = await sellTicket({
         departId, seatNumber: seat,
@@ -526,7 +526,7 @@ export default function POSVente() {
                     {(() => {
                       const destStation = stations.find(s => s.id === lignes.find(l => l.id === depart.route_id)?.destination_station_id);
                       if (destStation) {
-                        return <option value={destStation.id}>{destStation.name}</option>;
+                        return <option value={destStation.id}>{destStation.city || destStation.name}</option>;
                       }
                       return null;
                     })()}
