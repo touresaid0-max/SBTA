@@ -9,10 +9,13 @@ import {
   nextDepartureNumber,
   nextRouteNumber,
   validateSeatAllocations,
+  findParentDepartForBus,
+  getSeatRangeForStation,
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
   type SeatAllocation,
+  type DepartRecord,
 } from '@/services/pos/departService';
-import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair, Lock, Info } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 
 export default function POSDepartNouveau() {
@@ -45,6 +48,9 @@ export default function POSDepartNouveau() {
   const [seatsTotal, setSeatsTotal] = useState(0);
   const [seatsFrom, setSeatsFrom] = useState(1);
   const [departureNo, setDepartureNo] = useState(0);
+  const [linkedParent, setLinkedParent] = useState<DepartRecord | null>(null);
+  const [seatRangeInfo, setSeatRangeInfo] = useState<{ from: number; to: number; stationName: string } | null>(null);
+  const [searchingParent, setSearchingParent] = useState(false);
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -94,13 +100,42 @@ export default function POSDepartNouveau() {
 
   const selectedBus = vehicules.find(v => v.id === busId);
 
-  const handleBusChange = (id: string) => {
+  const handleBusChange = async (id: string) => {
     setBusId(id);
     const bus = vehicules.find(v => v.id === id);
     if (bus && seatsTotal === 0) {
       setSeatsTotal(bus.capacity);
     }
+    setLinkedParent(null);
+    setSeatRangeInfo(null);
+    if (!id || !session?.station_id) return;
+    setSearchingParent(true);
+    try {
+      const parent = await findParentDepartForBus(id, session.station_id);
+      if (parent) {
+        const range = getSeatRangeForStation(parent, session.station_id);
+        if (range) {
+          setLinkedParent(parent);
+          setSeatRangeInfo({ from: range.from, to: range.to, stationName: session.station_name ?? 'Votre gare' });
+          setLigneId(parent.route_id);
+          setDriverId(parent.driver_id);
+          setSeatsTotal(parent.seats_total);
+          setSeatsFrom(range.from);
+          setDepartureDate(parent.departure_date);
+          setDepartureTime(parent.departure_time);
+          setIsAc(parent.is_ac);
+          setConvoyeurId(parent.convoyeur_id ?? '');
+          setApprentiId(parent.apprenti_id ?? '');
+        }
+      }
+    } catch {
+      // non-critical
+    } finally {
+      setSearchingParent(false);
+    }
   };
+
+  const isLinked = !!linkedParent;
 
   const missingFields = [
     !departureDate && 'Date de départ',
@@ -140,6 +175,11 @@ export default function POSDepartNouveau() {
 
       const allAllocations: SeatAllocation[] = [];
       const primaryStationName = session?.station_name ?? 'Gare principale';
+
+      if (isLinked && linkedParent) {
+        allAllocations.push(...(linkedParent.seat_allocations ?? []));
+      }
+
       if (seatAllocations.length > 0) {
         const sortedAllocs = [...seatAllocations].sort((a, b) => a.seat_from - b.seat_from);
         const primaryFrom = sortedAllocs[0].seat_from > seatsFrom ? seatsFrom : seatsFrom;
@@ -220,19 +260,25 @@ export default function POSDepartNouveau() {
           <div className="grid grid-cols-2 gap-4">
             {/* Date départ */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Date départ *</label>
-              <input type="date" value={departureDate} onChange={e => setDepartureDate(e.target.value)} className={fieldInput} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Date départ * {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
+              <input type="date" value={departureDate} disabled={isLinked} onChange={e => setDepartureDate(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
             {/* Heure */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Heure</label>
-              <input type="time" value={departureTime} onChange={e => setDepartureTime(e.target.value)} className={fieldInput} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Heure {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
+              <input type="time" value={departureTime} disabled={isLinked} onChange={e => setDepartureTime(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
             {/* Ligne */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Ligne *</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Ligne * {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
               {noLinesAssigned ? (
                 <div
                   className="rounded-xl px-4 py-3 text-sm flex items-start gap-2"
@@ -242,7 +288,7 @@ export default function POSDepartNouveau() {
                   <span>Aucune ligne n'est affectée à votre compte. Veuillez contacter votre Chef de Gare ou l'Administrateur.</span>
                 </div>
               ) : (
-                <select value={ligneId} onChange={e => setLigneId(e.target.value)} className={fieldInput} style={fieldStyle}>
+                <select value={ligneId} disabled={isLinked} onChange={e => setLigneId(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1 }}>
                   <option value="">Sélectionner...</option>
                   {lignes.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
@@ -251,12 +297,15 @@ export default function POSDepartNouveau() {
 
             {/* Climatisé */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Climatisé</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Climatisé {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
               <button
                 type="button"
-                onClick={() => setIsAc(!isAc)}
+                disabled={isLinked}
+                onClick={() => !isLinked && setIsAc(!isAc)}
                 className={fieldInput}
-                style={{ ...fieldStyle, borderColor: isAc ? 'var(--primary)' : 'var(--border)', fontWeight: isAc ? 700 : 400, color: isAc ? 'var(--primary)' : 'var(--text-secondary)' }}
+                style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1, borderColor: isAc ? 'var(--primary)' : 'var(--border)', fontWeight: isAc ? 700 : 400, color: isAc ? 'var(--primary)' : 'var(--text-secondary)' }}
               >
                 {isAc ? 'Oui' : 'Non'}
               </button>
@@ -265,6 +314,11 @@ export default function POSDepartNouveau() {
             {/* Car */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Car *</label>
+              {searchingParent && (
+                <div className="flex items-center gap-2 text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Recherche d'un départ lié...
+                </div>
+              )}
               <AutocompleteSelect
                 options={vehicules.map(v => ({
                   id: v.id,
@@ -282,7 +336,9 @@ export default function POSDepartNouveau() {
 
             {/* Chauffeur */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Chauffeur *</label>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Chauffeur * {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
               <AutocompleteSelect
                 options={chauffeurs.map(c => ({
                   id: c.id,
@@ -295,10 +351,12 @@ export default function POSDepartNouveau() {
                 placeholder="Rechercher par nom, matricule, téléphone..."
                 required
                 emptyText="Aucun chauffeur trouvé"
+                disabled={isLinked}
               />
             </div>
 
             {/* Charger dans une autre gare */}
+            {!isLinked && (
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Charger dans une autre gare</label>
               <div className="flex gap-2">
@@ -328,11 +386,14 @@ export default function POSDepartNouveau() {
                 </button>
               </div>
             </div>
+            )}
 
             {/* Convoyeur */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Convoyeur</label>
-              <select value={convoyeurId} onChange={e => setConvoyeurId(e.target.value)} className={fieldInput} style={fieldStyle}>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Convoyeur {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
+              <select value={convoyeurId} disabled={isLinked} onChange={e => setConvoyeurId(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1 }}>
                 <option value="">Aucun</option>
                 {chauffeurs.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
               </select>
@@ -340,8 +401,10 @@ export default function POSDepartNouveau() {
 
             {/* Apprenti */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Apprenti</label>
-              <select value={apprentiId} onChange={e => setApprentiId(e.target.value)} className={fieldInput} style={fieldStyle}>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Apprenti {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
+              <select value={apprentiId} disabled={isLinked} onChange={e => setApprentiId(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1 }}>
                 <option value="">Aucun</option>
                 {chauffeurs.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
               </select>
@@ -349,19 +412,41 @@ export default function POSDepartNouveau() {
 
             {/* Nbre siège */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nbre siège *</label>
-              <input type="number" min={1} value={seatsTotal || ''} onChange={e => setSeatsTotal(parseInt(e.target.value) || 0)} className={fieldInput} style={fieldStyle} placeholder={selectedBus ? `${selectedBus.capacity}` : '0'} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Nbre siège * {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
+              <input type="number" min={1} disabled={isLinked} value={seatsTotal || ''} onChange={e => setSeatsTotal(parseInt(e.target.value) || 0)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} placeholder={selectedBus ? `${selectedBus.capacity}` : '0'} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
             {/* Siège à partir de */}
             <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Siège à partir de</label>
-              <input type="number" min={0} value={seatsFrom} onChange={e => setSeatsFrom(parseInt(e.target.value) || 0)} className={fieldInput} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Siège à partir de {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
+              <input type="number" min={0} disabled={isLinked} value={seatsFrom} onChange={e => setSeatsFrom(parseInt(e.target.value) || 0)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
           </div>
 
+          {/* Seat range info banner for linked secondary station */}
+          {isLinked && seatRangeInfo && (
+            <div className="mt-4 rounded-xl p-4 flex items-start gap-3" style={{ backgroundColor: 'var(--info-light, #E0F2FE)', border: '2px solid var(--info, #0284C7)' }}>
+              <Info className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: 'var(--info, #0284C7)' }} />
+              <div>
+                <p className="text-sm font-bold" style={{ color: 'var(--info, #0284C7)' }}>
+                  Départ lié à la gare principale {linkedParent?.station_name ?? ''}
+                </p>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-primary)' }}>
+                  Vous êtes autorisé à vendre uniquement les sièges n°{seatRangeInfo.from} à n°{seatRangeInfo.to}.
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Gare : {seatRangeInfo.stationName} · Plage attribuée : {seatRangeInfo.from} à {seatRangeInfo.to} · {seatRangeInfo.to - seatRangeInfo.from + 1} siège(s)
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Seat allocation section */}
-          {enableOtherStation && seatsTotal > 0 && (
+          {enableOtherStation && seatsTotal > 0 && !isLinked && (
             <div className="mt-5 rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)' }}>
               <h3 className="text-sm font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--primary)' }}>
                 <Armchair className="w-4 h-4" /> Répartition des sièges

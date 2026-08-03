@@ -16,6 +16,7 @@ interface AutocompleteSelectProps {
   required?: boolean;
   allowClear?: boolean;
   emptyText?: string;
+  disabled?: boolean;
 }
 
 export default function AutocompleteSelect({
@@ -26,6 +27,7 @@ export default function AutocompleteSelect({
   required = false,
   allowClear = true,
   emptyText = 'Aucun résultat',
+  disabled = false,
 }: AutocompleteSelectProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -60,6 +62,8 @@ export default function AutocompleteSelect({
     return () => document.removeEventListener('mousedown', handler);
   }, [selected]);
 
+  if (disabled) return null;
+
   const handleSelect = (id: string) => {
     onChange(id);
     setOpen(false);
@@ -75,6 +79,7 @@ export default function AutocompleteSelect({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
     if (!open) {
       if (e.key === 'ArrowDown' || e.key === 'Enter') {
         setOpen(true);
@@ -100,9 +105,9 @@ export default function AutocompleteSelect({
   return (
     <div ref={containerRef} className="relative">
       <div
-        className="w-full flex items-center gap-2 px-3 py-3 rounded-xl border-2 text-base outline-none transition-colors cursor-pointer"
-        style={{ borderColor: open ? 'var(--primary)' : 'var(--border)', backgroundColor: 'var(--surface)' }}
-        onClick={() => { setOpen(true); inputRef.current?.focus(); }}
+        className="w-full flex items-center gap-2 px-3 py-3 rounded-xl border-2 text-base outline-none transition-colors"
+        style={{ borderColor: open ? 'var(--primary)' : 'var(--border)', backgroundColor: 'var(--surface)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.7 : 1 }}
+        onClick={() => { if (!disabled) { setOpen(true); inputRef.current?.focus(); } }}
       >
         {open ? (
           <>
@@ -127,7 +132,7 @@ export default function AutocompleteSelect({
             >
               {selected ? selected.label : placeholder}
             </span>
-            {allowClear && selected && (
+            {allowClear && selected && !disabled && (
               <button
                 type="button"
                 onClick={handleClear}

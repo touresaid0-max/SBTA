@@ -174,6 +174,20 @@ export function getStationNameForSeat(
   return alloc?.station_name ?? null;
 }
 
+export async function findParentDepartForBus(busId: string, currentStationId: string): Promise<DepartRecord | null> {
+  const all = await getAll<DepartRecord>('departs');
+  const candidates = all.filter(d => {
+    if (d.cancelled) return false;
+    if (d.cloture) return false;
+    if (d.bus_id !== busId) return false;
+    if (d.station_id === currentStationId) return false;
+    return d.seat_allocations?.some(a => a.station_id === currentStationId) ?? false;
+  });
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  return candidates[0];
+}
+
 export function validateSeatAllocations(
   allocations: SeatAllocation[],
   busCapacity: number,
