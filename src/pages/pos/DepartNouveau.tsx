@@ -102,7 +102,15 @@ export default function POSDepartNouveau() {
     }
   };
 
-  const canSubmit = departureDate && ligneId && busId && driverId && seatsTotal > 0;
+  const missingFields = [
+    !departureDate && 'Date de départ',
+    !ligneId && 'Ligne',
+    !busId && 'Car',
+    !driverId && 'Chauffeur',
+    !(seatsTotal > 0) && 'Nbre de sièges',
+  ].filter(Boolean) as string[];
+
+  const canSubmit = missingFields.length === 0;
 
   const handleSubmit = () => {
     setError('');
@@ -111,7 +119,7 @@ export default function POSDepartNouveau() {
       return;
     }
     if (!canSubmit) {
-      setError('Veuillez renseigner tous les champs obligatoires (date, ligne, car, chauffeur, nombre de sièges).');
+      setError(`Veuillez renseigner : ${missingFields.join(', ')}.`);
       return;
     }
     setShowConfirm(true);
@@ -551,11 +559,21 @@ export default function POSDepartNouveau() {
             <button
               onClick={handleSubmit}
               disabled={!canSubmit || saving}
-              className="flex-1 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 transition-opacity"
-              style={{ backgroundColor: 'var(--primary)' }}
+              className="flex-1 py-3.5 rounded-xl font-bold text-base transition-all"
+              style={{
+                backgroundColor: canSubmit ? 'var(--primary)' : 'var(--border)',
+                color: canSubmit ? 'var(--text-on-primary, white)' : 'var(--text-muted)',
+                cursor: canSubmit ? 'pointer' : 'not-allowed',
+              }}
             >
               {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Créer le départ'}
             </button>
+            {!canSubmit && missingFields.length > 0 && (
+              <p className="text-xs mt-1.5 flex items-center gap-1" style={{ color: 'var(--danger)' }}>
+                <AlertCircle className="w-3.5 h-3.5" />
+                Champs manquants : {missingFields.join(', ')}
+              </p>
+            )}
           </div>
         </div>
       )}
