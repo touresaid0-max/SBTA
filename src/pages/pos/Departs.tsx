@@ -6,7 +6,10 @@ import {
   getAllDeparts, updateDepart, type DepartRecord,
   seatsLibres, computeSolde,
   getSeatRangeForStation,
+  seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
 } from '@/services/pos/departService';
+import { getAll as getAllTickets } from '@/services/pos/offlineStore';
+import type { TicketRecord } from '@/services/pos/db';
 import {
   departToSummary, exportToExcel, exportToPDF, printDeparturesList,
 } from '@/services/pos/posReportService';
@@ -22,11 +25,30 @@ type SortDir = 'asc' | 'desc';
 
 interface DepartRow extends DepartRecord {
   seats_libres: number;
+  seats_sold_station: number;
+  seats_allocated: number;
   solde_calc: number;
 }
 
-function toRow(d: DepartRecord): DepartRow {
-  return { ...d, seats_libres: seatsLibres(d), solde_calc: computeSolde(d) };
+function toRow(d: DepartRecord, tickets: TicketRecord[], stationId?: string): DepartRow {
+  if (stationId && d.seat_allocations && d.seat_allocations.length > 0) {
+    const allocated = seatsAllocatedForStation(d, stationId);
+    const sold = seatsVendusForStation(tickets, d, stationId);
+    return {
+      ...d,
+      seats_allocated: allocated,
+      seats_sold_station: sold,
+      seats_libres: seatsLibresForStation(tickets, d, stationId),
+      solde_calc: computeSolde(d),
+    };
+  }
+  return {
+    ...d,
+    seats_allocated: d.seats_total,
+    seats_sold_station: d.seats_sold,
+    seats_libres: seatsLibres(d),
+    solde_calc: computeSolde(d),
+  };
 }
 
 function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
@@ -40,7 +62,7 @@ function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
     case 'driver_name': return row.driver_name ?? '';
     case 'seats_total': return row.seats_total;
     case 'seats_libres': return row.seats_libres;
-    case 'seats_sold': return row.seats_sold;
+    case 'seats_sold': return row.seats_sold_station;
     case 'cloture': return row.cloture;
     case 'mt_ticket': return row.mt_ticket;
     case 'mt_bagage': return row.mt_bagage;
@@ -63,8 +85,11 @@ export default function POSDeparts() {
   const [showCancelConfirm, setShowCancelConfirm] = useState<DepartRow | null>(null);
 
   const loadDeparts = useCallback(async () => {
-    const all = await getAllDeparts(session?.station_id, session?.counter_id);
-    setDeparts(all.map(toRow));
+    const [all, tickets] = await Promise.all([
+      getAllDeparts(session?.station_id, session?.counter_id),
+      getAllTickets<TicketRecord>('tickets'),
+    ]);
+    setDeparts(all.map(d => toRow(d, tickets, session?.station_id)));
     setLoading(false);
   }, [session?.station_id, session?.counter_id]);
 
@@ -89,8 +114,8 @@ export default function POSDeparts() {
 
   const totals = useMemo(() => {
     return visibleDeparts.reduce((acc, d) => ({
-      seats_total: acc.seats_total + d.seats_total,
-      seats_sold: acc.seats_sold + d.seats_sold,
+      seats_total: acc.seats_total + d.seats_allocated,
+      seats_sold: acc.seats_sold + d.seats_sold_station,
       seats_libres: acc.seats_libres + d.seats_libres,
       mt_ticket: acc.mt_ticket + d.mt_ticket,
       mt_bagage: acc.mt_bagage + d.mt_bagage,
@@ -265,8 +290,8 @@ export default function POSDeparts() {
                   <th className={th} onClick={() => handleSort('bus_plate')}>Matricule {sortIcon('bus_plate')}</th>
                   <th className={th} onClick={() => handleSort('bus_name')}>Nom Car {sortIcon('bus_name')}</th>
                   <th className={th} onClick={() => handleSort('driver_name')}>Chauffeur {sortIcon('driver_name')}</th>
-                  <th className={th + ' text-right'} onClick={() => handleSort('seats_total')}>Nbre Siège {sortIcon('seats_total')}</th>
-                  <th className={th + ' text-right'}>Siège à vendre</th>
+                  <th className={th + ' text-right'} onClick={() => handleSort('seats_total')}>Sièges attribués {sortIcon('seats_total')}</th>
+                  <th className={th + ' text-right'}>Plage sièges</th>
                   <th className={th + ' text-right'} onClick={() => handleSort('seats_sold')}>Siège vendu {sortIcon('seats_sold')}</th>
                   <th className={th + ' text-right'} onClick={() => handleSort('seats_libres')}>Siège libre {sortIcon('seats_libres')}</th>
                   <th className={th} onClick={() => handleSort('cloture')}>Clôture {sortIcon('cloture')}</th>
@@ -306,17 +331,17 @@ export default function POSDeparts() {
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_plate}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_name}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.driver_name}</td>
-                      <td className={td + ' text-right'} style={{ fontWeight: 600 }}>{d.seats_total}</td>
+                      <td className={td + ' text-right'} style={{ fontWeight: 600 }}>{d.seats_allocated}</td>
                       <td className={td + ' text-right'} style={{ color: 'var(--text-muted)' }}>
                         {(() => {
                           if (d.seat_allocations && session?.station_id) {
                             const range = getSeatRangeForStation(d, session.station_id);
                             if (range) return `${range.from}–${range.to}`;
                           }
-                          return d.seats_from;
+                          return `${d.seats_from}–${d.seats_total}`;
                         })()}
                       </td>
-                      <td className={td + ' text-right'} style={{ color: 'var(--info)', fontWeight: 600 }}>{d.seats_sold}</td>
+                      <td className={td + ' text-right'} style={{ color: 'var(--info)', fontWeight: 600 }}>{d.seats_sold_station}</td>
                       <td className={td + ' text-right'} style={{ color: 'var(--success)', fontWeight: 700 }}>{d.seats_libres}</td>
                       <td className={td}>
                         {d.cloture ? <span style={{ color: 'var(--danger)' }}>Clôturé</span> : d.confirmed ? <span style={{ color: 'var(--success)' }}>Confirmé</span> : <span style={{ color: 'var(--text-muted)' }}>En attente</span>}

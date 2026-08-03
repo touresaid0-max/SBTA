@@ -106,8 +106,27 @@ export async function getDepartById(id: string): Promise<DepartRecord | undefine
   return all.find(d => d.id === id);
 }
 
+export function seatsAllocatedForStation(d: DepartRecord, stationId: string): number {
+  if (!d.seat_allocations || d.seat_allocations.length === 0) return d.seats_total;
+  const alloc = d.seat_allocations.find(a => a.station_id === stationId);
+  if (!alloc) return d.seats_total;
+  return alloc.seat_to - alloc.seat_from + 1;
+}
+
+export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
+  const range = getSeatRangeForStation(d, stationId);
+  if (!range) return d.seats_sold;
+  return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && t.seat_number >= range.from && t.seat_number <= range.to).length;
+}
+
 export function seatsLibres(d: DepartRecord): number {
   return d.seats_total - d.seats_sold;
+}
+
+export function seatsLibresForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
+  const allocated = seatsAllocatedForStation(d, stationId);
+  const sold = seatsVendusForStation(tickets, d, stationId);
+  return allocated - sold;
 }
 
 export function computeSolde(d: DepartRecord): number {
