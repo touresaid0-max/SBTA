@@ -5,6 +5,7 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
   getAllDeparts, updateDepart, type DepartRecord,
   seatsLibres, computeSolde,
+  getSeatRangeForStation,
 } from '@/services/pos/departService';
 import {
   departToSummary, exportToExcel, exportToPDF, printDeparturesList,
@@ -290,14 +291,31 @@ export default function POSDeparts() {
                         opacity: d.cancelled ? 0.6 : 1,
                       }}
                     >
-                      <td className={td} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>#{d.route_number}</td>
+                      <td className={td} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        <div className="flex items-center gap-1.5">
+                          #{d.route_number}
+                          {d.station_id !== session?.station_id && d.seat_allocations?.some(a => a.station_id === session?.station_id) && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
+                              Gare secondaire
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.departure_date} {d.departure_time}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.route_name}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_plate}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_name}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.driver_name}</td>
                       <td className={td + ' text-right'} style={{ fontWeight: 600 }}>{d.seats_total}</td>
-                      <td className={td + ' text-right'} style={{ color: 'var(--text-muted)' }}>{d.seats_from}</td>
+                      <td className={td + ' text-right'} style={{ color: 'var(--text-muted)' }}>
+                        {(() => {
+                          if (d.seat_allocations && session?.station_id) {
+                            const range = getSeatRangeForStation(d, session.station_id);
+                            if (range) return `${range.from}–${range.to}`;
+                          }
+                          return d.seats_from;
+                        })()}
+                      </td>
                       <td className={td + ' text-right'} style={{ color: 'var(--info)', fontWeight: 600 }}>{d.seats_sold}</td>
                       <td className={td + ' text-right'} style={{ color: 'var(--success)', fontWeight: 700 }}>{d.seats_libres}</td>
                       <td className={td}>

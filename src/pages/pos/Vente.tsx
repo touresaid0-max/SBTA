@@ -10,6 +10,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
+import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { printBaggageTicket } from '@/utils/printBaggageTicket';
@@ -190,6 +191,13 @@ export default function POSVente() {
     return depart.seats_total - depart.seats_sold;
   }, [depart]);
 
+  const allowedSeatRange = useMemo(() => {
+    if (!depart || !session?.station_id) return null;
+    return getSeatRangeForStation(depart, session.station_id);
+  }, [depart, session?.station_id]);
+
+  const isSecondaryStation = depart && session?.station_id && depart.station_id !== session.station_id;
+
   const ticketTotal = useMemo(() => tickets.reduce((sum, t) => sum + t.price, 0), [tickets]);
   const bagageTotal = useMemo(() => bagages.reduce((sum, b) => sum + b.price, 0), [bagages]);
 
@@ -212,6 +220,15 @@ export default function POSVente() {
     if (!seat || isNaN(seat)) { setError('Veuillez saisir un numéro de siège valide'); return; }
     if (seat < depart.seats_from || seat > depart.seats_total) {
       setError(`Le siège doit être entre ${depart.seats_from} et ${depart.seats_total}`); return;
+    }
+    if (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to)) {
+      const ownerStation = getStationNameForSeat(depart, seat);
+      if (ownerStation && ownerStation !== session?.station_name) {
+        setError(`Le siège n°${seat} est réservé à la gare de ${ownerStation}.`);
+      } else {
+        setError(`Siège indisponible : ce siège est attribué à une autre gare.`);
+      }
+      return;
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
     if (tarif <= 0) { setError('Tarif invalide — vérifiez la destination'); return; }
@@ -364,6 +381,45 @@ export default function POSVente() {
         {depart.cloture && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
             <Lock className="w-4 h-4" /> Ce départ est clôturé — vente verrouillée
+          </div>
+        )}
+
+        {/* Secondary station seat allocation banner */}
+        {isSecondaryStation && allowedSeatRange && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', border: '1px solid var(--primary)' }}>
+            <Armchair className="w-4 h-4 flex-shrink-0" />
+            <span>
+              Vous êtes autorisé à vendre uniquement les sièges n°{allowedSeatRange.from} à n°{allowedSeatRange.to}.
+            </span>
+          </div>
+        )}
+
+        {/* Seat allocation recap table */}
+        {depart.seat_allocations && depart.seat_allocations.length > 0 && (
+          <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <p className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+              <Armchair className="w-3.5 h-3.5" /> Répartition des sièges par gare
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ color: 'var(--text-muted)' }}>
+                    <th className="px-2 py-1.5 text-xs font-bold text-left">Gare</th>
+                    <th className="px-2 py-1.5 text-xs font-bold text-center">Sièges attribués</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {depart.seat_allocations.map((a, i) => (
+                    <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td className="px-2 py-1.5 text-xs font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
+                        {a.station_name}{a.station_id === session?.station_id ? ' (vous)' : ''}
+                      </td>
+                      <td className="px-2 py-1.5 text-xs text-center" style={{ color: 'var(--text-secondary)' }}>{a.seat_from} à {a.seat_to}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -536,24 +592,24 @@ export default function POSVente() {
                 {/* N° Siège */}
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                    N° Siège ({depart.seats_from}–{depart.seats_total})
+                    N° Siège {allowedSeatRange ? `(${allowedSeatRange.from}–${allowedSeatRange.to})` : `(${depart.seats_from}–${depart.seats_total})`}
                   </label>
                   <input
                     type="number"
-                    min={depart.seats_from}
-                    max={depart.seats_total}
+                    min={allowedSeatRange?.from ?? depart.seats_from}
+                    max={allowedSeatRange?.to ?? depart.seats_total}
                     value={seatNumber}
                     onChange={e => setSeatNumber(e.target.value)}
                     className={fieldInput}
                     style={{
                       ...fieldStyle,
-                      borderColor: seatNumber && soldSeats.includes(parseInt(seatNumber)) ? 'var(--danger)' : 'var(--border)',
+                      borderColor: seatNumber && soldSeats.includes(parseInt(seatNumber)) ? 'var(--danger)' : seatNumber && allowedSeatRange && (parseInt(seatNumber) < allowedSeatRange.from || parseInt(seatNumber) > allowedSeatRange.to) ? 'var(--danger)' : 'var(--border)',
                     }}
                     placeholder="Ex: 1"
                     list="available-seats"
                   />
                   <datalist id="available-seats">
-                    {Array.from({ length: depart.seats_total - depart.seats_from + 1 }, (_, i) => i + depart.seats_from)
+                    {Array.from({ length: (allowedSeatRange?.to ?? depart.seats_total) - (allowedSeatRange?.from ?? depart.seats_from) + 1 }, (_, i) => i + (allowedSeatRange?.from ?? depart.seats_from))
                       .filter(n => !soldSeats.includes(n))
                       .slice(0, 50)
                       .map(n => <option key={n} value={n} />)}
@@ -561,6 +617,16 @@ export default function POSVente() {
                   {seatNumber && soldSeats.includes(parseInt(seatNumber)) && (
                     <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--danger)' }}>
                       <X className="w-3 h-3" /> Siège déjà vendu
+                    </p>
+                  )}
+                  {seatNumber && allowedSeatRange && (parseInt(seatNumber) < allowedSeatRange.from || parseInt(seatNumber) > allowedSeatRange.to) && (
+                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--danger)' }}>
+                      <X className="w-3 h-3" /> {(() => {
+                        const owner = getStationNameForSeat(depart, parseInt(seatNumber));
+                        return owner && owner !== session?.station_name
+                          ? `Le siège n°${seatNumber} est réservé à la gare de ${owner}.`
+                          : 'Siège indisponible : ce siège est attribué à une autre gare.';
+                      })()}
                     </p>
                   )}
                 </div>

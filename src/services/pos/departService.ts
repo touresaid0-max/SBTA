@@ -3,7 +3,7 @@ import { localInsert, localUpdate, getAll } from './offlineStore';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
 
-export type { DepartRecord };
+export type { DepartRecord, SeatAllocation };
 
 export interface LigneRef { id: string; name: string; origin_station_id: string; destination_station_id: string; base_price: number; is_active: boolean }
 export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string; brand?: string; model?: string }
@@ -88,7 +88,13 @@ export async function updateDepart(
 export async function getAllDeparts(stationId?: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
   let result = all;
-  if (stationId) result = result.filter(d => d.station_id === stationId);
+  if (stationId) {
+    result = result.filter(d =>
+      d.station_id === stationId ||
+      (d.seat_allocations?.some(a => a.station_id === stationId) ?? false) ||
+      d.other_station_id === stationId,
+    );
+  }
   if (counterId) {
     result = result.filter(d => d.counter_id === counterId);
   }
@@ -121,9 +127,71 @@ export async function cloturerDepart(
 
 export async function getDepartsForOtherStations(currentStationId: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
-  let result = all.filter(d => d.station_id !== currentStationId && !d.cancelled);
+  let result = all.filter(d => {
+    if (d.cancelled) return false;
+    if (d.station_id === currentStationId) return false;
+    if (d.seat_allocations && d.seat_allocations.some(a => a.station_id === currentStationId)) return true;
+    if (d.other_station_id === currentStationId) return true;
+    return false;
+  });
   if (counterId) {
     result = result.filter(d => d.counter_id === counterId);
   }
   return result;
+}
+
+export function getSeatRangeForStation(
+  depart: DepartRecord,
+  stationId: string,
+): { from: number; to: number } | null {
+  if (!depart.seat_allocations || depart.seat_allocations.length === 0) {
+    if (depart.station_id === stationId) {
+      return { from: depart.seats_from, to: depart.seats_total };
+    }
+    return null;
+  }
+  const alloc = depart.seat_allocations.find(a => a.station_id === stationId);
+  if (!alloc) return null;
+  return { from: alloc.seat_from, to: alloc.seat_to };
+}
+
+export function isSeatAllowedForStation(
+  depart: DepartRecord,
+  stationId: string,
+  seatNumber: number,
+): boolean {
+  const range = getSeatRangeForStation(depart, stationId);
+  if (!range) return false;
+  return seatNumber >= range.from && seatNumber <= range.to;
+}
+
+export function getStationNameForSeat(
+  depart: DepartRecord,
+  seatNumber: number,
+): string | null {
+  if (!depart.seat_allocations || depart.seat_allocations.length === 0) return null;
+  const alloc = depart.seat_allocations.find(a => seatNumber >= a.seat_from && seatNumber <= a.seat_to);
+  return alloc?.station_name ?? null;
+}
+
+export function validateSeatAllocations(
+  allocations: SeatAllocation[],
+  busCapacity: number,
+): string | null {
+  if (allocations.length === 0) return null;
+  for (const a of allocations) {
+    if (a.seat_from < 1 || a.seat_to > busCapacity) {
+      return `Les sièges doivent être entre 1 et ${busCapacity}`;
+    }
+    if (a.seat_from > a.seat_to) {
+      return `La plage ${a.seat_from}-${a.seat_to} pour ${a.station_name} est invalide`;
+    }
+  }
+  const sorted = [...allocations].sort((a, b) => a.seat_from - b.seat_from);
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].seat_from <= sorted[i - 1].seat_to) {
+      return `Chevauchement détecté entre ${sorted[i - 1].station_name} (${sorted[i - 1].seat_from}-${sorted[i - 1].seat_to}) et ${sorted[i].station_name} (${sorted[i].seat_from}-${sorted[i].seat_to})`;
+    }
+  }
+  return null;
 }

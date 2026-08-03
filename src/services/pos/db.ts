@@ -3,6 +3,13 @@ import Dexie, { type Table } from 'dexie';
 export type SyncOp = 'insert' | 'update' | 'delete';
 export type SyncStatus = 'pending' | 'syncing' | 'done' | 'error';
 
+export interface SeatAllocation {
+  station_id: string;
+  station_name: string;
+  seat_from: number;
+  seat_to: number;
+}
+
 export interface DepartRecord {
   id: string;
   departure_number: number;
@@ -26,6 +33,7 @@ export interface DepartRecord {
   seats_total: number;
   seats_from: number;
   seats_sold: number;
+  seat_allocations?: SeatAllocation[];
   station_id: string;
   station_name?: string;
   counter_id?: string;

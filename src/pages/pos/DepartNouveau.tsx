@@ -8,9 +8,11 @@ import {
   getAssignedRouteIds,
   nextDepartureNumber,
   nextRouteNumber,
+  validateSeatAllocations,
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
+  type SeatAllocation,
 } from '@/services/pos/departService';
-import { AlertCircle, CheckCircle, Loader2, X } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 
 export default function POSDepartNouveau() {
@@ -31,6 +33,12 @@ export default function POSDepartNouveau() {
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [otherStationId, setOtherStationId] = useState('');
+  const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
+  const [newAllocStationId, setNewAllocStationId] = useState('');
+  const [newAllocSeatCount, setNewAllocSeatCount] = useState('');
+  const [newAllocSeatFrom, setNewAllocSeatFrom] = useState('');
+  const [newAllocSeatTo, setNewAllocSeatTo] = useState('');
+  const [allocError, setAllocError] = useState('');
   const [convoyeurId, setConvoyeurId] = useState('');
   const [apprentiId, setApprentiId] = useState('');
   const [seatsTotal, setSeatsTotal] = useState(0);
@@ -120,6 +128,18 @@ export default function POSDepartNouveau() {
       const apprenti = chauffeurs.find(c => c.id === apprentiId);
       const otherStation = otherStationId ? gares.find(g => g.id === otherStationId) : undefined;
 
+      const allAllocations: SeatAllocation[] = [];
+      const primaryStationName = session?.station_name ?? 'Gare principale';
+      if (seatAllocations.length > 0) {
+        const sortedAllocs = [...seatAllocations].sort((a, b) => a.seat_from - b.seat_from);
+        const primaryFrom = sortedAllocs[0].seat_from > seatsFrom ? seatsFrom : seatsFrom;
+        const primaryTo = sortedAllocs[0].seat_from - 1;
+        if (primaryTo >= primaryFrom) {
+          allAllocations.push({ station_id: stationId, station_name: primaryStationName, seat_from: primaryFrom, seat_to: primaryTo });
+        }
+        allAllocations.push(...sortedAllocs);
+      }
+
       await createDepart({
         route_id: ligneId,
         route_name: ligne?.name ?? '',
@@ -139,6 +159,7 @@ export default function POSDepartNouveau() {
         status: 'planned',
         seats_total: seatsTotal,
         seats_from: seatsFrom,
+        seat_allocations: allAllocations.length > 0 ? allAllocations : undefined,
         station_id: stationId,
         station_name: session?.station_name ?? '',
         counter_id: session?.counter_id,
@@ -278,7 +299,7 @@ export default function POSDepartNouveau() {
                   keywords: `${g.name} ${g.city ?? ''} ${g.agency_code ?? ''}`,
                 }))}
                 value={otherStationId}
-                onChange={setOtherStationId}
+                onChange={(id) => { setOtherStationId(id); setSeatAllocations([]); setAllocError(''); }}
                 placeholder="Rechercher une gare..."
                 emptyText="Aucune gare trouvée"
               />
@@ -314,6 +335,193 @@ export default function POSDepartNouveau() {
               <input type="number" min={0} value={seatsFrom} onChange={e => setSeatsFrom(parseInt(e.target.value) || 0)} className={fieldInput} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
           </div>
+
+          {/* Seat allocation section */}
+          {otherStationId && seatsTotal > 0 && (
+            <div className="mt-5 rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)' }}>
+              <h3 className="text-sm font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--primary)' }}>
+                <Armchair className="w-4 h-4" /> Répartition des sièges
+              </h3>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+                Capacité du bus : {seatsTotal} places · Gare primaire : <strong>{session?.station_name ?? 'Gare principale'}</strong>
+              </p>
+
+              {/* Existing allocations table */}
+              {seatAllocations.length > 0 && (
+                <div className="rounded-lg overflow-hidden mb-3" style={{ border: '1px solid var(--border)' }}>
+                  <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: 'var(--surface-raised)', color: 'var(--text-secondary)' }}>
+                        <th className="px-3 py-2 text-xs font-bold text-left">Gare</th>
+                        <th className="px-3 py-2 text-xs font-bold text-center">Sièges attribués</th>
+                        <th className="px-3 py-2 text-xs font-bold text-right">Nbre</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Primary station row */}
+                      {(() => {
+                        const sorted = [...seatAllocations].sort((a, b) => a.seat_from - b.seat_from);
+                        const primaryTo = sorted[0].seat_from - 1;
+                        const primaryFrom = seatsFrom;
+                        if (primaryTo >= primaryFrom) {
+                          return (
+                            <tr style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--primary-light)' }}>
+                              <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--primary)' }}>{session?.station_name ?? 'Gare primaire'}</td>
+                              <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--primary)' }}>{primaryFrom} à {primaryTo}</td>
+                              <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: 'var(--primary)' }}>{primaryTo - primaryFrom + 1}</td>
+                              <td className="px-3 py-2"></td>
+                            </tr>
+                          );
+                        }
+                        return null;
+                      })()}
+                      {seatAllocations.map((a, i) => (
+                        <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{a.station_name}</td>
+                          <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--text-primary)' }}>{a.seat_from} à {a.seat_to}</td>
+                          <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: 'var(--text-primary)' }}>{a.seat_to - a.seat_from + 1}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSeatAllocations(seatAllocations.filter((_, idx) => idx !== i))}
+                              className="p-1 rounded-lg"
+                              style={{ color: 'var(--danger)' }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: '2px solid var(--border)' }}>
+                        <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Total attribué</td>
+                        <td className="px-3 py-2"></td>
+                        <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0) + (seatAllocations.length > 0 ? seatAllocations[0].seat_from - seatsFrom : 0) > seatsTotal ? 'var(--danger)' : 'var(--success)' }}>
+                          {seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0) + (seatAllocations.length > 0 ? seatAllocations[0].seat_from - seatsFrom : 0)} / {seatsTotal}
+                        </td>
+                        <td className="px-3 py-2"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {allocError && (
+                <div className="rounded-lg px-3 py-2 mb-3 flex items-start gap-2 text-xs" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span>{allocError}</span>
+                </div>
+              )}
+
+              {/* Add allocation form */}
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="col-span-2">
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Gare de vente secondaire</label>
+                  <AutocompleteSelect
+                    options={gares.filter(g => g.id !== session?.station_id && g.id !== otherStationId && !seatAllocations.some(a => a.station_id === g.id)).map(g => ({
+                      id: g.id,
+                      label: g.name,
+                      sublabel: [g.city, g.agency_code].filter(Boolean).join(' · '),
+                      keywords: `${g.name} ${g.city ?? ''} ${g.agency_code ?? ''}`,
+                    }))}
+                    value={newAllocStationId}
+                    onChange={setNewAllocStationId}
+                    placeholder="Rechercher une gare..."
+                    emptyText="Aucune gare disponible"
+                  />
+                </div>
+                <div>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nombre de sièges</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newAllocSeatCount || ''}
+                    onChange={e => {
+                      setNewAllocSeatCount(e.target.value);
+                      const count = parseInt(e.target.value) || 0;
+                      if (count > 0 && seatsTotal > 0) {
+                        const usedSeats = new Set<number>();
+                        seatAllocations.forEach(a => { for (let s = a.seat_from; s <= a.seat_to; s++) usedSeats.add(s); });
+                        let startFrom = seatsFrom;
+                        for (let s = seatsFrom; s <= seatsTotal; s++) {
+                          if (!usedSeats.has(s)) { startFrom = s; break; }
+                        }
+                        setNewAllocSeatFrom(String(startFrom));
+                        setNewAllocSeatTo(String(Math.min(startFrom + count - 1, seatsTotal)));
+                      }
+                    }}
+                    className={fieldInput}
+                    style={fieldStyle}
+                    placeholder="Ex: 31"
+                  />
+                </div>
+                <div>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Premier numéro de siège</label>
+                  <input
+                    type="number"
+                    min={seatsFrom}
+                    max={seatsTotal}
+                    value={newAllocSeatFrom}
+                    onChange={e => {
+                      setNewAllocSeatFrom(e.target.value);
+                      const from = parseInt(e.target.value) || 0;
+                      const count = parseInt(newAllocSeatCount) || 0;
+                      if (from > 0 && count > 0) {
+                        setNewAllocSeatTo(String(Math.min(from + count - 1, seatsTotal)));
+                      }
+                    }}
+                    className={fieldInput}
+                    style={fieldStyle}
+                    placeholder="Ex: 32"
+                  />
+                </div>
+                <div>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Dernier numéro de siège</label>
+                  <input
+                    type="number"
+                    min={seatsFrom}
+                    max={seatsTotal}
+                    value={newAllocSeatTo}
+                    onChange={e => setNewAllocSeatTo(e.target.value)}
+                    className={fieldInput}
+                    style={fieldStyle}
+                    placeholder="Ex: 62"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!newAllocStationId) { setAllocError('Veuillez sélectionner une gare secondaire'); return; }
+                  const from = parseInt(newAllocSeatFrom);
+                  const to = parseInt(newAllocSeatTo);
+                  if (isNaN(from) || isNaN(to) || from < 1 || to > seatsTotal || from > to) {
+                    setAllocError(`Plage invalide — les sièges doivent être entre 1 et ${seatsTotal}`); return;
+                  }
+                  const gare = gares.find(g => g.id === newAllocStationId);
+                  const newAlloc: SeatAllocation = {
+                    station_id: newAllocStationId,
+                    station_name: gare?.name ?? newAllocStationId,
+                    seat_from: from,
+                    seat_to: to,
+                  };
+                  const updated = [...seatAllocations, newAlloc];
+                  const err = validateSeatAllocations(updated, seatsTotal);
+                  if (err) { setAllocError(err); return; }
+                  setSeatAllocations(updated);
+                  setNewAllocStationId(''); setNewAllocSeatCount(''); setNewAllocSeatFrom(''); setNewAllocSeatTo('');
+                  setAllocError('');
+                }}
+                disabled={!newAllocStationId || !newAllocSeatFrom || !newAllocSeatTo}
+                className="w-full py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-60 flex items-center justify-center gap-2"
+                style={{ backgroundColor: 'var(--primary)' }}
+              >
+                <Plus className="w-4 h-4" /> Valider la répartition
+              </button>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 mt-6">
