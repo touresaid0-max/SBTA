@@ -3,14 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import {
   PlusCircle, Ticket, Package, Building2, Receipt, Lock, FileText,
   Settings as SettingsIcon, Wifi, WifiOff, UploadCloud, RefreshCw, LogOut,
-  AlertTriangle, CheckCircle, XCircle, X, RotateCw, Trash2, Zap,
+  AlertTriangle, CheckCircle, XCircle, X, RotateCw, Trash2, Zap, Eraser,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { useSyncStatus } from '@/services/pos/useSyncStatus';
 import {
   retryAllErrors, forceSyncItem, discardErrorItem, type SyncErrorDetail,
 } from '@/services/pos/syncService';
+import { resetOperationalData } from '@/services/pos/db';
 
 interface TileConfig {
   label: string;
@@ -62,9 +64,25 @@ export default function POSAccueil() {
   const { session, logout } = usePOSSession();
   const { isOnline, pendingCount, errorCount, syncErrors, syncing, triggerSync } = useSyncStatus();
   const [showErrors, setShowErrors] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const canSync = isOnline && pendingCount > 0 && !syncing;
   const hasErrors = errorCount > 0;
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await resetOperationalData();
+      await triggerSync();
+      toast.success('Données opérationnelles remises à zéro');
+      setShowResetModal(false);
+    } catch {
+      toast.error('Erreur lors de la remise à zéro');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--bg-subtle)' }}>
@@ -229,14 +247,80 @@ export default function POSAccueil() {
           })}
         </div>
 
-        <div className="mt-8 text-center">
+        <div className="mt-8 flex flex-col items-center gap-3">
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             Sélectionnez une action pour commencer
           </p>
+          <button
+            onClick={() => setShowResetModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:shadow-md"
+            style={{
+              backgroundColor: 'transparent',
+              color: '#DC2626',
+              border: '1px solid #FECACA',
+            }}
+          >
+            <Eraser className="w-4 h-4" />
+            Remise à zéro des données
+          </button>
         </div>
       </main>
 
       <PWAUpdateBanner />
+
+      {/* Reset confirmation modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div
+            className="w-full max-w-md rounded-2xl shadow-xl p-6"
+            style={{ backgroundColor: 'var(--surface)' }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: '#FEE2E2' }}
+              >
+                <AlertTriangle className="w-6 h-6" style={{ color: '#DC2626' }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                Remise à zéro des données
+              </h3>
+            </div>
+            <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+              Cette action supprimera tous les départs, tickets, bagages, dépenses et la file de synchronisation de ce terminal.
+            </p>
+            <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
+              La configuration (gares, lignes, bus, chauffeurs, utilisateurs, paramètres) est conservée.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowResetModal(false)}
+                disabled={resetting}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors"
+                style={{
+                  backgroundColor: 'var(--bg-subtle)',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={resetting}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-60"
+                style={{ backgroundColor: '#DC2626' }}
+              >
+                {resetting ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Eraser className="w-4 h-4" />
+                )}
+                {resetting ? 'Remise à zéro…' : 'Confirmer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error diagnostic modal */}
       {showErrors && (
