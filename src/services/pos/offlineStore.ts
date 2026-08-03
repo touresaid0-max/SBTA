@@ -35,7 +35,7 @@ function computeArrivalDatetime(departureIso: string): string {
 
 function mapDepartInsert(payload: Record<string, unknown>): Record<string, unknown> {
   const p = payload;
-  const status = p.cancelled ? 'cancelled' : p.cloture ? 'completed' : p.confirmed ? 'confirmed' : (p.status as string ?? 'scheduled');
+  const status = p.cancelled ? 'annule' : p.cloture ? 'termine' : (p.status as string === 'confirmed' ? 'en_cours' : 'planifie');
   const depIso = p.departure_datetime as string;
 
   return {
@@ -63,10 +63,10 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
 
   if (p.seats_sold !== undefined) result.seats_reserved = p.seats_sold;
   if (p.seats_total !== undefined) result.seats_available = p.seats_total;
-  if (p.status !== undefined) result.status = p.status;
-  if (p.confirmed === true) result.status = 'confirmed';
-  if (p.cancelled === true) result.status = 'cancelled';
-  if (p.cloture === true) result.status = 'completed';
+  if (p.cancelled === true) result.status = 'annule';
+  if (p.cloture === true) result.status = 'termine';
+  if (p.confirmed === true) result.status = 'en_cours';
+  if (p.status !== undefined && !result.status) result.status = p.status;
   if (p.route_name !== undefined) result.route_name = p.route_name;
   if (p.bus_id !== undefined) result.bus_id = p.bus_id;
   if (p.driver_id !== undefined) result.driver_id = p.driver_id;
@@ -96,7 +96,7 @@ function mapTicketInsert(payload: Record<string, unknown>): Record<string, unkno
     seat_numbers: seats,
     total_seats: (seats as unknown[]).length || 1,
     total_price: p.price ?? 0,
-    status: p.status === 'cancelled' ? 'cancelled' : 'confirmed',
+    status: p.status === 'cancelled' ? 'annulee' : 'confirmee',
     payment_status: p.status === 'cancelled' ? 'refunded' : 'paid',
     booking_reference: p.ticket_number ?? null,
     created_at: p.created_at ?? nowIso(),
@@ -113,7 +113,7 @@ function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unkno
   const result: Record<string, unknown> = {};
 
   if (p.status !== undefined) {
-    result.status = p.status === 'cancelled' ? 'cancelled' : 'confirmed';
+    result.status = p.status === 'cancelled' ? 'annulee' : 'confirmee';
     result.payment_status = p.status === 'cancelled' ? 'refunded' : 'paid';
   }
   if (p.passenger_name !== undefined) result.passenger_name = p.passenger_name;
