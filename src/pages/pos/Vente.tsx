@@ -10,7 +10,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat } from '@/services/pos/departService';
+import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { printBaggageTicket } from '@/utils/printBaggageTicket';
@@ -188,8 +188,21 @@ export default function POSVente() {
 
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
+    if (allowedSeatRange && session?.station_id) {
+      return seatsLibresForStation(tickets, depart, session.station_id);
+    }
     return depart.seats_total - depart.seats_sold;
-  }, [depart]);
+  }, [depart, tickets, allowedSeatRange, session?.station_id]);
+
+  const stationSeatsAllocated = useMemo(() => {
+    if (!depart || !session?.station_id) return depart?.seats_total ?? 0;
+    return seatsAllocatedForStation(depart, session.station_id);
+  }, [depart, session?.station_id]);
+
+  const stationSeatsSold = useMemo(() => {
+    if (!depart || !session?.station_id) return depart?.seats_sold ?? 0;
+    return seatsVendusForStation(tickets, depart, session.station_id);
+  }, [depart, tickets, session?.station_id]);
 
   const allowedSeatRange = useMemo(() => {
     if (!depart || !session?.station_id) return null;
@@ -1009,16 +1022,16 @@ export default function POSVente() {
           <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--surface-raised)', border: '2px solid var(--border)' }}>
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <Armchair className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-              <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Total sièges</p>
+              <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>{allowedSeatRange ? 'Sièges attribués' : 'Total sièges'}</p>
             </div>
-            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{depart.seats_total}</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{stationSeatsAllocated}</p>
           </div>
           <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--info-light)', border: '2px solid var(--info)' }}>
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <TicketIcon className="w-4 h-4" style={{ color: 'var(--info)' }} />
               <p className="text-xs font-bold" style={{ color: 'var(--info)' }}>Sièges vendus</p>
             </div>
-            <p className="text-2xl font-bold" style={{ color: 'var(--info)' }}>{depart.seats_sold}</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--info)' }}>{stationSeatsSold}</p>
           </div>
           <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--success-light)', border: '2px solid var(--success)' }}>
             <div className="flex items-center justify-center gap-1.5 mb-1">

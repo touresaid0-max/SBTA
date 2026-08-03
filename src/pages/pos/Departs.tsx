@@ -10,6 +10,7 @@ import {
 } from '@/services/pos/departService';
 import { getAll as getAllTickets } from '@/services/pos/offlineStore';
 import type { TicketRecord } from '@/services/pos/db';
+import type { DepartSummary } from '@/services/pos/posReportService';
 import {
   departToSummary, exportToExcel, exportToPDF, printDeparturesList,
 } from '@/services/pos/posReportService';
@@ -83,12 +84,14 @@ export default function POSDeparts() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState<DepartRow | null>(null);
+  const [allTickets, setAllTickets] = useState<TicketRecord[]>([]);
 
   const loadDeparts = useCallback(async () => {
     const [all, tickets] = await Promise.all([
       getAllDeparts(session?.station_id, session?.counter_id),
       getAllTickets<TicketRecord>('tickets'),
     ]);
+    setAllTickets(tickets);
     setDeparts(all.map(d => toRow(d, tickets, session?.station_id)));
     setLoading(false);
   }, [session?.station_id, session?.counter_id]);
@@ -159,7 +162,7 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'imprimer') {
-        const summaries = visibleDeparts.map(departToSummary);
+        const summaries = visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id));
         printDeparturesList(summaries, session?.station_name);
         return;
       }
@@ -216,21 +219,21 @@ export default function POSDeparts() {
             <Plus className="w-4 h-4" /> Nouveau
           </button>
           <button
-            onClick={() => printDeparturesList(visibleDeparts.map(departToSummary), session?.station_name)}
+            onClick={() => printDeparturesList(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), session?.station_name)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
           >
             <Copy className="w-4 h-4" /> Imprimer liste
           </button>
           <button
-            onClick={() => exportToPDF(visibleDeparts.map(departToSummary), `recap-departs-${todayStr}.pdf`, 'Récapitulatif des départs')}
+            onClick={() => exportToPDF(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.pdf`, 'Récapitulatif des départs')}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
           >
             <FileText className="w-4 h-4" /> Export PDF
           </button>
           <button
-            onClick={() => exportToExcel(visibleDeparts.map(departToSummary), `recap-departs-${todayStr}.xlsx`)}
+            onClick={() => exportToExcel(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.xlsx`)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
           >

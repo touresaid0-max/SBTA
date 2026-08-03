@@ -1,7 +1,12 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import type { DepartRecord } from './departService';
-import { seatsLibres, computeSolde } from './departService';
+import {
+  seatsLibres, computeSolde,
+  seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
+  getSeatRangeForStation,
+} from './departService';
+import type { TicketRecord } from './db';
 
 export interface DepartSummary {
   departure_number: number;
@@ -13,8 +18,11 @@ export interface DepartSummary {
   departure_date: string;
   departure_time: string;
   seats_total: number;
+  seats_allocated: number;
+  seat_range: string;
   seats_sold: number;
   seats_libres: number;
+  fill_rate: number;
   mt_ticket: number;
   mt_bagage: number;
   tot_depense: number;
@@ -24,7 +32,18 @@ export interface DepartSummary {
   station_name?: string;
 }
 
-export function departToSummary(d: DepartRecord): DepartSummary {
+export function departToSummary(
+  d: DepartRecord,
+  tickets?: TicketRecord[],
+  stationId?: string,
+): DepartSummary {
+  const hasAlloc = !!(stationId && d.seat_allocations && d.seat_allocations.length > 0 && tickets);
+  const allocated = hasAlloc ? seatsAllocatedForStation(d, stationId!) : d.seats_total;
+  const sold = hasAlloc ? seatsVendusForStation(tickets!, d, stationId!) : d.seats_sold;
+  const libres = hasAlloc ? seatsLibresForStation(tickets!, d, stationId!) : seatsLibres(d);
+  const range = hasAlloc ? getSeatRangeForStation(d, stationId!) : null;
+  const seatRangeStr = range ? `${range.from}–${range.to}` : `${d.seats_from}–${d.seats_total}`;
+  const fillRate = allocated > 0 ? Math.round((sold / allocated) * 100) : 0;
   return {
     departure_number: d.departure_number,
     route_number: d.route_number,
@@ -34,9 +53,12 @@ export function departToSummary(d: DepartRecord): DepartSummary {
     driver_name: d.driver_name ?? '',
     departure_date: d.departure_date,
     departure_time: d.departure_time,
-    seats_total: d.seats_total,
-    seats_sold: d.seats_sold,
-    seats_libres: seatsLibres(d),
+    seats_total: allocated,
+    seats_allocated: allocated,
+    seat_range: seatRangeStr,
+    seats_sold: sold,
+    seats_libres: libres,
+    fill_rate: fillRate,
     mt_ticket: d.mt_ticket,
     mt_bagage: d.mt_bagage,
     tot_depense: d.tot_depense,
@@ -49,12 +71,14 @@ export function departToSummary(d: DepartRecord): DepartSummary {
 
 const COLUMNS: { key: keyof DepartSummary; label: string; width: number }[] = [
   { key: 'route_number', label: 'N° Départ/Ligne', width: 20 },
-  { key: 'route_name', label: 'Ligne', width: 55 },
+  { key: 'route_name', label: 'Ligne', width: 45 },
   { key: 'departure_date', label: 'Date', width: 28 },
   { key: 'departure_time', label: 'Heure', width: 18 },
-  { key: 'seats_total', label: 'Sièges', width: 16 },
+  { key: 'seats_allocated', label: 'Sièges attribués', width: 22 },
+  { key: 'seat_range', label: 'Plage sièges', width: 20 },
   { key: 'seats_sold', label: 'Vendus', width: 16 },
   { key: 'seats_libres', label: 'Libres', width: 16 },
+  { key: 'fill_rate', label: 'Taux remplissage', width: 22 },
   { key: 'mt_ticket', label: 'MT Ticket', width: 28 },
   { key: 'mt_bagage', label: 'MT Bagage', width: 28 },
   { key: 'tot_depense', label: 'Tot Dépense', width: 28 },
@@ -76,9 +100,11 @@ export function exportToExcel(summaries: DepartSummary[], fileName: string): voi
     'Matricule': s.bus_plate,
     'Nom Car': s.bus_name,
     'Chauffeur': s.driver_name,
-    'Sièges': s.seats_total,
+    'Sièges attribués': s.seats_allocated,
+    'Plage sièges': s.seat_range,
     'Sièges vendus': s.seats_sold,
     'Sièges libres': s.seats_libres,
+    'Taux remplissage %': s.fill_rate,
     'MT Ticket': s.mt_ticket,
     'MT Bagage': s.mt_bagage,
     'Tot Dépense': s.tot_depense,
@@ -96,9 +122,11 @@ export function exportToExcel(summaries: DepartSummary[], fileName: string): voi
     'Matricule': '',
     'Nom Car': '',
     'Chauffeur': '',
-    'Sièges': summaries.reduce((a, s) => a + s.seats_total, 0),
+    'Sièges attribués': summaries.reduce((a, s) => a + s.seats_allocated, 0),
+    'Plage sièges': '',
     'Sièges vendus': summaries.reduce((a, s) => a + s.seats_sold, 0),
     'Sièges libres': summaries.reduce((a, s) => a + s.seats_libres, 0),
+    'Taux remplissage %': '',
     'MT Ticket': summaries.reduce((a, s) => a + s.mt_ticket, 0),
     'MT Bagage': summaries.reduce((a, s) => a + s.mt_bagage, 0),
     'Tot Dépense': summaries.reduce((a, s) => a + s.tot_depense, 0),
@@ -193,7 +221,7 @@ export function exportToPDF(summaries: DepartSummary[], fileName: string, title:
   doc.text('TOTAL', margin, y);
 
   const totals = {
-    seats_total: summaries.reduce((a, s) => a + s.seats_total, 0),
+    seats_allocated: summaries.reduce((a, s) => a + s.seats_allocated, 0),
     seats_sold: summaries.reduce((a, s) => a + s.seats_sold, 0),
     seats_libres: summaries.reduce((a, s) => a + s.seats_libres, 0),
     mt_ticket: summaries.reduce((a, s) => a + s.mt_ticket, 0),
@@ -204,14 +232,14 @@ export function exportToPDF(summaries: DepartSummary[], fileName: string, title:
   };
 
   const colStart = margin + COLUMNS.slice(0, 4).reduce((a, c) => a + c.width, 0);
-  doc.text(String(totals.seats_total), colStart, y);
-  doc.text(String(totals.seats_sold), colStart + COLUMNS[4].width, y);
-  doc.text(String(totals.seats_libres), colStart + COLUMNS[4].width + COLUMNS[5].width, y);
-  doc.text(fmt(totals.mt_ticket), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width, y);
-  doc.text(fmt(totals.mt_bagage), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width, y);
-  doc.text(fmt(totals.tot_depense), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width, y);
-  doc.text(fmt(totals.solde), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width, y);
-  doc.text(fmt(totals.caisse), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width + COLUMNS[10].width, y);
+  doc.text(String(totals.seats_allocated), colStart, y);
+  doc.text(String(totals.seats_sold), colStart + COLUMNS[4].width + COLUMNS[5].width, y);
+  doc.text(String(totals.seats_libres), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width, y);
+  doc.text(fmt(totals.mt_ticket), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width, y);
+  doc.text(fmt(totals.mt_bagage), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width, y);
+  doc.text(fmt(totals.tot_depense), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width + COLUMNS[10].width, y);
+  doc.text(fmt(totals.solde), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width + COLUMNS[10].width + COLUMNS[11].width, y);
+  doc.text(fmt(totals.caisse), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width + COLUMNS[10].width + COLUMNS[11].width + COLUMNS[12].width, y);
 
   doc.save(fileName);
 }
@@ -250,9 +278,11 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
     <td style="text-align:center">${s.departure_date} ${s.departure_time}</td>
     <td style="text-align:center">${s.bus_plate}</td>
     <td>${escapeHtml(s.driver_name)}</td>
-    <td style="text-align:center">${s.seats_total}</td>
+    <td style="text-align:center">${s.seats_allocated}</td>
+    <td style="text-align:center">${s.seat_range}</td>
     <td style="text-align:center">${s.seats_sold}</td>
     <td style="text-align:center">${s.seats_libres}</td>
+    <td style="text-align:center">${s.fill_rate}%</td>
     <td style="text-align:right">${fmt(s.mt_ticket)}</td>
     <td style="text-align:right">${fmt(s.mt_bagage)}</td>
     <td style="text-align:right">${fmt(s.tot_depense)}</td>
@@ -261,7 +291,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
   </tr>`).join('');
 
   const totals = {
-    seats_total: summaries.reduce((a, s) => a + s.seats_total, 0),
+    seats_allocated: summaries.reduce((a, s) => a + s.seats_allocated, 0),
     seats_sold: summaries.reduce((a, s) => a + s.seats_sold, 0),
     seats_libres: summaries.reduce((a, s) => a + s.seats_libres, 0),
     mt_ticket: summaries.reduce((a, s) => a + s.mt_ticket, 0),
@@ -288,17 +318,19 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
     <thead>
       <tr>
         <th>N° Ligne</th><th>Ligne</th><th>Date/Heure</th><th>Matricule</th><th>Chauffeur</th>
-        <th>Sièges</th><th>Vendus</th><th>Libres</th><th>MT Ticket</th><th>MT Bagage</th>
-        <th>Tot Dépense</th><th>Solde</th><th>Statut</th>
+        <th>Sièges attribués</th><th>Plage</th><th>Vendus</th><th>Libres</th><th>Taux</th>
+        <th>MT Ticket</th><th>MT Bagage</th><th>Tot Dépense</th><th>Solde</th><th>Statut</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
     <tfoot>
       <tr>
         <td colspan="5" style="text-align:right">TOTAL</td>
-        <td style="text-align:center">${totals.seats_total}</td>
+        <td style="text-align:center">${totals.seats_allocated}</td>
+        <td></td>
         <td style="text-align:center">${totals.seats_sold}</td>
         <td style="text-align:center">${totals.seats_libres}</td>
+        <td></td>
         <td style="text-align:right">${fmt(totals.mt_ticket)}</td>
         <td style="text-align:right">${fmt(totals.mt_bagage)}</td>
         <td style="text-align:right">${fmt(totals.tot_depense)}</td>
