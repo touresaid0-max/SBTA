@@ -200,122 +200,107 @@ export async function syncNow(): Promise<{ synced: number; failed: number }> {
 }
 
 // ── Field mapping: local POS record → remote Supabase row ──
+// Each mapper ONLY returns columns that exist in the target table.
+// schedules: id, route_id, bus_id, driver_id, departure_station_id, arrival_station_id, departure_datetime, arrival_datetime, status, seats_available, seats_reserved, price, created_by, created_at, updated_at, route_name, fill_rate, notes, is_ramassage, is_anticipated
+// reservations: id, schedule_id, customer_id, passenger_name, passenger_phone, seat_numbers, total_seats, total_price, status, payment_status, booking_reference, qr_code, booked_by, created_at, updated_at, baggage_fee, destination_city_name
+// baggage_tickets: id, baggage_number, schedule_id, reservation_id, destination, price, seat_number, departure_number, bus_registration, description, owner_name, owner_phone, has_ticket, counter_id, station_id, sold_by, created_at
+// bus_expenses: id, bus_id, expense_type, amount, description, expense_date, receipt_url, status, validated_by, created_by, created_at
+
+async function getCurrentUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  return data?.user?.id ?? null;
+}
 
 function mapDepart(payload: Record<string, unknown>): Record<string, unknown> {
-  const {
-    id, route_id, bus_id, driver_id, station_id, departure_datetime,
-    status, seats_total, seats_sold, route_name, route_number,
-    departure_number, is_ac, confirmed, cancelled, cloture,
-    created_at, updated_at,
-  } = payload as Record<string, unknown>;
+  const p = payload;
+  const status = p.cancelled ? 'cancelled' : p.cloture ? 'completed' : p.confirmed ? 'confirmed' : (p.status ?? 'scheduled');
 
-  const result: Record<string, unknown> = {
-    id,
-    route_id: route_id ?? null,
-    bus_id: bus_id ?? null,
-    driver_id: driver_id ?? null,
-    departure_station_id: station_id ?? null,
-    departure_datetime,
-    arrival_datetime: departure_datetime,
-    status: cancelled ? 'cancelled' : cloture ? 'completed' : confirmed ? 'confirmed' : (status ?? 'scheduled'),
-    seats_available: (seats_total as number) ?? 0,
-    seats_reserved: (seats_sold as number) ?? 0,
-    route_name: route_name ?? null,
-    created_at: created_at ?? new Date().toISOString(),
-    updated_at: updated_at ?? new Date().toISOString(),
-    is_ramassage: false,
-    is_anticipated: false,
-  };
+  const result: Record<string, unknown> = { id: p.id };
 
-  if (is_ac !== undefined) result.is_ac = is_ac;
-  if (route_number !== undefined) result.route_number = route_number;
-  if (departure_number !== undefined) result.departure_number = departure_number;
+  if (p.route_id !== undefined) result.route_id = p.route_id ?? null;
+  if (p.bus_id !== undefined) result.bus_id = p.bus_id ?? null;
+  if (p.driver_id !== undefined) result.driver_id = p.driver_id ?? null;
+  if (p.station_id !== undefined) result.departure_station_id = p.station_id;
+  if (p.departure_datetime !== undefined) {
+    result.departure_datetime = p.departure_datetime;
+    result.arrival_datetime = p.departure_datetime;
+  }
+  result.status = status;
+  if (p.seats_total !== undefined) result.seats_available = p.seats_total;
+  if (p.seats_sold !== undefined) result.seats_reserved = p.seats_sold;
+  if (p.route_name !== undefined) result.route_name = p.route_name;
+  if (p.created_at !== undefined) result.created_at = p.created_at;
+  if (p.updated_at !== undefined) result.updated_at = p.updated_at;
+
+  result.is_ramassage = false;
+  result.is_anticipated = false;
 
   return result;
 }
 
 function mapTicket(payload: Record<string, unknown>): Record<string, unknown> {
-  const {
-    id, depart_id, seat_number, seat_numbers, destination, destination_id,
-    passenger_name, passenger_phone, price, original_price,
-    is_reduced, is_reported, is_ac, payment_method, status,
-    loyalty_card_number, loyalty_name, ticket_number,
-    created_at, updated_at,
-  } = payload as Record<string, unknown>;
+  const p = payload;
 
-  const seats = Array.isArray(seat_numbers) && seat_numbers.length > 0
-    ? seat_numbers
-    : seat_number != null ? [String(seat_number)] : [];
+  const seats = Array.isArray(p.seat_numbers) && (p.seat_numbers as unknown[]).length > 0
+    ? p.seat_numbers
+    : p.seat_number != null ? [String(p.seat_number)] : [];
 
   const result: Record<string, unknown> = {
-    id,
-    schedule_id: depart_id,
-    passenger_name: passenger_name ?? 'Passager',
-    passenger_phone: passenger_phone ?? null,
+    id: p.id,
+    schedule_id: p.depart_id,
+    passenger_name: p.passenger_name ?? 'Passager',
+    passenger_phone: p.passenger_phone ?? null,
     seat_numbers: seats,
-    total_seats: seats.length || 1,
-    total_price: price ?? 0,
-    status: status === 'cancelled' ? 'cancelled' : 'confirmed',
-    payment_status: status === 'cancelled' ? 'refunded' : 'paid',
-    booking_reference: ticket_number ?? null,
-    created_at: created_at ?? new Date().toISOString(),
-    updated_at: updated_at ?? new Date().toISOString(),
+    total_seats: (seats as unknown[]).length || 1,
+    total_price: p.price ?? 0,
+    status: p.status === 'cancelled' ? 'cancelled' : 'confirmed',
+    payment_status: p.status === 'cancelled' ? 'refunded' : 'paid',
+    booking_reference: p.ticket_number ?? null,
+    created_at: p.created_at ?? new Date().toISOString(),
+    updated_at: p.updated_at ?? new Date().toISOString(),
   };
 
-  if (destination_id) result.destination_city_name = destination;
-  else if (destination) result.destination_city_name = destination;
-
-  if (loyalty_card_number) result.loyalty_card_number = loyalty_card_number;
-  if (loyalty_name) result.loyalty_name = loyalty_name;
-  if (is_ac !== undefined) result.is_ac = is_ac;
-  if (is_reduced !== undefined) result.is_reduced = is_reduced;
-  if (is_reported !== undefined) result.is_reported = is_reported;
-  if (payment_method) result.payment_method = payment_method;
-  if (original_price !== undefined) result.original_price = original_price;
+  if (p.destination || p.destination_id) {
+    result.destination_city_name = (p.destination as string) ?? null;
+  }
 
   return result;
 }
 
 function mapBagage(payload: Record<string, unknown>): Record<string, unknown> {
-  const {
-    id, depart_id, bagage_number, ticket_id, ticket_number,
-    price, destination, description, car_plate,
-    owner_name, owner_phone, with_ticket, with_ticket_report,
-    created_at, updated_at,
-  } = payload as Record<string, unknown>;
+  const p = payload;
 
   return {
-    id,
-    baggage_number: bagage_number ?? `BAG-${Date.now()}`,
-    schedule_id: depart_id ?? null,
-    reservation_id: ticket_id ?? null,
-    destination: destination ?? '',
-    price: price ?? 0,
-    seat_number: ticket_number ?? null,
-    bus_registration: car_plate ?? null,
-    description: description ?? null,
-    owner_name: owner_name ?? '',
-    owner_phone: owner_phone ?? '',
-    has_ticket: with_ticket ?? false,
-    created_at: created_at ?? new Date().toISOString(),
+    id: p.id,
+    baggage_number: p.bagage_number ?? `BAG-${Date.now()}`,
+    schedule_id: p.depart_id ?? null,
+    reservation_id: p.ticket_id ?? null,
+    destination: p.destination ?? '',
+    price: p.price ?? 0,
+    seat_number: null,
+    bus_registration: p.car_plate ?? null,
+    description: p.description ?? null,
+    owner_name: p.owner_name ?? '',
+    owner_phone: p.owner_phone ?? '',
+    has_ticket: p.with_ticket ?? false,
+    station_id: p.station_id ?? null,
+    counter_id: p.counter_id ?? null,
+    created_at: p.created_at ?? new Date().toISOString(),
   };
 }
 
 function mapDepense(payload: Record<string, unknown>): Record<string, unknown> {
-  const {
-    id, depart_id, type, label, amount, description,
-    station_id, expense_date, created_at, updated_at,
-  } = payload as Record<string, unknown>;
+  const p = payload;
 
   return {
-    id,
-    bus_id: null,
-    expense_type: type ?? label ?? 'autre',
-    amount: amount ?? 0,
-    description: description ?? label ?? '',
-    expense_date: expense_date ?? new Date().toISOString().slice(0, 10),
+    id: p.id,
+    bus_id: p.bus_id ?? null,
+    expense_type: p.type ?? p.label ?? 'autre',
+    amount: p.amount ?? 0,
+    description: p.description ?? p.label ?? '',
+    expense_date: p.expense_date ?? new Date().toISOString().slice(0, 10),
     status: 'en_attente',
-    created_at: created_at ?? new Date().toISOString(),
+    created_at: p.created_at ?? new Date().toISOString(),
   };
 }
 
@@ -337,9 +322,24 @@ async function applyRemote(item: SyncQueueItem): Promise<void> {
     return;
   }
 
-  const remotePayload = mapper
+  let remotePayload = mapper
     ? mapper(item.payload)
     : stripLocalFields(item.payload);
+
+  const userId = await getCurrentUserId();
+
+  if (item.entity === 'departs' && userId) {
+    remotePayload.created_by = remotePayload.created_by ?? userId;
+  }
+  if (item.entity === 'tickets' && userId) {
+    remotePayload.booked_by = remotePayload.booked_by ?? userId;
+  }
+  if (item.entity === 'bagages' && userId) {
+    remotePayload.sold_by = remotePayload.sold_by ?? userId;
+  }
+  if (item.entity === 'depenses' && userId) {
+    remotePayload.created_by = remotePayload.created_by ?? userId;
+  }
 
   if (item.op === 'update') {
     const { data: existing } = await supabase
@@ -348,7 +348,7 @@ async function applyRemote(item: SyncQueueItem): Promise<void> {
       .eq('id', id)
       .maybeSingle();
 
-    if (existing?.updated_at) {
+    if (existing?.updated_at && item.payload.updated_at) {
       const remoteTs = new Date(existing.updated_at as string).getTime();
       const localTs = new Date(item.payload.updated_at as string).getTime();
       if (localTs < remoteTs) return;
