@@ -1,7 +1,7 @@
 import { db, type ReferentielRecord } from './db';
 import { supabase } from '@/services/supabase';
 
-type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares';
+type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops';
 
 const CACHE_TTL_MS = 1000 * 60 * 30;
 
@@ -30,6 +30,11 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
     const { data, error } = await supabase.from('stations').select('id, name, city_id, agency_code, is_active, cities(name)').eq('is_active', true).order('name');
     if (error) throw error;
     return (data ?? []).map((s: any) => ({ id: s.id, name: s.name, city: s.cities?.name ?? '', agency_code: s.agency_code, is_active: s.is_active }));
+  },
+  route_city_stops: async () => {
+    const { data, error } = await supabase.from('route_city_stops').select('id, route_id, city_id, price, position, cities(name)').order('route_id, position');
+    if (error) throw error;
+    return (data ?? []).map((s: any) => ({ id: s.id, route_id: s.route_id, city_id: s.city_id, city_name: s.cities?.name ?? '', price: Number(s.price ?? 0), position: s.position }));
   },
 };
 
@@ -60,7 +65,7 @@ export async function getReferentiel<T = unknown>(type: RefType, opts?: { force?
 }
 
 export async function refreshAllReferentiels(): Promise<void> {
-  const types: RefType[] = ['lignes', 'vehicules', 'chauffeurs', 'tarifs', 'gares'];
+  const types: RefType[] = ['lignes', 'vehicules', 'chauffeurs', 'tarifs', 'gares', 'route_city_stops'];
   await Promise.allSettled(types.map(t => refreshReferentiel(t)));
 }
 

@@ -5,8 +5,8 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getDepartById } from '@/services/pos/departService';
 import {
   sellTicket, getTicketsForDepart, getSoldSeats,
-  calculatePrice, getStations, generateTicketNumber, getTarifs,
-  type TicketRecord, type StationRef, type TarifRef,
+  calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
+  type TicketRecord, type StationRef, type TarifRef, type RouteCityStopRef,
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
@@ -33,6 +33,7 @@ export default function POSVente() {
   const [stations, setStations] = useState<StationRef[]>([]);
   const [tarifs, setTarifs] = useState<TarifRef[]>([]);
   const [lignes, setLignes] = useState<LigneRef[]>([]);
+  const [routeCityStops, setRouteCityStops] = useState<RouteCityStopRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -83,13 +84,14 @@ export default function POSVente() {
       }
       setDepart(d);
 
-      const [t, s, st, ta, li, bg] = await Promise.all([
+      const [t, s, st, ta, li, bg, rcs] = await Promise.all([
         getTicketsForDepart(departId),
         getSoldSeats(departId),
         getStations(),
         getTarifs(),
         getLignes(),
         getBagagesForDepart(departId),
+        getRouteCityStops(),
       ]);
       setTickets(t);
       setSoldSeats(s);
@@ -97,6 +99,7 @@ export default function POSVente() {
       setTarifs(ta);
       setLignes(li);
       setBagages(bg);
+      setRouteCityStops(rcs);
     } catch {
       // non-critical
     } finally {
@@ -139,14 +142,30 @@ export default function POSVente() {
     }
   }, [depart, stations, lignes]);
 
+  // Intermediate city stops for the current route
+  const currentRouteStops = useMemo(
+    () => routeCityStops.filter(s => s.route_id === depart?.route_id).sort((a, b) => a.position - b.position),
+    [routeCityStops, depart?.route_id]
+  );
+
   // Auto-calculate tarif when destination changes
+  // Destination can be a station ID (final destination) or `city:{id}` (intermediate city)
   useEffect(() => {
     if (!depart || !destination) { setTarif(0); return; }
-    const tarifRef = tarifs.find(t => t.route_id === depart.route_id && t.station_id === destination);
     const ligne = lignes.find(l => l.id === depart.route_id);
-    const basePrice = tarifRef?.price ?? ligne?.base_price ?? 0;
+
+    let basePrice = 0;
+    if (destination.startsWith('city:')) {
+      const cityId = destination.slice(5);
+      const stop = currentRouteStops.find(s => s.city_id === cityId);
+      basePrice = stop?.price ?? 0;
+    } else {
+      const tarifRef = tarifs.find(t => t.route_id === depart.route_id && t.station_id === destination);
+      basePrice = tarifRef?.price ?? ligne?.base_price ?? 0;
+    }
+
     setTarif(calculatePrice(basePrice, depart.is_ac, isReduced));
-  }, [destination, depart, tarifs, lignes, isReduced]);
+  }, [destination, depart, tarifs, lignes, currentRouteStops, isReduced]);
 
   // Preview ticket number
   useEffect(() => {
@@ -176,9 +195,14 @@ export default function POSVente() {
 
   // Destination name for display
   const destStationName = useMemo(() => {
+    if (destination.startsWith('city:')) {
+      const cityId = destination.slice(5);
+      const stop = currentRouteStops.find(s => s.city_id === cityId);
+      return stop?.city_name ?? '';
+    }
     const s = stations.find(st => st.id === destination);
     return s?.name ?? depart?.route_name ?? '';
-  }, [stations, destination, depart]);
+  }, [stations, destination, depart, currentRouteStops]);
 
   const handleSell = async () => {
     if (!depart || !departId) return;
@@ -194,11 +218,21 @@ export default function POSVente() {
 
     setSelling(true);
     try {
-      const station = stations.find(s => s.id === destination);
+      let destName = '';
+      let destId = destination;
+      if (destination.startsWith('city:')) {
+        const cityId = destination.slice(5);
+        const stop = currentRouteStops.find(s => s.city_id === cityId);
+        destName = stop?.city_name ?? '';
+        destId = cityId;
+      } else {
+        const station = stations.find(s => s.id === destination);
+        destName = station?.name ?? destination;
+      }
       const ticket = await sellTicket({
         departId, seatNumber: seat,
-        destination: station?.name ?? destination,
-        destinationId: destination,
+        destination: destName,
+        destinationId: destId,
         price: tarif, originalPrice: tarif,
         isReduced, isReported, isAc: depart.is_ac, printTicket,
         loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
@@ -486,15 +520,17 @@ export default function POSVente() {
                     <option value="">Sélectionner...</option>
                     {(() => {
                       const departStation = stations.find(s => s.id === depart.station_id);
-                      const destStation = stations.find(s => s.id === destination);
+                      const destStation = stations.find(s => s.id === lignes.find(l => l.id === depart.route_id)?.destination_station_id);
                       if (departStation && destStation) {
-                        return <option value={destination}>{`${departStation.name} → ${destStation.name}`}</option>;
-                      }
-                      if (departStation && destination) {
-                        return <option value={destination}>{departStation.name} → {destination}</option>;
+                        return <option value={destStation.id}>{`${destStation.name} (Terminus)`}</option>;
                       }
                       return null;
                     })()}
+                    {currentRouteStops.map(stop => (
+                      <option key={stop.city_id} value={`city:${stop.city_id}`}>
+                        {`${stop.city_name} — ${stop.price.toLocaleString()} FCFA`}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

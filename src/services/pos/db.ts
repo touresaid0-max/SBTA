@@ -107,7 +107,7 @@ export interface DepenseRecord {
 
 export interface ReferentielRecord {
   key: string;
-  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares';
+  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops';
   data: unknown;
   updated_at: string;
 }

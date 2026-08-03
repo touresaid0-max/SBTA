@@ -29,6 +29,19 @@ export async function getStations(): Promise<StationRef[]> {
   return getReferentiel<StationRef>('gares');
 }
 
+export interface RouteCityStopRef {
+  id: string;
+  route_id: string;
+  city_id: string;
+  city_name: string;
+  price: number;
+  position: number;
+}
+
+export async function getRouteCityStops(): Promise<RouteCityStopRef[]> {
+  return getReferentiel<RouteCityStopRef>('route_city_stops');
+}
+
 export async function getTicketsForDepart(departId: string): Promise<TicketRecord[]> {
   const all = await getAll<TicketRecord>('tickets');
   return all.filter(t => t.depart_id === departId && t.status !== 'cancelled');
