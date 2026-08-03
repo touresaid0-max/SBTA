@@ -518,19 +518,18 @@ export default function POSVente() {
                     disabled={sameDestination && destination !== ''}
                   >
                     <option value="">Sélectionner...</option>
+                    {currentRouteStops.map(stop => (
+                      <option key={stop.city_id} value={`city:${stop.city_id}`}>
+                        {stop.city_name}
+                      </option>
+                    ))}
                     {(() => {
-                      const departStation = stations.find(s => s.id === depart.station_id);
                       const destStation = stations.find(s => s.id === lignes.find(l => l.id === depart.route_id)?.destination_station_id);
-                      if (departStation && destStation) {
-                        return <option value={destStation.id}>{`${destStation.name} (Terminus)`}</option>;
+                      if (destStation) {
+                        return <option value={destStation.id}>{destStation.name}</option>;
                       }
                       return null;
                     })()}
-                    {currentRouteStops.map(stop => (
-                      <option key={stop.city_id} value={`city:${stop.city_id}`}>
-                        {`${stop.city_name} — ${stop.price.toLocaleString()} FCFA`}
-                      </option>
-                    ))}
                   </select>
                 </div>
 
