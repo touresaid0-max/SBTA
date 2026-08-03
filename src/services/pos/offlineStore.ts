@@ -26,9 +26,17 @@ async function getCurrentUserId(): Promise<string | null> {
 
 // ── Field mapping: local POS record → remote Supabase row ──
 
+function computeArrivalDatetime(departureIso: string): string {
+  const dep = new Date(departureIso);
+  if (isNaN(dep.getTime())) return new Date(Date.now() + 8 * 3600_000).toISOString();
+  dep.setHours(dep.getHours() + 8);
+  return dep.toISOString();
+}
+
 function mapDepartInsert(payload: Record<string, unknown>): Record<string, unknown> {
   const p = payload;
   const status = p.cancelled ? 'cancelled' : p.cloture ? 'completed' : p.confirmed ? 'confirmed' : (p.status as string ?? 'scheduled');
+  const depIso = p.departure_datetime as string;
 
   return {
     id: p.id,
@@ -36,8 +44,8 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     bus_id: p.bus_id ?? null,
     driver_id: p.driver_id ?? null,
     departure_station_id: p.station_id ?? null,
-    departure_datetime: p.departure_datetime,
-    arrival_datetime: p.departure_datetime,
+    departure_datetime: depIso,
+    arrival_datetime: computeArrivalDatetime(depIso),
     status,
     seats_available: p.seats_total ?? 0,
     seats_reserved: p.seats_sold ?? 0,
@@ -65,7 +73,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.station_id !== undefined) result.departure_station_id = p.station_id;
   if (p.departure_datetime !== undefined) {
     result.departure_datetime = p.departure_datetime;
-    result.arrival_datetime = p.departure_datetime;
+    result.arrival_datetime = computeArrivalDatetime(p.departure_datetime as string);
   }
 
   result.updated_at = nowIso();
