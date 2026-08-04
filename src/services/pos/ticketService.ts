@@ -2,7 +2,6 @@ import { type TicketRecord, type DepartRecord } from './db';
 import { localInsert, getAll, getById, localUpdate } from './offlineStore';
 import { getDepartById, updateDepart } from './departService';
 import { getReferentiel } from './referentiels';
-import { generateBookingReference } from '../../utils/generateBookingReference';
 
 export type { TicketRecord };
 
@@ -58,8 +57,13 @@ export async function getSoldSeats(departId: string): Promise<number[]> {
   return tickets.map(t => t.seat_number).sort((a, b) => a - b);
 }
 
-export function generateTicketNumber(stationAgencyCode?: string): string {
-  return generateBookingReference(stationAgencyCode || 'SBTA');
+export function generateTicketNumber(_stationAgencyCode?: string): string {
+  const year = new Date().getFullYear();
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `${year}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  }
+  const rand = Math.random().toString(36).slice(2, 10).toUpperCase();
+  return `${year}-${Date.now().toString(36).toUpperCase()}-${rand}`;
 }
 
 export function calculatePrice(basePrice: number, isAc: boolean, isReduced: boolean): number {
@@ -110,7 +114,7 @@ export async function sellTicket(params: SellTicketParams): Promise<TicketRecord
     throw new Error(`Le siège ${params.seatNumber} est déjà vendu`);
   }
 
-  const ticketNumber = generateTicketNumber(params.stationAgencyCode ?? 'SBTA');
+  const ticketNumber = generateTicketNumber();
 
   const ticket = await localInsert<TicketRecord>('tickets', {
     depart_id: params.departId,

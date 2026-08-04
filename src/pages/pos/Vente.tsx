@@ -176,7 +176,7 @@ export default function POSVente() {
   // Preview ticket number
   useEffect(() => {
     if (!depart) return;
-    setTicketPreview(generateTicketNumber(session?.station_name ?? 'SBTA'));
+    setTicketPreview(generateTicketNumber());
   }, [depart, session, tickets.length]);
 
   // Reset bagage form when mode is cleared
