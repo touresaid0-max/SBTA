@@ -206,8 +206,17 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
       // Build update payload
       const update: Record<string, any> = { updated_at: new Date().toISOString() }
 
+      // Compute the effective departure and arrival datetimes for validation
+      let effectiveDeparture = new Date(currentDeparture)
+      let effectiveArrival = new Date(schedule.arrival_datetime)
+
       if (routeId !== currentRouteId) {
         update.route_id = routeId
+        // Recalculate arrival based on new route duration
+        const selectedRoute = routes.find(r => r.id === routeId)
+        const duration = selectedRoute?.estimated_duration_minutes || 180
+        effectiveArrival = new Date(effectiveDeparture.getTime() + Math.max(1, duration) * 60000)
+        update.arrival_datetime = effectiveArrival.toISOString()
       }
 
       if (busId !== currentBusId) {
@@ -229,11 +238,20 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
         const [hours, minutes] = departureTime.split(':').map(Number)
         currentDt.setHours(hours, minutes, 0, 0)
         update.departure_datetime = currentDt.toISOString()
+        effectiveDeparture = currentDt
 
         const selectedRoute = routes.find(r => r.id === routeId)
         const duration = selectedRoute?.estimated_duration_minutes || 180
-        const arrivalDt = new Date(currentDt.getTime() + duration * 60000)
+        const arrivalDt = new Date(currentDt.getTime() + Math.max(1, duration) * 60000)
         update.arrival_datetime = arrivalDt.toISOString()
+        effectiveArrival = arrivalDt
+      }
+
+      // Ensure arrival is always strictly after departure (DB constraint: arrival_datetime > departure_datetime)
+      if (effectiveArrival <= effectiveDeparture) {
+        const correctedArrival = new Date(effectiveDeparture.getTime() + 60000)
+        update.arrival_datetime = correctedArrival.toISOString()
+        effectiveArrival = correctedArrival
       }
 
       // Apply the schedule update

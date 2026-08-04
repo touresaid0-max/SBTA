@@ -8,6 +8,14 @@ import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import { format, startOfDay } from 'date-fns';
 
+function toLocalDatetimeInput(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 interface RouteData {
   id: string;
   name: string;
@@ -134,14 +142,24 @@ export default function Schedules() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate arrival is strictly after departure
+    if (formData.departure_datetime && formData.arrival_datetime) {
+      const dep = new Date(formData.departure_datetime);
+      const arr = new Date(formData.arrival_datetime);
+      if (arr <= dep) {
+        toast.error("La date d'arrivée doit être strictement postérieure à la date de départ.");
+        return;
+      }
+    }
+
     try {
       const payload = {
         route_id: formData.route_id,
         bus_id: formData.bus_id,
         driver_id: formData.driver_id,
         copilot_id: formData.copilot_id || null,
-        departure_datetime: formData.departure_datetime,
-        arrival_datetime: formData.arrival_datetime,
+        departure_datetime: new Date(formData.departure_datetime).toISOString(),
+        arrival_datetime: new Date(formData.arrival_datetime).toISOString(),
         price: formData.price,
         status: formData.status
       };
@@ -179,8 +197,8 @@ export default function Schedules() {
       bus_id: schedule.bus_id,
       driver_id: schedule.driver_id,
       copilot_id: schedule.copilot_id || '',
-      departure_datetime: schedule.departure_datetime,
-      arrival_datetime: schedule.arrival_datetime,
+      departure_datetime: toLocalDatetimeInput(schedule.departure_datetime),
+      arrival_datetime: toLocalDatetimeInput(schedule.arrival_datetime),
       price: schedule.price,
       status: schedule.status
     });
