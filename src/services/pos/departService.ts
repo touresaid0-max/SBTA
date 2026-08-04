@@ -194,12 +194,14 @@ export function getStationNameForSeat(
 }
 
 export async function findParentDepartForBus(busId: string, currentStationId: string): Promise<DepartRecord | null> {
+  const todayStr = new Date().toISOString().split('T')[0];
   const all = await getAll<DepartRecord>('departs');
   const candidates = all.filter(d => {
     if (d.cancelled) return false;
     if (d.cloture) return false;
     if (d.bus_id !== busId) return false;
     if (d.station_id === currentStationId) return false;
+    if (d.departure_date !== todayStr) return false;
     return d.seat_allocations?.some(a => a.station_id === currentStationId) ?? false;
   });
   if (candidates.length === 0) return null;
