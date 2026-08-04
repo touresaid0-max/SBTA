@@ -17,7 +17,7 @@ import { printBaggageTicket } from '@/utils/printBaggageTicket';
 import { formatCurrency } from '@/utils/formatCurrency';
 import type { DepartRecord } from '@/services/pos/departService';
 import {
-  AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock,
+  AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock, RotateCw,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
   Package,
 } from 'lucide-react';
@@ -51,6 +51,9 @@ export default function POSVente() {
   const [printTicket, setPrintTicket] = useState(true);
   const [selling, setSelling] = useState(false);
   const [ticketPreview, setTicketPreview] = useState('');
+  const [printError, setPrintError] = useState('');
+  const [pendingReprint, setPendingReprint] = useState<TicketRecord[]>([]);
+  const [printing, setPrinting] = useState(false);
 
   // Loyalty state
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -293,14 +296,6 @@ export default function POSVente() {
         stationAgencyCode: session?.station_name,
       });
 
-      // Print sequentially — one window per ticket, with delay to avoid browser popup blocking
-      if (printTicket) {
-        for (const ticket of soldTickets) {
-          await PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
-          await new Promise(r => setTimeout(r, 800));
-        }
-      }
-
       const [t, s] = await Promise.all([getTicketsForDepart(departId), getSoldSeats(departId)]);
       setTickets(t); setSoldSeats(s);
       const updatedDepart = await getDepartById(departId);
@@ -315,11 +310,41 @@ export default function POSVente() {
       setLoyaltyEnabled(false); setLoyaltyNewCard(false);
       setLoyaltyCardNumber(''); setLoyaltyName(''); setLoyaltyPhone(''); setLoyaltyTrips(0);
       setTimeout(() => setSuccess(''), 4000);
+
+      if (printTicket) {
+        await printTicketsSequentially(soldTickets, depart, session?.station_name);
+      }
     } catch (err: any) {
       setError(err?.message ?? 'Erreur lors de la vente');
     } finally {
       setSelling(false);
     }
+  };
+
+  const printTicketsSequentially = async (ticketsToPrint: TicketRecord[], dep: DepartRecord, stName?: string) => {
+    setPrinting(true);
+    setPrintError('');
+    const failed: TicketRecord[] = [];
+    for (const ticket of ticketsToPrint) {
+      try {
+        const ok = await PrintService.printTicket({ ticket, depart: dep, stationName: stName });
+        if (!ok) { failed.push(ticket); break; }
+      } catch {
+        failed.push(ticket);
+        break;
+      }
+    }
+    setPrinting(false);
+    if (failed.length > 0) {
+      setPendingReprint(failed);
+      setPrintError(`L'impression a échoué au ticket siège ${failed[0].seat_number}. Cliquez sur "Reprendre l'impression" pour reprendre à partir de ce ticket.`);
+    }
+  };
+
+  const handleReprintResume = async () => {
+    if (pendingReprint.length === 0 || !depart) return;
+    setPrintError('');
+    await printTicketsSequentially(pendingReprint, depart, session?.station_name);
   };
 
   const handlePrintTicket = (ticket: TicketRecord) => {
@@ -503,6 +528,23 @@ export default function POSVente() {
         {success && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-medium" style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}>
             <CheckCircle className="w-4 h-4" /> {success}
+          </div>
+        )}
+        {printError && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center justify-between gap-3 text-sm" style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}>
+            <div className="flex items-start gap-2 flex-1">
+              <Printer className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>{printError}</span>
+            </div>
+            <button
+              onClick={handleReprintResume}
+              disabled={printing || pendingReprint.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap disabled:opacity-50"
+              style={{ backgroundColor: 'var(--warning)', color: 'white' }}
+            >
+              {printing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+              Reprendre l'impression
+            </button>
           </div>
         )}
 

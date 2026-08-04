@@ -338,19 +338,35 @@ async function printBrowser(payload: PrintPayload, settings: PrintSettings): Pro
   document.body.appendChild(iframe);
 
   return new Promise((resolve) => {
-    const doc = iframe.contentWindow?.document;
+    const cw = iframe.contentWindow;
+    const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
     doc.write(html);
     doc.close();
 
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      setTimeout(() => iframe.remove(), 1500);
+      resolve(ok);
+    };
+
+    // Resolve when print dialog closes (afterprint) or on timeout fallback
+    if (cw) {
+      cw.addEventListener('afterprint', () => finish(true), { once: true });
+    }
     setTimeout(() => {
       try {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      } catch { /* non-critical */ }
-      setTimeout(() => iframe.remove(), 2000);
-      resolve(true);
+        cw?.focus();
+        cw?.print();
+      } catch {
+        finish(false);
+        return;
+      }
+      // Fallback timeout: if afterprint never fires (some browsers), resolve after 2s
+      setTimeout(() => finish(true), 2000);
     }, 300);
   });
 }
