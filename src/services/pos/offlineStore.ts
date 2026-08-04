@@ -147,12 +147,40 @@ function mapBagageInsert(payload: Record<string, unknown>): Record<string, unkno
   };
 }
 
+const EXPENSE_TYPE_MAP: Record<string, string> = {
+  'carburant': 'carburant',
+  'péage': 'peage',
+  'peage': 'peage',
+  'réparation': 'reparation',
+  'reparation': 'reparation',
+  'achat stock': 'autres',
+  'frais route': 'taxe_route',
+  'autre': 'autre',
+  'autres': 'autres',
+  'assurance': 'assurance',
+  'taxes': 'taxes',
+  'lavage': 'lavage',
+  'vignette': 'vignette',
+  'visite technique': 'visite_technique',
+  'visite_technique': 'visite_technique',
+  'parking': 'parking',
+  'amende': 'amende',
+  'taxe route': 'taxe_route',
+  'taxe_route': 'taxe_route',
+};
+
+function normalizeExpenseType(raw: string | undefined): string {
+  if (!raw) return 'autre';
+  const key = raw.trim().toLowerCase();
+  return EXPENSE_TYPE_MAP[key] ?? 'autre';
+}
+
 function mapDepenseInsert(payload: Record<string, unknown>): Record<string, unknown> {
   const p = payload;
   return {
     id: p.id,
     bus_id: p.bus_id ?? null,
-    expense_type: (p.type as string) ?? (p.label as string) ?? 'autre',
+    expense_type: normalizeExpenseType((p.type as string) ?? (p.label as string)),
     amount: p.amount ?? 0,
     description: (p.description as string) ?? (p.label as string) ?? '',
     expense_date: (p.expense_date as string) ?? new Date().toISOString().slice(0, 10),
