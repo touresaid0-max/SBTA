@@ -92,7 +92,7 @@ export default function Refunds() {
         .from('reservations')
         .update({
           status: 'refunded',
-          payment_status: 'refunded'
+          payment_status: 'remboursee'
         })
         .eq('id', refund.id);
 

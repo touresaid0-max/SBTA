@@ -97,7 +97,7 @@ function mapTicketInsert(payload: Record<string, unknown>): Record<string, unkno
     total_seats: (seats as unknown[]).length || 1,
     total_price: p.price ?? 0,
     status: p.status === 'cancelled' ? 'annulee' : 'confirmee',
-    payment_status: p.status === 'cancelled' ? 'refunded' : 'paid',
+    payment_status: p.status === 'cancelled' ? 'remboursee' : 'payee',
     booking_reference: p.ticket_number ?? null,
     created_at: p.created_at ?? nowIso(),
     updated_at: p.updated_at ?? nowIso(),
@@ -114,7 +114,7 @@ function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unkno
 
   if (p.status !== undefined) {
     result.status = p.status === 'cancelled' ? 'annulee' : 'confirmee';
-    result.payment_status = p.status === 'cancelled' ? 'refunded' : 'paid';
+    result.payment_status = p.status === 'cancelled' ? 'remboursee' : 'payee';
   }
   if (p.passenger_name !== undefined) result.passenger_name = p.passenger_name;
   if (p.passenger_phone !== undefined) result.passenger_phone = p.passenger_phone;
