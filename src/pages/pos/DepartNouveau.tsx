@@ -647,7 +647,7 @@ export default function POSDepartNouveau() {
               </button>
             </div>
             <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Voulez-vous créer un nouveau départ ? Veuillez renseigner la date de départ SVP.
+              Voulez-vous créer un nouveau départ ? Veuillez bien vérifier la date, le nom du chauffeur et le numéro de la plaque d'immatriculation avant de confirmer.
             </p>
             <div className="flex gap-3">
               <button
