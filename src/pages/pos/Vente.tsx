@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
@@ -17,7 +17,7 @@ import { printBaggageTicket } from '@/utils/printBaggageTicket';
 import { formatCurrency } from '@/utils/formatCurrency';
 import type { DepartRecord } from '@/services/pos/departService';
 import {
-  AlertCircle, CheckCircle, Loader2, Plus, Printer, X, Lock,
+  AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
   Package,
 } from 'lucide-react';
@@ -41,7 +41,9 @@ export default function POSVente() {
 
   // Ticket form state
   const [destination, setDestination] = useState('');
-  const [seatNumber, setSeatNumber] = useState('');
+  const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
+  const [seatDropdownOpen, setSeatDropdownOpen] = useState(false);
+  const seatDropdownRef = useRef<HTMLDivElement>(null);
   const [tarif, setTarif] = useState(0);
   const [isReduced, setIsReduced] = useState(false);
   const [isReported, setIsReported] = useState(false);
@@ -225,23 +227,43 @@ export default function POSVente() {
     return (s?.city || s?.name) ?? depart?.route_name ?? '';
   }, [stations, destination, depart, currentRouteStops]);
 
+  // Derived single seat string for baggage compatibility
+  const seatNumber = selectedSeats.length > 0 ? String(selectedSeats[0]) : '';
+
+  // Close seat dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (seatDropdownRef.current && !seatDropdownRef.current.contains(e.target as Node)) {
+        setSeatDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggleSeat = (n: number) => {
+    setSelectedSeats(prev =>
+      prev.includes(n) ? prev.filter(s => s !== n) : [...prev, n].sort((a, b) => a - b)
+    );
+  };
+
   const handleSell = async () => {
     if (!depart || !departId) return;
     if (depart.cloture) { setError('Ce départ est clôturé — vente impossible'); return; }
     setError(''); setSuccess('');
-    const seat = parseInt(seatNumber);
-    if (!seat || isNaN(seat)) { setError('Veuillez saisir un numéro de siège valide'); return; }
-    if (seat < depart.seats_from || seat > depart.seats_total) {
-      setError(`Le siège doit être entre ${depart.seats_from} et ${depart.seats_total}`); return;
-    }
-    if (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to)) {
-      const ownerStation = getStationNameForSeat(depart, seat);
-      if (ownerStation && ownerStation !== session?.station_name) {
-        setError(`Le siège n°${seat} est réservé à la gare de ${ownerStation}.`);
-      } else {
-        setError(`Siège indisponible : ce siège est attribué à une autre gare.`);
+    if (selectedSeats.length === 0) { setError('Veuillez sélectionner au moins un siège'); return; }
+    for (const seat of selectedSeats) {
+      if (seat < depart.seats_from || seat > depart.seats_total) {
+        setError(`Le siège n°${seat} est hors de la plage autorisée (${depart.seats_from}–${depart.seats_total})`); return;
       }
-      return;
+      if (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to)) {
+        const ownerStation = getStationNameForSeat(depart, seat);
+        setError(ownerStation && ownerStation !== session?.station_name
+          ? `Le siège n°${seat} est réservé à la gare de ${ownerStation}.`
+          : `Siège n°${seat} indisponible : attribué à une autre gare.`);
+        return;
+      }
+      if (soldSeats.includes(seat)) { setError(`Le siège n°${seat} est déjà vendu`); return; }
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
     if (tarif <= 0) { setError('Tarif invalide — vérifiez la destination'); return; }
@@ -259,29 +281,37 @@ export default function POSVente() {
         const station = stations.find(s => s.id === destination);
         destName = (station?.city || station?.name) ?? destination;
       }
-      const ticket = await sellTicket({
-        departId, seatNumber: seat,
-        destination: destName,
-        destinationId: destId,
-        price: tarif, originalPrice: tarif,
-        isReduced, isReported, isAc: depart.is_ac, printTicket,
-        loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
-        loyaltyName: loyaltyEnabled ? loyaltyName : undefined,
-        stationAgencyCode: session?.station_name,
-      });
-      if (printTicket) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
+
+      const soldTickets = [];
+      for (const seat of selectedSeats) {
+        const ticket = await sellTicket({
+          departId, seatNumber: seat,
+          destination: destName,
+          destinationId: destId,
+          price: tarif, originalPrice: tarif,
+          isReduced, isReported, isAc: depart.is_ac, printTicket,
+          loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
+          loyaltyName: loyaltyEnabled ? loyaltyName : undefined,
+          stationAgencyCode: session?.station_name,
+        });
+        soldTickets.push(ticket);
+        if (printTicket) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
+      }
 
       const [t, s] = await Promise.all([getTicketsForDepart(departId), getSoldSeats(departId)]);
       setTickets(t); setSoldSeats(s);
       const updatedDepart = await getDepartById(departId);
       if (updatedDepart) setDepart(updatedDepart);
 
-      setSuccess(`Siège ${seat} vendu — Ticket ${ticket.ticket_number}`);
-      setSeatNumber(''); setIsReduced(false); setIsReported(false);
+      const seatsLabel = soldTickets.map(tk => tk.seat_number).join(', ');
+      setSuccess(soldTickets.length === 1
+        ? `Siège ${seatsLabel} vendu — Ticket ${soldTickets[0].ticket_number}`
+        : `${soldTickets.length} tickets vendus — Sièges : ${seatsLabel}`);
+      setSelectedSeats([]); setIsReduced(false); setIsReported(false);
       if (!sameDestination) { setDestination(''); setTarif(0); }
       setLoyaltyEnabled(false); setLoyaltyNewCard(false);
       setLoyaltyCardNumber(''); setLoyaltyName(''); setLoyaltyPhone(''); setLoyaltyTrips(0);
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(''), 4000);
     } catch (err: any) {
       setError(err?.message ?? 'Erreur lors de la vente');
     } finally {
@@ -602,51 +632,89 @@ export default function POSVente() {
                   </select>
                 </div>
 
-                {/* N° Siège */}
-                <div>
+                {/* N° Siège — multi-select dropdown */}
+                <div ref={seatDropdownRef} className="relative">
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
                     N° Siège {allowedSeatRange ? `(${allowedSeatRange.from}–${allowedSeatRange.to})` : `(${depart.seats_from}–${depart.seats_total})`}
                   </label>
-                  <input
-                    type="number"
-                    min={allowedSeatRange?.from ?? depart.seats_from}
-                    max={allowedSeatRange?.to ?? depart.seats_total}
-                    value={seatNumber}
-                    onChange={e => setSeatNumber(e.target.value)}
-                    className={fieldInput}
+                  {/* Trigger button */}
+                  <button
+                    type="button"
+                    onClick={() => setSeatDropdownOpen(o => !o)}
+                    className={fieldInput + ' text-left flex items-center justify-between'}
                     style={{
                       ...fieldStyle,
-                      borderColor: seatNumber && soldSeats.includes(parseInt(seatNumber)) ? 'var(--danger)' : seatNumber && allowedSeatRange && (parseInt(seatNumber) < allowedSeatRange.from || parseInt(seatNumber) > allowedSeatRange.to) ? 'var(--danger)' : 'var(--border)',
+                      borderColor: selectedSeats.length > 0 ? 'var(--primary)' : 'var(--border)',
+                      cursor: 'pointer',
                     }}
-                    placeholder="Ex: 1"
-                    list="available-seats"
-                  />
-                  <datalist id="available-seats">
-                    {Array.from({ length: (allowedSeatRange?.to ?? depart.seats_total) - (allowedSeatRange?.from ?? depart.seats_from) + 1 }, (_, i) => i + (allowedSeatRange?.from ?? depart.seats_from))
-                      .filter(n => !soldSeats.includes(n))
-                      .slice(0, 50)
-                      .map(n => <option key={n} value={n} />)}
-                  </datalist>
-                  {seatNumber && soldSeats.includes(parseInt(seatNumber)) && (
-                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--danger)' }}>
-                      <X className="w-3 h-3" /> Siège déjà vendu
-                    </p>
-                  )}
-                  {seatNumber && allowedSeatRange && (parseInt(seatNumber) < allowedSeatRange.from || parseInt(seatNumber) > allowedSeatRange.to) && (
-                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--danger)' }}>
-                      <X className="w-3 h-3" /> {(() => {
-                        const owner = getStationNameForSeat(depart, parseInt(seatNumber));
-                        return owner && owner !== session?.station_name
-                          ? `Le siège n°${seatNumber} est réservé à la gare de ${owner}.`
-                          : 'Siège indisponible : ce siège est attribué à une autre gare.';
-                      })()}
-                    </p>
+                  >
+                    <span style={{ color: selectedSeats.length === 0 ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                      {selectedSeats.length === 0
+                        ? 'Sélectionner...'
+                        : selectedSeats.length <= 4
+                          ? `Sièges : ${selectedSeats.join(', ')}`
+                          : `${selectedSeats.length} siège(s) sélectionné(s)`}
+                    </span>
+                    <svg className={`w-4 h-4 flex-shrink-0 transition-transform ${seatDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+
+                  {/* Dropdown panel */}
+                  {seatDropdownOpen && (
+                    <div
+                      className="absolute z-50 mt-1 rounded-xl shadow-lg overflow-hidden"
+                      style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)', width: '220px', maxHeight: '280px', overflowY: 'auto' }}
+                    >
+                      {/* Header */}
+                      <div className="px-3 py-2 flex items-center justify-between sticky top-0" style={{ backgroundColor: 'var(--surface-raised)', borderBottom: '1px solid var(--border)' }}>
+                        <span className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>
+                          {selectedSeats.length} sélectionné(s)
+                        </span>
+                        {selectedSeats.length > 0 && (
+                          <button type="button" onClick={() => setSelectedSeats([])} className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Effacer</button>
+                        )}
+                      </div>
+                      {/* Seat list */}
+                      {Array.from(
+                        { length: (allowedSeatRange?.to ?? depart.seats_total) - (allowedSeatRange?.from ?? depart.seats_from) + 1 },
+                        (_, i) => i + (allowedSeatRange?.from ?? depart.seats_from)
+                      ).map(n => {
+                        const sold = soldSeats.includes(n);
+                        const checked = selectedSeats.includes(n);
+                        return (
+                          <label
+                            key={n}
+                            className="flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none"
+                            style={{
+                              backgroundColor: checked ? 'var(--primary-light)' : 'transparent',
+                              opacity: sold ? 0.45 : 1,
+                              cursor: sold ? 'not-allowed' : 'pointer',
+                              borderBottom: '1px solid var(--border)',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={sold}
+                              onChange={() => !sold && toggleSeat(n)}
+                              className="w-4 h-4 flex-shrink-0"
+                              style={{ accentColor: 'var(--primary)' }}
+                            />
+                            <span className="text-sm font-bold" style={{ color: sold ? 'var(--text-muted)' : checked ? 'var(--primary)' : 'var(--text-primary)' }}>
+                              {n}
+                            </span>
+                            {sold && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--danger)' }}>Vendu</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
 
                 {/* Tarif */}
                 <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Tarif</label>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                    Tarif{selectedSeats.length > 1 ? ` × ${selectedSeats.length} = ${(tarif * selectedSeats.length).toLocaleString('fr-FR')} FCFA` : ''}
+                  </label>
                   <div className="relative">
                     <input
                       type="number"
@@ -667,7 +735,9 @@ export default function POSVente() {
 
                 {/* N° Ticket preview */}
                 <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket (auto)</label>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                    {selectedSeats.length > 1 ? `N° Tickets (auto — ${selectedSeats.length} tickets)` : 'N° Ticket (auto)'}
+                  </label>
                   <input
                     type="text"
                     value={ticketPreview || '...'}
@@ -678,14 +748,20 @@ export default function POSVente() {
                 </div>
               </div>
 
+              {selectedSeats.length > 1 && tarif > 0 && (
+                <div className="mt-3 px-3 py-2 rounded-lg flex items-center justify-between text-sm font-bold" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
+                  <span>{selectedSeats.length} tickets</span>
+                  <span>{(tarif * selectedSeats.length).toLocaleString('fr-FR')} FCFA</span>
+                </div>
+              )}
               <button
                 onClick={handleSell}
-                disabled={selling || !seatNumber || !destination || tarif <= 0 || depart.cloture}
+                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
               >
                 {selling ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                Vendre le ticket
+                {selectedSeats.length > 1 ? `Vendre ${selectedSeats.length} tickets` : 'Vendre le ticket'}
               </button>
             </div>
 
