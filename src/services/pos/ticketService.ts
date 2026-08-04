@@ -133,16 +133,31 @@ export async function sellTicket(params: SellTicketParams): Promise<TicketRecord
     loyalty_name: params.loyaltyName,
   });
 
-  const soldCount = (await getTicketsForDepart(params.departId)).length;
-  const newMtTicket = depart.mt_ticket + params.price;
-  await updateDepart(params.departId, {
-    seats_sold: soldCount,
-    mt_ticket: newMtTicket,
-    solde: newMtTicket + depart.mt_bagage - depart.tot_depense,
-    caisse: newMtTicket + depart.mt_bagage - depart.tot_depense,
-  });
-
+  // NOTE: caller is responsible for updating depart counters when selling multiple tickets at once.
+  // This avoids stale reads when looping over seats. Use sellTickets() for multi-seat.
   return ticket;
+}
+
+export async function sellTickets(seats: number[], commonParams: Omit<SellTicketParams, 'seatNumber'>): Promise<TicketRecord[]> {
+  const soldTickets: TicketRecord[] = [];
+  for (const seat of seats) {
+    const ticket = await sellTicket({ ...commonParams, seatNumber: seat });
+    soldTickets.push(ticket);
+  }
+  // Single depart update after all inserts
+  const depart = await getDepartById(commonParams.departId);
+  if (depart) {
+    const soldCount = (await getTicketsForDepart(commonParams.departId)).filter(t => t.status !== 'cancelled').length;
+    const totalAdded = soldTickets.reduce((s, t) => s + t.price, 0);
+    const newMtTicket = depart.mt_ticket + totalAdded;
+    await updateDepart(commonParams.departId, {
+      seats_sold: soldCount,
+      mt_ticket: newMtTicket,
+      solde: newMtTicket + depart.mt_bagage - depart.tot_depense,
+      caisse: newMtTicket + depart.mt_bagage - depart.tot_depense,
+    });
+  }
+  return soldTickets;
 }
 
 export async function cancelTicket(ticketId: string): Promise<void> {

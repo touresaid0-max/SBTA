@@ -4,7 +4,7 @@ import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getDepartById } from '@/services/pos/departService';
 import {
-  sellTicket, getTicketsForDepart, getSoldSeats,
+  sellTicket, sellTickets, getTicketsForDepart, getSoldSeats,
   calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
   type TicketRecord, type StationRef, type TarifRef, type RouteCityStopRef,
 } from '@/services/pos/ticketService';
@@ -282,20 +282,23 @@ export default function POSVente() {
         destName = (station?.city || station?.name) ?? destination;
       }
 
-      const soldTickets = [];
-      for (const seat of selectedSeats) {
-        const ticket = await sellTicket({
-          departId, seatNumber: seat,
-          destination: destName,
-          destinationId: destId,
-          price: tarif, originalPrice: tarif,
-          isReduced, isReported, isAc: depart.is_ac, printTicket,
-          loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
-          loyaltyName: loyaltyEnabled ? loyaltyName : undefined,
-          stationAgencyCode: session?.station_name,
-        });
-        soldTickets.push(ticket);
-        if (printTicket) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
+      const soldTickets = await sellTickets(selectedSeats, {
+        departId,
+        destination: destName,
+        destinationId: destId,
+        price: tarif, originalPrice: tarif,
+        isReduced, isReported, isAc: depart.is_ac, printTicket,
+        loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
+        loyaltyName: loyaltyEnabled ? loyaltyName : undefined,
+        stationAgencyCode: session?.station_name,
+      });
+
+      // Print sequentially — one window per ticket, with delay to avoid browser popup blocking
+      if (printTicket) {
+        for (const ticket of soldTickets) {
+          await PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
+          await new Promise(r => setTimeout(r, 800));
+        }
       }
 
       const [t, s] = await Promise.all([getTicketsForDepart(departId), getSoldSeats(departId)]);
