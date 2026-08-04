@@ -32,7 +32,7 @@ export default function POSDepartNouveau() {
   const [departureDate, setDepartureDate] = useState('');
   const [departureTime, setDepartureTime] = useState('');
   const [ligneId, setLigneId] = useState('');
-  const [isAc, setIsAc] = useState(false);
+
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [enableOtherStation, setEnableOtherStation] = useState(false);
@@ -44,7 +44,7 @@ export default function POSDepartNouveau() {
   const [newAllocSeatTo, setNewAllocSeatTo] = useState('');
   const [allocError, setAllocError] = useState('');
   const [convoyeurId, setConvoyeurId] = useState('');
-  const [apprentiId, setApprentiId] = useState('');
+
   const [seatsTotal, setSeatsTotal] = useState(0);
   const [seatsFrom, setSeatsFrom] = useState(1);
   const [departureNo, setDepartureNo] = useState(0);
@@ -123,9 +123,7 @@ export default function POSDepartNouveau() {
           setSeatsFrom(range.from);
           setDepartureDate(parent.departure_date);
           setDepartureTime(parent.departure_time);
-          setIsAc(parent.is_ac);
           setConvoyeurId(parent.convoyeur_id ?? '');
-          setApprentiId(parent.apprenti_id ?? '');
         }
       }
     } catch {
@@ -173,7 +171,6 @@ export default function POSDepartNouveau() {
       const bus = vehicules.find(v => v.id === busId);
       const driver = chauffeurs.find(c => c.id === driverId);
       const convoyeur = chauffeurs.find(c => c.id === convoyeurId);
-      const apprenti = chauffeurs.find(c => c.id === apprentiId);
       const firstAllocStationId = seatAllocations.length > 0 ? seatAllocations[0].station_id : '';
       const otherStation = firstAllocStationId ? gares.find(g => g.id === firstAllocStationId) : undefined;
 
@@ -204,12 +201,9 @@ export default function POSDepartNouveau() {
         driver_name: driver?.full_name ?? '',
         convoyeur_id: convoyeurId || undefined,
         convoyeur_name: convoyeur?.full_name || undefined,
-        apprenti_id: apprentiId || undefined,
-        apprenti_name: apprenti?.full_name || undefined,
         departure_datetime: `${departureDate}T${departureTime || '00:00'}:00`,
         departure_date: departureDate,
         departure_time: departureTime || '',
-        is_ac: isAc,
         status: 'planned',
         seats_total: seatsTotal,
         seats_from: seatsFrom,
@@ -301,22 +295,6 @@ export default function POSDepartNouveau() {
               )}
             </div>
 
-            {/* Climatisé */}
-            <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                Climatisé {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
-              </label>
-              <button
-                type="button"
-                disabled={isLinked}
-                onClick={() => !isLinked && setIsAc(!isAc)}
-                className={fieldInput}
-                style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1, borderColor: isAc ? 'var(--primary)' : 'var(--border)', fontWeight: isAc ? 700 : 400, color: isAc ? 'var(--primary)' : 'var(--text-secondary)' }}
-              >
-                {isAc ? 'Oui' : 'Non'}
-              </button>
-            </div>
-
             {/* Car */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Car *</label>
@@ -400,17 +378,6 @@ export default function POSDepartNouveau() {
                 Convoyeur {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
               </label>
               <select value={convoyeurId} disabled={isLinked} onChange={e => setConvoyeurId(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1 }}>
-                <option value="">Aucun</option>
-                {chauffeurs.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-              </select>
-            </div>
-
-            {/* Apprenti */}
-            <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                Apprenti {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
-              </label>
-              <select value={apprentiId} disabled={isLinked} onChange={e => setApprentiId(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1 }}>
                 <option value="">Aucun</option>
                 {chauffeurs.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
               </select>
