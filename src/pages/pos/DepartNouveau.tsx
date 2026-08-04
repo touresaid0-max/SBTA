@@ -103,7 +103,7 @@ export default function POSDepartNouveau() {
   const handleBusChange = async (id: string) => {
     setBusId(id);
     const bus = vehicules.find(v => v.id === id);
-    if (bus && seatsTotal === 0) {
+    if (bus) {
       setSeatsTotal(bus.capacity);
     }
     setLinkedParent(null);
@@ -388,7 +388,7 @@ export default function POSDepartNouveau() {
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
                 Nbre siège * {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
               </label>
-              <input type="number" min={1} disabled={isLinked} value={seatsTotal || ''} onChange={e => setSeatsTotal(parseInt(e.target.value) || 0)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} placeholder={selectedBus ? `${selectedBus.capacity}` : '0'} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <input type="number" min={1} readOnly value={seatsTotal || ''} className={fieldInput} style={{ ...fieldStyle, cursor: 'not-allowed', opacity: 0.7 }} placeholder={selectedBus ? `${selectedBus.capacity}` : '0'} />
             </div>
 
             {/* Siège à partir de */}
