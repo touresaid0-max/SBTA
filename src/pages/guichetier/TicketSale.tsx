@@ -24,7 +24,6 @@ import { offlineSyncService } from '../../services/offlineSync';
 import OfflineBanner from '../../components/guichetier/OfflineBanner';
 import OfflineQueue from '../../components/guichetier/OfflineQueue';
 import { printBaggageTicket, generateBaggageNumber, type BaggageTicketData } from '../../utils/printBaggageTicket';
-import ManualSeatGrid from '@/components/pos/ManualSeatGrid';
 
 interface City { id: string; name: string; }
 interface Station { id: string; name: string; city_id: string; }
@@ -207,7 +206,6 @@ export default function TicketSale() {
 
   const [showBaggage, setShowBaggage] = useState(false);
   const [showPassengerInfo, setShowPassengerInfo] = useState(false);
-  const [manualSelectedSeats, setManualSelectedSeats] = useState<string[]>([]);
   type BaggageMode = 'none' | 'avec_ticket' | 'avec_ticket_reporte' | 'sans_ticket';
   const [baggageForm, setBaggageForm] = useState<{
     mode: BaggageMode;
@@ -730,7 +728,7 @@ export default function TicketSale() {
     setStep('seats');
   };
 
-  const effectiveSeatCount = hasSeatMap ? enrichedSelectedSeats.length : manualSelectedSeats.length;
+  const effectiveSeatCount = hasSeatMap ? enrichedSelectedSeats.length : seatCount;
   const effectiveUnitPrice = selectedTransitPrice !== null ? selectedTransitPrice : (selectedSchedule?.price ?? 0);
   const totalAmount = hasSeatMap
     ? (selectedTransitPrice !== null
@@ -755,8 +753,8 @@ export default function TicketSale() {
         return false;
       }
     } else {
-      if (manualSelectedSeats.length === 0) { toast.error('Sélectionnez au moins un siège'); return false; }
-      if (manualSelectedSeats.length > available) {
+      if (seatCount < 1) { toast.error('Sélectionnez au moins 1 siège'); return false; }
+      if (seatCount > available) {
         toast.error(`Seulement ${available} place(s) disponible(s)`);
         return false;
       }
@@ -768,7 +766,8 @@ export default function TicketSale() {
     if (hasSeatMap) {
       return enrichedSelectedSeats.map(s => s.label);
     }
-    return [...manualSelectedSeats].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const existing = selectedSchedule?.seats_reserved || 0;
+    return Array.from({ length: seatCount }, (_, i) => `${existing + i + 1}`);
   };
 
   const boardingStationName = boardingStations.find(s => s.id === boardingStationId)?.name;
@@ -1096,11 +1095,8 @@ export default function TicketSale() {
     }
   };
 
-  const generatePDF = async (seatFilter?: string[]) => {
+  const generatePDF = async () => {
     if (!confirmedTicket) return;
-    const seatsToPrint = seatFilter && seatFilter.length > 0 ? seatFilter : confirmedTicket.seat_numbers;
-    const isSingleSeat = seatsToPrint.length === 1;
-    const allSeats = seatsToPrint;
 
     // Use plain ASCII formatting — jsPDF cannot render Unicode narrow no-break spaces (U+202F)
     // produced by fr-FR locale, which appear as '/' in output.
@@ -1120,16 +1116,15 @@ export default function TicketSale() {
       : format(new Date(confirmedTicket.schedule.departure_datetime), 'HH:mm');
     const origin = (confirmedTicket.schedule.origin_city_name || '').toUpperCase();
     const dest = (confirmedTicket.alighting_station || confirmedTicket.schedule.destination_city_name || '').toUpperCase();
-    const tarifPerSeat = isSingleSeat ? confirmedTicket.total_price : Math.round(confirmedTicket.total_price / confirmedTicket.seat_numbers.length);
-    const tarif = formatAmount(tarifPerSeat);
+    const tarif = formatAmount(confirmedTicket.total_price);
     const busReg = confirmedTicket.schedule.buses?.registration_number || '--';
     const printDt = format(new Date(), 'dd/MM/yyyy HH:mm:ss');
 
-    const refBase = confirmedTicket.booking_reference;
-    const refFull = isSingleSeat ? refBase : `${refBase}-${allSeats[0]}`;
+    const refFull = confirmedTicket.booking_reference;
     const departureNum = confirmedTicket.departure_number ?? '';
 
-    const seatsDisplay = isSingleSeat ? allSeats[0] : allSeats.join(', ');
+    const allSeats = confirmedTicket.seat_numbers;
+    const seatsDisplay = allSeats.join(', ');
 
     const W = 80;
     // Layout constants — fixed split between left and right columns
@@ -1595,7 +1590,6 @@ export default function TicketSale() {
     setSchedules([]);
     clearSeatSelection();
     setSeatCount(1);
-    setManualSelectedSeats([]);
     setPassenger({ name: '', phone: '', id_number: '' });
     setPayment({ method: 'especes', amount_received: 0, reference: '', mobile_provider: '' });
     setConfirmedTicket(null);
@@ -1604,7 +1598,6 @@ export default function TicketSale() {
     setBoardingStations([]);
     setAlightingStations([]);
     setShowBaggage(false);
-    setManualSelectedSeats([]);
     setBaggageForm({
       mode: 'none', has_ticket: false, destination: '', price: 0, seat_number: '',
       departure_number: '', bus_registration: '', description: '',
@@ -1617,7 +1610,6 @@ export default function TicketSale() {
     setConfirmedTicket(null);
     clearSeatSelection();
     setSeatCount(1);
-    setManualSelectedSeats([]);
     setPassenger({ name: '', phone: '', id_number: '' });
     setPayment({ method: 'especes', amount_received: 0, reference: '', mobile_provider: '' });
     setAlightingStationId('');
@@ -1695,9 +1687,7 @@ export default function TicketSale() {
     if (!confirmedTicket || !autoPrintAndResetRef.current) return;
     autoPrintAndResetRef.current = false;
     (async () => {
-      for (const seat of confirmedTicket.seat_numbers) {
-        await generatePDF([seat]);
-      }
+      await generatePDF();
       continueSale();
     })();
   }, [confirmedTicket]);
@@ -2175,14 +2165,27 @@ export default function TicketSale() {
                       </p>
                     </div>
                   )}
-                  <p className="text-xs font-medium mb-3" style={{ color: 'var(--text-muted)' }}>
-                    Sélectionnez les sièges * ({manualSelectedSeats.length} sélectionné{manualSelectedSeats.length > 1 ? 's' : ''})
-                  </p>
-                  <ManualSeatGrid
-                    available={selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60}
-                    selected={manualSelectedSeats}
-                    onChange={setManualSelectedSeats}
-                  />
+                  <p className="text-xs font-medium mb-3" style={{ color: 'var(--text-muted)' }}>Nombre de places a reserver *</p>
+                  <div className="flex items-center gap-3 mb-5">
+                    <button
+                      onClick={() => setSeatCount(c => Math.max(1, c - 1))}
+                      className="w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all hover:bg-slate-50"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                      type="button"
+                    >—</button>
+                    <span className="text-3xl font-black w-12 text-center" style={{ color: 'var(--primary)' }}>
+                      {seatCount}
+                    </span>
+                    <button
+                      onClick={() => setSeatCount(c => Math.min(selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60, c + 1))}
+                      className="w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all hover:bg-slate-50"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                      type="button"
+                    >+</button>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      / {selectedSchedule.seats_available ?? selectedSchedule.buses?.total_seats ?? 60} disponibles
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -2286,11 +2289,9 @@ export default function TicketSale() {
                                 {enrichedSelectedSeats.map(s => s.label).join(', ')}
                               </span>
                         ) : (
-                          manualSelectedSeats.length === 0
-                            ? <span className="text-xs italic" style={{ color: 'var(--text-muted)' }}>Aucun siège sélectionné</span>
-                            : <span className="font-bold font-mono text-sm" style={{ color: 'var(--primary)' }}>
-                                {manualSelectedSeats.join(', ')}
-                              </span>
+                          <span className="font-bold" style={{ color: 'var(--primary)' }}>
+                            {seatCount} place{seatCount > 1 ? 's' : ''}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -2545,7 +2546,7 @@ export default function TicketSale() {
 
           {/* Print + Retour buttons — full width below both columns */}
           {(() => {
-            const noSeats = hasSeatMap ? enrichedSelectedSeats.length === 0 : manualSelectedSeats.length === 0;
+            const noSeats = hasSeatMap ? enrichedSelectedSeats.length === 0 : seatCount < 1;
             const disabled = processing || noSeats;
 
             return (
@@ -2713,19 +2714,12 @@ export default function TicketSale() {
 
             <div className="px-6 pb-6 flex gap-3">
               <button
-                onClick={async () => {
-                  if (!confirmedTicket) return;
-                  for (const seat of confirmedTicket.seat_numbers) {
-                    await generatePDF([seat]);
-                  }
-                }}
+                onClick={generatePDF}
                 className="flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border-2 transition-all hover:opacity-80"
                 style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
               >
                 <Printer className="w-5 h-5" />
-                {confirmedTicket && confirmedTicket.seat_numbers.length > 1
-                  ? `Imprimer les ${confirmedTicket.seat_numbers.length} billets`
-                  : 'Imprimer le billet'}
+                Imprimer le billet
               </button>
               <button
                 onClick={continueSale}
