@@ -195,6 +195,8 @@ export default function POSDeparts() {
 
   const th = 'px-2 py-2 text-xs font-bold whitespace-nowrap cursor-pointer select-none';
   const td = 'px-2 py-2.5 text-sm whitespace-nowrap';
+  // Keep colSpan in totals row in sync with visible column count (15 after removing Nom Car)
+  const totalsColSpan = 5;
 
   if (loading) {
     return (
@@ -291,7 +293,6 @@ export default function POSDeparts() {
                   <th className={th} onClick={() => handleSort('departure_datetime')}>Date {sortIcon('departure_datetime')}</th>
                   <th className={th} onClick={() => handleSort('route_name')}>Ligne {sortIcon('route_name')}</th>
                   <th className={th} onClick={() => handleSort('bus_plate')}>Matricule {sortIcon('bus_plate')}</th>
-                  <th className={th} onClick={() => handleSort('bus_name')}>Nom Car {sortIcon('bus_name')}</th>
                   <th className={th} onClick={() => handleSort('driver_name')}>Chauffeur {sortIcon('driver_name')}</th>
                   <th className={th + ' text-right'} onClick={() => handleSort('seats_total')}>Sièges attribués {sortIcon('seats_total')}</th>
                   <th className={th + ' text-right'}>Plage sièges</th>
@@ -332,7 +333,6 @@ export default function POSDeparts() {
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.departure_date} {d.departure_time}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.route_name}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_plate}</td>
-                      <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.bus_name}</td>
                       <td className={td} style={{ color: 'var(--text-secondary)' }}>{d.driver_name}</td>
                       <td className={td + ' text-right'} style={{ fontWeight: 600 }}>{d.seats_allocated}</td>
                       <td className={td + ' text-right'} style={{ color: 'var(--text-muted)' }}>
@@ -361,7 +361,7 @@ export default function POSDeparts() {
               {/* Totals row */}
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border-strong)', backgroundColor: 'var(--surface-raised)' }}>
-                  <td className={td} style={{ fontWeight: 800, color: 'var(--text-primary)' }} colSpan={7}>Somme</td>
+                  <td className={td} style={{ fontWeight: 800, color: 'var(--text-primary)' }} colSpan={totalsColSpan}>Somme</td>
                   <td className={td + ' text-right'} style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{totals.seats_total}</td>
                   <td className={td}></td>
                   <td className={td + ' text-right'} style={{ fontWeight: 800, color: 'var(--info)' }}>{totals.seats_sold}</td>
