@@ -157,6 +157,10 @@ export default function POSDepartNouveau() {
       setError(`Veuillez renseigner : ${missingFields.join(', ')}.`);
       return;
     }
+    if (departureDate && departureDate < todayStr) {
+      setError('La date de départ ne peut pas être antérieure à la date du jour.');
+      return;
+    }
     setShowConfirm(true);
   };
 
@@ -226,6 +230,8 @@ export default function POSDepartNouveau() {
     }
   };
 
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const fieldLabel = 'block text-xs font-bold mb-1.5';
   const fieldInput = 'w-full px-3 py-3 rounded-xl border-2 text-base outline-none transition-colors';
   const fieldStyle = { borderColor: 'var(--border)', backgroundColor: 'var(--surface)' as const };
@@ -263,7 +269,7 @@ export default function POSDepartNouveau() {
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
                 Date départ * {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
               </label>
-              <input type="date" value={departureDate} disabled={isLinked} onChange={e => setDepartureDate(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <input type="date" value={departureDate} min={!isLinked ? todayStr : undefined} disabled={isLinked} onChange={e => setDepartureDate(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
             {/* Heure */}
