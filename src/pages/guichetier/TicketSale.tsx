@@ -24,6 +24,7 @@ import { offlineSyncService } from '../../services/offlineSync';
 import OfflineBanner from '../../components/guichetier/OfflineBanner';
 import OfflineQueue from '../../components/guichetier/OfflineQueue';
 import { printBaggageTicket, generateBaggageNumber, type BaggageTicketData } from '../../utils/printBaggageTicket';
+import { generateBookingReference } from '../../utils/generateBookingReference';
 
 interface City { id: string; name: string; }
 interface Station { id: string; name: string; city_id: string; }
@@ -865,7 +866,7 @@ export default function TicketSale() {
     }
 
     const serverNow = getServerNow();
-    const reference = `SBTA-${serverNow.getFullYear()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+    const reference = generateBookingReference();
     const seatNumbers = buildSeatNumbers();
     const count = seatNumbers.length;
     try {

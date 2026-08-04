@@ -8,6 +8,7 @@ import { toast } from 'react-hot-toast'
 import type { EnrichedSeat } from '../../types/seatMap.types'
 import { formatCurrency } from '../../utils/formatCurrency'
 import { useAuthStore } from '../../store/authStore'
+import { generateBookingReference } from '../../utils/generateBookingReference'
 
 interface BookingWithSeatMapProps {
   scheduleId: string
@@ -119,7 +120,7 @@ export function BookingWithSeatMap({ scheduleId, onBookingComplete }: BookingWit
         passenger_phone: f.passenger_phone,
         status: 'confirmee',
         payment_status: 'payee',
-        booking_reference: `SBTA-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+        booking_reference: generateBookingReference(),
       }))
 
       const { data: createdReservations, error: insertError } = await supabase

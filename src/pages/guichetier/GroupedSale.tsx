@@ -14,6 +14,7 @@ import {
 import { fetchScheduleSeatMap, tryLockSeat, releaseSeatLock, isSeatStillAvailable, subscribeToSeatChanges, getSiblingScheduleIds, getSiblingOccupancy } from '../../services/seatMap.service';
 import type { ScheduleSeatMap, EnrichedSeat } from '../../types/seatMap.types';
 import { SeatMap as SeatMapComponent } from '../../components/bus/SeatMap';
+import { generateBookingReference } from '../../utils/generateBookingReference';
 
 /* ─── types ──────────────────────────────────────────────── */
 interface City { id: string; name: string }
@@ -640,7 +641,7 @@ export default function GroupedSale() {
       }
 
       const totalPrice = tickets.reduce((s, t) => s + t.price, 0);
-      const reference = `SBTA-${new Date().getFullYear()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+      const reference = generateBookingReference();
 
       const reservationInserts = tickets.map((t, i) => ({
         schedule_id: activeSchedule.id,

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, Bus, User, MapPin, Clock, Loader2, AlertTriangle, CheckCircle2, Search, Printer } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import toast from 'react-hot-toast'
+import { generateBookingReference } from '../../utils/generateBookingReference'
 
 interface ScheduleData {
   id: string
@@ -314,7 +315,7 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
               // Create new reservations on the next schedule, preserving all info
               const newReservations = []
               for (const r of overflowReservations) {
-                const newRef = `TRF-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+                const newRef = generateBookingReference('TRF')
                 const { data: newRes, error: insertError } = await supabase
                   .from('reservations')
                   .insert({
