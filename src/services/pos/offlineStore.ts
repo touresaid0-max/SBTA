@@ -119,6 +119,11 @@ function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.passenger_name !== undefined) result.passenger_name = p.passenger_name;
   if (p.passenger_phone !== undefined) result.passenger_phone = p.passenger_phone;
   if (p.price !== undefined) result.total_price = p.price;
+  if (p.depart_id !== undefined) result.schedule_id = p.depart_id;
+  if (p.seat_number !== undefined) {
+    result.seat_numbers = [String(p.seat_number)];
+    result.total_seats = 1;
+  }
 
   result.updated_at = nowIso();
 

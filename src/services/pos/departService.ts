@@ -1,4 +1,4 @@
-import { type DepartRecord, type SeatAllocation } from './db';
+import { type DepartRecord, type SeatAllocation, type TicketRecord } from './db';
 import { localInsert, localUpdate, getAll } from './offlineStore';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
@@ -229,4 +229,67 @@ export function validateSeatAllocations(
     }
   }
   return null;
+}
+
+export async function findNextDepartForRoute(
+  routeId: string,
+  currentDepartId: string,
+  stationId?: string,
+  counterId?: string,
+): Promise<DepartRecord | null> {
+  const all = await getAllDeparts(stationId, counterId);
+  const now = new Date();
+  const candidates = all.filter(d =>
+    d.id !== currentDepartId &&
+    d.route_id === routeId &&
+    !d.cancelled &&
+    !d.cloture &&
+    new Date(d.departure_datetime) > now
+  );
+  candidates.sort((a, b) =>
+    new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime()
+  );
+  return candidates[0] ?? null;
+}
+
+export async function transferTicketsToDepart(
+  surplusTickets: TicketRecord[],
+  targetDepart: DepartRecord,
+): Promise<void> {
+  const targetSold = await getSoldSeatNumbers(targetDepart.id);
+  const occupied = new Set(targetSold);
+  let nextSeat = targetDepart.seats_from;
+  for (const ticket of surplusTickets) {
+    while (occupied.has(nextSeat)) nextSeat++;
+    if (nextSeat > targetDepart.seats_total) {
+      throw new Error(
+        `Le départ cible #${targetDepart.route_number} n'a plus de sièges libres pour recevoir tous les tickets.`
+      );
+    }
+    occupied.add(nextSeat);
+    await localUpdate<TicketRecord>('tickets', ticket.id, {
+      depart_id: targetDepart.id,
+      seat_number: nextSeat,
+      seat_numbers: [String(nextSeat)],
+    });
+  }
+  const allTargetTickets = await getAll<TicketRecord>('tickets');
+  const targetActive = allTargetTickets.filter(
+    t => t.depart_id === targetDepart.id && t.status !== 'cancelled'
+  );
+  const newSoldCount = targetActive.length;
+  const newMtTicket = targetActive.reduce((sum, t) => sum + t.price, 0);
+  await localUpdate<DepartRecord>('departs', targetDepart.id, {
+    seats_sold: newSoldCount,
+    mt_ticket: newMtTicket,
+    solde: newMtTicket + targetDepart.mt_bagage - targetDepart.tot_depense,
+    caisse: newMtTicket + targetDepart.mt_bagage - targetDepart.tot_depense,
+  });
+}
+
+export async function getSoldSeatNumbers(departId: string): Promise<number[]> {
+  const all = await getAll<TicketRecord>('tickets');
+  return all
+    .filter(t => t.depart_id === departId && t.status !== 'cancelled')
+    .map(t => t.seat_number);
 }

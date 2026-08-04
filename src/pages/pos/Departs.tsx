@@ -4,9 +4,12 @@ import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
   getAllDeparts, updateDepart, type DepartRecord,
+  type VehiculeRef, type ChauffeurRef,
   seatsLibres, computeSolde,
   getSeatRangeForStation,
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
+  getVehicules, getChauffeurs,
+  findNextDepartForRoute, transferTicketsToDepart,
 } from '@/services/pos/departService';
 import { getAll as getAllTickets } from '@/services/pos/offlineStore';
 import type { TicketRecord } from '@/services/pos/db';
@@ -15,6 +18,7 @@ import {
   departToSummary, exportToExcel, exportToPDF, printDeparturesList,
 } from '@/services/pos/posReportService';
 import { formatCurrency } from '@/utils/formatCurrency';
+import EditDepartModal from '@/components/pos/EditDepartModal';
 import {
   Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
   ChevronUp, ChevronDown, Eye, Loader2, X,
@@ -85,6 +89,11 @@ export default function POSDeparts() {
   const [actionLoading, setActionLoading] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState<DepartRow | null>(null);
   const [allTickets, setAllTickets] = useState<TicketRecord[]>([]);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editVehicules, setEditVehicules] = useState<VehiculeRef[]>([]);
+  const [editChauffeurs, setEditChauffeurs] = useState<ChauffeurRef[]>([]);
+  const [editSoldTickets, setEditSoldTickets] = useState<TicketRecord[]>([]);
+  const [editNextDepart, setEditNextDepart] = useState<DepartRecord | null>(null);
 
   const loadDeparts = useCallback(async () => {
     const [all, tickets] = await Promise.all([
@@ -158,7 +167,18 @@ export default function POSDeparts() {
         await updateDepart(depart.id, { cloture: true, status: 'closed' });
       }
       if (action === 'modifier') {
-        // Future: navigate to edit screen
+        const [vehs, chfs] = await Promise.all([getVehicules(), getChauffeurs()]);
+        setEditVehicules(vehs);
+        setEditChauffeurs(chfs);
+        const sold = allTickets.filter(
+          t => t.depart_id === depart.id && t.status !== 'cancelled'
+        );
+        setEditSoldTickets(sold);
+        const next = await findNextDepartForRoute(
+          depart.route_id, depart.id, session?.station_id, session?.counter_id
+        );
+        setEditNextDepart(next);
+        setShowEditModal(true);
         return;
       }
       if (action === 'imprimer') {
@@ -381,6 +401,40 @@ export default function POSDeparts() {
             {visibleDeparts.length} départ(s) {showAll ? '(toutes dates)' : "(aujourd'hui)"} · Cliquez sur une ligne pour la sélectionner et voir les actions
           </p>
         </>
+      )}
+
+      {/* Edit modal */}
+      {showEditModal && selectedRow && (
+        <EditDepartModal
+          depart={selectedRow}
+          vehicules={editVehicules}
+          chauffeurs={editChauffeurs}
+          soldTickets={editSoldTickets}
+          nextDepart={editNextDepart}
+          onSave={async (newBusId, newBusPlate, newDriverId, newDriverName, newCapacity) => {
+            await updateDepart(selectedRow.id, {
+              bus_id: newBusId,
+              bus_plate: newBusPlate,
+              driver_id: newDriverId,
+              driver_name: newDriverName,
+              seats_total: newCapacity,
+            });
+          }}
+          onTransfer={async (surplusTickets, nextDepart) => {
+            await transferTicketsToDepart(surplusTickets, nextDepart);
+            const sourceSold = editSoldTickets.length - surplusTickets.length;
+            const sourceMtTicket = editSoldTickets
+              .filter(t => !surplusTickets.some(s => s.id === t.id))
+              .reduce((sum, t) => sum + t.price, 0);
+            await updateDepart(selectedRow.id, {
+              seats_sold: sourceSold,
+              mt_ticket: sourceMtTicket,
+              solde: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
+              caisse: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
+            });
+          }}
+          onClose={() => { setShowEditModal(false); loadDeparts(); }}
+        />
       )}
 
       {/* Cancel confirmation */}
