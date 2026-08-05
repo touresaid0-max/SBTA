@@ -23,6 +23,7 @@ interface DepartureRow {
   status: string;
   bus_registration: string;
   departure_order: number | null;
+  source: string;
 }
 
 interface RecentSale {
@@ -121,7 +122,7 @@ export default function BagagisteBaggageSale() {
       const { data, error } = await supabase
         .from('schedules')
         .select(`
-          id, route_name, departure_datetime, status,
+          id, route_name, departure_datetime, status, source, departure_number,
           bus:bus_id(registration_number),
           arrival_station:arrival_station_id(name)
         `)
@@ -151,7 +152,8 @@ export default function BagagisteBaggageSale() {
         departure_datetime: s.departure_datetime,
         status: s.status || 'planifie',
         bus_registration: s.bus?.registration_number || '',
-        departure_order: orderMap[s.id] ?? null,
+        departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.departure_number ?? null) : null),
+        source: s.source || 'chef_gare',
       })));
     } catch (err: any) {
       toast.error(err.message || 'Erreur de chargement des départs');
@@ -182,7 +184,12 @@ export default function BagagisteBaggageSale() {
 
   const selectDeparture = (dep: DepartureRow) => {
     setSelected(dep);
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      bus_registration: dep.bus_registration,
+      departure_number: dep.departure_order != null ? String(dep.departure_order) : '',
+      destination: dep.destination,
+    });
   };
 
   const switchMode = (mode: BaggageMode) => {
@@ -206,6 +213,9 @@ export default function BagagisteBaggageSale() {
       seat_number: mode === 'sans_ticket' ? '' : prev.seat_number,
     }));
   };
+
+  const depLabel = (dep: DepartureRow) =>
+    dep.departure_order != null ? `Départ ${dep.departure_order}` : 'Départ';
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
@@ -400,16 +410,17 @@ export default function BagagisteBaggageSale() {
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2 min-w-0">
-                            {dep.departure_order != null && (
-                              <span
-                                className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                                style={{ backgroundColor: 'var(--primary)' }}
-                              >
-                                {dep.departure_order}
-                              </span>
-                            )}
+                            <span
+                              className="flex-shrink-0 inline-flex items-center justify-center px-2.5 py-1 rounded-lg text-sm font-black"
+                              style={{
+                                backgroundColor: isSel ? 'var(--primary)' : 'var(--primary)1A',
+                                color: isSel ? '#fff' : 'var(--primary)',
+                              }}
+                            >
+                              {depLabel(dep)}
+                            </span>
                             <span className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-                              {dep.destination}
+                              {dep.route_name}
                             </span>
                           </div>
                           <span
@@ -429,6 +440,7 @@ export default function BagagisteBaggageSale() {
                               <Bus className="w-3.5 h-3.5" /> {dep.bus_registration}
                             </span>
                           )}
+                          <span className="truncate">→ {dep.destination}</span>
                         </div>
                       </button>
                     </li>
@@ -486,16 +498,33 @@ export default function BagagisteBaggageSale() {
             ) : (
               <>
                 <div className="flex items-center justify-between mb-5 pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Départ sélectionné</p>
-                    <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{selected.destination}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                      {format(new Date(selected.departure_datetime), 'HH:mm')}
-                      {selected.bus_registration ? ` · ${selected.bus_registration}` : ''}
-                      {selected.departure_order != null ? ` · Départ N°${selected.departure_order}` : ''}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span
+                        className="inline-flex items-center justify-center px-3 py-1 rounded-lg text-base font-black"
+                        style={{ backgroundColor: 'var(--primary)', color: '#fff' }}
+                      >
+                        {depLabel(selected)}
+                      </span>
+                      <span className="text-lg font-bold truncate" style={{ color: 'var(--text-primary)' }}>
+                        {selected.route_name}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        {format(new Date(selected.departure_datetime), 'HH:mm')}
+                      </span>
+                      {selected.bus_registration && (
+                        <span className="flex items-center gap-1">
+                          <Bus className="w-3.5 h-3.5" /> {selected.bus_registration}
+                        </span>
+                      )}
+                      <span>→ {selected.destination}</span>
+                    </div>
                   </div>
-                  <Luggage className="w-9 h-9" style={{ color: 'var(--primary)' }} />
+                  <Luggage className="w-9 h-9 flex-shrink-0" style={{ color: 'var(--primary)' }} />
                 </div>
 
                 {/* Mode selection */}
@@ -584,10 +613,9 @@ export default function BagagisteBaggageSale() {
                     <input
                       type="text"
                       value={form.bus_registration}
-                      onChange={e => setForm({ ...form, bus_registration: e.target.value.toUpperCase() })}
-                      readOnly={form.mode !== 'none'}
-                      className="w-full px-3 py-2 rounded-lg border text-sm"
-                      style={{ ...inputStyle, backgroundColor: form.mode !== 'none' ? lockedBg : 'var(--surface)' }}
+                      readOnly
+                      className="w-full px-3 py-2 rounded-lg border text-sm font-medium"
+                      style={{ ...inputStyle, backgroundColor: lockedBg }}
                     />
                   </div>
 
