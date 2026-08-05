@@ -36,7 +36,9 @@ export interface DepartRecord {
   seat_allocations?: SeatAllocation[];
   station_id: string;
   station_name?: string;
+  arrival_station_id?: string;
   counter_id?: string;
+  source?: string;
   other_station_id?: string;
   other_station_name?: string;
   cloture: boolean;

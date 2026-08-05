@@ -49,6 +49,9 @@ interface ScheduleRow {
   convoy_amount: number | null;
   is_anticipated: boolean;
   admin_reactivated_at: string | null;
+  source: string;
+  schedule_counter_id: string | null;
+  schedule_departure_number: number | null;
 }
 
 interface CounterOption {
@@ -234,7 +237,7 @@ export default function DailyPlanning() {
       .select(`
         id, route_name, departure_datetime, arrival_datetime, is_anticipated,
         status, seats_available, seats_reserved, fill_rate, notes, transit_stops,
-        admin_reactivated_at,
+        admin_reactivated_at, source, counter_id, departure_number,
         bus:bus_id(registration_number, model, capacity),
         driver:driver_id(full_name, phone),
         copilot:copilot_id(full_name),
@@ -296,14 +299,17 @@ export default function DailyPlanning() {
       driver_name: s.driver?.full_name || '—',
       driver_phone: s.driver?.phone || '',
       copilot_name: s.copilot?.full_name || null,
-      arrival_station_name: s.arrival_station?.name || '—',
+      arrival_station_name: s.arrival_station?.name || (s.route_name ? s.route_name.replace(/^[^-]+-\s*/, '') : '—'),
       reservations_count: s.seats_reserved ?? 0,
-      counter_id: assignmentMap[s.id]?.counter_id ?? null,
+      counter_id: assignmentMap[s.id]?.counter_id ?? s.counter_id ?? null,
       counter_number: assignmentMap[s.id]?.counter_number ?? null,
       departure_order: (assignmentMap[s.id] as any)?.departure_order ?? null,
       convoy_amount: convoyMap[s.id] ?? null,
       is_anticipated: s.is_anticipated ?? false,
       admin_reactivated_at: s.admin_reactivated_at || null,
+      source: s.source || 'chef_gare',
+      schedule_counter_id: s.counter_id ?? null,
+      schedule_departure_number: s.departure_number ?? null,
     }));
 
     rows.sort((a, b) => {
@@ -1119,12 +1125,25 @@ export default function DailyPlanning() {
                   className="flex items-center gap-4 px-5 py-4 cursor-pointer"
                   onClick={() => setExpandedId(isExpanded ? null : sched.id)}
                 >
-                  {/* Time */}
+                  {/* Time / Departure number */}
                   <div className="w-20 flex-shrink-0 text-center">
-                    <p className="text-2xl font-black tabular-nums" style={{ color: isActive ? 'var(--primary)' : 'var(--text-primary)' }}>
-                      {format(depDate, 'HH:mm')}
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>départ</p>
+                    {sched.source === 'guichet' && sched.schedule_departure_number != null ? (
+                      <>
+                        <p className="text-lg font-black" style={{ color: isActive ? 'var(--primary)' : 'var(--text-primary)' }}>
+                          Départ
+                        </p>
+                        <p className="text-3xl font-black tabular-nums leading-none" style={{ color: isActive ? 'var(--primary)' : 'var(--text-primary)' }}>
+                          {sched.schedule_departure_number}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-black tabular-nums" style={{ color: isActive ? 'var(--primary)' : 'var(--text-primary)' }}>
+                          {format(depDate, 'HH:mm')}
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>départ</p>
+                      </>
+                    )}
                   </div>
 
                   {/* Route info */}
@@ -1243,6 +1262,12 @@ export default function DailyPlanning() {
                         style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', borderColor: 'var(--primary)' }}>
                         <Monitor className="w-3 h-3" />
                         Guichet {sched.counter_number}
+                      </div>
+                    ) : sched.source === 'guichet' && sched.schedule_counter_id ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border"
+                        style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', borderColor: 'var(--primary)' }}>
+                        <Monitor className="w-3 h-3" />
+                        Guichet POS
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border border-dashed"

@@ -210,6 +210,7 @@ export default function POSDepartNouveau() {
         seat_allocations: allAllocations.length > 0 ? allAllocations : undefined,
         station_id: stationId,
         station_name: session?.station_name ?? '',
+        arrival_station_id: ligne?.destination_station_id,
         counter_id: session?.counter_id,
         other_station_id: (seatAllocations.length > 0 ? seatAllocations[0].station_id : '') || undefined,
         other_station_name: otherStation?.name,
