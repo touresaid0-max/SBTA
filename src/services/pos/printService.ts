@@ -223,10 +223,13 @@ function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
   @page { size: ${mm}mm auto; margin: 0.4mm; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin:0; padding:0; }
-  html, body { width: ${mm}mm; margin: 0; padding: 0; }
-  body { font-size: ${fsInfo}px; }
+  html, body { width: calc(${mm}mm - 0.8mm); margin: 0; padding: 0; }
+  body { font-size: ${fsInfo}px; overflow-x: hidden; }
   .box { border: 1px solid #000; width: 100%; }
   .inner { padding: 1.5mm 1mm; }
+  .row.info > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.info > span:first-child { flex: 1 1 50%; }
+  .row.info > span:last-child { flex: 1 1 50%; text-align: right; }
   .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2mm; width: 100%; }
   .logo { width: 26%; }
   .brand { text-align: right; line-height: 1.3; width: 74%; }
