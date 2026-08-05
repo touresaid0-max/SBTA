@@ -258,8 +258,8 @@ export default function GroupedPlanning() {
       const label = `Voyage ${i + 1} (${t.origin_city} → ${t.destination_city})`;
       if (!isAnticipated && !t.departure_datetime) alerts.push({ uid: t.uid, message: `${label} : horaire manquant`, type: 'error' });
       if (!t.arrival_station_id) alerts.push({ uid: t.uid, message: `${label} : destination manquante`, type: 'error' });
-      if (!isAnticipated && !t.bus_id) alerts.push({ uid: t.uid, message: `${label} : bus non selectionne`, type: 'error' });
-      if (!isAnticipated && !t.driver_id) alerts.push({ uid: t.uid, message: `${label} : chauffeur non selectionne`, type: 'error' });
+      if (!isAnticipated && !t.bus_id) alerts.push({ uid: t.uid, message: `${label} : bus non sélectionné`, type: 'error' });
+      if (!isAnticipated && !t.driver_id) alerts.push({ uid: t.uid, message: `${label} : chauffeur non sélectionné`, type: 'error' });
 
       if (t.bus_id) {
         const prev = busAssignments.get(t.bus_id) || [];
@@ -276,14 +276,14 @@ export default function GroupedPlanning() {
     busAssignments.forEach((labels, busId) => {
       if (labels.length > 1) {
         const bus = buses.find(b => b.id === busId);
-        alerts.push({ uid: '', message: `Bus ${bus?.license_plate || busId} affecte a ${labels.length} voyages : ${labels.join(', ')}`, type: 'warning' });
+        alerts.push({ uid: '', message: `Bus ${bus?.license_plate || busId} affecté à ${labels.length} voyages : ${labels.join(', ')}`, type: 'warning' });
       }
     });
 
     driverAssignments.forEach((labels, driverId) => {
       if (labels.length > 1) {
         const driver = drivers.find(d => d.id === driverId);
-        alerts.push({ uid: '', message: `Chauffeur ${driver?.full_name || driverId} affecte a ${labels.length} voyages : ${labels.join(', ')}`, type: 'warning' });
+        alerts.push({ uid: '', message: `Chauffeur ${driver?.full_name || driverId} affecté à ${labels.length} voyages : ${labels.join(', ')}`, type: 'warning' });
       }
     });
 
@@ -294,7 +294,7 @@ export default function GroupedPlanning() {
     const alerts = getAlerts();
     const errors = alerts.filter(a => a.type === 'error');
     if (errors.length > 0) {
-      toast.error(`${errors.length} erreur(s) a corriger avant la validation`);
+      toast.error(`${errors.length} erreur(s) à corriger avant la validation`);
       return;
     }
 
@@ -323,10 +323,10 @@ export default function GroupedPlanning() {
       const { error } = await supabase.from('schedules').insert(inserts);
       if (error) throw error;
 
-      toast.success(`${inserts.length} voyage(s) cree(s) avec succes`);
+      toast.success(`${inserts.length} voyage(s) créé(s) avec succès`);
       navigate('/chef-gare/planning');
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la creation des voyages');
+      toast.error(err.message || 'Erreur lors de la création des voyages');
     } finally { setSubmitting(false); }
   };
 
@@ -366,15 +366,15 @@ export default function GroupedPlanning() {
 
   const renderStepRoutes = () => (
     <div>
-      <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Selection des itineraires</h2>
+      <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Sélection des itinéraires</h2>
       <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-        Cochez les itineraires a planifier. Vous pourrez dupliquer chaque itineraire pour creer plusieurs departs.
+        Cochez les itinéraires à planifier. Vous pourrez dupliquer chaque itinéraire pour créer plusieurs départs.
       </p>
 
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
         <input type="text" value={routeSearch} onChange={e => setRouteSearch(e.target.value)}
-          placeholder="Rechercher un itineraire..."
+          placeholder="Rechercher un itinéraire..."
           className="w-full pl-9 pr-9 py-2.5 border rounded-xl text-sm outline-none focus:ring-2"
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
         {routeSearch && (
@@ -408,7 +408,7 @@ export default function GroupedPlanning() {
                       <span>{formatHours(route.estimated_duration_minutes / 60)}</span>
                       {(route.stops || []).length > 0 && (
                         <span className="flex items-center gap-1">
-                          <Navigation className="w-3 h-3" />{(route.stops || []).length} arret(s)
+                          <Navigation className="w-3 h-3" />{(route.stops || []).length} arrêt(s)
                         </span>
                       )}
                     </div>
@@ -421,7 +421,7 @@ export default function GroupedPlanning() {
         })}
         {filteredRoutes.length === 0 && (
           <div className="text-center py-10 rounded-xl border-2 border-dashed" style={{ borderColor: 'var(--border)' }}>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Aucun itineraire trouve</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Aucun itinéraire trouvé</p>
           </div>
         )}
       </div>
@@ -434,10 +434,10 @@ export default function GroupedPlanning() {
             className="mt-0.5 w-5 h-5 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
           <div>
             <span className="text-sm font-semibold" style={{ color: isAnticipated ? '#92400E' : 'var(--text-primary)' }}>
-              Depart anticipe
+              Départ anticipé
             </span>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-              Creer les departs immediatement pour permettre la vente rapide des billets, meme si le vehicule, l'heure et le chauffeur ne sont pas encore connus.
+              Créer les départs immédiatement pour permettre la vente rapide des billets, même si le véhicule, l'heure et le chauffeur ne sont pas encore connus.
             </p>
           </div>
         </label>
@@ -445,7 +445,7 @@ export default function GroupedPlanning() {
 
       <div className="flex justify-between items-center mt-6">
         <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-          {selectedRouteIds.length} itineraire(s) selectionne(s)
+          {selectedRouteIds.length} itinéraire(s) sélectionné(s)
         </span>
         <button onClick={() => goStep(1)} disabled={selectedRouteIds.length === 0}
           className="px-6 py-3 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
@@ -456,9 +456,9 @@ export default function GroupedPlanning() {
 
   const renderStepStations = () => (
     <div>
-      <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Gares d'arrivee</h2>
+      <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Gares d'arrivée</h2>
       <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-        Confirmez la gare d'arrivee pour chaque itineraire. La gare de depart est votre gare.
+        Confirmez la gare d'arrivée pour chaque itinéraire. La gare de départ est votre gare.
       </p>
       <div className="space-y-4">
         {trips.map((trip, i) => {
@@ -472,14 +472,14 @@ export default function GroupedPlanning() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Gare de depart</label>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Gare de départ</label>
                   <input type="text" readOnly
                     value={allStations.find(s => s.id === trip.departure_station_id)?.name || '--'}
                     className="w-full p-2.5 border rounded-lg text-sm"
                     style={{ borderColor: 'var(--border)', backgroundColor: 'var(--neutral-50)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Gare d'arrivee *</label>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Gare d'arrivée *</label>
                   <select value={trip.arrival_station_id}
                     onChange={e => updateTrip(trip.uid, { arrival_station_id: e.target.value })}
                     className="w-full p-2.5 border rounded-lg text-sm"
@@ -507,7 +507,7 @@ export default function GroupedPlanning() {
     <div>
       <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Points de transit</h2>
       <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-        Les arrets intermediaires sont pre-remplis depuis l'itineraire. Vous pouvez les modifier ou en ajouter.
+        Les arrêts intermédiaires sont pré-remplis depuis l'itinéraire. Vous pouvez les modifier ou en ajouter.
       </p>
       <div className="space-y-4">
         {trips.map((trip, i) => {
@@ -519,7 +519,7 @@ export default function GroupedPlanning() {
                   <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: 'var(--primary)' }}>{i + 1}</div>
                   <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{trip.origin_city} → {trip.destination_city}</span>
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--neutral-100)', color: 'var(--text-secondary)' }}>
-                    {trip.transit_stops.length} arret(s)
+                    {trip.transit_stops.length} arrêt(s)
                   </span>
                 </div>
                 {expanded ? <ChevronUp className="w-4 h-4" style={{ color: 'var(--text-muted)' }} /> : <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />}
@@ -541,7 +541,7 @@ export default function GroupedPlanning() {
                       <div key={si} className="p-3 border rounded-lg" style={{ borderColor: 'var(--border)' }}>
                         <div className="flex items-center gap-2 mb-2">
                           <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ backgroundColor: 'var(--primary)' }}>{si + 1}</div>
-                          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Arret intermediaire</span>
+                          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Arrêt intermédiaire</span>
                           <button onClick={() => {
                             const newStops = trip.transit_stops.filter((_, idx) => idx !== si).map((s, idx) => ({ ...s, position: idx + 1 }));
                             updateTrip(trip.uid, { transit_stops: newStops });
@@ -600,7 +600,7 @@ export default function GroupedPlanning() {
                   }}
                     className="flex items-center gap-2 px-3 py-2 border-2 border-dashed rounded-lg text-xs font-medium w-full justify-center"
                     style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}>
-                    <Plus className="w-3.5 h-3.5" /> Ajouter un arret
+                    <Plus className="w-3.5 h-3.5" /> Ajouter un arrêt
                   </button>
                 </div>
               )}
@@ -620,7 +620,7 @@ export default function GroupedPlanning() {
               className="px-6 py-3 rounded-lg text-white font-semibold disabled:opacity-50 flex items-center gap-2"
               style={{ backgroundColor: '#D97706' }}>
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              Creer les departs anticipes
+              Créer les départs anticipés
             </button>
           </>
         ) : (
@@ -634,9 +634,9 @@ export default function GroupedPlanning() {
 
   const renderStepSchedule = () => (
     <div>
-      <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Dates et heures de depart</h2>
+      <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Dates et heures de départ</h2>
       <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-        Definissez l'heure de depart pour chaque voyage. Dupliquez un itineraire pour creer plusieurs departs.
+        Définissez l'heure de départ pour chaque voyage. Dupliquez un itinéraire pour créer plusieurs départs.
       </p>
       <div className="space-y-3">
         {trips.map((trip, i) => (
@@ -663,7 +663,7 @@ export default function GroupedPlanning() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Date et heure de depart *</label>
+                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Date et heure de départ *</label>
                 <input type="datetime-local" value={trip.departure_datetime}
                   onChange={e => handleDepartureDatetimeChange(trip.uid, e.target.value)}
                   className="w-full p-2.5 border rounded-lg text-sm"
@@ -800,7 +800,7 @@ export default function GroupedPlanning() {
                       );
                     })}
                     {filteredBuses.length === 0 && (
-                      <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>Aucun bus trouve</p>
+                      <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>Aucun bus trouvé</p>
                     )}
                   </div>
                 )}
@@ -919,7 +919,7 @@ export default function GroupedPlanning() {
                       );
                     })}
                     {filteredDrivers.length === 0 && (
-                      <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>Aucun chauffeur trouve</p>
+                      <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>Aucun chauffeur trouvé</p>
                     )}
                   </div>
                 )}

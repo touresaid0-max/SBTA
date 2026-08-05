@@ -470,7 +470,7 @@ export default function ChefGareNewSchedule() {
               Depart anticipe
             </span>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-              Creer le depart immediatement pour permettre la vente rapide des billets, meme si le vehicule, l'heure et le chauffeur ne sont pas encore connus.
+              Créer le départ immédiatement pour permettre la vente rapide des billets, même si le véhicule, l'heure et le chauffeur ne sont pas encore connus.
             </p>
           </div>
         </label>
@@ -622,7 +622,7 @@ export default function ChefGareNewSchedule() {
               className="px-6 py-3 rounded-lg text-white font-semibold disabled:opacity-50 flex items-center gap-2"
               style={{ backgroundColor: '#D97706' }}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              Creer le depart anticipe
+              Créer le départ anticipé
             </button>
           </>
         ) : (

@@ -538,7 +538,7 @@ export default function ChefGareCounters() {
 
             <div className="px-6 py-5 max-h-[60vh] overflow-y-auto">
               <p className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
-                Selectionnez les lignes que ce guichet peut vendre. Si aucune ligne n'est selectionnee, le guichetier voit toutes les lignes.
+                Sélectionnez les lignes que ce guichet peut vendre. Si aucune ligne n'est sélectionnée, le guichetier voit toutes les lignes.
               </p>
               {allRoutes.length === 0 ? (
                 <p className="text-sm italic py-4 text-center" style={{ color: 'var(--text-muted)' }}>

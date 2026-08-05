@@ -238,7 +238,7 @@ export default function RevenueByStation() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">Aucune donnee pour cette periode</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">Aucune donnée pour cette période</td></tr>
                 )}
               </tbody>
               {rows.length > 0 && (

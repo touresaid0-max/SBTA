@@ -440,7 +440,7 @@ export default function DailyPlanning() {
           });
         if (error) throw error;
       }
-      toast.success('Montant ramassage enregistre');
+      toast.success('Montant ramassage enregistré');
       setRamassageModalSched(null);
       await loadRamassageSchedules(station.id);
     } catch (err: any) {
@@ -653,7 +653,7 @@ export default function DailyPlanning() {
           ? { ...s, status: 'convoi', seats_available: 0, seats_reserved: s.bus_capacity, fill_rate: 100, convoy_amount: Number(convoyAmount) }
           : s
       ));
-      toast.success('Convoi enregistre avec succes');
+      toast.success('Convoi enregistré avec succès');
       closeConvoyModal();
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors de l\'enregistrement du convoi');
@@ -763,7 +763,7 @@ export default function DailyPlanning() {
       setSchedules(prev => prev.map(s =>
         s.id === breakdownSchedule.id ? { ...s, status: 'panne' } : s
       ));
-      toast.success('Panne signalee. Le gestionnaire a ete notifie.');
+      toast.success('Panne signalée. Le gestionnaire a été notifié.');
       closeBreakdownModal();
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors du signalement');
@@ -962,7 +962,7 @@ export default function DailyPlanning() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-600" />
               <span className="font-semibold text-red-800 text-sm">
-                Voyages termin\u00e9s automatiquement - Charges obligatoires manquantes
+                Voyages terminés automatiquement - Charges obligatoires manquantes
               </span>
             </div>
             <button onClick={() => setShowAlerts(false)} className="text-red-400 hover:text-red-700">
@@ -982,7 +982,7 @@ export default function DailyPlanning() {
                 </div>
                 <div className="flex gap-1">
                   {alert.missing_peage && (
-                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-200 text-red-800">P\u00e9age</span>
+                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-200 text-red-800">Péage</span>
                   )}
                   {alert.missing_ration && (
                     <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-200 text-red-800">Ratios</span>
@@ -992,7 +992,7 @@ export default function DailyPlanning() {
             ))}
           </div>
           <div className="px-4 py-2 bg-red-50 border-t border-red-100">
-            <p className="text-xs text-red-600 italic">Seuls le P\u00e9age et les Ratios sont obligatoires pour la cl\u00f4ture d'un voyage.</p>
+            <p className="text-xs text-red-600 italic">Seuls le Péage et les Ratios sont obligatoires pour la clôture d'un voyage.</p>
           </div>
         </div>
       )}
@@ -1509,7 +1509,7 @@ export default function DailyPlanning() {
                         style={{ backgroundColor: '#FFF7ED', borderColor: '#FDBA74' }}>
                         <Truck className="w-4 h-4 flex-shrink-0" style={{ color: '#F97316' }} />
                         <p className="text-sm font-semibold" style={{ color: '#7C2D12' }}>
-                          Départ cloture en convoi — Aucune modification possible
+                          Départ clôturé en convoi — Aucune modification possible
                         </p>
                       </div>
                     )}
@@ -1523,7 +1523,7 @@ export default function DailyPlanning() {
                           style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', borderColor: '#93C5FD' }}
                         >
                           <Pencil className="w-3.5 h-3.5" />
-                          Modifier le depart
+                          Modifier le départ
                         </button>
                       </div>
                     )}
@@ -1549,7 +1549,7 @@ export default function DailyPlanning() {
                             <button
                               onClick={() => updateStatus(sched.id, 'en_cours')}
                               disabled={updatingId === sched.id || anticipatedIncomplete}
-                              title={anticipatedIncomplete ? 'Completez d\'abord le vehicule, le chauffeur et l\'heure de depart' : ''}
+                              title={anticipatedIncomplete ? "Complétez d'abord le véhicule, le chauffeur et l'heure de départ" : ''}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{ backgroundColor: STATUS_CONFIG.en_cours.bg, color: STATUS_CONFIG.en_cours.color, border: `1px solid ${STATUS_CONFIG.en_cours.border}` }}
                             >
@@ -1561,7 +1561,7 @@ export default function DailyPlanning() {
                             <button
                               onClick={() => updateStatus(sched.id, 'termine')}
                               disabled={updatingId === sched.id || anticipatedIncomplete}
-                              title={anticipatedIncomplete ? 'Completez d\'abord le vehicule, le chauffeur et l\'heure de depart' : ''}
+                              title={anticipatedIncomplete ? "Complétez d'abord le véhicule, le chauffeur et l'heure de départ" : ''}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{ backgroundColor: STATUS_CONFIG.termine.bg, color: STATUS_CONFIG.termine.color, border: `1px solid ${STATUS_CONFIG.termine.border}` }}
                             >
@@ -1571,7 +1571,7 @@ export default function DailyPlanning() {
                           )}
                           {anticipatedIncomplete && sched.status === 'planifie' && (
                             <span className="text-xs font-medium px-2 py-1 rounded" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
-                              Completez le vehicule, chauffeur et horaire pour activer l'embarquement
+                              Complétez le véhicule, chauffeur et horaire pour activer l'embarquement
                             </span>
                           )}
                           {(sched.status === 'planifie' || sched.status === 'en_cours') && (
@@ -1721,7 +1721,7 @@ export default function DailyPlanning() {
                 Ramassages entrants
               </h2>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {ramassageSchedules.length} voyage(s) de ramassage a destination de votre gare
+                {ramassageSchedules.length} voyage(s) de ramassage à destination de votre gare
               </p>
             </div>
           </div>
@@ -1740,7 +1740,7 @@ export default function DailyPlanning() {
                     <p className="text-2xl font-black tabular-nums" style={{ color: '#EA580C' }}>
                       {format(depDate, 'HH:mm')}
                     </p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>depart</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>départ</p>
                   </div>
 
                   <div className="flex-1 min-w-0">
@@ -1793,7 +1793,7 @@ export default function DailyPlanning() {
                         <p className="text-lg font-black" style={{ color: '#16A34A' }}>
                           {Number(sched.ramassage_collection.amount).toLocaleString()} F
                         </p>
-                        <p className="text-xs" style={{ color: '#059669' }}>Montant enregistre</p>
+                        <p className="text-xs" style={{ color: '#059669' }}>Montant enregistré</p>
                       </div>
                       <button onClick={() => openRamassageModal(sched)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
@@ -1913,7 +1913,7 @@ export default function DailyPlanning() {
               </div>
               <div className="p-3 rounded-lg border" style={{ backgroundColor: '#FFF7ED', borderColor: '#FDBA74' }}>
                 <p className="text-xs" style={{ color: '#9A3412' }}>
-                  Le montant du ramassage sera ajoute automatiquement a la recette du jour, du bus, et de la societe.
+                  Le montant du ramassage sera ajouté automatiquement à la recette du jour, du bus, et de la société.
                 </p>
               </div>
             </div>
@@ -2049,7 +2049,7 @@ export default function DailyPlanning() {
                     Confirmer l'enregistrement du convoi ?
                   </p>
                   <p className="text-xs" style={{ color: '#B91C1C' }}>
-                    Cette action est irreversible. Le depart sera cloture, toutes les places seront marquees comme vendues
+                    Cette action est irréversible. Le départ sera clôturé, toutes les places seront marquées comme vendues
                     ({convoySchedule.bus_capacity}/{convoySchedule.bus_capacity}), et aucune vente de billet ne sera plus possible.
                   </p>
                 </div>
@@ -2071,7 +2071,7 @@ export default function DailyPlanning() {
                 {convoySubmitting ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Enregistrement...</>
                 ) : convoyConfirmStep ? (
-                  'Confirmer definitivement'
+                  'Confirmer définitivement'
                 ) : (
                   <><Truck className="w-4 h-4" /> Enregistrer le convoi</>
                 )}
@@ -2149,7 +2149,7 @@ export default function DailyPlanning() {
                   type="text"
                   value={breakdownReason}
                   onChange={(e) => setBreakdownReason(e.target.value)}
-                  placeholder="Ex: Probleme moteur, crevaison, surchauffe..."
+                  placeholder="Ex: Problème moteur, crevaison, surchauffe..."
                   className="w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2"
                   style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
                 />
@@ -2161,7 +2161,7 @@ export default function DailyPlanning() {
                 <textarea
                   value={breakdownObservation}
                   onChange={(e) => setBreakdownObservation(e.target.value)}
-                  placeholder="Details complementaires, localisation, gravite..."
+                  placeholder="Détails complémentaires, localisation, gravité..."
                   rows={3}
                   className="w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 resize-none"
                   style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
@@ -2169,7 +2169,7 @@ export default function DailyPlanning() {
               </div>
               <div className="p-3 rounded-lg border" style={{ backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }}>
                 <p className="text-xs" style={{ color: '#92400E' }}>
-                  Le voyage passera au statut "Panne signalee" et le gestionnaire de la societe recevra une notification pour gerer le remplacement.
+                  Le voyage passera au statut "Panne signalée" et le gestionnaire de la société recevra une notification pour gérer le remplacement.
                 </p>
               </div>
             </div>
@@ -2324,7 +2324,7 @@ export default function DailyPlanning() {
                     Assignation des lignes aux guichets
                   </p>
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    Selectionnez les itineraires que chaque guichet peut vendre
+                    Sélectionnez les itinéraires que chaque guichet peut vendre
                   </p>
                 </div>
               </div>
@@ -2340,7 +2340,7 @@ export default function DailyPlanning() {
                 <div className="text-center py-12">
                   <Navigation className="w-10 h-10 mx-auto mb-3 opacity-30" style={{ color: 'var(--text-muted)' }} />
                   <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    Aucune ligne active trouvee pour cette gare
+                    Aucune ligne active trouvée pour cette gare
                   </p>
                 </div>
               ) : (

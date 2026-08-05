@@ -18,12 +18,12 @@ const PERIOD_LABELS: Record<Period, string> = {
 }
 
 const STATUS_CONFIG: Record<ParcelStatus, { label: string; color: string; bg: string }> = {
-  enregistre:    { label: 'Enregistr\u00e9',    color: '#0B7439', bg: '#d4edda' },
+  enregistre:    { label: 'Enregistré',    color: '#0B7439', bg: '#d4edda' },
   mis_en_paquet: { label: 'Mis en paquet', color: '#1D6FA4', bg: '#DBEAFE' },
-  expedie:       { label: 'Exp\u00e9di\u00e9',       color: '#D97706', bg: '#FEF3C7' },
-  arrive:        { label: 'Arriv\u00e9',        color: '#1D6FA4', bg: '#DBEAFE' },
-  livre:         { label: 'Retir\u00e9',        color: '#0B7439', bg: '#d4edda' },
-  retourne:      { label: 'Retourn\u00e9',      color: '#92400E', bg: '#FEF3C7' },
+  expedie:       { label: 'Expédié',       color: '#D97706', bg: '#FEF3C7' },
+  arrive:        { label: 'Arrivé',        color: '#1D6FA4', bg: '#DBEAFE' },
+  livre:         { label: 'Retiré',        color: '#0B7439', bg: '#d4edda' },
+  retourne:      { label: 'Retourné',      color: '#92400E', bg: '#FEF3C7' },
   perdu:         { label: 'Perdu',         color: '#AF3029', bg: '#f8d7d5' },
 }
 
@@ -93,7 +93,7 @@ export default function SuperviseurColisDashboard() {
       setParcels(all)
       setAgencyStats(computeAgencyStats(all, period))
     } catch (e: any) {
-      toast.error('Erreur chargement donn\u00e9es')
+      toast.error('Erreur chargement données')
     } finally {
       setLoading(false)
     }
@@ -108,7 +108,7 @@ export default function SuperviseurColisDashboard() {
   }, [period, parcels, computeAgencyStats])
 
   const barData = agencyStats.slice(0, 8).map(s => ({
-    name: s.station_name.length > 12 ? s.station_name.slice(0, 12) + '\u2026' : s.station_name,
+    name: s.station_name.length > 12 ? s.station_name.slice(0, 12) + '…' : s.station_name,
     CA: Math.round(s.period_revenue / 1000),
     enreg: s.total_registered,
   }))
@@ -215,7 +215,7 @@ export default function SuperviseurColisDashboard() {
       {/* Agency Table — Détail par agence */}
       <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>D\u00e9tail par agence</h2>
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Détail par agence</h2>
           <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#d4edda', color: '#0B7439' }}>
             {agencyStats.length} agence{agencyStats.length > 1 ? 's' : ''}
           </span>
@@ -229,7 +229,7 @@ export default function SuperviseurColisDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                  {['AGENCE', 'ENREGISTR\u00c9S', 'EN PAQUET', 'EXP\u00c9DI\u00c9S', 'ARRIV\u00c9S', 'RETIR\u00c9S', 'CA P\u00c9RIODE', 'D\u00c9TAIL'].map(h => (
+                  {['AGENCE', 'ENREGISTRÉS', 'EN PAQUET', 'EXPÉDIÉS', 'ARRIVÉS', 'RETIRÉS', 'CA PÉRIODE', 'DÉTAIL'].map(h => (
                     <th key={h} className="px-4 py-3 text-left font-semibold text-xs" style={{ color: 'var(--text-muted)' }}>{h}</th>
                   ))}
                 </tr>
@@ -274,7 +274,7 @@ export default function SuperviseurColisDashboard() {
                         <button
                           onClick={() => setExpandedAgency(expandedAgency === stat.station_id ? null : stat.station_id)}
                           className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                          title="Voir d\u00e9tail"
+                          title="Voir détail"
                         >
                           {expandedAgency === stat.station_id ? (
                             <ChevronUp className="w-4 h-4" style={{ color: '#0B7439' }} />
@@ -305,7 +305,7 @@ export default function SuperviseurColisDashboard() {
                                 <thead>
                                   <tr style={{ backgroundColor: 'var(--surface)' }}>
                                     <th className="px-4 py-2 text-left font-semibold" style={{ color: 'var(--text-muted)' }}>CODE</th>
-                                    <th className="px-4 py-2 text-left font-semibold" style={{ color: 'var(--text-muted)' }}>EXP\u00c9DITEUR</th>
+                                    <th className="px-4 py-2 text-left font-semibold" style={{ color: 'var(--text-muted)' }}>EXPÉDITEUR</th>
                                     <th className="px-4 py-2 text-left font-semibold" style={{ color: 'var(--text-muted)' }}>DESTINATAIRE</th>
                                     <th className="px-4 py-2 text-left font-semibold" style={{ color: 'var(--text-muted)' }}>DESTINATION</th>
                                     <th className="px-4 py-2 text-left font-semibold" style={{ color: 'var(--text-muted)' }}>MONTANT</th>
@@ -332,7 +332,7 @@ export default function SuperviseurColisDashboard() {
                                           <button
                                             onClick={() => navigate(`/superviseur-colis/parcels/${p.id}`)}
                                             className="p-1 rounded hover:bg-gray-200"
-                                            title="Voir d\u00e9tail"
+                                            title="Voir détail"
                                           >
                                             <Eye className="w-3.5 h-3.5" style={{ color: '#0B7439' }} />
                                           </button>
@@ -343,7 +343,7 @@ export default function SuperviseurColisDashboard() {
                                   {getAgencyParcels(stat.station_id).length === 0 && (
                                     <tr>
                                       <td colSpan={8} className="px-4 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                                        Aucun courrier pour cette p\u00e9riode
+                                        Aucun courrier pour cette période
                                       </td>
                                     </tr>
                                   )}
@@ -370,7 +370,7 @@ export default function SuperviseurColisDashboard() {
                 {agencyStats.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                      Aucune donn\u00e9e pour cette p\u00e9riode
+                      Aucune donnée pour cette période
                     </td>
                   </tr>
                 )}

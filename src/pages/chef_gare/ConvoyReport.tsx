@@ -288,7 +288,7 @@ export default function ConvoyReport() {
             Rapport Convois
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            {stationName} — Suivi des departs en convoi
+            {stationName} — Suivi des départs en convoi
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -387,7 +387,7 @@ export default function ConvoyReport() {
       {filteredConvoys.length === 0 ? (
         <div className="text-center py-16 rounded-2xl border-2 border-dashed" style={{ borderColor: 'var(--border)' }}>
           <Truck className="w-12 h-12 mx-auto mb-3" style={{ color: '#D1D5DB' }} />
-          <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>Aucun convoi sur cette periode</p>
+          <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>Aucun convoi sur cette période</p>
         </div>
       ) : (
         <>
@@ -455,7 +455,7 @@ export default function ConvoyReport() {
           <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
             <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-subtle)' }}>
               <FileText className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Detail des convois</span>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Détail des convois</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

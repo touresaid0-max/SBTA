@@ -246,7 +246,7 @@ export default function SmsFeesByStation() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Aucune donnee pour cette periode</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Aucune donnée pour cette période</td></tr>
                 )}
               </tbody>
               {rows.length > 0 && (
