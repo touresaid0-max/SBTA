@@ -125,7 +125,7 @@ async function sendQzTray(data: Uint8Array, settings: PrintSettings): Promise<bo
 
 function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string {
   const { ticket, depart, stationName } = data;
-  const w = settings.width_mm === 80 ? 302 : 220;
+  const mm = settings.width_mm;
 
   const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
   const originCity = (routeParts[0] ?? stationName ?? 'ABIDJAN').toUpperCase();
@@ -151,130 +151,107 @@ function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string
   const nowD = new Date();
   const printedAt = `${String(nowD.getDate()).padStart(2,'0')}/${String(nowD.getMonth()+1).padStart(2,'0')}/${nowD.getFullYear()} ${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}:${String(nowD.getSeconds()).padStart(2,'0')}`;
 
-  const reducedBadge = ticket.is_reduced ? `<div class="center note">** REDUCTION APPLIQUEE **</div>` : '';
-  const reportedBadge = ticket.is_reported ? `<div class="center note">** TICKET REPORTE **</div>` : '';
+  const reducedBadge = ticket.is_reduced ? `<div class="badge">** REDUCTION APPLIQUEE **</div>` : '';
+  const reportedBadge = ticket.is_reported ? `<div class="badge">** TICKET REPORTE **</div>` : '';
 
-  const fsSm  = w > 270 ? 10 : 9;
-  const fsMed = w > 270 ? 12 : 10;
-  const fsLg  = w > 270 ? 18 : 14;
-  const fsXl  = w > 270 ? 22 : 18;
-  const fsRoute = w > 270 ? 14 : 12;
+  const isWide = mm >= 80;
+  const fsInfo = isWide ? 11 : 9;
+  const fsVal  = isWide ? 13 : 11;
+  const fsBig  = isWide ? 20 : 16;
+  const fsXl   = isWide ? 26 : 20;
+  const fsRoute = isWide ? 15 : 12;
+  const fsNote = isWide ? 9 : 8;
+  const logoMax = isWide ? 72 : 50;
 
   const block = (isSouche: boolean) => `
-<table class="box" width="100%" cellpadding="0" cellspacing="0">
-  <tr><td style="padding:4px 5px;">
+<div class="box">
+  <div class="inner">
 
     ${!isSouche ? `
-    <!-- HEADER -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:4px;">
-      <tr>
-        <td width="28%" valign="middle">
-          <img src="/LOGO_SBTA_-1.png" style="width:100%;max-width:56px;" alt="SBTA"/>
-        </td>
-        <td valign="middle" style="text-align:right;line-height:1.35;">
-          <span style="font-size:${fsXl}px;font-weight:900;letter-spacing:1px;">SBTA</span><br/>
-          <span style="font-size:${fsSm - 1}px;">Societe Bonkoungou Transport de L&apos;Agneby</span><br/>
-          <span style="font-size:${fsSm - 1}px;">Tel 01 14 34 60 / 01 14 34 87</span>
-        </td>
-      </tr>
-    </table>
+    <div class="header">
+      <div class="logo"><img src="/LOGO_SBTA_-1.png" style="width:100%;max-width:${logoMax}px;" alt="SBTA"/></div>
+      <div class="brand">
+        <span class="brand-name">SBTA</span><br/>
+        <span class="brand-sub">Societe Bonkoungou Transport de L&apos;Agneby</span><br/>
+        <span class="brand-sub">Tel 01 14 34 60 / 01 14 34 87</span>
+      </div>
+    </div>
     ` : `
-    <div class="center" style="font-size:${fsLg}px;font-weight:900;font-style:italic;margin:3px 0 4px;">SOUCHE</div>
+    <div class="souche-title">SOUCHE</div>
     `}
 
-    <!-- DEPART | N° -->
     <div class="dash"></div>
-    <table width="100%" cellpadding="1" cellspacing="0">
-      <tr>
-        <td style="font-size:${isSouche ? fsMed+2 : fsLg}px;font-weight:900;">DEPART</td>
-        <td style="text-align:center;font-size:${fsMed}px;color:#555;">|</td>
-        <td style="text-align:right;font-size:${isSouche ? fsMed+2 : fsLg}px;font-weight:900;">${escapeHtml(depNum)}</td>
-      </tr>
-    </table>
-    <div class="dash"></div>
-
-    <!-- Route -->
-    <div style="font-size:${isSouche ? fsSm+1 : fsRoute}px;font-weight:900;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-      ${escapeHtml(originCity)} &nbsp;<span style="font-size:${isSouche ? fsSm : fsMed}px;">=&gt;</span>&nbsp; ${escapeHtml(destCity)}
+    <div class="row big">
+      <span class="big-label">DEPART</span>
+      <span class="sep">|</span>
+      <span class="big-num">${escapeHtml(depNum)}</span>
     </div>
     <div class="dash"></div>
 
-    <!-- Gares -->
-    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${fsSm}px;">
-      <tr>
-        <td>GARE DEPART</td>
-        <td style="text-align:right;font-weight:bold;">${gareDepart}</td>
-      </tr>
-      <tr>
-        <td>GARE ARRIVEE</td>
-        <td style="text-align:right;font-weight:bold;">${gareArrivee}</td>
-      </tr>
-    </table>
+    <div class="route">
+      ${escapeHtml(originCity)} &nbsp;<span class="arrow">=&gt;</span>&nbsp; ${escapeHtml(destCity)}
+    </div>
     <div class="dash"></div>
 
-    <!-- Siège + Tarif -->
-    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${fsSm}px;">
-      <tr>
-        <td>SIEGE &nbsp;<b style="font-size:${fsMed}px;">${escapeHtml(seatStr)}</b></td>
-        <td style="text-align:right;">TARIF &nbsp;<b style="font-size:${fsMed}px;">${escapeHtml(tarifStr)}</b></td>
-      </tr>
-    </table>
+    <div class="row info"><span>GARE DEPART</span><span class="val">${gareDepart}</span></div>
+    <div class="row info"><span>GARE ARRIVEE</span><span class="val">${gareArrivee}</span></div>
     <div class="dash"></div>
 
-    <!-- CAR + N°TICKET en bleu -->
-    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${fsSm}px;">
-      <tr>
-        <td>CAR &nbsp;<b>${carPlate}</b></td>
-        <td style="text-align:right;">N°TICKET &nbsp;<b style="color:#0066cc;font-size:${fsSm}px;">${ticketNum}</b></td>
-      </tr>
-    </table>
+    <div class="row info"><span>SIEGE &nbsp;<b class="val-lg">${escapeHtml(seatStr)}</b></span><span>TARIF &nbsp;<b class="val-lg">${escapeHtml(tarifStr)}</b></span></div>
     <div class="dash"></div>
 
-    <!-- Date + Heure -->
-    <table width="100%" cellpadding="1" cellspacing="0" style="font-size:${fsSm}px;">
-      <tr>
-        <td>DATE : &nbsp;<b>${escapeHtml(dateStr)}</b></td>
-        <td style="text-align:right;">HEURE: &nbsp;<b>${escapeHtml(timeStr)}</b></td>
-      </tr>
-    </table>
+    <div class="row info"><span>CAR &nbsp;<b class="val">${carPlate}</b></span><span>N°TICKET &nbsp;<b class="val ticket-num">${ticketNum}</b></span></div>
+    <div class="dash"></div>
+
+    <div class="row info"><span>DATE : &nbsp;<b class="val">${escapeHtml(dateStr)}</b></span><span>HEURE: &nbsp;<b class="val">${escapeHtml(timeStr)}</b></span></div>
 
     ${reducedBadge}${reportedBadge}
 
     ${!isSouche ? `
     <div class="dash"></div>
-    <div class="center note">NB. Tout ticket encaisse n est plus remboursable</div>
-    <div class="dash"></div>
-    <div class="center note">SBTA pas responsable ces bagages sans ticket</div>
-    <div class="dash"></div>
-    <div class="center note">VEUILLEZ CONSERVER LES TICKETS JUSQU&apos;A DESTINATION</div>
+    <div class="note">NB. Tout ticket encaisse n est plus remboursable</div>
+    <div class="note">SBTA pas responsable ces bagages sans ticket</div>
+    <div class="note">VEUILLEZ CONSERVER LES TICKETS JUSQU&apos;A DESTINATION</div>
     ` : ''}
 
     <div class="dash"></div>
-    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:${fsSm - 1}px;">
-      <tr>
-        <td>V10&nbsp; Imprimer le :</td>
-        <td style="text-align:right;">${escapeHtml(printedAt)}</td>
-      </tr>
-    </table>
+    <div class="row footnote"><span>V10&nbsp; Imprimer le :</span><span>${escapeHtml(printedAt)}</span></div>
 
-  </td></tr>
-</table>`;
+  </div>
+</div>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
-  @page { size: ${settings.width_mm}mm auto; margin: 2mm; }
+  @page { size: ${mm}mm auto; margin: 0.4mm; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin:0; padding:0; }
-  body { width: ${w}px; margin: 0 auto; font-size: 10px; }
-  .center { text-align: center; }
-  .note { font-size: 9px; }
-  .bold { font-weight: bold; }
-  .dash { border: none; border-top: 1px dashed #000; margin: 3px 0; }
-  .box { border: 1px solid #000; border-collapse: collapse; }
-  table { border-collapse: collapse; }
+  html, body { width: ${mm}mm; margin: 0; padding: 0; }
+  body { font-size: ${fsInfo}px; }
+  .box { border: 1px solid #000; width: 100%; }
+  .inner { padding: 1.5mm 1mm; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2mm; width: 100%; }
+  .logo { width: 26%; }
+  .brand { text-align: right; line-height: 1.3; width: 74%; }
+  .brand-name { font-size: ${fsXl}px; font-weight: 900; letter-spacing: 1px; }
+  .brand-sub { font-size: ${fsNote}px; }
+  .souche-title { text-align: center; font-size: ${fsBig}px; font-weight: 900; font-style: italic; margin: 1mm 0; }
+  .dash { border: none; border-top: 1px dashed #000; margin: 1mm 0; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; width: 100%; }
+  .row.big { font-size: ${fsBig}px; font-weight: 900; }
+  .big-label { flex: 0 0 auto; }
+  .sep { flex: 1 1 auto; text-align: center; font-size: ${fsVal}px; color: #555; }
+  .big-num { flex: 0 0 auto; }
+  .route { font-size: ${fsRoute}px; font-weight: 900; padding: 1mm 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.info { font-size: ${fsInfo}px; padding: 0.3mm 0; }
+  .row.info .val { font-weight: bold; }
+  .val-lg { font-size: ${fsVal}px; font-weight: bold; }
+  .ticket-num { color: #0066cc; }
+  .badge { text-align: center; font-size: ${fsVal}px; font-weight: bold; padding: 1mm 0 0; }
+  .note { text-align: center; font-size: ${fsNote}px; padding: 0.3mm 0; }
+  .row.footnote { font-size: ${fsNote}px; padding-top: 0.5mm; }
+  .sep-cut { margin: 2mm 0; border-top: 2px dashed #000; text-align: center; font-size: ${fsNote}px; padding-top: 1mm; }
 </style></head><body>
   ${block(false)}
 
-  <!-- Separator scissor -->
-  <div style="margin:6px 0;border-top:2px dashed #000;text-align:center;font-size:9px;padding-top:2px;">&mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash;</div>
+  <div class="sep-cut">&mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash;</div>
 
   ${block(true)}
 
