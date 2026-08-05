@@ -122,7 +122,7 @@ export default function BagagisteBaggageSale() {
       const { data, error } = await supabase
         .from('schedules')
         .select(`
-          id, route_name, departure_datetime, status, source, departure_number,
+          id, route_name, departure_datetime, status, source, departure_number, bus_id,
           bus:bus_id(registration_number),
           arrival_station:arrival_station_id(name)
         `)
@@ -145,16 +145,34 @@ export default function BagagisteBaggageSale() {
         });
       }
 
-      setDepartures((data || []).map((s: any) => ({
-        id: s.id,
-        route_name: s.route_name || '—',
-        destination: s.arrival_station?.name || s.route_name || '—',
-        departure_datetime: s.departure_datetime,
-        status: s.status || 'planifie',
-        bus_registration: s.bus?.registration_number || '',
-        departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.departure_number ?? null) : null),
-        source: s.source || 'chef_gare',
-      })));
+      const scheduleRows = (data || []) as any[];
+      const busIds = scheduleRows.map(s => s.bus_id).filter(Boolean);
+      const busMap: Record<string, string> = {};
+      if (busIds.length > 0) {
+        const { data: buses } = await supabase
+          .from('buses')
+          .select('id, registration_number')
+          .in('id', busIds);
+        (buses || []).forEach((b: any) => {
+          if (b.registration_number) busMap[b.id] = b.registration_number;
+        });
+      }
+
+      setDepartures(scheduleRows.map((s: any) => {
+        const busReg = busMap[s.bus_id]
+          || (Array.isArray(s.bus) ? s.bus?.[0]?.registration_number : s.bus?.registration_number)
+          || '';
+        return {
+          id: s.id,
+          route_name: s.route_name || '—',
+          destination: s.arrival_station?.name || s.route_name || '—',
+          departure_datetime: s.departure_datetime,
+          status: s.status || 'planifie',
+          bus_registration: busReg,
+          departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.departure_number ?? null) : null),
+          source: s.source || 'chef_gare',
+        };
+      }));
     } catch (err: any) {
       toast.error(err.message || 'Erreur de chargement des départs');
       setDepartures([]);
