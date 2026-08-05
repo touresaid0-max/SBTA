@@ -40,15 +40,33 @@ interface PrintPayload {
 async function sendWebSerial(data: Uint8Array): Promise<boolean> {
   const nav = navigator as any;
   if (!nav.serial) return false;
-  try {
-    const port = await nav.serial.requestPort({ filters: [] });
+
+  const writePort = async (port: any): Promise<boolean> => {
+    if (!port.writable || port.writable.locked) return false;
     await port.open({ baudRate: 9600 });
     const writer = port.writable?.getWriter();
-    if (!writer) throw new Error('Serial writer unavailable');
+    if (!writer) { await port.close(); return false; }
     await writer.write(data);
     writer.releaseLock();
     await port.close();
     return true;
+  };
+
+  try {
+    // 1. Reuse already-authorized ports first (no dialog)
+    const granted = await nav.serial.getPorts();
+    for (const port of granted) {
+      try {
+        const ok = await writePort(port);
+        if (ok) return true;
+      } catch {
+        // try next port
+      }
+    }
+
+    // 2. No authorized port — show picker dialog
+    const port = await nav.serial.requestPort({ filters: [] });
+    return writePort(port);
   } catch {
     return false;
   }
@@ -57,14 +75,31 @@ async function sendWebSerial(data: Uint8Array): Promise<boolean> {
 async function sendWebUSB(data: Uint8Array): Promise<boolean> {
   const nav = navigator as any;
   if (!nav.usb) return false;
-  try {
-    const device = await nav.usb.requestDevice({ filters: [{ classCode: 7 }] });
-    await device.open();
+
+  const writeDevice = async (device: any): Promise<boolean> => {
+    if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
     await device.claimInterface(0);
     await device.transferOut(1, data);
     await device.close();
     return true;
+  };
+
+  try {
+    // 1. Reuse already-authorized devices first (no dialog)
+    const granted = await nav.usb.getDevices();
+    for (const device of granted) {
+      try {
+        const ok = await writeDevice(device);
+        if (ok) return true;
+      } catch {
+        // try next device
+      }
+    }
+
+    // 2. No authorized device — show picker dialog
+    const device = await nav.usb.requestDevice({ filters: [{ classCode: 7 }] });
+    return writeDevice(device);
   } catch {
     return false;
   }
