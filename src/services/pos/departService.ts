@@ -144,89 +144,120 @@ export async function cloturerDepart(
     cloture_by: userName,
   });
 
-  if (existing?.is_ramassage && !existing.ramassage_notified) {
-    let arrivalStationId = existing.arrival_station_id;
-    let destName: string | undefined;
-    let originName: string | undefined;
+  if (!existing || existing.ramassage_notified) return updated;
 
-    // Resolve destination station from route if missing
-    if (!arrivalStationId && existing.route_id) {
-      try {
-        const { data: route } = await supabase
-          .from('routes')
-          .select('destination_station_id, destination_city_id')
-          .eq('id', existing.route_id)
-          .maybeSingle();
-        if (route?.destination_station_id) {
-          arrivalStationId = route.destination_station_id;
-        } else if (route?.destination_city_id) {
-          const { data: station } = await supabase
-            .from('stations')
-            .select('id, name')
-            .eq('city_id', route.destination_city_id)
-            .eq('is_active', true)
-            .order('name')
-            .limit(1)
-            .maybeSingle();
-          if (station) {
-            arrivalStationId = station.id;
-            destName = station.name;
-          }
-        }
-      } catch { /* offline resolution failed */ }
-    }
+  const isRamassageFlag = existing.is_ramassage === true || existing.status === 'ramassage';
+  if (!isRamassageFlag) return updated;
 
-    if (!arrivalStationId) {
-      // No destination station found; cannot send notification
-      return updated;
-    }
+  let arrivalStationId = existing.arrival_station_id;
+  let destName: string | undefined;
+  let originName: string | undefined;
+  let busRegistration = existing.bus_plate ?? existing.bus_name ?? null;
+  let driverName = existing.driver_name ?? null;
+  let companyId = existing.company_id ?? null;
 
-    let createdById: string | null = null;
+  // Always resolve destination station from route (source of truth)
+  if (existing.route_id) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      createdById = user?.id ?? null;
-    } catch { /* no active session — insert with null created_by */ }
-
-    try {
-      try {
-        const { data: sts } = await supabase
+      const { data: route } = await supabase
+        .from('routes')
+        .select('destination_station_id, destination_city_id')
+        .eq('id', existing.route_id)
+        .maybeSingle();
+      if (route?.destination_station_id) {
+        arrivalStationId = route.destination_station_id;
+      } else if (route?.destination_city_id) {
+        const { data: station } = await supabase
           .from('stations')
-          .select('id,name')
-          .in('id', [existing.station_id, arrivalStationId]);
-        originName = sts?.find(s => s.id === existing.station_id)?.name;
-        if (!destName) destName = sts?.find(s => s.id === arrivalStationId)?.name;
-      } catch { /* offline: names optional */ }
-
-      const { error: insertError } = await supabase.from('ramassage_notifications').insert({
-        local_depart_id: existing.id,
-        route_id: existing.route_id || null,
-        route_name: existing.route_name ?? null,
-        departure_number: existing.departure_number ?? null,
-        bus_id: existing.bus_id || null,
-        bus_registration: existing.bus_plate || existing.bus_name || null,
-        driver_name: existing.driver_name ?? null,
-        departure_datetime: existing.departure_datetime ?? null,
-        seats_total: existing.seats_total ?? null,
-        seats_sold: existing.seats_sold ?? null,
-        company_id: existing.company_id ?? null,
-        origin_station_id: existing.station_id || null,
-        origin_station_name: originName ?? existing.station_name ?? null,
-        destination_station_id: arrivalStationId,
-        destination_station_name: destName ?? null,
-        status: 'pending',
-        created_by: createdById,
-      });
-
-      if (insertError) {
-        console.error('[ramassage] insert failed:', insertError.message, insertError.details, {
-          departId: existing.id, route: existing.route_name, arrival: arrivalStationId,
-        });
-      } else {
-        await localUpdate<DepartRecord>('departs', departId, { ramassage_notified: true, arrival_station_id: arrivalStationId });
+          .select('id, name')
+          .eq('city_id', route.destination_city_id)
+          .eq('is_active', true)
+          .order('name')
+          .limit(1)
+          .maybeSingle();
+        if (station) {
+          arrivalStationId = station.id;
+          destName = station.name;
+        }
       }
-    } catch (err) {
-      console.error('[ramassage] notification error:', err);
+    } catch { /* resolution failed */ }
+  }
+
+  if (!arrivalStationId) return updated;
+
+  // Always resolve bus registration from buses table (source of truth)
+  if (existing.bus_id) {
+    try {
+      const { data: bus } = await supabase
+        .from('buses')
+        .select('registration_number, company_id')
+        .eq('id', existing.bus_id)
+        .maybeSingle();
+      if (bus?.registration_number) busRegistration = bus.registration_number;
+      if (bus?.company_id) companyId = bus.company_id;
+    } catch { /* bus lookup failed */ }
+  }
+
+  // Resolve driver name from users/employees if missing
+  if (!driverName && existing.driver_id) {
+    try {
+      const { data: driver } = await supabase
+        .from('users')
+        .select('full_name')
+        .eq('id', existing.driver_id)
+        .maybeSingle();
+      if (driver?.full_name) driverName = driver.full_name;
+    } catch { /* driver lookup failed */ }
+  }
+
+  let createdById: string | null = null;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    createdById = user?.id ?? null;
+  } catch { /* no active session */ }
+
+  try {
+    const stationIds = [existing.station_id, arrivalStationId].filter(Boolean) as string[];
+    const { data: sts } = await supabase
+      .from('stations')
+      .select('id,name')
+      .in('id', stationIds);
+    originName = sts?.find(s => s.id === existing.station_id)?.name;
+    if (!destName) destName = sts?.find(s => s.id === arrivalStationId)?.name;
+
+    const { error: insertError } = await supabase.from('ramassage_notifications').insert({
+      schedule_id: existing.id,
+      local_depart_id: existing.id,
+      route_id: existing.route_id || null,
+      route_name: existing.route_name ?? null,
+      departure_number: existing.departure_number ?? null,
+      bus_id: existing.bus_id || null,
+      bus_registration: busRegistration,
+      driver_name: driverName,
+      departure_datetime: existing.departure_datetime ?? null,
+      seats_total: existing.seats_total ?? null,
+      seats_sold: existing.seats_sold ?? null,
+      company_id: companyId,
+      origin_station_id: existing.station_id || null,
+      origin_station_name: originName ?? existing.station_name ?? null,
+      destination_station_id: arrivalStationId,
+      destination_station_name: destName ?? null,
+      status: 'pending',
+      created_by: createdById,
+    });
+
+    if (insertError) {
+      console.error('[ramassage] insert failed:', insertError.message, insertError.details, {
+        departId: existing.id, route: existing.route_name, arrival: arrivalStationId,
+      });
+    } else {
+      await localUpdate<DepartRecord>('departs', departId, {
+        ramassage_notified: true,
+        arrival_station_id: arrivalStationId,
+      });
     }
+  } catch (err) {
+    console.error('[ramassage] notification error:', err);
   }
 
   return updated;
