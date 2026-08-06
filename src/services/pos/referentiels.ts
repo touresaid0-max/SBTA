@@ -5,9 +5,9 @@ type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'rou
 
 const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   lignes: async () => {
-    const { data, error } = await supabase.from('routes').select('id, name, origin_station_id, destination_station_id, base_price, is_active').eq('is_active', true).order('name');
+    const { data, error } = await supabase.from('routes').select('id, name, origin_station_id, destination_station_id, destination_city_id, base_price, is_active').eq('is_active', true).order('name');
     if (error) throw error;
-    return (data ?? []).map((r: any) => ({ id: r.id, name: r.name, origin_station_id: r.origin_station_id, destination_station_id: r.destination_station_id, base_price: Number(r.base_price ?? 0), is_active: r.is_active }));
+    return (data ?? []).map((r: any) => ({ id: r.id, name: r.name, origin_station_id: r.origin_station_id, destination_station_id: r.destination_station_id, destination_city_id: r.destination_city_id, base_price: Number(r.base_price ?? 0), is_active: r.is_active }));
   },
   vehicules: async () => {
     const { data, error } = await supabase.from('buses').select('id, registration_number, capacity, company_id, status, brand, model').order('registration_number');
@@ -27,7 +27,7 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   gares: async () => {
     const { data, error } = await supabase.from('stations').select('id, name, city_id, agency_code, is_active, cities(name)').eq('is_active', true).order('name');
     if (error) throw error;
-    return (data ?? []).map((s: any) => ({ id: s.id, name: s.name, city: s.cities?.name ?? '', agency_code: s.agency_code, is_active: s.is_active }));
+    return (data ?? []).map((s: any) => ({ id: s.id, name: s.name, city_id: s.city_id, city: s.cities?.name ?? '', agency_code: s.agency_code, is_active: s.is_active }));
   },
   route_city_stops: async () => {
     const { data, error } = await supabase.from('route_city_stops').select('id, route_id, city_id, price, position, cities(name)').order('route_id, position');

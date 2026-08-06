@@ -175,6 +175,13 @@ export default function POSDepartNouveau() {
       const firstAllocStationId = seatAllocations.length > 0 ? seatAllocations[0].station_id : '';
       const otherStation = firstAllocStationId ? gares.find(g => g.id === firstAllocStationId) : undefined;
 
+      // Resolve arrival station: prefer route.destination_station_id, fallback to station matching destination city
+      let arrivalStationId = ligne?.destination_station_id ?? '';
+      if (!arrivalStationId && ligne?.destination_city_id) {
+        const destStation = gares.find(g => g.city_id === ligne.destination_city_id);
+        if (destStation) arrivalStationId = destStation.id;
+      }
+
       const allAllocations: SeatAllocation[] = [];
       const primaryStationName = session?.station_name ?? 'Gare principale';
 
@@ -213,7 +220,7 @@ export default function POSDepartNouveau() {
         seat_allocations: allAllocations.length > 0 ? allAllocations : undefined,
         station_id: stationId,
         station_name: session?.station_name ?? '',
-        arrival_station_id: ligne?.destination_station_id,
+        arrival_station_id: arrivalStationId || undefined,
         counter_id: session?.counter_id,
         other_station_id: (seatAllocations.length > 0 ? seatAllocations[0].station_id : '') || undefined,
         other_station_name: otherStation?.name,

@@ -5,10 +5,10 @@ import { supabase } from '@/services/supabase';
 
 export type { DepartRecord, SeatAllocation };
 
-export interface LigneRef { id: string; name: string; origin_station_id: string; destination_station_id: string; base_price: number; is_active: boolean }
+export interface LigneRef { id: string; name: string; origin_station_id: string; destination_station_id: string; destination_city_id?: string; base_price: number; is_active: boolean }
 export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string; brand?: string; model?: string }
 export interface ChauffeurRef { id: string; full_name: string; email: string; role: string; employee_id?: string; phone?: string }
-export interface GareRef { id: string; name: string; city: string; agency_code: string; is_active: boolean }
+export interface GareRef { id: string; name: string; city: string; city_id: string; agency_code: string; is_active: boolean }
 
 export async function getLignes(): Promise<LigneRef[]> {
   return getReferentiel<LigneRef>('lignes');
@@ -144,18 +144,52 @@ export async function cloturerDepart(
     cloture_by: userName,
   });
 
-  if (existing?.is_ramassage && !existing.ramassage_notified && existing.arrival_station_id) {
+  if (existing?.is_ramassage && !existing.ramassage_notified) {
+    let arrivalStationId = existing.arrival_station_id;
+    let destName: string | undefined;
+    let originName: string | undefined;
+
+    // Resolve destination station from route if missing
+    if (!arrivalStationId && existing.route_id) {
+      try {
+        const { data: route } = await supabase
+          .from('routes')
+          .select('destination_station_id, destination_city_id')
+          .eq('id', existing.route_id)
+          .maybeSingle();
+        if (route?.destination_station_id) {
+          arrivalStationId = route.destination_station_id;
+        } else if (route?.destination_city_id) {
+          const { data: station } = await supabase
+            .from('stations')
+            .select('id, name')
+            .eq('city_id', route.destination_city_id)
+            .eq('is_active', true)
+            .order('name')
+            .limit(1)
+            .maybeSingle();
+          if (station) {
+            arrivalStationId = station.id;
+            destName = station.name;
+          }
+        }
+      } catch { /* offline resolution failed */ }
+    }
+
+    if (!arrivalStationId) {
+      // No destination station found; cannot send notification
+      return updated;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      let originName: string | undefined;
-      let destName: string | undefined;
       try {
         const { data: sts } = await supabase
           .from('stations')
           .select('id,name')
-          .in('id', [existing.station_id, existing.arrival_station_id]);
+          .in('id', [existing.station_id, arrivalStationId]);
         originName = sts?.find(s => s.id === existing.station_id)?.name;
-        destName = sts?.find(s => s.id === existing.arrival_station_id)?.name;
+        if (!destName) destName = sts?.find(s => s.id === arrivalStation_id)?.name;
       } catch { /* offline: names optional */ }
 
       await supabase.from('ramassage_notifications').insert({
@@ -172,13 +206,13 @@ export async function cloturerDepart(
         company_id: existing.company_id ?? null,
         origin_station_id: existing.station_id || null,
         origin_station_name: originName ?? existing.station_name ?? null,
-        destination_station_id: existing.arrival_station_id,
+        destination_station_id: arrivalStationId,
         destination_station_name: destName ?? null,
         status: 'pending',
         created_by: user?.id ?? null,
       });
 
-      await localUpdate<DepartRecord>('departs', departId, { ramassage_notified: true });
+      await localUpdate<DepartRecord>('departs', departId, { ramassage_notified: true, arrival_station_id: arrivalStationId });
     } catch {
       // Notification best-effort; departure remains closed even if offline.
     }
