@@ -181,24 +181,29 @@ export async function cloturerDepart(
       return updated;
     }
 
+    let createdById: string | null = null;
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      createdById = user?.id ?? null;
+    } catch { /* no active session — insert with null created_by */ }
+
+    try {
       try {
         const { data: sts } = await supabase
           .from('stations')
           .select('id,name')
           .in('id', [existing.station_id, arrivalStationId]);
         originName = sts?.find(s => s.id === existing.station_id)?.name;
-        if (!destName) destName = sts?.find(s => s.id === arrivalStation_id)?.name;
+        if (!destName) destName = sts?.find(s => s.id === arrivalStationId)?.name;
       } catch { /* offline: names optional */ }
 
-      await supabase.from('ramassage_notifications').insert({
+      const { error: insertError } = await supabase.from('ramassage_notifications').insert({
         local_depart_id: existing.id,
         route_id: existing.route_id || null,
         route_name: existing.route_name ?? null,
         departure_number: existing.departure_number ?? null,
         bus_id: existing.bus_id || null,
-        bus_registration: existing.bus_plate ?? existing.bus_name ?? null,
+        bus_registration: existing.bus_plate || existing.bus_name || null,
         driver_name: existing.driver_name ?? null,
         departure_datetime: existing.departure_datetime ?? null,
         seats_total: existing.seats_total ?? null,
@@ -209,12 +214,18 @@ export async function cloturerDepart(
         destination_station_id: arrivalStationId,
         destination_station_name: destName ?? null,
         status: 'pending',
-        created_by: user?.id ?? null,
+        created_by: createdById,
       });
 
-      await localUpdate<DepartRecord>('departs', departId, { ramassage_notified: true, arrival_station_id: arrivalStationId });
-    } catch {
-      // Notification best-effort; departure remains closed even if offline.
+      if (insertError) {
+        console.error('[ramassage] insert failed:', insertError.message, insertError.details, {
+          departId: existing.id, route: existing.route_name, arrival: arrivalStationId,
+        });
+      } else {
+        await localUpdate<DepartRecord>('departs', departId, { ramassage_notified: true, arrival_station_id: arrivalStationId });
+      }
+    } catch (err) {
+      console.error('[ramassage] notification error:', err);
     }
   }
 
