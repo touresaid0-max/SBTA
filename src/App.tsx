@@ -137,6 +137,7 @@ import LoyaltyReport from './pages/reports/LoyaltyReport';
 import ActivityLogs from './pages/admin/ActivityLogs';
 import AuditLogs from './pages/admin/AuditLogs';
 import Archives from './pages/admin/Archives';
+import RamassageHistorique from './pages/admin/RamassageHistorique';
 import Connexion from './pages/admin/Connexion';
 import RHDashboard from './pages/rh/Dashboard';
 import EmployeesPage from './pages/rh/EmployeesPage';
@@ -330,6 +331,7 @@ function App() {
             <Route path="admin/activity-logs" element={<ProtectedRoute roles={['admin']}><ActivityLogs /></ProtectedRoute>} />
             <Route path="admin/audit-logs" element={<ProtectedRoute roles={['admin']}><AuditLogs /></ProtectedRoute>} />
             <Route path="admin/archives" element={<ProtectedRoute roles={['admin']}><Archives /></ProtectedRoute>} />
+            <Route path="admin/ramassage-historique" element={<ProtectedRoute roles={['admin','daf','gestionnaire']}><RamassageHistorique /></ProtectedRoute>} />
             <Route path="admin/connexion" element={<ProtectedRoute roles={['admin']}><Connexion /></ProtectedRoute>} />
             <Route path="reports/driver-performance" element={<ProtectedRoute roles={['admin', 'gestionnaire']}><DriverPerformanceReport /></ProtectedRoute>} />
             <Route path="daf/dashboard" element={<ProtectedRoute roles={['daf']}><DAFDashboard /></ProtectedRoute>} />
@@ -342,6 +344,7 @@ function App() {
             <Route path="daf/performance" element={<ProtectedRoute roles={['daf']}><PerformanceAnalytics /></ProtectedRoute>} />
             <Route path="daf/expenses-report" element={<ProtectedRoute roles={['daf']}><ExpensesReport /></ProtectedRoute>} />
             <Route path="daf/compte-resultat" element={<ProtectedRoute roles={['daf']}><DAFCompteResultat /></ProtectedRoute>} />
+            <Route path="daf/ramassage-historique" element={<ProtectedRoute roles={['daf','admin']}><RamassageHistorique /></ProtectedRoute>} />
             <Route path="comptable/dashboard" element={<ProtectedRoute roles={['comptable']}><ComptableNewDashboard /></ProtectedRoute>} />
             <Route path="comptable/expenses" element={<ProtectedRoute roles={['comptable']}><ComptableExpensesList /></ProtectedRoute>} />
             <Route path="comptable/expenses/new" element={<ProtectedRoute roles={['comptable']}><ComptableExpenseForm /></ProtectedRoute>} />
@@ -369,6 +372,7 @@ function App() {
             <Route path="gestionnaire/drivers" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDrivers /></ProtectedRoute>} />
             <Route path="gestionnaire/drivers-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDriversReport /></ProtectedRoute>} />
             <Route path="gestionnaire/breakdowns" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBreakdowns /></ProtectedRoute>} />
+            <Route path="gestionnaire/ramassage-historique" element={<ProtectedRoute roles={['gestionnaire','admin']}><RamassageHistorique /></ProtectedRoute>} />
 
             <Route path="gerant-principal/dashboard" element={<ProtectedRoute roles={['gerant_principal']}><GerantPrincipalDashboard /></ProtectedRoute>} />
             <Route path="gerant-principal/articles" element={<ProtectedRoute roles={['gerant_principal']}><GerantPrincipalArticles /></ProtectedRoute>} />

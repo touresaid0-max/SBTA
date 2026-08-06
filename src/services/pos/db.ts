@@ -31,6 +31,7 @@ export interface DepartRecord {
   is_ac: boolean;
   is_ramassage?: boolean;
   ramassage_notified?: boolean;
+  company_id?: string;
   status: string;
   seats_total: number;
   seats_from: number;

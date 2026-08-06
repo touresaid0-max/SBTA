@@ -9,7 +9,7 @@ import {
   PackagePlus, Truck, ChevronLeft, ChevronRight, ChevronDown, X, ShoppingCart, Car, BarChart2,
   Droplets, ArrowDownCircle, ArrowUpCircle, Zap,
   Wallet, MinusCircle, UserX, MessageSquareWarning, BookOpen, FileCheck, Landmark,
-  PieChart, Luggage, ScrollText, Archive, Wifi, Container,
+  PieChart, Luggage, ScrollText, Archive, Wifi, Container, Bus,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import type { UserRole } from '../../types';
@@ -50,6 +50,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: "Journal d'audit",    path: '/admin/audit-logs',   icon: <ScrollText className="w-5 h-5" /> },
     { label: 'Connexion',          path: '/admin/connexion',    icon: <Wifi className="w-5 h-5" /> },
     { label: 'Archives',           path: '/admin/archives',     icon: <Archive className="w-5 h-5" /> },
+    { label: 'Historique ramassage', path: '/admin/ramassage-historique', icon: <Bus className="w-5 h-5" /> },
   ],
   daf: [
     { label: 'Tableau de bord',    path: '/daf/dashboard',          icon: <LayoutDashboard className="w-5 h-5" /> },
@@ -59,6 +60,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Performance bus',    path: '/daf/bus-performance',    icon: <TrendingUp className="w-5 h-5" /> },
     { label: 'Gestion des pannes', path: '/daf/pannes',             icon: <Wrench className="w-5 h-5" /> },
     { label: 'Pannes & Répartitions', path: '/daf/breakdowns', icon: <Wrench className="w-5 h-5" /> },
+    { label: 'Historique ramassage', path: '/daf/ramassage-historique', icon: <Bus className="w-5 h-5" /> },
     { label: 'Rapports',           path: '/reports',                icon: <FileText className="w-5 h-5" /> },
   ],
   comptable: [
@@ -79,6 +81,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Rapport chauffeurs', path: '/gestionnaire/drivers-report',  icon: <FileText className="w-5 h-5" /> },
     { label: 'Pannes',             path: '/gestionnaire/breakdowns',       icon: <Wrench className="w-5 h-5" /> },
     { label: 'Rapport pannes',     path: '/reports/breakdowns',            icon: <FileText className="w-5 h-5" /> },
+    { label: 'Historique ramassage', path: '/gestionnaire/ramassage-historique', icon: <Bus className="w-5 h-5" /> },
   ],
   chauffeur: [
     { label: 'Dashboard',      path: '/chauffeur/dashboard',     icon: <LayoutDashboard className="w-5 h-5" /> },

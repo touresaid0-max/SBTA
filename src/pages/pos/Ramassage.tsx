@@ -14,6 +14,9 @@ type RamassageNotif = {
   departure_datetime: string | null;
   seats_total: number | null;
   seats_sold: number | null;
+  company_id: string | null;
+  collected_by_name: string | null;
+  collected_at: string | null;
   origin_station_id: string | null;
   origin_station_name: string | null;
   destination_station_id: string;
@@ -140,6 +143,8 @@ export default function POSRamassage() {
         status: 'done',
         collected_places: p,
         collected_amount: m,
+        collected_by_name: session?.full_name ?? null,
+        collected_at: new Date().toISOString(),
       })
       .eq('id', selected.id);
     setSubmitting(false);

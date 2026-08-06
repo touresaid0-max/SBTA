@@ -169,6 +169,7 @@ export async function cloturerDepart(
         departure_datetime: existing.departure_datetime ?? null,
         seats_total: existing.seats_total ?? null,
         seats_sold: existing.seats_sold ?? null,
+        company_id: existing.company_id ?? null,
         origin_station_id: existing.station_id || null,
         origin_station_name: originName ?? existing.station_name ?? null,
         destination_station_id: existing.arrival_station_id,
