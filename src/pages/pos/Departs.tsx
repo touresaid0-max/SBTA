@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
+import { supabase } from '@/services/supabase';
 import {
   getAllDeparts, updateDepart, type DepartRecord,
   type VehiculeRef, type ChauffeurRef,
@@ -11,7 +12,7 @@ import {
   getVehicules, getChauffeurs,
   findNextDepartForRoute, transferTicketsToDepart,
 } from '@/services/pos/departService';
-import { getAll as getAllTickets } from '@/services/pos/offlineStore';
+import { getAll as getAllTickets, localUpdate } from '@/services/pos/offlineStore';
 import type { TicketRecord } from '@/services/pos/db';
 import type { DepartSummary } from '@/services/pos/posReportService';
 import {
@@ -109,6 +110,18 @@ export default function POSDeparts() {
     loadDeparts();
   }, [loadDeparts]);
 
+  // Realtime: refresh table when tickets, bagages, or depenses change (cross-counter, cross-gare)
+  useEffect(() => {
+    const ch = supabase
+      .channel('pos_departs_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => loadDeparts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bagages' }, () => loadDeparts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bus_expenses' }, () => loadDeparts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => loadDeparts())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [loadDeparts]);
+
   const todayStr = new Date().toISOString().split('T')[0];
 
   const visibleDeparts = useMemo(() => {
@@ -125,7 +138,9 @@ export default function POSDeparts() {
   }, [departs, showAll, sortKey, sortDir, todayStr]);
 
   const totals = useMemo(() => {
-    return visibleDeparts.reduce((acc, d) => ({
+    // Exclude cancelled departures from financial totals — they carry no active revenue
+    const active = visibleDeparts.filter(d => !d.cancelled);
+    return active.reduce((acc, d) => ({
       seats_total: acc.seats_total + d.seats_allocated,
       seats_sold: acc.seats_sold + d.seats_sold_station,
       seats_libres: acc.seats_libres + d.seats_libres,
@@ -198,7 +213,22 @@ export default function POSDeparts() {
     if (!showCancelConfirm) return;
     setActionLoading(true);
     try {
-      await updateDepart(showCancelConfirm.id, { cancelled: true, status: 'cancelled' });
+      // Cancel all active tickets for this departure first
+      const departTickets = allTickets.filter(t => t.depart_id === showCancelConfirm.id && t.status !== 'cancelled');
+      for (const t of departTickets) {
+        await localUpdate<TicketRecord>('tickets', t.id, { status: 'cancelled' });
+      }
+      // Zero out financial totals and mark cancelled
+      await updateDepart(showCancelConfirm.id, {
+        cancelled: true,
+        status: 'cancelled',
+        seats_sold: 0,
+        mt_ticket: 0,
+        mt_bagage: 0,
+        tot_depense: 0,
+        solde: 0,
+        caisse: 0,
+      });
       await loadDeparts();
     } catch {
       // non-critical
@@ -422,15 +452,25 @@ export default function POSDeparts() {
           }}
           onTransfer={async (surplusTickets, nextDepart) => {
             await transferTicketsToDepart(surplusTickets, nextDepart);
-            const sourceSold = editSoldTickets.length - surplusTickets.length;
-            const sourceMtTicket = editSoldTickets
-              .filter(t => !surplusTickets.some(s => s.id === t.id))
-              .reduce((sum, t) => sum + t.price, 0);
+            // Recompute source depart from remaining active tickets
+            const sourceRemaining = (await getAllTickets<TicketRecord>('tickets'))
+              .filter(t => t.depart_id === selectedRow.id && t.status !== 'cancelled');
+            const sourceMtTicket = sourceRemaining.reduce((sum, t) => sum + t.price, 0);
             await updateDepart(selectedRow.id, {
-              seats_sold: sourceSold,
+              seats_sold: sourceRemaining.length,
               mt_ticket: sourceMtTicket,
               solde: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
               caisse: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
+            });
+            // Recompute destination depart from all active tickets (transferTicketsToDepart already updated seats_sold/mt_ticket, but ensure solde/caisse are correct)
+            const destRemaining = (await getAllTickets<TicketRecord>('tickets'))
+              .filter(t => t.depart_id === nextDepart.id && t.status !== 'cancelled');
+            const destMtTicket = destRemaining.reduce((sum, t) => sum + t.price, 0);
+            await updateDepart(nextDepart.id, {
+              seats_sold: destRemaining.length,
+              mt_ticket: destMtTicket,
+              solde: destMtTicket + nextDepart.mt_bagage - nextDepart.tot_depense,
+              caisse: destMtTicket + nextDepart.mt_bagage - nextDepart.tot_depense,
             });
           }}
           onClose={() => { setShowEditModal(false); loadDeparts(); }}

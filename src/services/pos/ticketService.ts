@@ -137,8 +137,19 @@ export async function sellTicket(params: SellTicketParams): Promise<TicketRecord
     loyalty_name: params.loyaltyName,
   });
 
-  // NOTE: caller is responsible for updating depart counters when selling multiple tickets at once.
-  // This avoids stale reads when looping over seats. Use sellTickets() for multi-seat.
+  // Recompute depart totals from all active tickets (source of truth)
+  const depart2 = await getDepartById(params.departId);
+  if (depart2) {
+    const activeTickets = await getTicketsForDepart(params.departId);
+    const newMtTicket = activeTickets.reduce((s, t) => s + t.price, 0);
+    await updateDepart(params.departId, {
+      seats_sold: activeTickets.length,
+      mt_ticket: newMtTicket,
+      solde: newMtTicket + depart2.mt_bagage - depart2.tot_depense,
+      caisse: newMtTicket + depart2.mt_bagage - depart2.tot_depense,
+    });
+  }
+
   return ticket;
 }
 
@@ -148,14 +159,13 @@ export async function sellTickets(seats: number[], commonParams: Omit<SellTicket
     const ticket = await sellTicket({ ...commonParams, seatNumber: seat });
     soldTickets.push(ticket);
   }
-  // Single depart update after all inserts
+  // Final recompute from source of truth (sellTicket already updates per-ticket, this ensures consistency)
   const depart = await getDepartById(commonParams.departId);
   if (depart) {
-    const soldCount = (await getTicketsForDepart(commonParams.departId)).filter(t => t.status !== 'cancelled').length;
-    const totalAdded = soldTickets.reduce((s, t) => s + t.price, 0);
-    const newMtTicket = depart.mt_ticket + totalAdded;
+    const activeTickets = await getTicketsForDepart(commonParams.departId);
+    const newMtTicket = activeTickets.reduce((s, t) => s + t.price, 0);
     await updateDepart(commonParams.departId, {
-      seats_sold: soldCount,
+      seats_sold: activeTickets.length,
       mt_ticket: newMtTicket,
       solde: newMtTicket + depart.mt_bagage - depart.tot_depense,
       caisse: newMtTicket + depart.mt_bagage - depart.tot_depense,
@@ -174,7 +184,7 @@ export async function cancelTicket(ticketId: string): Promise<void> {
   const depart = await getDepartById(ticket.depart_id);
   if (depart) {
     const remainingTickets = await getTicketsForDepart(ticket.depart_id);
-    const newMtTicket = Math.max(0, depart.mt_ticket - ticket.price);
+    const newMtTicket = remainingTickets.reduce((s, t) => s + t.price, 0);
     await updateDepart(ticket.depart_id, {
       seats_sold: remainingTickets.length,
       mt_ticket: newMtTicket,
