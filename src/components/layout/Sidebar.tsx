@@ -9,7 +9,7 @@ import {
   PackagePlus, Truck, ChevronLeft, ChevronRight, ChevronDown, X, ShoppingCart, Car, BarChart2,
   Droplets, ArrowDownCircle, ArrowUpCircle, Zap,
   Wallet, MinusCircle, UserX, MessageSquareWarning, BookOpen, FileCheck, Landmark,
-  PieChart, Luggage, ScrollText, Archive, Wifi, Container, Bus,
+  PieChart, Luggage, ScrollText, Archive, Wifi, Container,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import type { UserRole } from '../../types';

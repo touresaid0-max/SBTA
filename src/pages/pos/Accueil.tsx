@@ -7,7 +7,6 @@ import {
 import { supabase } from '@/services/supabase';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
-import { usePOSSession } from '@/services/pos/POSSessionContext';
 
 interface TileConfig {
   label: string;
