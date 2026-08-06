@@ -137,11 +137,49 @@ export async function cloturerDepart(
   departId: string,
   userName?: string,
 ): Promise<DepartRecord | null> {
-  return localUpdate<DepartRecord>('departs', departId, {
+  const existing = (await getAll<DepartRecord>('departs')).find(d => d.id === departId) ?? null;
+  const updated = await localUpdate<DepartRecord>('departs', departId, {
     cloture: true,
     cloture_at: new Date().toISOString(),
     cloture_by: userName,
   });
+
+  if (existing?.is_ramassage && !existing.ramassage_notified && existing.arrival_station_id) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      let originName: string | undefined;
+      let destName: string | undefined;
+      try {
+        const { data: sts } = await supabase
+          .from('stations')
+          .select('id,name')
+          .in('id', [existing.station_id, existing.arrival_station_id]);
+        originName = sts?.find(s => s.id === existing.station_id)?.name;
+        destName = sts?.find(s => s.id === existing.arrival_station_id)?.name;
+      } catch { /* offline: names optional */ }
+
+      await supabase.from('ramassage_notifications').insert({
+        local_depart_id: existing.id,
+        route_id: existing.route_id || null,
+        route_name: existing.route_name ?? null,
+        departure_number: existing.departure_number ?? null,
+        bus_id: existing.bus_id || null,
+        bus_registration: existing.bus_plate ?? existing.bus_name ?? null,
+        origin_station_id: existing.station_id || null,
+        origin_station_name: originName ?? existing.station_name ?? null,
+        destination_station_id: existing.arrival_station_id,
+        destination_station_name: destName ?? null,
+        status: 'pending',
+        created_by: user?.id ?? null,
+      });
+
+      await localUpdate<DepartRecord>('departs', departId, { ramassage_notified: true });
+    } catch {
+      // Notification best-effort; departure remains closed even if offline.
+    }
+  }
+
+  return updated;
 }
 
 export async function getDepartsForOtherStations(currentStationId: string, counterId?: string): Promise<DepartRecord[]> {

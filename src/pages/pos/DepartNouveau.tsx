@@ -35,6 +35,7 @@ export default function POSDepartNouveau() {
 
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
+  const [isRamassage, setIsRamassage] = useState(false);
   const [enableOtherStation, setEnableOtherStation] = useState(false);
   const [otherStationId, setOtherStationId] = useState('');
   const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
@@ -204,7 +205,9 @@ export default function POSDepartNouveau() {
         departure_datetime: `${departureDate}T${departureTime || '00:00'}:00`,
         departure_date: departureDate,
         departure_time: departureTime || '',
-        status: 'planned',
+        status: isRamassage ? 'ramassage' : 'planned',
+        is_ramassage: isRamassage,
+        is_ac: false,
         seats_total: seatsTotal,
         seats_from: seatsFrom,
         seat_allocations: allAllocations.length > 0 ? allAllocations : undefined,
@@ -372,6 +375,42 @@ export default function POSDepartNouveau() {
               </div>
             </div>
             )}
+
+            {/* Ramassage */}
+            <div>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Ramassage</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRamassage(false)}
+                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors"
+                  style={{
+                    borderColor: !isRamassage ? 'var(--primary)' : 'var(--border)',
+                    color: !isRamassage ? 'var(--primary)' : 'var(--text-secondary)',
+                    backgroundColor: !isRamassage ? 'var(--primary-light)' : 'var(--surface)',
+                  }}
+                >
+                  Non
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRamassage(true)}
+                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors"
+                  style={{
+                    borderColor: isRamassage ? 'var(--primary)' : 'var(--border)',
+                    color: isRamassage ? 'var(--primary)' : 'var(--text-secondary)',
+                    backgroundColor: isRamassage ? 'var(--primary-light)' : 'var(--surface)',
+                  }}
+                >
+                  Oui
+                </button>
+              </div>
+              {isRamassage && (
+                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Le départ est enregistré comme Ramassage. Une notification sera envoyée à la gare d'arrivée à la clôture.
+                </p>
+              )}
+            </div>
 
             {/* Convoyeur */}
             <div>

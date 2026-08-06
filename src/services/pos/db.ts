@@ -29,6 +29,8 @@ export interface DepartRecord {
   departure_date: string;
   departure_time: string;
   is_ac: boolean;
+  is_ramassage?: boolean;
+  ramassage_notified?: boolean;
   status: string;
   seats_total: number;
   seats_from: number;

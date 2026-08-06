@@ -244,6 +244,7 @@ import POSBagages from './pages/pos/Bagages';
 import POSDepenses from './pages/pos/Depenses';
 import POSAutresGares from './pages/pos/AutresGares';
 import POSCloture from './pages/pos/Cloture';
+import POSRamassage from './pages/pos/Ramassage';
 import POSParametres from './pages/pos/Parametres';
 import { POSSessionProvider } from './services/pos/POSSessionContext';
 
@@ -553,6 +554,7 @@ function App() {
             <Route path="depenses" element={<POSDepenses />} />
             <Route path="autres-gares" element={<POSAutresGares />} />
             <Route path="cloture" element={<POSCloture />} />
+            <Route path="ramassage" element={<POSRamassage />} />
             <Route path="parametres" element={<POSParametres />} />
           </Route>
 
