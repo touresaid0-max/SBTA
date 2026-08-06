@@ -188,7 +188,7 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     departure_number: p.departure_number ?? null,
     created_at: p.created_at ?? nowIso(),
     updated_at: p.updated_at ?? nowIso(),
-    is_ramassage: p.is_ramassage === true,
+    is_ramassage: false,
     is_anticipated: false,
   };
 }

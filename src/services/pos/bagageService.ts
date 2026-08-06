@@ -7,7 +7,7 @@ export type { BagageRecord };
 
 export async function getBagagesForDepart(departId: string): Promise<BagageRecord[]> {
   const all = await getAll<BagageRecord>('bagages');
-  return all.filter(b => b.depart_id === departId && b.description !== '__deleted__');
+  return all.filter(b => b.depart_id === departId);
 }
 
 export async function generateBagageNumber(): Promise<string> {
