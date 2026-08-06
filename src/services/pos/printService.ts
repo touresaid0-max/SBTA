@@ -154,113 +154,138 @@ function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string
   const reducedBadge = ticket.is_reduced ? `<div class="badge">** REDUCTION APPLIQUEE **</div>` : '';
   const reportedBadge = ticket.is_reported ? `<div class="badge">** TICKET REPORTE **</div>` : '';
 
-  const isWide = mm >= 80;
-  const fsInfo = isWide ? 11 : 9;
-  const fsVal  = isWide ? 13 : 11;
-  const fsBig  = isWide ? 20 : 16;
-  const fsXl   = isWide ? 26 : 20;
-  const fsRoute = isWide ? 15 : 12;
-  const fsNote = isWide ? 9 : 8;
-  const logoMax = isWide ? 72 : 50;
-
   const block = (isSouche: boolean) => `
-<div class="box">
-  <div class="inner">
+<div class="ticket-block">
 
-    ${!isSouche ? `
-    <div class="header">
-      <div class="logo"><img src="/LOGO_SBTA_-1.png" style="width:100%;max-width:${logoMax}px;" alt="SBTA"/></div>
-      <div class="brand">
-        <span class="brand-name">SBTA</span><br/>
-        <span class="brand-sub">Societe Bonkoungou Transport de L&apos;Agneby</span><br/>
-        <span class="brand-sub">Tel 01 14 34 60 / 01 14 34 87</span>
-      </div>
+  ${!isSouche ? `
+  <div class="header">
+    <div class="logo">
+      <img src="/LOGO_SBTA_-1.png" alt="SBTA"/>
     </div>
-    ` : `
-    <div class="souche-title">SOUCHE</div>
-    `}
-
-    <div class="dash"></div>
-    <div class="row big">
-      <span class="big-label">DEPART</span>
-      <span class="sep">|</span>
-      <span class="big-num">${escapeHtml(depNum)}</span>
+    <div class="brand">
+      <div class="brand-name">SBTA</div>
+      <div class="brand-sub">Societe Bonkoungou Transport de L&apos;Agneby</div>
+      <div class="brand-sub">Tel 01 14 34 60 / 01 14 34 87</div>
     </div>
-    <div class="dash"></div>
-
-    <div class="route">
-      ${escapeHtml(originCity)} &nbsp;<span class="arrow">=&gt;</span>&nbsp; ${escapeHtml(destCity)}
-    </div>
-    <div class="dash"></div>
-
-    <div class="row info"><span>GARE DEPART</span><span class="val">${gareDepart}</span></div>
-    <div class="row info"><span>GARE ARRIVEE</span><span class="val">${gareArrivee}</span></div>
-    <div class="dash"></div>
-
-    <div class="row info"><span>SIEGE &nbsp;<b class="val-lg">${escapeHtml(seatStr)}</b></span><span>TARIF &nbsp;<b class="val-lg">${escapeHtml(tarifStr)}</b></span></div>
-    <div class="dash"></div>
-
-    <div class="row info"><span>CAR &nbsp;<b class="val">${carPlate}</b></span><span>N°TICKET &nbsp;<b class="val ticket-num">${ticketNum}</b></span></div>
-    <div class="dash"></div>
-
-    <div class="row info"><span>DATE : &nbsp;<b class="val">${escapeHtml(dateStr)}</b></span><span>HEURE: &nbsp;<b class="val">${escapeHtml(timeStr)}</b></span></div>
-
-    ${reducedBadge}${reportedBadge}
-
-    ${!isSouche ? `
-    <div class="dash"></div>
-    <div class="note">NB. Tout ticket encaisse n est plus remboursable</div>
-    <div class="note">SBTA pas responsable ces bagages sans ticket</div>
-    <div class="note">VEUILLEZ CONSERVER LES TICKETS JUSQU&apos;A DESTINATION</div>
-    ` : ''}
-
-    <div class="dash"></div>
-    <div class="row footnote"><span>V10&nbsp; Imprimer le :</span><span>${escapeHtml(printedAt)}</span></div>
-
   </div>
+  ` : `
+  <div class="souche-title">SOUCHE</div>
+  `}
+
+  <div class="section depart-row">
+    <span class="depart-label">DEPART</span>
+    <span class="depart-sep"></span>
+    <span class="depart-num">${escapeHtml(depNum)}</span>
+  </div>
+
+  <div class="section route-row">
+    <span class="route-from">${escapeHtml(originCity)}</span>
+    <span class="route-to"><span class="arrow">=&gt;</span> ${escapeHtml(destCity)}</span>
+  </div>
+
+  <div class="section">
+    <div class="line"><span class="lbl">GARE DEPART</span><span class="val">${gareDepart}</span></div>
+    <div class="line"><span class="lbl">GARE ARRIVEE</span><span class="val">${gareArrivee}</span></div>
+  </div>
+
+  <div class="section">
+    <div class="line">
+      <span class="lbl">SIEGE&nbsp;&nbsp;<b class="val-strong">${escapeHtml(seatStr)}</b></span>
+      <span class="val">TARIF&nbsp;&nbsp;<b class="val-strong">${escapeHtml(tarifStr)}</b></span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="line">
+      <span class="lbl">CAR&nbsp;&nbsp;<b>${carPlate}</b></span>
+      <span class="val">N°TICKET&nbsp;&nbsp;<b>${ticketNum}</b></span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="line">
+      <span class="lbl">DATE :&nbsp;&nbsp;<b>${escapeHtml(dateStr)}</b></span>
+      <span class="val">HEURE:&nbsp;&nbsp;<b>${escapeHtml(timeStr)}</b></span>
+    </div>
+  </div>
+
+  ${reducedBadge}${reportedBadge}
+
+  ${!isSouche ? `
+  <div class="section notes">
+    <div class="note">NB. Tout ticket encaisse n est plus remboursable</div>
+  </div>
+  <div class="section notes">
+    <div class="note">SBTA pas responsable ces bagages sans ticket</div>
+  </div>
+  <div class="section notes">
+    <div class="note">VEUILLEZ CONSERVER LES TICKETS JUSQU&apos;A DESTINATION</div>
+  </div>
+  ` : ''}
+
+  <div class="footer">
+    <span>V10&nbsp;&nbsp;Imprimer le :</span>
+    <span>${escapeHtml(printedAt)}</span>
+  </div>
+
 </div>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
   @page { size: ${mm}mm auto; margin: 0; }
-  * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin:0; padding:0; }
-  html, body { width: ${mm}mm; margin: 0; padding: 0; }
-  body { font-size: ${fsInfo}px; overflow-x: hidden; display: flex; justify-content: center; }
-  .ticket-wrap { width: calc(${mm}mm - 3mm); margin: 0 auto; }
-  .box { border: 1px solid #000; width: 100%; }
-  .inner { padding: 1.5mm 1.5mm; }
-  .row.info > span { min-width: 0; word-break: break-word; }
-  .row.info > span:first-child { flex: 0 0 auto; padding-right: 2mm; }
-  .row.info > span:last-child { flex: 1 1 auto; text-align: right; }
-  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2mm; width: 100%; }
-  .logo { width: 26%; }
-  .brand { text-align: right; line-height: 1.3; width: 74%; }
-  .brand-name { font-size: ${fsXl}px; font-weight: 900; letter-spacing: 1px; }
-  .brand-sub { font-size: ${fsNote}px; }
-  .souche-title { text-align: center; font-size: ${fsBig}px; font-weight: 900; font-style: italic; margin: 1mm 0; }
-  .dash { border: none; border-top: 1px dashed #000; margin: 1mm 0; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; width: 100%; }
-  .row.big { font-size: ${fsBig}px; font-weight: 900; }
-  .big-label { flex: 0 0 auto; }
-  .sep { flex: 1 1 auto; text-align: center; font-size: ${fsVal}px; color: #555; }
-  .big-num { flex: 0 0 auto; }
-  .route { font-size: ${fsRoute}px; font-weight: 900; padding: 1mm 0; word-break: break-word; }
-  .row.info { font-size: ${fsInfo}px; padding: 0.3mm 0; }
-  .row.info .val { font-weight: bold; }
-  .val-lg { font-size: ${fsVal}px; font-weight: bold; }
-  .ticket-num { color: #0066cc; }
-  .badge { text-align: center; font-size: ${fsVal}px; font-weight: bold; padding: 1mm 0 0; }
-  .note { text-align: center; font-size: ${fsNote}px; padding: 0.3mm 0; }
-  .row.footnote { font-size: ${fsNote}px; padding-top: 0.5mm; }
-  .sep-cut { margin: 2mm 0; border-top: 2px dashed #000; text-align: center; font-size: ${fsNote}px; padding-top: 1mm; }
+  * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { background: #fff; }
+  body { margin: 0; padding: 0; }
+  .ticket-container { width: 100%; max-width: 480px; margin: 0 auto; padding: 10px; }
+
+  .ticket-block { width: 100%; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 8px; gap: 8px; }
+  .logo { flex: 0 0 auto; width: 78px; }
+  .logo img { width: 100%; height: auto; display: block; }
+  .brand { flex: 1 1 auto; text-align: right; line-height: 1.25; }
+  .brand-name { font-size: 30px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
+  .brand-sub { font-size: 11px; }
+
+  .souche-title { font-style: italic; font-weight: bold; font-size: 20px; text-align: center; margin: 10px 0; }
+
+  .section { border-bottom: 1.5px dashed #000; padding: 6px 2px; }
+  .section:first-of-type { border-top: 1.5px dashed #000; }
+
+  .depart-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; font-size: 22px; font-weight: 900; }
+  .depart-label { flex: 0 0 auto; }
+  .depart-sep { flex: 1 1 auto; text-align: center; border-left: 1.5px solid #000; height: 22px; align-self: center; margin: 0 auto; width: 0; }
+  .depart-num { flex: 0 0 auto; }
+
+  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 15px; font-weight: 900; padding: 8px 4px; }
+  .route-from { flex: 0 0 auto; }
+  .route-to { flex: 1 1 auto; text-align: right; word-break: break-word; }
+  .route-to .arrow { font-weight: 900; }
+
+  .line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
+  .line .lbl { flex: 0 0 auto; }
+  .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; word-break: break-word; }
+  .val-strong { font-weight: 900; font-size: 14px; }
+
+  .notes { padding: 4px 2px; }
+  .note { text-align: center; font-size: 11px; }
+
+  .badge { text-align: center; font-weight: bold; padding: 4px 0; font-size: 12px; }
+
+  .footer { display: flex; align-items: center; justify-content: space-between; padding: 6px 2px 2px; font-size: 10px; }
+
+  .cut { margin: 12px 0 6px; border-top: 2px dashed #000; }
+
+  @media print {
+    body { margin: 0; padding: 0; background: #fff; }
+    .ticket-container { width: 100% !important; max-width: 480px !important; margin: 0 auto !important; padding: 10px; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
 </style></head><body>
-  <div class="ticket-wrap">
-  ${block(false)}
-
-  <div class="sep-cut">&mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash; &mdash;</div>
-
-  ${block(true)}
+  <div class="ticket-container">
+    ${block(false)}
+    <div class="cut"></div>
+    ${block(true)}
   </div>
-
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
 </body></html>`;
 }
