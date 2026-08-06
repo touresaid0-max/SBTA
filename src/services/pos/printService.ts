@@ -471,3 +471,132 @@ export const PrintService = {
 
   buildESCPOS,
 };
+
+export interface PrintRamassageData {
+  notif: {
+    route_name?: string | null;
+    departure_number?: number | null;
+    bus_registration?: string | null;
+    driver_name?: string | null;
+    origin_station_name?: string | null;
+    destination_station_name?: string | null;
+    departure_datetime?: string | null;
+    collected_places?: number | null;
+    collected_amount?: number | null;
+  };
+  stationName?: string;
+}
+
+function buildHTMLRamassageBordereau(data: PrintRamassageData, settings: PrintSettings): string {
+  const { notif, stationName } = data;
+  const mm = settings.width_mm;
+  const headerHtml = settings.header_lines.map(l => `<div class="hdr">${escapeHtml(l)}</div>`).join('');
+  const footerHtml = settings.footer_lines.map(l => `<div class="ftr">${escapeHtml(l)}</div>`).join('');
+
+  let dateStr = '—', timeStr = '—';
+  if (notif.departure_datetime) {
+    try {
+      const d = new Date(notif.departure_datetime);
+      if (!isNaN(d.getTime())) {
+        dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+        timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      }
+    } catch { /* defaults */ }
+  }
+
+  const nowD = new Date();
+  const printedAt = `${String(nowD.getDate()).padStart(2,'0')}/${String(nowD.getMonth()+1).padStart(2,'0')}/${nowD.getFullYear()} ${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau Ramassage</title><style>
+  @page { size: ${mm}mm auto; margin: 0; }
+  * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff; margin: 0; padding: 0; }
+  .container { width: 100%; max-width: 480px; margin: 0 auto; padding: 10px; }
+  .hdr { text-align: center; font-size: 12px; }
+  .brand { text-align: center; font-size: 22px; font-weight: 900; margin: 4px 0; }
+  .title { text-align: center; font-size: 18px; font-weight: 900; padding: 8px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; margin: 6px 0; }
+  .section { padding: 6px 2px; border-bottom: 1.5px dashed #000; }
+  .row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
+  .lbl { flex: 0 0 auto; }
+  .val { flex: 1 1 auto; text-align: right; font-weight: bold; word-break: break-word; }
+  .val-strong { font-weight: 900; font-size: 15px; }
+  .ftr { text-align: center; font-size: 11px; margin-top: 4px; }
+  .printed { text-align: center; font-size: 10px; margin-top: 6px; }
+  @media print { body { margin: 0; padding: 0; } .container { width: 100% !important; max-width: 480px !important; } }
+</style></head><body>
+  <div class="container">
+    ${headerHtml}
+    <div class="brand">SBTA</div>
+    <div class="title">BORDEREAU RAMASSAGE</div>
+    <div class="section">
+      <div class="row"><span class="lbl">N° Départ</span><span class="val val-strong">${escapeHtml(String(notif.departure_number ?? '—'))}</span></div>
+      <div class="row"><span class="lbl">Ligne</span><span class="val">${escapeHtml(notif.route_name ?? '—')}</span></div>
+    </div>
+    <div class="section">
+      <div class="row"><span class="lbl">Immatriculation</span><span class="val">${escapeHtml(notif.bus_registration ?? '—')}</span></div>
+      <div class="row"><span class="lbl">Chauffeur</span><span class="val">${escapeHtml(notif.driver_name ?? '—')}</span></div>
+    </div>
+    <div class="section">
+      <div class="row"><span class="lbl">Gare de départ</span><span class="val">${escapeHtml(notif.origin_station_name ?? '—')}</span></div>
+      <div class="row"><span class="lbl">Gare de destination</span><span class="val">${escapeHtml(notif.destination_station_name ?? '—')}</span></div>
+    </div>
+    <div class="section">
+      <div class="row"><span class="lbl">Places vendues</span><span class="val val-strong">${escapeHtml(String(notif.collected_places ?? 0))}</span></div>
+      <div class="row"><span class="lbl">Montant collecté</span><span class="val val-strong">${(notif.collected_amount ?? 0).toLocaleString('fr-FR')} FCFA</span></div>
+    </div>
+    <div class="section">
+      <div class="row"><span class="lbl">Date</span><span class="val">${escapeHtml(dateStr)}</span></div>
+      <div class="row"><span class="lbl">Heure</span><span class="val">${escapeHtml(timeStr)}</span></div>
+      <div class="row"><span class="lbl">Guichet</span><span class="val">${escapeHtml(stationName ?? '—')}</span></div>
+    </div>
+    ${footerHtml}
+    <div class="printed">Imprimé le ${escapeHtml(printedAt)}</div>
+  </div>
+  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
+</body></html>`;
+}
+
+export async function printRamassageBordereau(data: PrintRamassageData): Promise<boolean> {
+  const settings = await getPrintSettings();
+  const html = buildHTMLRamassageBordereau(data, settings);
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  return new Promise((resolve) => {
+    const cw = iframe.contentWindow;
+    const doc = cw?.document;
+    if (!doc) { iframe.remove(); resolve(false); return; }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      setTimeout(() => iframe.remove(), 1500);
+      resolve(ok);
+    };
+
+    if (cw) {
+      cw.addEventListener('afterprint', () => finish(true), { once: true });
+    }
+    setTimeout(() => {
+      try {
+        cw?.focus();
+        cw?.print();
+      } catch {
+        finish(false);
+        return;
+      }
+      setTimeout(() => finish(true), 2000);
+    }, 300);
+  });
+}
