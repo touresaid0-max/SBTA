@@ -63,7 +63,7 @@ export default function POSDepartNouveau() {
       const [l, v, c, g] = await Promise.all([getLignes(), getVehicules(), getChauffeurs(), getGares()]);
 
       let routeIds = session?.assigned_route_ids ?? [];
-      if (navigator.onLine && session?.counter_id) {
+      if (session?.counter_id) {
         const fresh = await getAssignedRouteIds(session.counter_id);
         if (fresh.length > 0) routeIds = fresh;
       }

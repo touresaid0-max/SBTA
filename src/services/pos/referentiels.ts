@@ -1,4 +1,3 @@
-import { db, type ReferentielRecord } from './db';
 import { supabase } from '@/services/supabase';
 
 type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops';
@@ -37,25 +36,11 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
 };
 
 export async function refreshReferentiel(type: RefType): Promise<unknown[]> {
-  const data = await QUERIES[type]();
-  const record: ReferentielRecord = {
-    key: type,
-    type,
-    data,
-    updated_at: new Date().toISOString(),
-  };
-  await db.referentiels.put(record);
-  return data;
+  return QUERIES[type]();
 }
 
 export async function getReferentiel<T = unknown>(type: RefType): Promise<T[]> {
-  try {
-    return (await refreshReferentiel(type)) as T[];
-  } catch {
-    const cached = await db.referentiels.get(type);
-    if (cached) return cached.data as T[];
-    return [];
-  }
+  return (await QUERIES[type]()) as T[];
 }
 
 export async function refreshAllReferentiels(): Promise<void> {

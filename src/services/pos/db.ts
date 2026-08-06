@@ -167,34 +167,12 @@ export interface PrintSettings {
 }
 
 class POSDatabase extends Dexie {
-  departs!: Table<DepartRecord, string>;
-  tickets!: Table<TicketRecord, string>;
-  bagages!: Table<BagageRecord, string>;
-  depenses!: Table<DepenseRecord, string>;
-  referentiels!: Table<ReferentielRecord, string>;
-  sync_queue!: Table<SyncQueueItem, number>;
   session!: Table<SessionRecord, string>;
   print_settings!: Table<PrintSettings, string>;
 
   constructor() {
     super('pos_guichet_db');
-    this.version(1).stores({
-      departs: 'id, route_id, bus_id, driver_id, station_id, departure_datetime, status, synced',
-      tickets: 'id, depart_id, status, created_at, synced',
-      bagages: 'id, depart_id, ticket_id, created_at, synced',
-      depenses: 'id, station_id, depart_id, type, created_at, synced',
-      referentiels: 'key, type, updated_at',
-      sync_queue: '++id, entity, status, created_at, tries',
-      session: 'id, user_id, station_id',
-      print_settings: 'id',
-    });
-    this.version(2).stores({
-      departs: 'id, route_id, bus_id, driver_id, station_id, counter_id, departure_datetime, status, synced',
-      tickets: 'id, depart_id, status, created_at, synced',
-      bagages: 'id, depart_id, ticket_id, created_at, synced',
-      depenses: 'id, station_id, depart_id, type, created_at, synced',
-      referentiels: 'key, type, updated_at',
-      sync_queue: '++id, entity, status, created_at, tries',
+    this.version(3).stores({
       session: 'id, user_id, station_id',
       print_settings: 'id',
     });

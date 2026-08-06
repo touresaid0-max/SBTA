@@ -1,14 +1,10 @@
-import { db } from './db';
 import { supabase } from '@/services/supabase';
-import { useAuthStore } from '@/store/authStore';
-
-function uuid(): string {
-  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
+import type {
+  DepartRecord,
+  TicketRecord,
+  BagageRecord,
+  DepenseRecord,
+} from './db';
 
 type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses';
 
@@ -19,12 +15,148 @@ const TABLE_MAP: Record<StoreName, string> = {
   depenses: 'bus_expenses',
 };
 
+function uuid(): string {
+  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
 async function getCurrentUserId(): Promise<string | null> {
   const { data } = await supabase.auth.getUser();
   return data?.user?.id ?? null;
 }
 
-// ── Field mapping: local POS record → remote Supabase row ──
+// ── Reverse mapping: Supabase row → POS local record ──
+
+function mapScheduleToDepart(r: any): DepartRecord {
+  const depIso = r.departure_datetime ?? new Date().toISOString();
+  const depDate = depIso.slice(0, 10);
+  const depTime = depIso.slice(11, 16);
+
+  let bus_plate = r.bus_registration ?? '';
+  let bus_name = r.bus_brand && r.bus_model ? `${r.bus_brand} ${r.bus_model}` : (r.bus_name ?? '');
+  let driver_name = r.driver_name ?? '';
+
+  const status = r.status ?? 'planifie';
+  return {
+    id: r.id,
+    departure_number: r.departure_number ?? 0,
+    route_id: r.route_id ?? '',
+    route_name: r.route_name ?? '',
+    route_number: r.departure_number ?? 0,
+    bus_id: r.bus_id ?? '',
+    bus_plate,
+    bus_name,
+    driver_id: r.driver_id ?? '',
+    driver_name,
+    convoyeur_id: undefined,
+    convoyeur_name: undefined,
+    apprenti_id: undefined,
+    apprenti_name: undefined,
+    departure_datetime: depIso,
+    departure_date: depDate,
+    departure_time: depTime,
+    is_ac: r.is_ac ?? false,
+    is_ramassage: r.is_ramassage ?? false,
+    ramassage_notified: r.ramassage_notified ?? false,
+    company_id: r.company_id,
+    status,
+    seats_total: r.seats_available ?? 0,
+    seats_from: 1,
+    seats_sold: r.seats_reserved ?? 0,
+    seat_allocations: r.seat_allocations ?? undefined,
+    station_id: r.departure_station_id ?? '',
+    station_name: r.station_name ?? undefined,
+    arrival_station_id: r.arrival_station_id ?? undefined,
+    counter_id: r.counter_id ?? undefined,
+    source: r.source ?? 'guichet',
+    other_station_id: r.other_station_id ?? undefined,
+    other_station_name: r.other_station_name ?? undefined,
+    cloture: status === 'termine',
+    cloture_at: r.cloture_at ?? undefined,
+    cloture_by: r.cloture_by ?? undefined,
+    mt_ticket: r.mt_ticket ?? 0,
+    mt_bagage: r.mt_bagage ?? 0,
+    tot_depense: r.tot_depense ?? 0,
+    solde: r.solde ?? 0,
+    caisse: r.caisse ?? 0,
+    confirmed: status === 'en_cours',
+    cancelled: status === 'annule',
+    created_at: r.created_at ?? nowIso(),
+    updated_at: r.updated_at ?? nowIso(),
+    synced: true,
+  };
+}
+
+function mapReservationToTicket(r: any): TicketRecord {
+  const seats = Array.isArray(r.seat_numbers) ? r.seat_numbers : [];
+  return {
+    id: r.id,
+    depart_id: r.schedule_id ?? '',
+    ticket_number: r.booking_reference ?? '',
+    seat_number: seats.length > 0 ? Number(seats[0]) : 0,
+    seat_numbers: seats.map((s: any) => String(s)),
+    destination: r.destination_city_name ?? '',
+    destination_id: r.destination_id ?? undefined,
+    passenger_name: r.passenger_name ?? '',
+    passenger_phone: r.passenger_phone ?? '',
+    price: Number(r.total_price ?? 0),
+    original_price: Number(r.total_price ?? 0),
+    is_reduced: false,
+    is_reported: false,
+    is_ac: false,
+    print_ticket: true,
+    payment_method: 'cash',
+    status: r.status === 'annulee' ? 'cancelled' : 'sold',
+    loyalty_card_number: r.loyalty_card_number ?? undefined,
+    loyalty_name: r.loyalty_name ?? undefined,
+    created_at: r.created_at ?? nowIso(),
+    updated_at: r.updated_at ?? nowIso(),
+    synced: true,
+  };
+}
+
+function mapBaggageToBagage(r: any): BagageRecord {
+  return {
+    id: r.id,
+    depart_id: r.schedule_id ?? '',
+    bagage_number: r.baggage_number ?? '',
+    ticket_id: r.reservation_id ?? undefined,
+    ticket_number: r.ticket_number ?? undefined,
+    with_ticket: r.has_ticket ?? false,
+    with_ticket_report: false,
+    price: Number(r.price ?? 0),
+    destination: r.destination ?? '',
+    description: r.description ?? '',
+    car_plate: r.bus_registration ?? '',
+    owner_name: r.owner_name ?? '',
+    owner_phone: r.owner_phone ?? '',
+    print_bagage: true,
+    created_at: r.created_at ?? nowIso(),
+    updated_at: r.updated_at ?? nowIso(),
+    synced: true,
+  };
+}
+
+function mapExpenseToDepense(r: any): DepenseRecord {
+  return {
+    id: r.id,
+    depart_id: r.schedule_id ?? '',
+    type: r.expense_type ?? 'autre',
+    label: r.description ?? '',
+    amount: Number(r.amount ?? 0),
+    description: r.description ?? '',
+    station_id: r.station_id ?? '',
+    expense_date: r.expense_date ?? new Date().toISOString().slice(0, 10),
+    created_at: r.created_at ?? nowIso(),
+    updated_at: r.updated_at ?? nowIso(),
+    synced: true,
+  };
+}
+
+// ── Forward mapping: POS local record → Supabase row ──
 
 function computeArrivalDatetime(departureIso: string): string {
   const dep = new Date(departureIso);
@@ -198,7 +330,6 @@ function mapDepenseInsert(payload: Record<string, unknown>): Record<string, unkn
   };
 }
 
-// Fields that are LOCAL ONLY — updates containing ONLY these should not be sent to remote
 const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'mt_ticket', 'mt_bagage', 'tot_depense', 'solde', 'caisse',
   'cloture_at', 'cloture_by', 'departure_number', 'route_number',
@@ -224,7 +355,7 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
   return false;
 }
 
-// ── Public API: same signatures as before, but now writes to Supabase in real-time ──
+// ── Public API: all reads and writes go directly to Supabase ──
 
 export async function localInsert<
   T extends { id: string; created_at: string; updated_at: string; synced?: boolean },
@@ -242,7 +373,6 @@ export async function localInsert<
     synced: true,
   } as unknown as T;
 
-  // Write to Supabase immediately
   const table = TABLE_MAP[store];
   let remotePayload: Record<string, unknown>;
 
@@ -269,8 +399,6 @@ export async function localInsert<
   const { error } = await supabase.from(table).upsert(remotePayload);
   if (error) throw error;
 
-  // Also keep in local IndexedDB for POS display
-  await (db[store] as any).put(full);
   return full;
 }
 
@@ -281,7 +409,7 @@ export async function localUpdate<
   id: string,
   patch: Partial<T>,
 ): Promise<T | null> {
-  const existing = await (db[store] as any).get(id);
+  const existing = await getById<T>(store as any, id);
   if (!existing) return null;
 
   const updated = {
@@ -292,7 +420,6 @@ export async function localUpdate<
     synced: true,
   } as unknown as T;
 
-  // Write to Supabase if there are remotely-mappable fields
   const patchRecord = patch as unknown as Record<string, unknown>;
   let remotePayload: Record<string, unknown> | null = null;
 
@@ -308,7 +435,6 @@ export async function localUpdate<
     if (error && !error.message.includes('0 rows')) throw error;
   }
 
-  await (db[store] as any).put(updated);
   return updated;
 }
 
@@ -316,23 +442,41 @@ export async function localDelete(store: StoreName, id: string): Promise<void> {
   const table = TABLE_MAP[store];
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error && !error.message.includes('0 rows')) throw error;
-  await (db[store] as any).delete(id);
 }
 
 export async function getAll<T>(store: StoreName): Promise<T[]> {
-  return await (db[store] as any).toArray();
+  const table = TABLE_MAP[store];
+  const { data, error } = await supabase.from(table).select('*');
+  if (error) throw error;
+  if (!data) return [];
+
+  const mapper =
+    store === 'departs' ? mapScheduleToDepart :
+    store === 'tickets' ? mapReservationToTicket :
+    store === 'bagages' ? mapBaggageToBagage :
+    mapExpenseToDepense;
+
+  return (data as any[]).map(mapper) as T[];
 }
 
 export async function getById<T extends { id: string }>(
   store: StoreName,
   id: string,
 ): Promise<T | undefined> {
-  return await (db[store] as any).get(id);
+  const table = TABLE_MAP[store];
+  const { data, error } = await supabase.from(table).select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!data) return undefined;
+
+  const mapper =
+    store === 'departs' ? mapScheduleToDepart :
+    store === 'tickets' ? mapReservationToTicket :
+    store === 'bagages' ? mapBaggageToBagage :
+    mapExpenseToDepense;
+
+  return mapper(data) as T;
 }
 
 export async function pendingCount(): Promise<number> {
   return 0;
 }
-
-// Ensure auth store is initialized (side-effect import to avoid tree-shaking)
-void useAuthStore;
