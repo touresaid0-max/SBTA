@@ -7,7 +7,7 @@ import {
   ClipboardList, ClipboardCheck, AlertTriangle, CalendarClock, CalendarDays, Droplet,
   DoorOpen, Shield, Monitor, TrendingUp, UserCog, DollarSign, Banknote,
   PackagePlus, Truck, ChevronLeft, ChevronRight, ChevronDown, X, ShoppingCart, Car, BarChart2,
-  Droplets, ArrowDownCircle, ArrowUpCircle, Zap,
+  Droplets, ArrowDownCircle, ArrowUpCircle, Zap, ArrowDownToLine,
   Wallet, MinusCircle, UserX, MessageSquareWarning, BookOpen, FileCheck, Landmark,
   PieChart, Luggage, ScrollText, Archive, Wifi, Container,
 } from 'lucide-react';
@@ -132,6 +132,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Guichets',            path: '/chef-gare/counters',     icon: <Monitor className="w-5 h-5" /> },
     { label: 'Bagagistes',          path: '/chef-gare/baggage-handlers', icon: <Luggage className="w-5 h-5" /> },
     { label: 'Ventes guichets',     path: '/chef-gare/sales',        icon: <TicketCheck className="w-5 h-5" /> },
+    { label: 'Ramassage',           path: '/chef-gare/ramassage',    icon: <ArrowDownToLine className="w-5 h-5" /> },
     { label: 'Convois',           path: '/chef-gare/convoys',      icon: <Truck className="w-5 h-5" /> },
     { label: 'Rapport convois',     path: '/chef-gare/convoys/report', icon: <FileText className="w-5 h-5" /> },
     { label: 'Rapport journalier',  path: '/chef-gare/daily-report', icon: <FileText className="w-5 h-5" /> },
