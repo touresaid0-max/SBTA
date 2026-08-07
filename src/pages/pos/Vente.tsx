@@ -13,13 +13,14 @@ import type { LigneRef } from '@/services/pos/departService';
 import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
+import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
 import { printBaggageTicket } from '@/utils/printBaggageTicket';
 import { formatCurrency } from '@/utils/formatCurrency';
 import type { DepartRecord } from '@/services/pos/departService';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock, RotateCw,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
-  Package,
+  Package, Banknote,
 } from 'lucide-react';
 
 export default function POSVente() {
@@ -30,6 +31,7 @@ export default function POSVente() {
   const [depart, setDepart] = useState<DepartRecord | null>(null);
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [bagages, setBagages] = useState<BagageRecord[]>([]);
+  const [depenses, setDepenses] = useState<DepenseRecord[]>([]);
   const [soldSeats, setSoldSeats] = useState<number[]>([]);
   const [stations, setStations] = useState<StationRef[]>([]);
   const [tarifs, setTarifs] = useState<TarifRef[]>([]);
@@ -90,7 +92,7 @@ export default function POSVente() {
       }
       setDepart(d);
 
-      const [t, s, st, ta, li, bg, rcs] = await Promise.all([
+      const [t, s, st, ta, li, bg, rcs, dp] = await Promise.all([
         getTicketsForDepart(departId),
         getSoldSeats(departId),
         getStations(),
@@ -98,6 +100,7 @@ export default function POSVente() {
         getLignes(),
         getBagagesForDepart(departId),
         getRouteCityStops(),
+        getDepensesForDepart(departId),
       ]);
       setTickets(t);
       setSoldSeats(s);
@@ -106,6 +109,7 @@ export default function POSVente() {
       setLignes(li);
       setBagages(bg);
       setRouteCityStops(rcs);
+      setDepenses(dp.filter(d => d.description !== '__deleted__'));
     } catch {
       // non-critical
     } finally {
@@ -218,6 +222,8 @@ export default function POSVente() {
 
   const ticketTotal = useMemo(() => tickets.reduce((sum, t) => sum + t.price, 0), [tickets]);
   const bagageTotal = useMemo(() => bagages.reduce((sum, b) => sum + b.price, 0), [bagages]);
+  const depenseTotal = useMemo(() => depenses.reduce((sum, d) => sum + d.amount, 0), [depenses]);
+  const solde = useMemo(() => ticketTotal + bagageTotal - depenseTotal, [ticketTotal, bagageTotal, depenseTotal]);
 
   // Destination name for display
   const destStationName = useMemo(() => {
@@ -1135,6 +1141,38 @@ export default function POSVente() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Financial summary — recettes / dépenses / solde / caisse */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--success-light)', border: '2px solid var(--success)' }}>
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <TicketIcon className="w-4 h-4" style={{ color: 'var(--success)' }} />
+              <p className="text-xs font-bold" style={{ color: 'var(--success)' }}>Recettes tickets</p>
+            </div>
+            <p className="text-xl font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(ticketTotal)}</p>
+          </div>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--warning-light)', border: '2px solid var(--warning)' }}>
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <Package className="w-4 h-4" style={{ color: 'var(--warning)' }} />
+              <p className="text-xs font-bold" style={{ color: 'var(--warning)' }}>Recettes bagages</p>
+            </div>
+            <p className="text-xl font-bold" style={{ color: 'var(--warning)' }}>{formatCurrency(bagageTotal)}</p>
+          </div>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--danger-light)', border: '2px solid var(--danger)' }}>
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <TrendingDown className="w-4 h-4" style={{ color: 'var(--danger)' }} />
+              <p className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Total dépenses</p>
+            </div>
+            <p className="text-xl font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(depenseTotal)}</p>
+          </div>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'var(--surface-raised)', border: '2px solid var(--primary)' }}>
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <Banknote className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+              <p className="text-xs font-bold" style={{ color: 'var(--primary)' }}>Solde / Caisse</p>
+            </div>
+            <p className="text-xl font-bold" style={{ color: solde >= 0 ? 'var(--primary)' : 'var(--danger)' }}>{formatCurrency(solde)}</p>
           </div>
         </div>
 
