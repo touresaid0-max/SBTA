@@ -13,8 +13,6 @@ import {
 const EXPENSE_TYPES = [
   'Carburant',
   'Péage',
-  'Réparation',
-  'Achat stock',
   'Frais route',
   'Autre',
 ];
