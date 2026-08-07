@@ -184,6 +184,8 @@ export default function POSConvois() {
 
   const stationId = session?.station_id ?? null;
   const stationName = session?.station_name ?? null;
+  const counterId = session?.counter_id ?? null;
+  const assignedRouteIds = session?.assigned_route_ids ?? null;
 
   // Master data
   const [routes, setRoutes] = useState<RouteOption[]>([]);
@@ -219,6 +221,18 @@ export default function POSConvois() {
           .from('stations').select('id, name, city_id').eq('id', stationId).maybeSingle();
         if (!stData) { setLoading(false); return; }
 
+        // Resolve assigned route IDs for this counter (from session or DB)
+        let assignedIds = assignedRouteIds;
+        if ((!assignedIds || assignedIds.length === 0) && counterId) {
+          try {
+            const { data: cr } = await supabase
+              .from('counter_routes')
+              .select('route_id')
+              .eq('counter_id', counterId);
+            assignedIds = (cr ?? []).map(r => r.route_id as string);
+          } catch { /* non-critical */ }
+        }
+
         const [routesRes, busesRes, driversRes, stationsRes] = await Promise.all([
           supabase
             .from('routes')
@@ -237,8 +251,14 @@ export default function POSConvois() {
             .from('stations').select('id, name, city_id').eq('is_active', true).order('name'),
         ]);
 
-        setRoutes((routesRes.data || []) as unknown as RouteOption[]);
-        setAllRoutes((routesRes.data || []) as unknown as RouteOption[]);
+        const allStationRoutes = (routesRes.data || []) as unknown as RouteOption[];
+        // Filter to only routes assigned to this guichetier's counter
+        const myRoutes = assignedIds && assignedIds.length > 0
+          ? allStationRoutes.filter(r => assignedIds.includes(r.id))
+          : allStationRoutes;
+
+        setRoutes(myRoutes);
+        setAllRoutes(allStationRoutes);
         setBuses((busesRes.data || []) as unknown as BusOption[]);
         setDrivers((driversRes.data || []) as unknown as DriverOption[]);
         setAllStations((stationsRes.data || []) as unknown as StationOption[]);
@@ -248,7 +268,7 @@ export default function POSConvois() {
         setLoading(false);
       }
     })();
-  }, [stationId]);
+  }, [stationId, counterId, assignedRouteIds]);
 
   // ─── Load convoys list ──────────────────────────────────────────────────────
   const applyPreset = useCallback((p: PeriodPreset) => {
