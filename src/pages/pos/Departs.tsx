@@ -480,28 +480,16 @@ export default function POSDeparts() {
               caisse: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
             });
           }}
-          onPendingTransfer={async (surplusTickets) => {
-            const selectedBus = editVehicules.find(v => v.id === selectedRow.bus_id);
+          onPendingTransfer={async (surplusTickets, newBusId, newBusPlate, newCapacity) => {
             await executeFullTransfer({
               depart: selectedRow,
               surplusTickets,
               nextDepart: null,
-              newBusId: selectedBus?.id ?? selectedRow.bus_id,
-              newBusPlate: selectedBus?.plate_number ?? selectedRow.bus_plate ?? '',
-              newCapacity: selectedBus?.capacity ?? selectedRow.seats_total,
+              newBusId,
+              newBusPlate,
+              newCapacity,
               oldCapacity: selectedRow.seats_total,
               transferReason: 'capacity_reduction',
-            });
-            // Update source depart revenue (surplus tickets remain on source until next depart is created)
-            const sourceSold = editSoldTickets.length - surplusTickets.length;
-            const sourceMtTicket = editSoldTickets
-              .filter(t => !surplusTickets.some(s => s.id === t.id))
-              .reduce((sum, t) => sum + t.price, 0);
-            await updateDepart(selectedRow.id, {
-              seats_sold: sourceSold,
-              mt_ticket: sourceMtTicket,
-              solde: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
-              caisse: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
             });
           }}
           onClose={() => { setShowEditModal(false); loadDeparts(); }}

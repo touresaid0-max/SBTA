@@ -22,7 +22,7 @@ interface EditDepartModalProps {
   nextDepart: DepartRecord | null;
   onSave: (busId: string, busPlate: string, driverId: string, driverName: string, newCapacity: number) => Promise<void>;
   onTransfer: (surplusTickets: TicketRecord[], nextDepart: DepartRecord) => Promise<void>;
-  onPendingTransfer?: (surplusTickets: TicketRecord[]) => Promise<void>;
+  onPendingTransfer?: (surplusTickets: TicketRecord[], newBusId: string, newBusPlate: string, newCapacity: number) => Promise<void>;
   onClose: () => void;
 }
 
@@ -74,11 +74,23 @@ export default function EditDepartModal({
 
     setSaving(true);
     try {
-      await onSave(busId, selectedBus?.plate_number ?? '', driverId, selectedDriver?.full_name ?? '', newCapacity);
-
+      // Step 1: Transfer surplus tickets BEFORE changing the bus capacity.
+      // The database trigger auto_calculate_fill_rate computes fill_rate from
+      // the new bus capacity and the current reservation count. If we reduce
+      // seats_total first while tickets are still on this depart, fill_rate
+      // exceeds 100% and the CHECK constraint rejects the update.
       if (hasSurplus && nextDepart) {
         setPhase('transferring');
         await onTransfer(surplusTickets, nextDepart);
+      } else if (hasSurplus && !nextDepart && onPendingTransfer) {
+        setPhase('transferring');
+        await onPendingTransfer(surplusTickets, busId, selectedBus?.plate_number ?? '', newCapacity);
+      }
+
+      // Step 2: Now save the bus/driver change (safe — reservation count is reduced)
+      await onSave(busId, selectedBus?.plate_number ?? '', driverId, selectedDriver?.full_name ?? '', newCapacity);
+
+      if (hasSurplus && nextDepart) {
         setTransferResult({
           transferredTickets: surplusTickets,
           nextDepart,
@@ -89,8 +101,6 @@ export default function EditDepartModal({
         });
         setPhase('transferred');
       } else if (hasSurplus && !nextDepart && onPendingTransfer) {
-        setPhase('transferring');
-        await onPendingTransfer(surplusTickets);
         setTransferResult({
           transferredTickets: surplusTickets,
           nextDepart: null,
