@@ -199,6 +199,7 @@ export async function cloturerDepart(
 
       const { error: insertError } = await supabase.from('ramassage_notifications').insert({
         local_depart_id: existing.id,
+        schedule_id: existing.id,
         route_id: existing.route_id || null,
         route_name: existing.route_name ?? null,
         departure_number: existing.departure_number ?? null,
