@@ -1,5 +1,5 @@
 import { type DepenseRecord, type DepartRecord } from './db';
-import { localInsert, localUpdate, getAll } from './offlineStore';
+import { localInsert, localDelete, getAll } from './offlineStore';
 import { getDepartById, updateDepart } from './departService';
 
 export type { DepenseRecord };
@@ -26,6 +26,8 @@ export interface CreateDepenseParams {
   amount: number;
   description: string;
   stationId: string;
+  busId?: string;
+  counterId?: string;
   expenseDate: string;
 }
 
@@ -41,6 +43,8 @@ export async function createDepense(params: CreateDepenseParams): Promise<Depens
     amount: params.amount,
     description: params.description,
     station_id: params.stationId,
+    bus_id: params.busId,
+    counter_id: params.counterId,
     expense_date: params.expenseDate,
   });
 
@@ -54,10 +58,7 @@ export async function deleteDepense(depenseId: string): Promise<void> {
   const depense = all.find(d => d.id === depenseId);
   if (!depense) return;
 
-  await localUpdate<DepenseRecord>('depenses', depenseId, {
-    ...depense,
-    description: '__deleted__',
-  } as Partial<DepenseRecord>);
+  await localDelete('depenses', depenseId);
 
   await recalcDepartTotals(depense.depart_id);
 }

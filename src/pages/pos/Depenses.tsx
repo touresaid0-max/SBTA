@@ -11,9 +11,9 @@ import {
 } from 'lucide-react';
 
 const EXPENSE_TYPES = [
-  'Carburant',
-  'Péage',
-  'Frais route',
+  'Carburant compl.',
+  'Rations',
+  'Péages',
   'Autre',
 ];
 
@@ -83,6 +83,8 @@ export default function POSDepenses() {
         amount,
         description: description.trim(),
         stationId: session?.station_id ?? '',
+        busId: selectedDepart?.bus_id,
+        counterId: selectedDepart?.counter_id ?? session?.counter_id,
         expenseDate,
       });
 

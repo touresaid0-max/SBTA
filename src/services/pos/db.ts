@@ -112,6 +112,8 @@ export interface DepenseRecord {
   amount: number;
   description: string;
   station_id: string;
+  bus_id?: string;
+  counter_id?: string;
   expense_date: string;
   created_at: string;
   updated_at: string;

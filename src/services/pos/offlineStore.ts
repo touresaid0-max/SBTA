@@ -16,7 +16,7 @@ const TABLE_MAP: Record<StoreName, string> = {
   departs: 'schedules',
   tickets: 'reservations',
   bagages: 'baggage_tickets',
-  depenses: 'bus_expenses',
+  depenses: 'counter_charges',
 };
 
 async function getCurrentUserId(): Promise<string | null> {
@@ -157,45 +157,65 @@ function mapBagageInsert(payload: Record<string, unknown>): Record<string, unkno
 }
 
 const EXPENSE_TYPE_MAP: Record<string, string> = {
-  'carburant': 'carburant',
+  'carburant compl.': 'carburant_complement',
+  'carburant': 'carburant_complement',
   'péage': 'peage',
   'peage': 'peage',
-  'réparation': 'reparation',
-  'reparation': 'reparation',
-  'achat stock': 'autres',
-  'frais route': 'taxe_route',
-  'autre': 'autre',
+  'frais de route': 'ration',
+  'frais route': 'ration',
+  'ration': 'ration',
+  'autre': 'autres',
   'autres': 'autres',
-  'assurance': 'assurance',
-  'taxes': 'taxes',
-  'lavage': 'lavage',
-  'vignette': 'vignette',
-  'visite technique': 'visite_technique',
-  'visite_technique': 'visite_technique',
-  'parking': 'parking',
-  'amende': 'amende',
-  'taxe route': 'taxe_route',
-  'taxe_route': 'taxe_route',
 };
 
 function normalizeExpenseType(raw: string | undefined): string {
-  if (!raw) return 'autre';
+  if (!raw) return 'autres';
   const key = raw.trim().toLowerCase();
-  return EXPENSE_TYPE_MAP[key] ?? 'autre';
+  return EXPENSE_TYPE_MAP[key] ?? 'autres';
 }
 
-function mapDepenseInsert(payload: Record<string, unknown>): Record<string, unknown> {
+const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage']);
+
+async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const p = payload;
-  return {
+  const chargeType = normalizeExpenseType((p.type as string) ?? (p.label as string));
+  const scheduleId = (p.depart_id as string) ?? null;
+
+  const row = {
     id: p.id,
+    schedule_id: scheduleId,
+    counter_id: p.counter_id ?? null,
+    station_id: p.station_id ?? null,
     bus_id: p.bus_id ?? null,
-    expense_type: normalizeExpenseType((p.type as string) ?? (p.label as string)),
+    charge_type: chargeType,
+    description: (p.description as string) || (p.label as string) || '',
     amount: p.amount ?? 0,
-    description: (p.description as string) ?? (p.label as string) ?? '',
-    expense_date: (p.expense_date as string) ?? new Date().toISOString().slice(0, 10),
+    charge_date: (p.expense_date as string) ?? new Date().toISOString().slice(0, 10),
     status: 'en_attente',
     created_at: p.created_at ?? nowIso(),
   };
+
+  if (UNIQUE_CHARGE_TYPES.has(chargeType) && scheduleId) {
+    const { data: existing } = await supabase
+      .from('counter_charges')
+      .select('id')
+      .eq('schedule_id', scheduleId)
+      .eq('charge_type', chargeType)
+      .maybeSingle();
+    if (existing) {
+      await supabase
+        .from('counter_charges')
+        .update({
+          amount: row.amount,
+          description: row.description,
+          charge_date: row.charge_date,
+          updated_at: nowIso(),
+        })
+        .eq('id', existing.id);
+      return null;
+    }
+  }
+  return row;
 }
 
 // Fields that are LOCAL ONLY — updates containing ONLY these should not be sent to remote
@@ -259,9 +279,15 @@ export async function localInsert<
     const userId = await getCurrentUserId();
     if (userId) remotePayload.sold_by = userId;
   } else if (store === 'depenses') {
-    remotePayload = mapDepenseInsert(full as unknown as Record<string, unknown>);
-    const userId = await getCurrentUserId();
-    if (userId) remotePayload.created_by = userId;
+    const depensePayload = await mapDepenseInsert(full as unknown as Record<string, unknown>);
+    if (depensePayload) {
+      remotePayload = depensePayload;
+      const userId = await getCurrentUserId();
+      if (userId) remotePayload.created_by = userId;
+    } else {
+      await (db[store] as any).put(full);
+      return full;
+    }
   } else {
     return full;
   }
