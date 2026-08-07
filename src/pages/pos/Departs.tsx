@@ -12,8 +12,11 @@ import {
   findNextDepartForRoute, transferTicketsToDepart,
 } from '@/services/pos/departService';
 import { getAll as getAllTickets } from '@/services/pos/offlineStore';
-import { getDepenseTotalForDepart } from '@/services/pos/depenseService';
-import type { TicketRecord } from '@/services/pos/db';
+import { getDepenseTotalForDepart, getDepensesForDepart } from '@/services/pos/depenseService';
+import { getBagagesForDepart } from '@/services/pos/bagageService';
+import type { TicketRecord, BagageRecord, DepenseRecord } from '@/services/pos/db';
+import { printBorderauDepart } from '@/utils/printBordereau';
+import type { BordereauDepartData, BordereauDestinationGroup } from '@/types/counter.types';
 import { executeFullTransfer, getPendingTransfersForStation } from '@/services/pos/transferService';
 import type { DepartSummary } from '@/services/pos/posReportService';
 import {
@@ -24,7 +27,7 @@ import EditDepartModal from '@/components/pos/EditDepartModal';
 import {
   Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
   ChevronUp, ChevronDown, Eye, Loader2, X,
-  FileText, FileSpreadsheet, Copy, Clock,
+  FileText, FileSpreadsheet, Copy, Clock, ScrollText,
 } from 'lucide-react';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
@@ -77,6 +80,106 @@ function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
     case 'solde': return row.solde_calc;
     case 'caisse': return row.caisse;
   }
+}
+
+async function printBordereauForDepart(depart: DepartRow): Promise<void> {
+  const [tickets, bagages, depenses] = await Promise.all([
+    getAllTickets<TicketRecord>('tickets'),
+    getBagagesForDepart(depart.id),
+    getDepensesForDepart(depart.id),
+  ]);
+
+  const activeTickets = tickets.filter(
+    t => t.depart_id === depart.id && t.status !== 'cancelled'
+  );
+
+  // Group tickets by destination
+  const groupsMap = new Map<string, TicketRecord[]>();
+  for (const t of activeTickets) {
+    const dest = t.destination || '—';
+    if (!groupsMap.has(dest)) groupsMap.set(dest, []);
+    groupsMap.get(dest)!.push(t);
+  }
+
+  const destinationGroups: BordereauDestinationGroup[] = Array.from(groupsMap.entries()).map(
+    ([destination, destTickets]) => ({
+      destination,
+      seats_sold: destTickets.length,
+      unit_price: destTickets[0]?.price ?? 0,
+      amount: destTickets.reduce((sum, t) => sum + t.price, 0),
+      seat_numbers: destTickets.map(t => String(t.seat_number)).sort((a, b) => +a - +b),
+    })
+  );
+
+  const totalTicketAmount = activeTickets.reduce((sum, t) => sum + t.price, 0);
+  const totalBaggage = bagages.reduce((sum, b) => sum + b.price, 0);
+
+  // Categorize expenses
+  const validDepenses = depenses.filter(d => d.description !== '__deleted__');
+  const totalRations = validDepenses
+    .filter(d => d.type.toLowerCase().includes('ration') || d.type.toLowerCase().includes('frais de route') || d.type.toLowerCase().includes('frais route'))
+    .reduce((s, d) => s + d.amount, 0);
+  const totalCarburant = validDepenses
+    .filter(d => d.type.toLowerCase().includes('carburant'))
+    .reduce((s, d) => s + d.amount, 0);
+  const totalPeages = validDepenses
+    .filter(d => d.type.toLowerCase().includes('péage') || d.type.toLowerCase().includes('peage'))
+    .reduce((s, d) => s + d.amount, 0);
+  const totalAutres = validDepenses
+    .filter(d => {
+      const t = d.type.toLowerCase();
+      return !t.includes('ration') && !t.includes('frais de route') && !t.includes('frais route')
+        && !t.includes('carburant') && !t.includes('péage') && !t.includes('peage');
+    })
+    .reduce((s, d) => s + d.amount, 0);
+  const totalCharges = totalRations + totalCarburant + totalPeages + totalAutres;
+  const soldeTicket = totalTicketAmount - totalCharges;
+
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const printDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+  const printTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  let depDate = depart.departure_date;
+  let depTime = depart.departure_time;
+  try {
+    const d = new Date(depart.departure_datetime);
+    if (!isNaN(d.getTime())) {
+      depDate = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+      depTime = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  } catch { /* keep defaults */ }
+
+  const data: BordereauDepartData = {
+    station_name: depart.station_name ?? '',
+    departure_number: depart.route_number ?? depart.departure_number,
+    route_name: depart.route_name ?? '',
+    departure_date: depDate,
+    departure_time: depTime,
+    registration_number: depart.bus_plate ?? '',
+    driver_name: depart.driver_name ?? '',
+    total_seats: depart.seats_total,
+    seats_sold: activeTickets.length,
+    seats_remaining: depart.seats_total - activeTickets.length,
+    destination: destinationGroups[0]?.destination ?? '',
+    unit_price: destinationGroups[0]?.unit_price ?? 0,
+    total_ticket_amount: totalTicketAmount,
+    total_charges: totalCharges,
+    total_rations: totalRations,
+    total_carburant: totalCarburant,
+    total_peages: totalPeages,
+    total_autres: totalAutres,
+    convoy_amount: 0,
+    is_convoy: false,
+    solde_ticket: soldeTicket,
+    total_baggage: totalBaggage,
+    sold_seat_numbers: activeTickets.map(t => String(t.seat_number)).sort((a, b) => +a - +b),
+    destination_groups: destinationGroups,
+    print_date: printDate,
+    print_time: printTime,
+  };
+
+  printBorderauDepart(data);
 }
 
 export default function POSDeparts() {
@@ -208,6 +311,10 @@ export default function POSDeparts() {
         printDeparturesList(summaries, session?.station_name);
         return;
       }
+      if (action === 'bordereau') {
+        await printBordereauForDepart(depart);
+        return;
+      }
       await loadDeparts();
     } catch {
       // non-critical
@@ -290,6 +397,9 @@ export default function POSDeparts() {
               </button>
               <button onClick={() => handleAction('imprimer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
                 <Printer className="w-4 h-4" /> Imprimer sélection
+              </button>
+              <button onClick={() => handleAction('bordereau', selectedRow)} disabled={actionLoading} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60" style={{ backgroundColor: 'var(--primary)' }}>
+                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScrollText className="w-4 h-4" />} Bordereau départ
               </button>
               <button onClick={() => handleAction('vente', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--info)' }}>
                 <Ticket className="w-4 h-4" /> Vente tickets
