@@ -21,10 +21,7 @@ const TABLE_MAP: Record<StoreName, string> = {
 
 async function getCurrentUserId(): Promise<string | null> {
   const { data } = await supabase.auth.getUser();
-  if (data?.user?.id) return data.user.id;
-  const cachedUser = useAuthStore.getState().user;
-  if (cachedUser?.id) return cachedUser.id;
-  return null;
+  return data?.user?.id ?? null;
 }
 
 // ── Field mapping: local POS record → remote Supabase row ──
