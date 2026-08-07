@@ -556,6 +556,155 @@ function buildHTMLRamassageBordereau(data: PrintRamassageData, settings: PrintSe
 </body></html>`;
 }
 
+export interface PrintConvoyData {
+  convoy: {
+    trip_type?: 'aller_simple' | 'aller_retour';
+    route_name?: string | null;
+    departure_datetime?: string | null;
+    bus_registration?: string | null;
+    driver_name?: string | null;
+    company_name?: string | null;
+    passengers_count?: number;
+    amount?: number;
+    ratio_amount?: number;
+    carburant_amount?: number;
+    peage_amount?: number;
+    autres_amount?: number;
+    observation?: string | null;
+  };
+  stationName?: string;
+}
+
+function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings): string {
+  const { convoy, stationName } = data;
+  const mm = settings.width_mm;
+  const headerHtml = settings.header_lines.map(l => `<div class="hdr">${escapeHtml(l)}</div>`).join('');
+  const footerHtml = settings.footer_lines.map(l => `<div class="ftr">${escapeHtml(l)}</div>`).join('');
+
+  let dateStr = '—', timeStr = '—';
+  if (convoy.departure_datetime) {
+    try {
+      const d = new Date(convoy.departure_datetime);
+      if (!isNaN(d.getTime())) {
+        dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+        timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      }
+    } catch { /* defaults */ }
+  }
+
+  const nowD = new Date();
+  const printedAt = `${String(nowD.getDate()).padStart(2,'0')}/${String(nowD.getMonth()+1).padStart(2,'0')}/${nowD.getFullYear()} ${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}`;
+
+  const totalCharges = (convoy.ratio_amount ?? 0) + (convoy.carburant_amount ?? 0) + (convoy.peage_amount ?? 0) + (convoy.autres_amount ?? 0);
+  const solde = (convoy.amount ?? 0) - totalCharges;
+  const tripLabel = convoy.trip_type === 'aller_retour' ? 'ALLER-RETOUR' : 'ALLER SIMPLE';
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau Convoi</title><style>
+  @page { size: ${mm}mm auto; margin: 0; }
+  * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff; margin: 0; padding: 0; }
+  .container { width: 100%; max-width: 480px; margin: 0 auto; padding: 10px; }
+  .hdr { text-align: center; font-size: 12px; }
+  .brand { text-align: center; font-size: 22px; font-weight: 900; margin: 4px 0; }
+  .title { text-align: center; font-size: 18px; font-weight: 900; padding: 8px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; margin: 6px 0; }
+  .trip-type { text-align: center; font-size: 14px; font-weight: 900; padding: 4px 0; }
+  .section { padding: 6px 2px; border-bottom: 1.5px dashed #000; }
+  .row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 0; }
+  .lbl { flex: 0 0 auto; }
+  .val { flex: 1 1 auto; text-align: right; font-weight: bold; word-break: break-word; }
+  .val-strong { font-weight: 900; font-size: 15px; }
+  .charges-box { margin: 6px 2px; border: 1.5px solid #000; border-radius: 4px; padding: 6px 8px; }
+  .charges-title { font-size: 12px; font-weight: 900; text-align: center; margin-bottom: 4px; }
+  .charge-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
+  .charge-total { display: flex; justify-content: space-between; font-size: 13px; font-weight: 900; border-top: 1px solid #000; margin-top: 4px; padding-top: 4px; }
+  .solde-row { display: flex; justify-content: space-between; font-size: 15px; font-weight: 900; margin-top: 6px; }
+  .obs { font-size: 11px; padding: 4px 2px; }
+  .ftr { text-align: center; font-size: 11px; margin-top: 4px; }
+  .printed { text-align: center; font-size: 10px; margin-top: 6px; }
+  @media print { body { margin: 0; padding: 0; } .container { width: 100% !important; max-width: 480px !important; } }
+</style></head><body>
+  <div class="container">
+    ${headerHtml}
+    <div class="brand">SBTA</div>
+    <div class="title">BORDEREAU CONVOI</div>
+    <div class="trip-type">${tripLabel}</div>
+    <div class="section">
+      <div class="row"><span class="lbl">Ligne</span><span class="val val-strong">${escapeHtml(convoy.route_name ?? '—')}</span></div>
+      <div class="row"><span class="lbl">Date</span><span class="val">${escapeHtml(dateStr)}</span></div>
+      <div class="row"><span class="lbl">Heure</span><span class="val">${escapeHtml(timeStr)}</span></div>
+    </div>
+    <div class="section">
+      <div class="row"><span class="lbl">Immatriculation</span><span class="val">${escapeHtml(convoy.bus_registration ?? '—')}</span></div>
+      <div class="row"><span class="lbl">Chauffeur</span><span class="val">${escapeHtml(convoy.driver_name ?? '—')}</span></div>
+      <div class="row"><span class="lbl">Société</span><span class="val">${escapeHtml(convoy.company_name ?? '—')}</span></div>
+      <div class="row"><span class="lbl">Guichet</span><span class="val">${escapeHtml(stationName ?? '—')}</span></div>
+    </div>
+    <div class="section">
+      <div class="row"><span class="lbl">Passagers</span><span class="val val-strong">${escapeHtml(String(convoy.passengers_count ?? 0))}</span></div>
+      <div class="row"><span class="lbl">Montant</span><span class="val val-strong">${(convoy.amount ?? 0).toLocaleString('fr-FR')} FCFA</span></div>
+    </div>
+    <div class="charges-box">
+      <div class="charges-title">CHARGES DU CONVOI</div>
+      <div class="charge-row"><span>Ratio</span><span>${(convoy.ratio_amount ?? 0).toLocaleString('fr-FR')} F</span></div>
+      <div class="charge-row"><span>Carburant</span><span>${(convoy.carburant_amount ?? 0).toLocaleString('fr-FR')} F</span></div>
+      <div class="charge-row"><span>Péage</span><span>${(convoy.peage_amount ?? 0).toLocaleString('fr-FR')} F</span></div>
+      <div class="charge-row"><span>Autres</span><span>${(convoy.autres_amount ?? 0).toLocaleString('fr-FR')} F</span></div>
+      <div class="charge-total"><span>TOTAL CHARGES</span><span>${totalCharges.toLocaleString('fr-FR')} F</span></div>
+      <div class="solde-row"><span>SOLDE</span><span style="color: ${solde >= 0 ? '#16A34A' : '#DC2626'}">${solde.toLocaleString('fr-FR')} F</span></div>
+    </div>
+    ${convoy.observation ? `<div class="obs"><b>Observations:</b> ${escapeHtml(convoy.observation)}</div>` : ''}
+    ${footerHtml}
+    <div class="printed">Imprimé le ${escapeHtml(printedAt)}</div>
+  </div>
+  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
+</body></html>`;
+}
+
+export async function printConvoyBordereau(data: PrintConvoyData): Promise<boolean> {
+  const settings = await getPrintSettings();
+  const html = buildHTMLConvoyBordereau(data, settings);
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  return new Promise((resolve) => {
+    const cw = iframe.contentWindow;
+    const doc = cw?.document;
+    if (!doc) { iframe.remove(); resolve(false); return; }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      setTimeout(() => iframe.remove(), 1500);
+      resolve(ok);
+    };
+
+    if (cw) {
+      cw.addEventListener('afterprint', () => finish(true), { once: true });
+    }
+    setTimeout(() => {
+      try {
+        cw?.focus();
+        cw?.print();
+      } catch {
+        finish(false);
+        return;
+      }
+      setTimeout(() => finish(true), 2000);
+    }, 300);
+  });
+}
+
 export async function printRamassageBordereau(data: PrintRamassageData): Promise<boolean> {
   const settings = await getPrintSettings();
   const html = buildHTMLRamassageBordereau(data, settings);
