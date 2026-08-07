@@ -125,6 +125,9 @@ export interface BordereauRecettesData {
   print_date:    string
   print_time:    string
   rows: Array<{
+    station_name:        string
+    route_name:          string
+    departure_date:      string
     registration_number: string
     departure_number:    number
     seats_sold:          number

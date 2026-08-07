@@ -15,8 +15,8 @@ import { getAll as getAllTickets } from '@/services/pos/offlineStore';
 import { getDepenseTotalForDepart, getDepensesForDepart } from '@/services/pos/depenseService';
 import { getBagagesForDepart } from '@/services/pos/bagageService';
 import type { TicketRecord, BagageRecord, DepenseRecord } from '@/services/pos/db';
-import { printBorderauDepart } from '@/utils/printBordereau';
-import type { BordereauDepartData, BordereauDestinationGroup } from '@/types/counter.types';
+import { printBorderauDepart, printBorderauRecettes } from '@/utils/printBordereau';
+import type { BordereauDepartData, BordereauDestinationGroup, BordereauRecettesData } from '@/types/counter.types';
 import { executeFullTransfer, getPendingTransfersForStation } from '@/services/pos/transferService';
 import type { DepartSummary } from '@/services/pos/posReportService';
 import {
@@ -27,7 +27,7 @@ import EditDepartModal from '@/components/pos/EditDepartModal';
 import {
   Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
   ChevronUp, ChevronDown, Eye, Loader2, X,
-  FileText, FileSpreadsheet, Copy, Clock, ScrollText,
+  FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks,
 } from 'lucide-react';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
@@ -193,6 +193,7 @@ export default function POSDeparts() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [showExportsMenu, setShowExportsMenu] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showCancelConfirm, setShowCancelConfirm] = useState<DepartRow | null>(null);
   const [allTickets, setAllTickets] = useState<TicketRecord[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -274,6 +275,96 @@ export default function POSDeparts() {
 
   const selectedRow = visibleDeparts.find(d => d.id === selectedId) ?? null;
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const allSelected = visibleDeparts.length > 0 && selectedIds.size === visibleDeparts.length;
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(visibleDeparts.map(d => d.id)));
+  };
+
+  const printGroupedBordereau = async () => {
+    const targets = visibleDeparts.filter(d => selectedIds.has(d.id));
+    if (targets.length === 0) return;
+    setActionLoading(true);
+    try {
+      const rows = await Promise.all(targets.map(async d => {
+        const [dTickets, dBagages, dDepenses] = await Promise.all([
+          getAllTickets<TicketRecord>('tickets'),
+          getBagagesForDepart(d.id),
+          getDepensesForDepart(d.id),
+        ]);
+        const active = dTickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled');
+        const totalTicket = active.reduce((s, t) => s + t.price, 0);
+        const totalBaggage = dBagages.reduce((s, b) => s + b.price, 0);
+        const valid = dDepenses.filter(x => x.description !== '__deleted__');
+        const totalCarburant = valid.filter(x => x.type.toLowerCase().includes('carburant')).reduce((s, x) => s + x.amount, 0);
+        const totalRations = valid.filter(x => x.type.toLowerCase().includes('ration') || x.type.toLowerCase().includes('frais de route') || x.type.toLowerCase().includes('frais route')).reduce((s, x) => s + x.amount, 0);
+        const totalPeages = valid.filter(x => x.type.toLowerCase().includes('péage') || x.type.toLowerCase().includes('peage')).reduce((s, x) => s + x.amount, 0);
+        const totalAutres = valid.filter(x => {
+          const t = x.type.toLowerCase();
+          return !t.includes('ration') && !t.includes('frais de route') && !t.includes('frais route') && !t.includes('carburant') && !t.includes('péage') && !t.includes('peage');
+        }).reduce((s, x) => s + x.amount, 0);
+        const totalCharges = totalCarburant + totalRations + totalPeages + totalAutres;
+        const pad = (n: number) => String(n).padStart(2, '0');
+        let depDate = d.departure_date;
+        try {
+          const dt = new Date(d.departure_datetime);
+          if (!isNaN(dt.getTime())) depDate = `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`;
+        } catch { /* keep default */ }
+        return {
+          station_name: d.station_name ?? session?.station_name ?? '',
+          route_name: d.route_name ?? '',
+          departure_date: depDate,
+          registration_number: d.bus_plate ?? '',
+          departure_number: d.route_number ?? d.departure_number,
+          seats_sold: active.length,
+          total_ticket: totalTicket,
+          total_rations: totalRations,
+          total_carburant: totalCarburant,
+          total_peages: totalPeages,
+          total_autres: totalAutres,
+          total_charges: totalCharges,
+          solde_ticket: totalTicket - totalCharges,
+          total_baggage: totalBaggage,
+        };
+      }));
+      const totals = rows.reduce((acc, r) => ({
+        departures: acc.departures + 1,
+        seats_sold: acc.seats_sold + r.seats_sold,
+        total_ticket: acc.total_ticket + r.total_ticket,
+        total_rations: acc.total_rations + r.total_rations,
+        total_carburant: acc.total_carburant + r.total_carburant,
+        total_peages: acc.total_peages + r.total_peages,
+        total_autres: acc.total_autres + r.total_autres,
+        total_charges: acc.total_charges + r.total_charges,
+        solde_ticket: acc.solde_ticket + r.solde_ticket,
+        total_baggage: acc.total_baggage + r.total_baggage,
+      }), { departures: 0, seats_sold: 0, total_ticket: 0, total_rations: 0, total_carburant: 0, total_peages: 0, total_autres: 0, total_charges: 0, solde_ticket: 0, total_baggage: 0 });
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const data: BordereauRecettesData = {
+        station_name: session?.station_name ?? '',
+        route_name: targets.length > 0 ? `${targets.length} départ(s)` : '',
+        date_from: rows[0]?.departure_date ?? '',
+        date_to: rows[rows.length - 1]?.departure_date ?? '',
+        print_date: `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`,
+        print_time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+        rows,
+        totals,
+      };
+      printBorderauRecettes(data);
+    } catch {
+      // non-critical
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleAction = async (action: string, depart: DepartRow) => {
     setActionLoading(true);
     try {
@@ -346,7 +437,7 @@ export default function POSDeparts() {
   const th = 'px-2 py-2 text-xs font-bold whitespace-nowrap cursor-pointer select-none';
   const td = 'px-2 py-2.5 text-sm whitespace-nowrap';
   // Keep colSpan in totals row in sync with visible column count (15 after removing Nom Car)
-  const totalsColSpan = 5;
+  const totalsColSpan = 6;
 
   if (loading) {
     return (
@@ -409,6 +500,17 @@ export default function POSDeparts() {
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                   >
                     <FileSpreadsheet className="w-4 h-4" /> Export Excel
+                  </button>
+                  <div className="my-1" style={{ borderTop: '1px solid var(--border)' }} />
+                  <button
+                    onClick={() => { setShowExportsMenu(false); printGroupedBordereau(); }}
+                    disabled={selectedIds.size === 0 || actionLoading}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-bold text-left transition-colors disabled:opacity-50"
+                    style={{ color: 'var(--primary)' }}
+                    onMouseEnter={(e) => { if (selectedIds.size > 0) e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ListChecks className="w-4 h-4" />} Bordereau détaillé des recettes{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
                   </button>
                 </div>
               </>
@@ -490,6 +592,15 @@ export default function POSDeparts() {
             <table className="w-full" style={{ borderCollapse: 'collapse' }}>
               <thead style={{ backgroundColor: 'var(--surface-raised)' }}>
                 <tr style={{ color: 'var(--text-secondary)' }}>
+                  <th className={th + ' text-center'} style={{ width: 32 }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                  </th>
                   <th className={th} onClick={() => handleSort('route_number')}>N°Départ/Ligne {sortIcon('route_number')}</th>
                   <th className={th} onClick={() => handleSort('departure_datetime')}>Date {sortIcon('departure_datetime')}</th>
                   <th className={th} onClick={() => handleSort('route_name')}>Ligne {sortIcon('route_name')}</th>
@@ -517,10 +628,19 @@ export default function POSDeparts() {
                       className="cursor-pointer transition-colors"
                       style={{
                         borderTop: '1px solid var(--border)',
-                        backgroundColor: isSelected ? 'var(--primary-light)' : d.cancelled ? 'var(--danger-light)' : 'transparent',
+                        backgroundColor: selectedIds.has(d.id) ? 'var(--primary-light)' : isSelected ? 'var(--primary-light)' : d.cancelled ? 'var(--danger-light)' : 'transparent',
                         opacity: d.cancelled ? 0.6 : 1,
                       }}
                     >
+                      <td className={td + ' text-center'} onClick={(e) => { e.stopPropagation(); toggleSelect(d.id); }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(d.id)}
+                          onChange={() => toggleSelect(d.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                      </td>
                       <td className={td} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                         <div className="flex items-center gap-1.5">
                           #{d.route_number}

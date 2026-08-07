@@ -263,13 +263,16 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
 
   // ── TABLEAU ────────────────────────────────────────────────────
   const col = {
-    matL:   margin + 3,
-    num:    60,
-    sieg:   85,
-    ticket: 110,
-    dep:    135,
-    solde:  160,
-    bag:    184,
+    gare:   margin + 2,
+    ligne:  margin + 32,
+    date:   margin + 70,
+    mat:    margin + 92,
+    num:    margin + 114,
+    sieg:   margin + 128,
+    ticket: margin + 148,
+    dep:    margin + 170,
+    solde:  margin + 192,
+    bag:    margin + 212,
   }
   const ROW_H = 8
 
@@ -280,13 +283,16 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setFontSize(7.5)
   doc.setFont('helvetica', 'bold')
   const hY = y + ROW_H - 1
-  doc.text('MATRICULE',    col.matL,    hY)
-  doc.text('N°',           col.num,     hY, { align: 'center' })
-  doc.text('SIEGES',       col.sieg,    hY, { align: 'center' })
-  doc.text('MT TICKET',    col.ticket,  hY, { align: 'center' })
-  doc.text('DEPENSES',     col.dep,     hY, { align: 'center' })
-  doc.text('SOLDE',        col.solde,   hY, { align: 'center' })
-  doc.text('BAGAGE',       col.bag,     hY, { align: 'center' })
+  doc.text('GUICHET',    col.gare,    hY)
+  doc.text('LIGNE',      col.ligne,   hY)
+  doc.text('DATE',       col.date,    hY)
+  doc.text('MATRICULE',  col.mat,     hY)
+  doc.text('N°',         col.num,     hY, { align: 'center' })
+  doc.text('SIEGES',     col.sieg,    hY, { align: 'center' })
+  doc.text('MT TICKET',  col.ticket,  hY, { align: 'center' })
+  doc.text('DEPENSES',   col.dep,     hY, { align: 'center' })
+  doc.text('SOLDE',      col.solde,   hY, { align: 'center' })
+  doc.text('BAGAGE',     col.bag,     hY, { align: 'center' })
   doc.setTextColor(0, 0, 0)
   y += ROW_H + 7
 
@@ -305,13 +311,16 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
     }
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
-    doc.text(row.registration_number,         col.matL,    y)
-    doc.text(String(row.departure_number),    col.num,     y, { align: 'center' })
-    doc.text(fmtNum(row.seats_sold),          col.sieg,    y, { align: 'center' })
-    doc.text(fmt(row.total_ticket),           col.ticket,  y, { align: 'center' })
-    doc.text(fmt(row.total_charges),          col.dep,     y, { align: 'center' })
-    doc.text(fmt(row.solde_ticket),           col.solde,   y, { align: 'center' })
-    doc.text(fmt(row.total_baggage),          col.bag,     y, { align: 'center' })
+    doc.text(String(row.station_name || '').slice(0, 16),         col.gare,    y)
+    doc.text(String(row.route_name || '').slice(0, 18),           col.ligne,   y)
+    doc.text(row.departure_date,                                   col.date,    y)
+    doc.text(row.registration_number,                             col.mat,     y)
+    doc.text(String(row.departure_number),                        col.num,     y, { align: 'center' })
+    doc.text(fmtNum(row.seats_sold),                              col.sieg,    y, { align: 'center' })
+    doc.text(fmt(row.total_ticket),                               col.ticket,  y, { align: 'center' })
+    doc.text(fmt(row.total_charges),                              col.dep,     y, { align: 'center' })
+    doc.text(fmt(row.solde_ticket),                               col.solde,   y, { align: 'center' })
+    doc.text(fmt(row.total_baggage),                              col.bag,     y, { align: 'center' })
 
     // Détail dépenses sous la ligne principale
     if (row.total_charges > 0) {
@@ -319,13 +328,13 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
       doc.setFontSize(6.5)
       doc.setFont('helvetica', 'italic')
       doc.setTextColor(80, 80, 80)
-      const depX = col.dep - 20
-      if (row.total_rations > 0) {
-        doc.text(`Ratio carburant : ${fmt(row.total_rations)}`, depX, y)
+      const depX = col.dep - 22
+      if (row.total_carburant > 0) {
+        doc.text(`Carburant : ${fmt(row.total_carburant)}`, depX, y)
         y += 4
       }
-      if (row.total_carburant > 0) {
-        doc.text(`Complément : ${fmt(row.total_carburant)}`, depX, y)
+      if (row.total_rations > 0) {
+        doc.text(`Complément : ${fmt(row.total_rations)}`, depX, y)
         y += 4
       }
       if (row.total_peages > 0) {
@@ -369,7 +378,7 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
-  doc.text('TOTAUX',                              col.matL,    y)
+  doc.text('TOTAUX',                              col.gare,    y)
   doc.text(String(data.totals.departures),        col.num,     y, { align: 'center' })
   doc.text(fmtNum(data.totals.seats_sold),        col.sieg,    y, { align: 'center' })
   doc.text(fmt(data.totals.total_ticket),         col.ticket,  y, { align: 'center' })
