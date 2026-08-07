@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
-import { Monitor, TrendingUp, TicketCheck, Banknote, RefreshCw, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
-import { format } from 'date-fns';
+import { Monitor, TrendingUp, TicketCheck, Banknote, RefreshCw, ChevronDown, ChevronUp, MapPin, Calendar } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subDays, parseISO, isWithinInterval } from 'date-fns';
+
+type Period = 'day' | 'week' | 'month' | 'year';
 
 interface SaleRow {
   schedule_id: string;
@@ -13,6 +15,7 @@ interface SaleRow {
   counter_id: string | null;
   counter_number: number | null;
   departure_number: number | null;
+  departure_date: string;
   route_name: string;
   origin_city: string;
   destination_city: string;
@@ -33,16 +36,48 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
   retard:     { label: 'Retard',      color: '#9A3412', bg: '#FFEDD5' },
 };
 
+const PERIODS: { key: Period; label: string }[] = [
+  { key: 'day', label: 'Jour' },
+  { key: 'week', label: 'Semaine' },
+  { key: 'month', label: 'Mois' },
+  { key: 'year', label: 'Année' },
+];
+
 export default function ChefGareSalesTracking() {
   const { user } = useAuthStore();
   const [rows, setRows] = useState<SaleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [period, setPeriod] = useState<Period>('day');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  useEffect(() => { load(); }, [dateFilter]);
+  const range = useMemo(() => {
+    const ref = parseISO(dateFilter);
+    switch (period) {
+      case 'day':
+        return { start: dateFilter, end: dateFilter, label: format(ref, 'EEEE d MMMM yyyy') };
+      case 'week': {
+        const s = startOfWeek(ref, { weekStartsOn: 1 });
+        const e = endOfWeek(ref, { weekStartsOn: 1 });
+        return { start: format(s, 'yyyy-MM-dd'), end: format(e, 'yyyy-MM-dd'), label: `${format(s, 'd MMM')} – ${format(e, 'd MMM yyyy')}` };
+      }
+      case 'month': {
+        const s = startOfMonth(ref);
+        const e = endOfMonth(ref);
+        return { start: format(s, 'yyyy-MM-dd'), end: format(e, 'yyyy-MM-dd'), label: format(ref, 'MMMM yyyy') };
+      }
+      case 'year': {
+        const s = startOfYear(ref);
+        const e = endOfYear(ref);
+        return { start: format(s, 'yyyy-MM-dd'), end: format(e, 'yyyy-MM-dd'), label: format(ref, 'yyyy') };
+      }
+    }
+  }, [dateFilter, period]);
+
+  useEffect(() => { load(); }, [range?.start, range?.end]);
 
   const load = async () => {
+    if (!range) return;
     setLoading(true);
     try {
       const { data: stationId } = await supabase.rpc('get_my_station_id');
@@ -58,7 +93,8 @@ export default function ChefGareSalesTracking() {
         .from('schedule_receipt_summary')
         .select('*')
         .eq('station_id', stationId)
-        .eq('departure_date', dateFilter)
+        .gte('departure_date', range.start)
+        .lte('departure_date', range.end)
         .order('departure_datetime', { ascending: true });
 
       if (restrictManagerId) {
@@ -116,7 +152,21 @@ export default function ChefGareSalesTracking() {
             Détail des départs, billets vendus et recettes par guichet
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Period selector */}
+          <div className="flex rounded-xl border overflow-hidden"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+            {PERIODS.map(p => (
+              <button key={p.key} onClick={() => setPeriod(p.key)}
+                className="px-3 py-2 text-sm font-medium transition-colors"
+                style={{
+                  color: period === p.key ? '#fff' : 'var(--text-secondary)',
+                  backgroundColor: period === p.key ? 'var(--primary)' : 'transparent',
+                }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
           <input type="date" value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
             className="px-3 py-2 border rounded-xl text-sm"
@@ -127,6 +177,14 @@ export default function ChefGareSalesTracking() {
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
+      </div>
+
+      {/* Active range badge */}
+      <div className="flex items-center gap-2 mb-6">
+        <Calendar className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+        <span className="text-sm font-medium capitalize" style={{ color: 'var(--text-secondary)' }}>
+          {range?.label}
+        </span>
       </div>
 
       {/* KPI summary */}
@@ -159,7 +217,7 @@ export default function ChefGareSalesTracking() {
       ) : rows.length === 0 ? (
         <div className="text-center py-16 rounded-2xl border-2 border-dashed" style={{ borderColor: 'var(--border)' }}>
           <Monitor className="w-12 h-12 mx-auto mb-3" style={{ color: '#D1D5DB' }} />
-          <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>Aucun départ pour cette date</p>
+          <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>Aucun départ pour cette période</p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -209,7 +267,7 @@ export default function ChefGareSalesTracking() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                        {['Départ', 'Itinéraire', 'Statut', 'Sièges vendus', 'Sièges restants', 'Recettes', 'Charges', 'Solde', ''].map(h => (
+                        {['Date', 'Départ', 'Itinéraire', 'Statut', 'Sièges vendus', 'Sièges restants', 'Recettes', 'Charges', 'Solde', ''].map(h => (
                           <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide"
                             style={{ color: 'var(--text-muted)' }}>{h}</th>
                         ))}
@@ -223,6 +281,9 @@ export default function ChefGareSalesTracking() {
                           <React.Fragment key={row.schedule_id}>
                             <tr className="border-t hover:bg-gray-50 transition-colors"
                               style={{ borderColor: 'var(--border)' }}>
+                              <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                {row.departure_date ? format(parseISO(row.departure_date), 'dd/MM') : '—'}
+                              </td>
                               <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
                                 {format(new Date(row.departure_datetime), 'HH:mm')}
                               </td>
@@ -264,7 +325,7 @@ export default function ChefGareSalesTracking() {
                             </tr>
                             {isExpanded && (
                               <tr style={{ borderColor: 'var(--border)' }}>
-                                <td colSpan={9} className="px-6 py-4 border-t"
+                                <td colSpan={10} className="px-6 py-4 border-t"
                                   style={{ backgroundColor: 'var(--bg-subtle)', borderColor: 'var(--border)' }}>
                                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                                     <div>
@@ -273,7 +334,7 @@ export default function ChefGareSalesTracking() {
                                     </div>
                                     <div>
                                       <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-muted)' }}>Bus</p>
-                                      <p style={{ color: 'var(--text-primary)' }}>{row.registration_number || '—'}</p>
+                                      <p style={{ color: 'var(--text-primary)' }}>{(row as any).registration_number || '—'}</p>
                                     </div>
                                     <div>
                                       <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-muted)' }}>Arrivée prévue</p>
