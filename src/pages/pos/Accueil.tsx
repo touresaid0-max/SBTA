@@ -23,6 +23,7 @@ const tiles: TileConfig[] = [
   { label: 'Gestion autres gares', icon: Building2, path: '/guichet/autres-gares', color: '#7C3AED', bgColor: '#EDE9FE' },
   { label: 'Nouvelles dépenses', icon: Receipt, path: '/guichet/depenses', color: '#AF3029', bgColor: '#f8d7d5' },
   { label: 'Ramassage', icon: Bus, path: '/guichet/ramassage', color: '#0EA5E9', bgColor: '#E0F2FE' },
+  { label: 'Rapport ramassage', icon: FileText, path: '/guichet/ramassage/report', color: '#1D6FA4', bgColor: '#DBEAFE' },
   { label: 'Clôture', icon: Lock, path: '/guichet/cloture', color: '#4A6B55', bgColor: '#E2EAE5' },
   { label: 'États & exports', icon: FileText, path: '/guichet/departs', color: '#2563EB', bgColor: '#DBEAFE' },
 ];

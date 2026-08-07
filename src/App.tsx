@@ -118,6 +118,7 @@ import ChefGareGroupedPlanning from './pages/chef_gare/GroupedPlanning';
 import ChefGareConvoyReport from './pages/chef_gare/ConvoyReport';
 import ChefGareConvoys from './pages/chef_gare/Convoys';
 import ChefGareRamassage from './pages/chef_gare/Ramassage';
+import ChefGareRamassageReport from './pages/chef_gare/RamassageReport';
 import BagagisteBaggageSale from './pages/bagagiste/BaggageSale';
 import BagagisteBaggageReport from './pages/bagagiste/BaggageReport';
 import Review from './pages/client/Review';
@@ -247,6 +248,7 @@ import POSDepenses from './pages/pos/Depenses';
 import POSAutresGares from './pages/pos/AutresGares';
 import POSCloture from './pages/pos/Cloture';
 import POSRamassage from './pages/pos/Ramassage';
+import POSRamassageReport from './pages/pos/RamassageReport';
 import POSParametres from './pages/pos/Parametres';
 import { POSSessionProvider } from './services/pos/POSSessionContext';
 
@@ -430,6 +432,7 @@ function App() {
             <Route path="chef-gare/sales" element={<ProtectedRoute roles={['chef_gare']}><ChefGareSalesTracking /></ProtectedRoute>} />
             <Route path="chef-gare/convoys" element={<ProtectedRoute roles={['chef_gare']}><ChefGareConvoys /></ProtectedRoute>} />
             <Route path="chef-gare/ramassage" element={<ProtectedRoute roles={['chef_gare']}><ChefGareRamassage /></ProtectedRoute>} />
+            <Route path="chef-gare/ramassage/report" element={<ProtectedRoute roles={['chef_gare']}><ChefGareRamassageReport /></ProtectedRoute>} />
             <Route path="chef-gare/convoys/report" element={<ProtectedRoute roles={['chef_gare']}><ChefGareConvoyReport /></ProtectedRoute>} />
             <Route path="chef-gare/daily-report" element={<ProtectedRoute roles={['chef_gare']}><ChefGareDailyReport /></ProtectedRoute>} />
             <Route path="chef-gare/breakdowns" element={<ProtectedRoute roles={['chef_gare']}><ChefGareBreakdowns /></ProtectedRoute>} />
@@ -561,6 +564,7 @@ function App() {
             <Route path="autres-gares" element={<POSAutresGares />} />
             <Route path="cloture" element={<POSCloture />} />
             <Route path="ramassage" element={<POSRamassage />} />
+            <Route path="ramassage/report" element={<POSRamassageReport />} />
             <Route path="parametres" element={<POSParametres />} />
           </Route>
 
