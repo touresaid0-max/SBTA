@@ -9,6 +9,13 @@ export async function getDepensesForDepart(departId: string): Promise<DepenseRec
   return all.filter(d => d.depart_id === departId);
 }
 
+export async function getDepenseTotalForDepart(departId: string): Promise<number> {
+  const depenses = await getDepensesForDepart(departId);
+  return depenses
+    .filter(d => d.description !== '__deleted__')
+    .reduce((total, depense) => total + depense.amount, 0);
+}
+
 export async function getDepensesForStation(stationId: string): Promise<DepenseRecord[]> {
   const all = await getAll<DepenseRecord>('depenses');
   return all.filter(d => d.station_id === stationId);

@@ -43,12 +43,14 @@ export default function POSAutresGares() {
           getBagagesForDepart(depart.id),
           getDepensesForDepart(depart.id),
         ]);
+        const visibleDepenses = depenses.filter(d => d.description !== '__deleted__');
+        const totDepense = visibleDepenses.reduce((sum, x) => sum + x.amount, 0);
         results.push({
           depart,
           tickets: tickets.filter(t => t.status !== 'cancelled'),
           bagages,
-          depenses: depenses.filter(d => d.description !== '__deleted__'),
-          solde: computeSolde(depart),
+          depenses: visibleDepenses,
+          solde: depart.mt_ticket + depart.mt_bagage - totDepense,
         });
       }
       setSummaries(results);
@@ -68,7 +70,7 @@ export default function POSAutresGares() {
         acc.bagages += s.bagages.length;
         acc.mtTicket += s.depart.mt_ticket;
         acc.mtBagage += s.depart.mt_bagage;
-        acc.totDepense += s.depart.tot_depense;
+        acc.totDepense += s.depenses.reduce((sum, x) => sum + x.amount, 0);
         acc.solde += s.solde;
         return acc;
       },
@@ -170,7 +172,7 @@ export default function POSAutresGares() {
                       </div>
                       <div className="rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-raised)' }}>
                         <Receipt className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--danger)' }} />
-                        <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(s.depart.tot_depense)}</p>
+                        <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(s.depenses.reduce((sum, x) => sum + x.amount, 0))}</p>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Dépenses</p>
                       </div>
                       <div className="rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-raised)' }}>

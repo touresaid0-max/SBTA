@@ -3,7 +3,7 @@ import { } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getAllDeparts, getDepartById, computeSolde, type DepartRecord } from '@/services/pos/departService';
-import { createDepense, getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
+import { createDepense, getDepensesForDepart, getDepenseTotalForDepart, type DepenseRecord } from '@/services/pos/depenseService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
   AlertCircle, CheckCircle, Loader2, Plus,
@@ -28,6 +28,8 @@ export default function POSDepenses() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const [liveTotDepense, setLiveTotDepense] = useState(0);
 
   // Form state
   const [type, setType] = useState(EXPENSE_TYPES[0]);
@@ -55,18 +57,20 @@ export default function POSDepenses() {
 
   useEffect(() => {
     (async () => {
-      if (!selectedDepartId) { setSelectedDepart(null); setDepenses([]); return; }
+      if (!selectedDepartId) { setSelectedDepart(null); setDepenses([]); setLiveTotDepense(0); return; }
       const d = await getDepartById(selectedDepartId);
       setSelectedDepart(d ?? null);
       const deps = await getDepensesForDepart(selectedDepartId);
-      setDepenses(deps.filter(x => x.description !== '__deleted__'));
+      const visible = deps.filter(x => x.description !== '__deleted__');
+      setDepenses(visible);
+      setLiveTotDepense(visible.reduce((sum, x) => sum + x.amount, 0));
     })();
   }, [selectedDepartId]);
 
   const solde = useMemo(() => {
     if (!selectedDepart) return 0;
-    return computeSolde(selectedDepart);
-  }, [selectedDepart]);
+    return selectedDepart.mt_ticket + selectedDepart.mt_bagage - liveTotDepense;
+  }, [selectedDepart, liveTotDepense]);
 
   const handleAdd = async () => {
     if (!selectedDepartId) { setError('Veuillez sélectionner un départ'); return; }
@@ -92,8 +96,10 @@ export default function POSDepenses() {
         getDepartById(selectedDepartId),
         getDepensesForDepart(selectedDepartId),
       ]);
+      const visible = deps.filter(x => x.description !== '__deleted__');
       setSelectedDepart(d ?? null);
-      setDepenses(deps.filter(x => x.description !== '__deleted__'));
+      setDepenses(visible);
+      setLiveTotDepense(visible.reduce((sum, x) => sum + x.amount, 0));
 
       setSuccess('Dépense enregistrée');
       setLabel('');
@@ -148,7 +154,7 @@ export default function POSDepenses() {
             </div>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tot Dépense</p>
-              <p className="text-sm font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(selectedDepart?.tot_depense ?? 0)}</p>
+              <p className="text-sm font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(liveTotDepense)}</p>
             </div>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Solde</p>

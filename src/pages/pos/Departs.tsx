@@ -12,6 +12,7 @@ import {
   findNextDepartForRoute, transferTicketsToDepart,
 } from '@/services/pos/departService';
 import { getAll as getAllTickets } from '@/services/pos/offlineStore';
+import { getDepenseTotalForDepart } from '@/services/pos/depenseService';
 import type { TicketRecord } from '@/services/pos/db';
 import type { DepartSummary } from '@/services/pos/posReportService';
 import {
@@ -100,8 +101,21 @@ export default function POSDeparts() {
       getAllDeparts(session?.station_id, session?.counter_id),
       getAllTickets<TicketRecord>('tickets'),
     ]);
+    const expenseTotals = await Promise.all(
+      all.map(async d => [d.id, await getDepenseTotalForDepart(d.id)] as const),
+    );
+    const totalsByDepart = new Map(expenseTotals);
+    const hydrated = all.map(d => {
+      const totDepense = totalsByDepart.get(d.id) ?? 0;
+      return {
+        ...d,
+        tot_depense: totDepense,
+        solde: d.mt_ticket + d.mt_bagage - totDepense,
+        caisse: d.mt_ticket + d.mt_bagage - totDepense,
+      };
+    });
     setAllTickets(tickets);
-    setDeparts(all.map(d => toRow(d, tickets, session?.station_id)));
+    setDeparts(hydrated.map(d => toRow(d, tickets, session?.station_id)));
     setLoading(false);
   }, [session?.station_id, session?.counter_id]);
 

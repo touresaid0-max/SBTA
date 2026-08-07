@@ -7,7 +7,7 @@ import {
 } from '@/services/pos/departService';
 import { getTicketsForDepart, type TicketRecord } from '@/services/pos/ticketService';
 import { getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
-import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
+import { getDepensesForDepart, getDepenseTotalForDepart, type DepenseRecord } from '@/services/pos/depenseService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
   AlertCircle, CheckCircle, Loader2, Lock,
@@ -44,6 +44,8 @@ export default function POSCloture() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const [liveTotDepense, setLiveTotDepense] = useState(0);
+
   useEffect(() => {
     (async () => {
       if (!selectedId) { setSelected(null); return; }
@@ -55,14 +57,16 @@ export default function POSCloture() {
           getBagagesForDepart(selectedId),
           getDepensesForDepart(selectedId),
         ]);
+        const visibleDepenses = dp.filter(x => x.description !== '__deleted__');
         setTickets(t.filter(x => x.status !== 'cancelled'));
         setBagages(b);
-        setDepenses(dp.filter(x => x.description !== '__deleted__'));
+        setDepenses(visibleDepenses);
+        setLiveTotDepense(visibleDepenses.reduce((sum, x) => sum + x.amount, 0));
       }
     })();
   }, [selectedId]);
 
-  const solde = useMemo(() => selected ? computeSolde(selected) : 0, [selected]);
+  const solde = useMemo(() => selected ? (selected.mt_ticket + selected.mt_bagage - liveTotDepense) : 0, [selected, liveTotDepense]);
 
   const handleCloture = async () => {
     if (!selectedId) return;
@@ -72,6 +76,10 @@ export default function POSCloture() {
       await cloturerDepart(selectedId, session?.full_name);
       const d = await getDepartById(selectedId);
       setSelected(d ?? null);
+      const dp = await getDepensesForDepart(selectedId);
+      const visibleDepenses = dp.filter(x => x.description !== '__deleted__');
+      setDepenses(visibleDepenses);
+      setLiveTotDepense(visibleDepenses.reduce((sum, x) => sum + x.amount, 0));
       setDeparts(prev => prev.map(x => x.id === selectedId ? { ...x, cloture: true } : x));
       setSuccess('Départ clôturé — verrouillé en lecture seule');
       setTimeout(() => setSuccess(''), 3000);
@@ -159,7 +167,7 @@ export default function POSCloture() {
                     <TrendingDown className="w-3.5 h-3.5" style={{ color: 'var(--danger)' }} />
                     <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tot Dépense</p>
                   </div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(selected.tot_depense)}</p>
+                  <p className="text-sm font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(liveTotDepense)}</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{depenses.length} dépense(s)</p>
                 </div>
                 <div className="rounded-lg p-2.5" style={{ backgroundColor: 'var(--surface-raised)' }}>
