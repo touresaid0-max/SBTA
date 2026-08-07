@@ -192,6 +192,7 @@ export default function POSDeparts() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showExportsMenu, setShowExportsMenu] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState<DepartRow | null>(null);
   const [allTickets, setAllTickets] = useState<TicketRecord[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -369,27 +370,50 @@ export default function POSDeparts() {
           >
             <Plus className="w-4 h-4" /> Nouveau
           </button>
-          <button
-            onClick={() => printDeparturesList(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), session?.station_name)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-          >
-            <Copy className="w-4 h-4" /> Imprimer liste
-          </button>
-          <button
-            onClick={() => exportToPDF(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.pdf`, 'Récapitulatif des départs')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-          >
-            <FileText className="w-4 h-4" /> Export PDF
-          </button>
-          <button
-            onClick={() => exportToExcel(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.xlsx`)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-          >
-            <FileSpreadsheet className="w-4 h-4" /> Export Excel
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportsMenu(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+            >
+              <FileText className="w-4 h-4" /> États & exports
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showExportsMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowExportsMenu(false)} />
+                <div className="absolute z-50 mt-1 left-0 min-w-[200px] rounded-lg shadow-xl border-2 py-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+                  <button
+                    onClick={() => { setShowExportsMenu(false); printDeparturesList(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), session?.station_name); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
+                    style={{ color: 'var(--text-primary)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <Copy className="w-4 h-4" /> Imprimer liste
+                  </button>
+                  <button
+                    onClick={() => { setShowExportsMenu(false); exportToPDF(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.pdf`, 'Récapitulatif des départs'); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
+                    style={{ color: 'var(--text-primary)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <FileText className="w-4 h-4" /> Export PDF
+                  </button>
+                  <button
+                    onClick={() => { setShowExportsMenu(false); exportToExcel(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.xlsx`); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
+                    style={{ color: 'var(--text-primary)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <FileSpreadsheet className="w-4 h-4" /> Export Excel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           {selectedRow && (
             <>
               <button onClick={() => handleAction('modifier', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
