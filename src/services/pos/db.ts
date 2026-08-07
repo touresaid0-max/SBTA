@@ -138,6 +138,48 @@ export interface SyncQueueItem {
   last_error?: string;
 }
 
+export interface TransferLogRecord {
+  id: string;
+  source_depart_id: string;
+  target_depart_id?: string;
+  route_id?: string;
+  old_bus_id?: string;
+  new_bus_id?: string;
+  old_bus_plate?: string;
+  new_bus_plate?: string;
+  old_capacity: number;
+  new_capacity: number;
+  transferred_count: number;
+  retained_count: number;
+  transfer_reason: string;
+  ticket_ids: string[];
+  transferred_by?: string;
+  transferred_at: string;
+  status: 'completed' | 'pending';
+}
+
+export interface PendingTransferRecord {
+  id: string;
+  source_depart_id: string;
+  route_id?: string;
+  station_id?: string;
+  counter_id?: string;
+  old_bus_id?: string;
+  new_bus_id?: string;
+  old_bus_plate?: string;
+  new_bus_plate?: string;
+  old_capacity: number;
+  new_capacity: number;
+  surplus_count: number;
+  ticket_ids: string[];
+  ticket_data: TicketRecord[];
+  created_by?: string;
+  created_at: string;
+  applied_to_depart_id?: string;
+  applied_at?: string;
+  status: 'pending' | 'applied' | 'cancelled';
+}
+
 export interface SessionRecord {
   id: string;
   user_id: string;
@@ -177,6 +219,8 @@ class POSDatabase extends Dexie {
   sync_queue!: Table<SyncQueueItem, number>;
   session!: Table<SessionRecord, string>;
   print_settings!: Table<PrintSettings, string>;
+  transfer_logs!: Table<TransferLogRecord, string>;
+  pending_transfers!: Table<PendingTransferRecord, string>;
 
   constructor() {
     super('pos_guichet_db');
@@ -199,6 +243,18 @@ class POSDatabase extends Dexie {
       sync_queue: '++id, entity, status, created_at, tries',
       session: 'id, user_id, station_id',
       print_settings: 'id',
+    });
+    this.version(3).stores({
+      departs: 'id, route_id, bus_id, driver_id, station_id, counter_id, departure_datetime, status, synced',
+      tickets: 'id, depart_id, status, created_at, synced',
+      bagages: 'id, depart_id, ticket_id, created_at, synced',
+      depenses: 'id, station_id, depart_id, type, created_at, synced',
+      referentiels: 'key, type, updated_at',
+      sync_queue: '++id, entity, status, created_at, tries',
+      session: 'id, user_id, station_id',
+      print_settings: 'id',
+      transfer_logs: 'id, source_depart_id, target_depart_id, transferred_at, status',
+      pending_transfers: 'id, source_depart_id, route_id, station_id, status',
     });
   }
 }

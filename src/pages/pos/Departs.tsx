@@ -14,6 +14,7 @@ import {
 import { getAll as getAllTickets } from '@/services/pos/offlineStore';
 import { getDepenseTotalForDepart } from '@/services/pos/depenseService';
 import type { TicketRecord } from '@/services/pos/db';
+import { executeFullTransfer, getPendingTransfersForStation } from '@/services/pos/transferService';
 import type { DepartSummary } from '@/services/pos/posReportService';
 import {
   departToSummary, exportToExcel, exportToPDF, printDeparturesList,
@@ -23,7 +24,7 @@ import EditDepartModal from '@/components/pos/EditDepartModal';
 import {
   Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
   ChevronUp, ChevronDown, Eye, Loader2, X,
-  FileText, FileSpreadsheet, Copy,
+  FileText, FileSpreadsheet, Copy, Clock,
 } from 'lucide-react';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
@@ -95,6 +96,7 @@ export default function POSDeparts() {
   const [editChauffeurs, setEditChauffeurs] = useState<ChauffeurRef[]>([]);
   const [editSoldTickets, setEditSoldTickets] = useState<TicketRecord[]>([]);
   const [editNextDepart, setEditNextDepart] = useState<DepartRecord | null>(null);
+  const [pendingTransfers, setPendingTransfers] = useState(0);
 
   const loadDeparts = useCallback(async () => {
     const [all, tickets] = await Promise.all([
@@ -117,6 +119,12 @@ export default function POSDeparts() {
     setAllTickets(tickets);
     setDeparts(hydrated.map(d => toRow(d, tickets, session?.station_id)));
     setLoading(false);
+
+    // Check for pending transfers needing a next depart
+    if (session?.station_id) {
+      const pending = await getPendingTransfersForStation(session.station_id);
+      setPendingTransfers(pending.length);
+    }
   }, [session?.station_id, session?.counter_id]);
 
   useEffect(() => {
@@ -313,6 +321,31 @@ export default function POSDeparts() {
         </button>
       </div>
 
+      {/* Pending transfer notification */}
+      {pendingTransfers > 0 && (
+        <div className="mb-4 rounded-xl p-4 flex items-center gap-3" style={{
+          backgroundColor: 'var(--warning-light, #FEF3C7)',
+          border: '1px solid var(--warning, #D97706)',
+        }}>
+          <Clock className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--warning, #D97706)' }} />
+          <div className="flex-1">
+            <p className="text-sm font-bold" style={{ color: 'var(--warning, #D97706)' }}>
+              {pendingTransfers} transfert{pendingTransfers > 1 ? 's' : ''} de ticket{pendingTransfers > 1 ? 's' : ''} en attente
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+              Créez le prochain départ pour le trajet correspondant afin de transférer automatiquement les tickets en surplus.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/guichet/depart/nouveau')}
+            className="px-3 py-2 rounded-lg text-sm font-bold text-white whitespace-nowrap"
+            style={{ backgroundColor: 'var(--warning, #D97706)' }}
+          >
+            Créer un départ
+          </button>
+        </div>
+      )}
+
       {departs.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Aucun départ. Cliquez sur « Nouveau » pour en créer un.</p>
@@ -436,6 +469,30 @@ export default function POSDeparts() {
           }}
           onTransfer={async (surplusTickets, nextDepart) => {
             await transferTicketsToDepart(surplusTickets, nextDepart);
+            const sourceSold = editSoldTickets.length - surplusTickets.length;
+            const sourceMtTicket = editSoldTickets
+              .filter(t => !surplusTickets.some(s => s.id === t.id))
+              .reduce((sum, t) => sum + t.price, 0);
+            await updateDepart(selectedRow.id, {
+              seats_sold: sourceSold,
+              mt_ticket: sourceMtTicket,
+              solde: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
+              caisse: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
+            });
+          }}
+          onPendingTransfer={async (surplusTickets) => {
+            const selectedBus = editVehicules.find(v => v.id === selectedRow.bus_id);
+            await executeFullTransfer({
+              depart: selectedRow,
+              surplusTickets,
+              nextDepart: null,
+              newBusId: selectedBus?.id ?? selectedRow.bus_id,
+              newBusPlate: selectedBus?.plate_number ?? selectedRow.bus_plate ?? '',
+              newCapacity: selectedBus?.capacity ?? selectedRow.seats_total,
+              oldCapacity: selectedRow.seats_total,
+              transferReason: 'capacity_reduction',
+            });
+            // Update source depart revenue (surplus tickets remain on source until next depart is created)
             const sourceSold = editSoldTickets.length - surplusTickets.length;
             const sourceMtTicket = editSoldTickets
               .filter(t => !surplusTickets.some(s => s.id === t.id))

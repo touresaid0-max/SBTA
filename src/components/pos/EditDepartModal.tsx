@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, AlertTriangle, ArrowRightLeft, Printer, CheckCircle } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { X, Loader2, AlertTriangle, ArrowRightLeft, Printer, CheckCircle, Clock, Info } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import type { DepartRecord, TicketRecord } from '@/services/pos/db';
 import type { VehiculeRef, ChauffeurRef } from '@/services/pos/departService';
@@ -11,6 +11,7 @@ export interface TransferResult {
   newCapacity: number;
   oldCapacity: number;
   surplus: number;
+  pendingSaved: boolean;
 }
 
 interface EditDepartModalProps {
@@ -21,10 +22,11 @@ interface EditDepartModalProps {
   nextDepart: DepartRecord | null;
   onSave: (busId: string, busPlate: string, driverId: string, driverName: string, newCapacity: number) => Promise<void>;
   onTransfer: (surplusTickets: TicketRecord[], nextDepart: DepartRecord) => Promise<void>;
+  onPendingTransfer?: (surplusTickets: TicketRecord[]) => Promise<void>;
   onClose: () => void;
 }
 
-type Phase = 'edit' | 'transferring' | 'transferred';
+type Phase = 'edit' | 'transferring' | 'transferred' | 'pending_saved';
 
 export default function EditDepartModal({
   depart,
@@ -34,6 +36,7 @@ export default function EditDepartModal({
   nextDepart,
   onSave,
   onTransfer,
+  onPendingTransfer,
   onClose,
 }: EditDepartModalProps) {
   const [busId, setBusId] = useState(depart.bus_id);
@@ -71,12 +74,6 @@ export default function EditDepartModal({
 
     setSaving(true);
     try {
-      if (hasSurplus && !hasNextDepart) {
-        setError('Surplus de tickets détecté mais aucun prochain départ disponible pour ce trajet. Créez un nouveau départ avant de modifier.');
-        setSaving(false);
-        return;
-      }
-
       await onSave(busId, selectedBus?.plate_number ?? '', driverId, selectedDriver?.full_name ?? '', newCapacity);
 
       if (hasSurplus && nextDepart) {
@@ -88,8 +85,21 @@ export default function EditDepartModal({
           newCapacity,
           oldCapacity,
           surplus,
+          pendingSaved: false,
         });
         setPhase('transferred');
+      } else if (hasSurplus && !nextDepart && onPendingTransfer) {
+        setPhase('transferring');
+        await onPendingTransfer(surplusTickets);
+        setTransferResult({
+          transferredTickets: surplusTickets,
+          nextDepart: null,
+          newCapacity,
+          oldCapacity,
+          surplus,
+          pendingSaved: true,
+        });
+        setPhase('pending_saved');
       } else {
         onClose();
       }
@@ -119,7 +129,7 @@ export default function EditDepartModal({
         <div className="flex items-start justify-between p-6 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
             <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-              {phase === 'transferred' ? 'Transfert effectué' : 'Modifier le départ'}
+              {phase === 'transferred' ? 'Transfert effectué' : phase === 'pending_saved' ? 'Transfert en attente' : 'Modifier le départ'}
             </h3>
             <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
               Départ #{depart.route_number} — {depart.route_name}
@@ -134,6 +144,8 @@ export default function EditDepartModal({
         <div className="p-6 space-y-4">
           {phase === 'transferred' && transferResult ? (
             <TransferConfirmation result={transferResult} onPrint={handlePrintTransferred} onClose={onClose} />
+          ) : phase === 'pending_saved' && transferResult ? (
+            <PendingTransferConfirmation result={transferResult} onClose={onClose} />
           ) : (
             <>
               {/* Current info */}
@@ -202,7 +214,7 @@ export default function EditDepartModal({
 
               {/* Surplus warning */}
               {hasSurplus && (
-                <div className="rounded-xl p-4 space-y-2" style={{
+                <div className="rounded-xl p-4 space-y-3" style={{
                   backgroundColor: 'var(--danger-light)',
                   border: '1px solid var(--danger)',
                 }}>
@@ -226,9 +238,15 @@ export default function EditDepartModal({
                       </span>
                     </div>
                   ) : (
-                    <p className="text-xs pl-7 font-semibold" style={{ color: 'var(--danger)' }}>
-                      Aucun prochain départ disponible pour ce trajet. Veuillez en créer un.
-                    </p>
+                    <div className="pl-7 space-y-1">
+                      <div className="flex items-start gap-1.5 text-xs font-semibold" style={{ color: 'var(--danger)' }}>
+                        <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                        <span>Aucun prochain départ disponible pour ce trajet.</span>
+                      </div>
+                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        Les {surplus} tickets en surplus seront mis en attente. Créez le prochain départ pour ce trajet afin de transférer automatiquement ces tickets.
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
@@ -264,7 +282,9 @@ export default function EditDepartModal({
               {phase === 'transferring' && (
                 <div className="flex items-center justify-center gap-2 py-4">
                   <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--primary)' }} />
-                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Transfert des tickets en cours...</span>
+                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {hasNextDepart ? 'Transfert des tickets en cours...' : 'Enregistrement du transfert en attente...'}
+                  </span>
                 </div>
               )}
             </>
@@ -272,7 +292,7 @@ export default function EditDepartModal({
         </div>
 
         {/* Footer */}
-        {phase !== 'transferred' && phase !== 'transferring' && (
+        {phase !== 'transferred' && phase !== 'transferring' && phase !== 'pending_saved' && (
           <div className="flex gap-3 p-6 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
             <button
               onClick={onClose}
@@ -283,11 +303,11 @@ export default function EditDepartModal({
             </button>
             <button
               onClick={handleSave}
-              disabled={!canSave || (hasSurplus && !hasNextDepart)}
+              disabled={!canSave}
               className="flex-1 py-3 rounded-xl font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ backgroundColor: 'var(--primary)' }}
             >
-              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : hasSurplus ? 'Modifier et transférer' : 'Enregistrer'}
+              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : hasSurplus ? (hasNextDepart ? 'Modifier et transférer' : 'Modifier et mettre en attente') : 'Enregistrer'}
             </button>
           </div>
         )}
@@ -348,6 +368,69 @@ function TransferConfirmation({
           style={{ backgroundColor: 'var(--primary)' }}
         >
           Terminer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PendingTransferConfirmation({
+  result,
+  onClose,
+}: {
+  result: TransferResult;
+  onClose: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--warning-light, #FEF3C7)' }}>
+          <Clock className="w-7 h-7" style={{ color: 'var(--warning, #D97706)' }} />
+        </div>
+        <div>
+          <p className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
+            {result.surplus} ticket{result.surplus > 1 ? 's' : ''} en attente de transfert
+          </p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Capacité ajustée de {result.oldCapacity} à {result.newCapacity} places
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl p-4 space-y-2" style={{
+        backgroundColor: 'var(--warning-light, #FEF3C7)',
+        border: '1px solid var(--warning, #D97706)',
+      }}>
+        <div className="flex items-start gap-2">
+          <Info className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--warning, #D97706)' }} />
+          <div className="flex-1">
+            <p className="text-sm font-bold" style={{ color: 'var(--warning, #D97706)' }}>
+              Action requise : créer le prochain départ
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+              Les {result.surplus} tickets en surplus seront automatiquement transférés vers le prochain départ créé pour ce trajet. Les tickets seront réaffectés avec de nouveaux sièges et la recette sera intégrée au nouveau départ.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl p-3 text-sm" style={{ backgroundColor: 'var(--surface-raised)' }}>
+        <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-1">Tickets en attente</p>
+        <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {result.transferredTickets.length} ticket{result.transferredTickets.length > 1 ? 's' : ''} de {result.oldCapacity} places → {result.newCapacity} places
+        </p>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+          Les tickets seront réimprimables avec les nouvelles informations (nouveau départ, siège, bus, date, heure) dès que le transfert sera effectué.
+        </p>
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          onClick={onClose}
+          className="flex-1 py-3 rounded-xl font-bold text-white"
+          style={{ backgroundColor: 'var(--primary)' }}
+        >
+          Compris, créer le prochain départ
         </button>
       </div>
     </div>

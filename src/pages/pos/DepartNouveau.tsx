@@ -15,6 +15,7 @@ import {
   type SeatAllocation,
   type DepartRecord,
 } from '@/services/pos/departService';
+import { checkAndApplyPendingTransfers } from '@/services/pos/transferService';
 import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair, Lock, Info } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 
@@ -199,7 +200,7 @@ export default function POSDepartNouveau() {
         allAllocations.push(...sortedAllocs);
       }
 
-      await createDepart({
+      const newDepart = await createDepart({
         route_id: ligneId,
         route_name: ligne?.name ?? '',
         bus_id: busId,
@@ -225,6 +226,18 @@ export default function POSDepartNouveau() {
         other_station_id: (seatAllocations.length > 0 ? seatAllocations[0].station_id : '') || undefined,
         other_station_name: otherStation?.name,
       });
+
+      // Auto-apply pending ticket transfers from bus changes on previous departs
+      try {
+        const result = await checkAndApplyPendingTransfers(newDepart, stationId);
+        if (result.totalTransferred > 0) {
+          setSuccess(true);
+          setTimeout(() => navigate('/guichet/departs'), 1200);
+          return;
+        }
+      } catch (transferErr) {
+        console.error('[transfer] auto-apply failed:', transferErr);
+      }
 
       setSuccess(true);
       setTimeout(() => navigate('/guichet/departs'), 800);
