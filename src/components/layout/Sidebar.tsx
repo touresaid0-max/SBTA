@@ -126,17 +126,41 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Rapports',           path: '/pompiste/reports',          icon: <BarChart2 className="w-5 h-5" /> },
   ],
   chef_gare: [
-    { label: 'Dashboard',           path: '/chef-gare/dashboard',    icon: <LayoutDashboard className="w-5 h-5" /> },
-    { label: 'Planning départs',    path: '/chef-gare/planning',     icon: <Calendar className="w-5 h-5" /> },
-    { label: 'Écran d\'affichage',  path: '/chef-gare/display',      icon: <Monitor className="w-5 h-5" /> },
-    { label: 'Guichets',            path: '/chef-gare/counters',     icon: <Monitor className="w-5 h-5" /> },
-    { label: 'Bagagistes',          path: '/chef-gare/baggage-handlers', icon: <Luggage className="w-5 h-5" /> },
-    { label: 'Ventes guichets',     path: '/chef-gare/sales',        icon: <TicketCheck className="w-5 h-5" /> },
-    { label: 'Ramassage',           path: '/chef-gare/ramassage',    icon: <ArrowDownToLine className="w-5 h-5" /> },
-    { label: 'Rapport ramassage',   path: '/chef-gare/ramassage/report', icon: <FileText className="w-5 h-5" /> },
-    { label: 'Convois',           path: '/chef-gare/convoys',      icon: <Truck className="w-5 h-5" /> },
-    { label: 'Rapport convois',     path: '/chef-gare/convoys/report', icon: <FileText className="w-5 h-5" /> },
-    { label: 'Rapport journalier',  path: '/chef-gare/daily-report', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Dashboard', path: '/chef-gare/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+    {
+      label: 'Exploitation',
+      icon: <ClipboardList className="w-5 h-5" />,
+      children: [
+        { label: 'Planning départs',    path: '/chef-gare/planning',     icon: <Calendar className="w-5 h-5" /> },
+        { label: 'Écran d\'affichage',  path: '/chef-gare/display',      icon: <Monitor className="w-5 h-5" /> },
+      ],
+    },
+    {
+      label: 'Ventes & Guichets',
+      icon: <TicketCheck className="w-5 h-5" />,
+      children: [
+        { label: 'Guichets',        path: '/chef-gare/counters',  icon: <Monitor className="w-5 h-5" /> },
+        { label: 'Ventes guichets', path: '/chef-gare/sales',     icon: <TicketCheck className="w-5 h-5" /> },
+      ],
+    },
+    {
+      label: 'Services',
+      icon: <Users className="w-5 h-5" />,
+      children: [
+        { label: 'Ramassage',   path: '/chef-gare/ramassage',          icon: <ArrowDownToLine className="w-5 h-5" /> },
+        { label: 'Convois',     path: '/chef-gare/convoys',            icon: <Truck className="w-5 h-5" /> },
+        { label: 'Bagagistes',  path: '/chef-gare/baggage-handlers',   icon: <Luggage className="w-5 h-5" /> },
+      ],
+    },
+    {
+      label: 'Rapports',
+      icon: <FileText className="w-5 h-5" />,
+      children: [
+        { label: 'Rapport ramassage',  path: '/chef-gare/ramassage/report', icon: <FileText className="w-5 h-5" /> },
+        { label: 'Rapport convois',    path: '/chef-gare/convoys/report',   icon: <FileText className="w-5 h-5" /> },
+        { label: 'Rapport journalier', path: '/chef-gare/daily-report',     icon: <FileText className="w-5 h-5" /> },
+      ],
+    },
   ],
   bagagiste: [
     { label: 'Vente bagages', path: '/bagagiste/baggage', icon: <Luggage className="w-5 h-5" /> },
