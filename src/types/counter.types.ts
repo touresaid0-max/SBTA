@@ -119,6 +119,7 @@ export interface BordereauDepartData {
 
 export interface BordereauRecettesData {
   station_name:  string
+  station_code:  string
   route_name:    string
   date_from:     string
   date_to:       string

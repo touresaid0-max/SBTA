@@ -257,22 +257,22 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   }
 
   infoRow('GUICHET', data.station_name)
+  infoRow('CODE GUICHET', data.station_code || '—')
   infoRow('LIGNE', data.route_name)
   infoRow('DATE', data.date_from === data.date_to ? data.date_from : `${data.date_from} au ${data.date_to}`)
   y += 3
 
   // ── TABLEAU ────────────────────────────────────────────────────
   const col = {
-    gare:   margin + 2,
-    ligne:  margin + 32,
-    date:   margin + 70,
-    mat:    margin + 92,
-    num:    margin + 114,
-    sieg:   margin + 128,
-    ticket: margin + 148,
-    dep:    margin + 170,
-    solde:  margin + 192,
-    bag:    margin + 212,
+    ligne:  margin + 2,
+    date:   margin + 42,
+    mat:    margin + 66,
+    num:    margin + 92,
+    sieg:   margin + 108,
+    ticket: margin + 130,
+    dep:    margin + 154,
+    solde:  margin + 176,
+    bag:    margin + 198,
   }
   const ROW_H = 8
 
@@ -283,7 +283,6 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setFontSize(7.5)
   doc.setFont('helvetica', 'bold')
   const hY = y + ROW_H - 1
-  doc.text('GUICHET',    col.gare,    hY)
   doc.text('LIGNE',      col.ligne,   hY)
   doc.text('DATE',       col.date,    hY)
   doc.text('MATRICULE',  col.mat,     hY)
@@ -311,8 +310,7 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
     }
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
-    doc.text(String(row.station_name || '').slice(0, 16),         col.gare,    y)
-    doc.text(String(row.route_name || '').slice(0, 18),           col.ligne,   y)
+    doc.text(String(row.route_name || '').slice(0, 20),           col.ligne,   y)
     doc.text(row.departure_date,                                   col.date,    y)
     doc.text(row.registration_number,                             col.mat,     y)
     doc.text(String(row.departure_number),                        col.num,     y, { align: 'center' })
@@ -378,7 +376,7 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
-  doc.text('TOTAUX',                              col.gare,    y)
+  doc.text('TOTAUX',                              col.ligne,   y)
   doc.text(String(data.totals.departures),        col.num,     y, { align: 'center' })
   doc.text(fmtNum(data.totals.seats_sold),        col.sieg,    y, { align: 'center' })
   doc.text(fmt(data.totals.total_ticket),         col.ticket,  y, { align: 'center' })

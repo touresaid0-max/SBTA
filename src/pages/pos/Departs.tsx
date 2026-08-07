@@ -8,7 +8,7 @@ import {
   seatsLibres, computeSolde,
   getSeatRangeForStation,
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
-  getVehicules, getChauffeurs,
+  getVehicules, getChauffeurs, getGares,
   findNextDepartForRoute, transferTicketsToDepart,
 } from '@/services/pos/departService';
 import { getAll as getAllTickets } from '@/services/pos/offlineStore';
@@ -292,6 +292,8 @@ export default function POSDeparts() {
     if (targets.length === 0) return;
     setActionLoading(true);
     try {
+      const [gares] = await Promise.all([getGares()]);
+      const stationCode = (gares.find(g => g.id === session?.station_id)?.agency_code) ?? '';
       const rows = await Promise.all(targets.map(async d => {
         const [dTickets, dBagages, dDepenses] = await Promise.all([
           getAllTickets<TicketRecord>('tickets'),
@@ -349,6 +351,7 @@ export default function POSDeparts() {
       const pad = (n: number) => String(n).padStart(2, '0');
       const data: BordereauRecettesData = {
         station_name: session?.station_name ?? '',
+        station_code: stationCode,
         route_name: targets.length > 0 ? `${targets.length} départ(s)` : '',
         date_from: rows[0]?.departure_date ?? '',
         date_to: rows[rows.length - 1]?.departure_date ?? '',
