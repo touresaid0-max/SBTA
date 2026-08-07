@@ -248,7 +248,6 @@ import POSDepenses from './pages/pos/Depenses';
 import POSAutresGares from './pages/pos/AutresGares';
 import POSCloture from './pages/pos/Cloture';
 import POSRamassage from './pages/pos/Ramassage';
-import POSRamassageReport from './pages/pos/RamassageReport';
 import POSParametres from './pages/pos/Parametres';
 import { POSSessionProvider } from './services/pos/POSSessionContext';
 
@@ -564,7 +563,6 @@ function App() {
             <Route path="autres-gares" element={<POSAutresGares />} />
             <Route path="cloture" element={<POSCloture />} />
             <Route path="ramassage" element={<POSRamassage />} />
-            <Route path="ramassage/report" element={<POSRamassageReport />} />
             <Route path="parametres" element={<POSParametres />} />
           </Route>
 

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { supabase } from '@/services/supabase';
-import { Bus, Search, MapPin, Hash, Loader2, CheckCircle, Clock, Lock, Printer, AlertCircle } from 'lucide-react';
+import { Bus, Search, MapPin, Hash, Loader2, CheckCircle, Clock, Lock, Printer, AlertCircle, FileText } from 'lucide-react';
 import { printRamassageBordereau } from '@/services/pos/printService';
+import RamassageReportView from '@/components/shared/RamassageReportView';
 
 type RamassageNotif = {
   id: string;
@@ -43,6 +44,7 @@ export default function POSRamassage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState<'collect' | 'report'>('collect');
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
@@ -178,6 +180,37 @@ export default function POSRamassage() {
 
   return (
     <POSLayout stationName={session?.station_name} activeRoute="Ramassage" showBack>
+      {/* Tabs */}
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-4">
+        <div className="flex gap-1 rounded-xl border-2 p-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <button
+            onClick={() => setTab('collect')}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-colors"
+            style={tab === 'collect'
+              ? { backgroundColor: 'var(--primary)', color: '#fff' }
+              : { color: 'var(--text-secondary)' }}
+          >
+            <Bus className="w-4 h-4" /> Collecte
+          </button>
+          <button
+            onClick={() => setTab('report')}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-colors"
+            style={tab === 'report'
+              ? { backgroundColor: 'var(--primary)', color: '#fff' }
+              : { color: 'var(--text-secondary)' }}
+          >
+            <FileText className="w-4 h-4" /> Rapport ramassage
+          </button>
+        </div>
+      </div>
+
+      {tab === 'report' ? (
+        <RamassageReportView
+          stationId={session?.station_id ?? null}
+          stationName={session?.station_name}
+          title="Rapport des ventes de ramassage"
+        />
+      ) : (
       <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-4">
         {/* Header stats */}
         <div className="rounded-2xl p-4 sm:p-5 border-2 flex items-center gap-4"
@@ -384,6 +417,8 @@ export default function POSRamassage() {
           ))}
         </div>
       </div>
+      )}
+
     </POSLayout>
   );
 }
