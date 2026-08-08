@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw, MousePointerClick } from 'lucide-react';
+import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw, MousePointerClick, Wrench, PowerOff, Power, X } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import StatusBadge from '../../components/shared/StatusBadge';
@@ -46,6 +46,7 @@ interface BusData {
   photo_url?: string;
   amenities: string[];
   fill_rate_current: number;
+  status_note?: string | null;
   bus_deck_type?: string;
   driver_position?: string;
   sleeping_type?: string;
@@ -106,6 +107,10 @@ export default function Buses() {
   const [viewingBus, setViewingBus] = useState<BusData | null>(null);
   const [repairingId, setRepairingId] = useState<string | null>(null);
   const [seatMgmtBus, setSeatMgmtBus] = useState<BusData | null>(null);
+  const [statusModalBus, setStatusModalBus] = useState<BusData | null>(null);
+  const [statusModalMode, setStatusModalMode] = useState<'maintenance' | 'deactivate' | 'reactivate'>('maintenance');
+  const [statusNote, setStatusNote] = useState('');
+  const [statusSaving, setStatusSaving] = useState(false);
 
   const [filters, setFilters] = useState({
     company: '',
@@ -306,6 +311,45 @@ export default function Buses() {
     return true;
   });
 
+  const openStatusModal = (bus: BusData, mode: 'maintenance' | 'deactivate' | 'reactivate') => {
+    setStatusModalBus(bus);
+    setStatusModalMode(mode);
+    setStatusNote(bus.status_note ?? '');
+  };
+
+  const handleStatusChange = async () => {
+    if (!statusModalBus) return;
+    if ((statusModalMode === 'maintenance' || statusModalMode === 'deactivate') && !statusNote.trim()) {
+      toast.error(statusModalMode === 'maintenance' ? 'Veuillez décrire la maintenance' : 'Veuillez indiquer le motif de désactivation');
+      return;
+    }
+    setStatusSaving(true);
+    try {
+      const newStatus = statusModalMode === 'maintenance' ? 'maintenance' : statusModalMode === 'deactivate' ? 'hors_service' : 'disponible';
+      const { error } = await supabase
+        .from('buses')
+        .update({
+          status: newStatus,
+          status_note: statusModalMode === 'reactivate' ? null : statusNote.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', statusModalBus.id);
+      if (error) throw error;
+      toast.success(
+        statusModalMode === 'maintenance' ? 'Bus mis en maintenance' :
+        statusModalMode === 'deactivate' ? 'Bus désactivé' :
+        'Bus réactivé'
+      );
+      setStatusModalBus(null);
+      setStatusNote('');
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors du changement de statut');
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   const getClassBadgeColor = (className: string) => {
     switch (className) {
       case 'standard': return 'var(--neutral-600)';
@@ -449,6 +493,11 @@ export default function Buses() {
                 </td>
                 <td className="p-4">
                   <StatusBadge status={bus.status} />
+                  {bus.status_note && (
+                    <p className="text-xs mt-1 max-w-[200px] truncate" style={{ color: 'var(--text-secondary)' }} title={bus.status_note}>
+                      {bus.status_note}
+                    </p>
+                  )}
                 </td>
                 <td className="p-4">
                   <button
@@ -481,6 +530,33 @@ export default function Buses() {
                     >
                       <Edit2 className="w-4 h-4" style={{ color: 'var(--primary)' }} />
                     </button>
+                    {bus.status === 'disponible' || bus.status === 'en_service' ? (
+                      <button
+                        onClick={() => openStatusModal(bus, 'maintenance')}
+                        className="p-2 hover:bg-amber-50 rounded-lg"
+                        title="Mettre en maintenance"
+                      >
+                        <Wrench className="w-4 h-4" style={{ color: '#D97706' }} />
+                      </button>
+                    ) : null}
+                    {bus.status !== 'hors_service' ? (
+                      <button
+                        onClick={() => openStatusModal(bus, 'deactivate')}
+                        className="p-2 hover:bg-red-50 rounded-lg"
+                        title="Désactiver le bus"
+                      >
+                        <PowerOff className="w-4 h-4" style={{ color: '#AF3029' }} />
+                      </button>
+                    ) : null}
+                    {bus.status === 'maintenance' || bus.status === 'hors_service' ? (
+                      <button
+                        onClick={() => openStatusModal(bus, 'reactivate')}
+                        className="p-2 hover:bg-green-50 rounded-lg"
+                        title="Réactiver le bus"
+                      >
+                        <Power className="w-4 h-4" style={{ color: '#0B7439' }} />
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -569,6 +645,36 @@ export default function Buses() {
                 </div>
 
                 <div>
+                  <h3 className="font-semibold mb-2">Statut &amp; Disponibilité</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span style={{ color: 'var(--text-secondary)' }}>Statut:</span>
+                      <StatusBadge status={viewingBus.status} />
+                    </div>
+                    {viewingBus.status_note && (
+                      <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: viewingBus.status === 'maintenance' ? '#FEF3C7' : '#FEE2E2' }}>
+                        <p className="text-xs font-medium mb-0.5" style={{ color: viewingBus.status === 'maintenance' ? '#92400E' : '#991B1B' }}>
+                          {viewingBus.status === 'maintenance' ? 'Description de la maintenance' : 'Motif de désactivation'}
+                        </p>
+                        <p className="text-sm" style={{ color: viewingBus.status === 'maintenance' ? '#78350F' : '#7F1D1D' }}>
+                          {viewingBus.status_note}
+                        </p>
+                      </div>
+                    )}
+                    {(viewingBus.status === 'maintenance' || viewingBus.status === 'hors_service') && (
+                      <button
+                        onClick={() => { setViewingBus(null); openStatusModal(viewingBus, 'reactivate'); }}
+                        className="mt-2 w-full py-2 rounded-lg text-sm font-semibold text-white flex items-center justify-center gap-2"
+                        style={{ backgroundColor: '#0B7439' }}
+                      >
+                        <Power className="w-4 h-4" />
+                        Réactiver ce bus
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div>
                   <h3 className="font-semibold mb-2">Carburant</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
@@ -650,6 +756,87 @@ export default function Buses() {
           busRegistration={seatMgmtBus.registration_number}
           onClose={() => { setSeatMgmtBus(null); loadData(); }}
         />
+      )}
+
+      {statusModalBus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                {statusModalMode === 'maintenance' && <Wrench className="w-5 h-5" style={{ color: '#D97706' }} />}
+                {statusModalMode === 'deactivate' && <PowerOff className="w-5 h-5" style={{ color: '#AF3029' }} />}
+                {statusModalMode === 'reactivate' && <Power className="w-5 h-5" style={{ color: '#0B7439' }} />}
+                {statusModalMode === 'maintenance' && 'Mettre en maintenance'}
+                {statusModalMode === 'deactivate' && 'Désactiver le bus'}
+                {statusModalMode === 'reactivate' && 'Réactiver le bus'}
+              </h3>
+              <button onClick={() => { setStatusModalBus(null); setStatusNote(''); }} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-secondary)' }}>
+                <Bus className="w-8 h-8" style={{ color: 'var(--primary)' }} />
+                <div>
+                  <p className="font-semibold">{statusModalBus.registration_number}</p>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {statusModalBus.brand} {statusModalBus.model} — {statusModalBus.capacity} places
+                  </p>
+                </div>
+              </div>
+              {statusModalMode === 'reactivate' ? (
+                <div className="p-4 rounded-lg bg-green-50 border border-green-200">
+                  <p className="text-sm" style={{ color: '#065F46' }}>
+                    Le bus redeviendra <strong>Disponible</strong> et sera à nouveau sélectionnable dans tous les modules.
+                    {(statusModalBus.status_note || statusModalBus.status === 'maintenance') && (
+                      <span className="block mt-1">{statusModalBus.status_note ? `Note précédente : « ${statusModalBus.status_note} »` : 'La note de maintenance sera effacée.'}</span>
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">
+                    {statusModalMode === 'maintenance' ? 'Description de la maintenance' : 'Motif de désactivation'} <span style={{ color: '#AF3029' }}>*</span>
+                  </label>
+                  <textarea
+                    value={statusNote}
+                    onChange={(e) => setStatusNote(e.target.value)}
+                    rows={3}
+                    placeholder={statusModalMode === 'maintenance' ? 'Ex : Révision moteur, changement de pneus…' : 'Ex : Véhicule hors service définitivement…'}
+                    className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    style={{ borderColor: 'var(--border)' }}
+                    autoFocus
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    {statusModalMode === 'maintenance'
+                      ? 'Le bus sera temporairement indisponible dans tous les modules de sélection.'
+                      : 'Le bus sera désactivé et ne sera plus sélectionnable. Son historique est conservé.'}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 p-5 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button
+                onClick={() => { setStatusModalBus(null); setStatusNote(''); }}
+                className="px-4 py-2 text-sm font-medium rounded-lg border hover:bg-gray-50"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleStatusChange}
+                disabled={statusSaving}
+                className="px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 flex items-center gap-2"
+                style={{ backgroundColor: statusModalMode === 'maintenance' ? '#D97706' : statusModalMode === 'deactivate' ? '#AF3029' : '#0B7439' }}
+              >
+                {statusSaving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {statusModalMode === 'maintenance' && 'Mettre en maintenance'}
+                {statusModalMode === 'deactivate' && 'Désactiver'}
+                {statusModalMode === 'reactivate' && 'Réactiver'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
