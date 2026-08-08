@@ -14,6 +14,7 @@ export type SBTARole =
   | 'responsable_assurance'
   | 'responsable_logistique'
   | 'agent_qhse'
+  | 'gestion_agboville'
   | 'client';
 
 export type UserRole = SBTARole;

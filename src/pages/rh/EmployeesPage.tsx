@@ -18,6 +18,7 @@ const ROLE_LABELS: Record<string, string> = {
   gerant_principal: 'Gérant Principal',
   responsable_assurance: 'Responsable Service Assurance',
   responsable_logistique: 'Responsable Logistique',
+  gestion_agboville: 'Gestion Agboville',
 }
 
 const TABS = [
