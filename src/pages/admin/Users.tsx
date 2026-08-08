@@ -2,14 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Pencil, Ban, Key, User as UserIcon,
   Search, AlertCircle, CheckCircle, X, Clock, Users as UsersIcon,
-  Trash2, AlertTriangle, RotateCcw,
+  Trash2, AlertTriangle, RotateCcw, Truck,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import DataTable from '../../components/shared/DataTable';
 import StatusBadge from '../../components/shared/StatusBadge';
 import CreateAccountModal from '../../components/admin/CreateAccountModal';
-import { fetchPendingEmployees, type PendingEmployee } from '../../services/employeeAccount.service';
+import { fetchPendingEmployees, createAccountByAdmin, type PendingEmployee } from '../../services/employeeAccount.service';
 import { deleteEmployeePermanently, reactivateEmployee } from '../../services/hr.service';
+import { generateSecurePassword } from '../../utils/generatePassword';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -397,6 +398,53 @@ export default function Users() {
   const getUserDisplayName = (user: UserRow) =>
     user.first_name ? `${user.first_name} ${user.last_name}` : user.full_name || '—';
 
+  const [batchActivating, setBatchActivating] = useState(false);
+
+  const handleBatchActivateChauffeurs = async () => {
+    const chauffeurs = pendingEmployees.filter(e => e.role === 'chauffeur');
+    if (chauffeurs.length === 0) {
+      toast('Aucun chauffeur en attente', { icon: 'ℹ️' });
+      return;
+    }
+    if (!confirm(
+      `Activer ${chauffeurs.length} compte${chauffeurs.length > 1 ? 's' : ''} chauffeur en attente ?\n` +
+      `Des identifiants de connexion seront créés automatiquement avec un mot de passe généré.\n` +
+      `Les chauffeurs seront visibles dans tous les menus de sélection.`
+    )) return;
+
+    setBatchActivating(true);
+    let success = 0;
+    const failures: string[] = [];
+
+    for (const emp of chauffeurs) {
+      const email = emp.professional_email ?? emp.personal_email;
+      if (!email) {
+        failures.push(`${emp.first_name} ${emp.last_name} — aucun email`);
+        continue;
+      }
+      try {
+        await createAccountByAdmin({
+          employee_id: emp.id,
+          email,
+          password: generateSecurePassword(),
+          send_welcome_email: false,
+        });
+        success++;
+      } catch (err) {
+        failures.push(`${emp.first_name} ${emp.last_name} — ${err instanceof Error ? err.message : 'erreur'}`);
+      }
+    }
+
+    setBatchActivating(false);
+    if (success > 0) {
+      toast.success(`${success} chauffeur${success > 1 ? 's' : ''} activé${success > 1 ? 's' : ''} avec succès`);
+    }
+    if (failures.length > 0) {
+      toast.error(`${failures.length} échec${failures.length > 1 ? 's' : ''} : ${failures.slice(0, 3).join(', ')}${failures.length > 3 ? '…' : ''}`, { duration: 8000 });
+    }
+    await Promise.all([loadPending(), loadUsers()]);
+  };
+
   const getRoleInfo = (role: UserRole) => ROLES.find(r => r.value === role) ?? ROLES[ROLES.length - 1];
 
   const activeUsers = users.filter(u => u.status === 'active' || u.status === 'repos_obligatoire');
@@ -577,6 +625,22 @@ export default function Users() {
                     Ces fiches ont été créées par le RH. Créez leurs identifiants de connexion.
                   </p>
                 </div>
+                {pendingEmployees.filter(e => e.role === 'chauffeur').length > 0 && (
+                  <button
+                    onClick={handleBatchActivateChauffeurs}
+                    disabled={batchActivating}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50 flex-shrink-0"
+                    style={{ backgroundColor: '#0B7439' }}
+                  >
+                    {batchActivating
+                      ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      : <Truck className="w-4 h-4" />}
+                    Activer tous les chauffeurs
+                    <span className="px-1.5 py-0.5 rounded-full text-xs bg-white/20">
+                      {pendingEmployees.filter(e => e.role === 'chauffeur').length}
+                    </span>
+                  </button>
+                )}
               </div>
 
               {/* Barre de recherche avec autocomplétion */}
