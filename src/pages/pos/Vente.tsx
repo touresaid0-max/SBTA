@@ -20,18 +20,13 @@ import type { DepartRecord } from '@/services/pos/departService';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock, RotateCw,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
-  Package, Banknote, BarChart3,
+  Package, Banknote,
 } from 'lucide-react';
-import { useStationCounterStats } from '../../hooks/useStationCounterStats';
-import StationCounterResultsTable from '../../components/shared/StationCounterResultsTable';
-import { format as fmtDate } from 'date-fns';
 
 export default function POSVente() {
   const { id: departId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { session } = usePOSSession();
-  const today = fmtDate(new Date(), 'yyyy-MM-dd');
-  const counterStats = useStationCounterStats(today, session?.station_id ?? null);
 
   const [depart, setDepart] = useState<DepartRecord | null>(null);
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
@@ -1204,16 +1199,6 @@ export default function POSVente() {
             </div>
             <p className="text-2xl font-bold" style={{ color: 'var(--success)' }}>{seatsRemaining}</p>
           </div>
-        </div>
-
-        {/* All-counter results for this station — real-time */}
-        <div className="mt-6">
-          <StationCounterResultsTable
-            stats={counterStats}
-            title="Résultats par guichet"
-            subtitle={session?.station_name ?? 'Ma gare'}
-            compact
-          />
         </div>
       </div>
     </POSLayout>
