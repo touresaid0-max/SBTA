@@ -10,6 +10,8 @@ import {
   AlertTriangle, Fuel, Receipt, ShieldAlert, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useStationCounterStats } from '../../hooks/useStationCounterStats';
+import StationCounterResultsTable from '../../components/shared/StationCounterResultsTable';
 
 interface StationInfo {
   id: string;
@@ -20,19 +22,6 @@ interface StationInfo {
   city_name?: string;
   display_screen_enabled?: boolean;
   facilities?: Record<string, boolean>;
-}
-
-interface CounterRow {
-  counter_id: string | null;
-  counter_number: number | null;
-  departures: number;
-  tickets: number;
-  seats_remaining: number;
-  revenue: number;
-  charges: number;
-  solde: number;
-  has_user: boolean;
-  user_name?: string;
 }
 
 interface CompletionAlert {
@@ -72,14 +61,13 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
 export default function ChefGareDashboard() {
   const { user } = useAuthStore();
   const [station, setStation] = useState<StationInfo | null>(null);
-  const [counterRows, setCounterRows] = useState<CounterRow[]>([]);
-  const [totalSeatsRemaining, setTotalSeatsRemaining] = useState(0);
   const [todaySchedules, setTodaySchedules] = useState<TodaySchedule[]>([]);
   const [completionAlerts, setCompletionAlerts] = useState<CompletionAlert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const today = format(new Date(), 'yyyy-MM-dd');
+  const counterStats = useStationCounterStats(today);
 
   useEffect(() => {
     if (user?.id) loadAll();
@@ -107,94 +95,12 @@ export default function ChefGareDashboard() {
       setStation(stationInfo);
 
       await Promise.all([
-        loadCounterStats(stationInfo.id),
         loadTodaySchedules(stationInfo.id),
         loadCompletionAlerts(stationInfo.id),
       ]);
     } finally {
       setLoading(false);
     }
-  };
-
-  const loadCounterStats = async (stationId: string) => {
-    const { count: chefCount } = await supabase
-      .from('station_managers')
-      .select('id', { count: 'exact', head: true })
-      .eq('station_id', stationId);
-    const restrictManagerId = (chefCount ?? 0) > 1 ? user?.id ?? null : null;
-
-    let countersQuery = supabase
-      .from('counters')
-      .select('id, counter_number, is_active, assigned_user_id, assigned_user:assigned_user_id(full_name)')
-      .eq('station_id', stationId)
-      .order('counter_number');
-    if (restrictManagerId) countersQuery = countersQuery.eq('manager_id', restrictManagerId);
-
-    const { data: countersData } = await countersQuery;
-
-    let summaryQuery = supabase
-      .from('schedule_receipt_summary')
-      .select('counter_id, counter_number, bus_id, seats_sold, seats_remaining, total_ticket_amount, total_charges, solde_ticket')
-      .eq('station_id', stationId)
-      .eq('departure_date', today);
-    if (restrictManagerId) {
-      const visibleIds = (countersData || []).map((c: any) => c.id);
-      if (visibleIds.length === 0) {
-        setCounterRows([]);
-        setTotalSeatsRemaining(0);
-        return;
-      }
-      summaryQuery = summaryQuery.in('counter_id', visibleIds);
-    }
-    const { data: summaryRows } = await summaryQuery;
-
-    const counterMap: Record<string, CounterRow> = {};
-
-    (countersData || []).forEach((c: any) => {
-      counterMap[c.id] = {
-        counter_id: c.id,
-        counter_number: c.counter_number,
-        departures: 0, tickets: 0, seats_remaining: 0, revenue: 0, charges: 0, solde: 0,
-        has_user: !!c.assigned_user_id || !!c.assigned_user,
-        user_name: (c.assigned_user as any)?.full_name || undefined,
-      };
-    });
-
-    const seenBusPerCounter: Record<string, Set<string>> = {};
-    const globalSeenBuses = new Map<string, number>();
-
-    (summaryRows || []).forEach((r: any) => {
-      const key = r.counter_id;
-      if (key && counterMap[key]) {
-        counterMap[key].departures += 1;
-        counterMap[key].tickets += r.seats_sold || 0;
-        counterMap[key].revenue += r.total_ticket_amount || 0;
-        counterMap[key].charges += r.total_charges || 0;
-        counterMap[key].solde += r.solde_ticket || 0;
-
-        if (!seenBusPerCounter[key]) seenBusPerCounter[key] = new Set();
-        const busId = r.bus_id;
-        if (busId && !seenBusPerCounter[key].has(busId)) {
-          seenBusPerCounter[key].add(busId);
-          counterMap[key].seats_remaining += r.seats_remaining || 0;
-        }
-        if (busId && !globalSeenBuses.has(busId)) {
-          globalSeenBuses.set(busId, r.seats_remaining || 0);
-        }
-      }
-    });
-
-    setTotalSeatsRemaining(
-      Array.from(globalSeenBuses.values()).reduce((sum, v) => sum + v, 0)
-    );
-
-    const sorted = Object.values(counterMap).sort((a, b) => {
-      if (a.counter_number == null) return 1;
-      if (b.counter_number == null) return -1;
-      return a.counter_number - b.counter_number;
-    });
-
-    setCounterRows(sorted);
   };
 
   const loadTodaySchedules = async (stationId: string) => {
@@ -264,11 +170,11 @@ export default function ChefGareDashboard() {
     if (station) loadCompletionAlerts(station.id);
   };
 
-  const activeCounters = counterRows.length;
-  const totalDepartures = counterRows.reduce((s, r) => s + r.departures, 0);
-  const totalTickets = counterRows.reduce((s, r) => s + r.tickets, 0);
-  const totalRevenue = counterRows.reduce((s, r) => s + r.revenue, 0);
-  const totalSolde = counterRows.reduce((s, r) => s + r.solde, 0);
+  const { totals: ctTotals } = counterStats;
+  const totalDepartures = ctTotals.departures;
+  const totalTickets = ctTotals.tickets;
+  const totalRevenue = ctTotals.ticket_amount;
+  const totalSolde = ctTotals.solde;
 
   if (loading) return (
     <div className="p-8 flex items-center justify-center min-h-64">
@@ -373,116 +279,16 @@ export default function ChefGareDashboard() {
         ))}
       </div>
 
-      {/* Consolidated counter table */}
-      <div className="rounded-2xl border shadow-sm overflow-hidden"
-        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-        <div className="flex items-center justify-between px-6 py-4 border-b"
-          style={{ borderColor: 'var(--border)' }}>
-          <div className="flex items-center gap-2">
-            <Monitor className="w-5 h-5" style={{ color: 'var(--primary)' }} />
-            <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
-              Synthèse par guichet
-            </h3>
-            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-              style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
-              Aujourd'hui
-            </span>
-          </div>
+      {/* Consolidated counter table — real-time */}
+      <div className="space-y-2">
+        <div className="flex justify-end">
           <Link to="/chef-gare/sales"
             className="flex items-center gap-1.5 text-sm font-medium"
             style={{ color: 'var(--primary)' }}>
             Voir détails <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
-
-        {counterRows.length === 0 ? (
-          <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
-            <Monitor className="w-10 h-10 mx-auto mb-2 opacity-40" />
-            <p>Aucun guichet configuré pour cette gare</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                  {['Guichet', 'Guichetier', 'Départs', 'Billets vendus', 'Sièges restants', 'Montant tickets', 'Charges', 'Solde'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide"
-                      style={{ color: 'var(--text-muted)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {counterRows.map((row, i) => (
-                  <tr key={row.counter_id ?? i}
-                    className="border-t transition-colors hover:bg-gray-50"
-                    style={{ borderColor: 'var(--border)' }}>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm text-white flex-shrink-0"
-                          style={{ backgroundColor: 'var(--primary)' }}>
-                          {row.counter_number ?? '?'}
-                        </div>
-                        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                          Guichet {row.counter_number ?? '—'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4" style={{ color: 'var(--text-secondary)' }}>
-                      {row.user_name ? (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full bg-green-500" />
-                          <span>{row.user_name}</span>
-                        </div>
-                      ) : (
-                        <span className="italic" style={{ color: 'var(--text-muted)' }}>Non assigné</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 font-semibold text-center" style={{ color: 'var(--text-primary)' }}>
-                      {row.departures}
-                    </td>
-                    <td className="px-5 py-4 font-semibold text-center" style={{ color: '#0369A1' }}>
-                      {row.tickets}
-                    </td>
-                    <td className="px-5 py-4 font-semibold text-center"
-                      style={{ color: row.seats_remaining === 0 && row.departures > 0 ? '#DC2626' : '#16A34A' }}>
-                      {row.seats_remaining}
-                    </td>
-                    <td className="px-5 py-4 font-semibold" style={{ color: '#16A34A' }}>
-                      {row.revenue.toLocaleString()}
-                    </td>
-                    <td className="px-5 py-4" style={{ color: '#D97706' }}>
-                      {row.charges.toLocaleString()}
-                    </td>
-                    <td className="px-5 py-4 font-bold"
-                      style={{ color: row.solde >= 0 ? '#16A34A' : '#DC2626' }}>
-                      {row.solde.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2" style={{ borderColor: 'var(--primary)', backgroundColor: 'var(--primary-light)' }}>
-                  <td colSpan={2} className="px-5 py-3 font-bold text-sm" style={{ color: 'var(--primary)' }}>
-                    TOTAL
-                  </td>
-                  <td className="px-5 py-3 font-bold text-center" style={{ color: 'var(--primary)' }}>{totalDepartures}</td>
-                  <td className="px-5 py-3 font-bold text-center" style={{ color: 'var(--primary)' }}>{totalTickets}</td>
-                  <td className="px-5 py-3 font-bold text-center" style={{ color: 'var(--primary)' }}>
-                    {totalSeatsRemaining}
-                  </td>
-                  <td className="px-5 py-3 font-bold" style={{ color: 'var(--primary)' }}>{totalRevenue.toLocaleString()}</td>
-                  <td className="px-5 py-3 font-bold" style={{ color: 'var(--primary)' }}>
-                    {counterRows.reduce((s, r) => s + r.charges, 0).toLocaleString()}
-                  </td>
-                  <td className="px-5 py-3 font-bold"
-                    style={{ color: totalSolde >= 0 ? '#16A34A' : '#DC2626' }}>
-                    {totalSolde.toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
+        <StationCounterResultsTable stats={counterStats} />
       </div>
 
       {/* Completion Alerts */}

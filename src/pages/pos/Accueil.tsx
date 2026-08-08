@@ -7,6 +7,9 @@ import {
 import { supabase } from '@/services/supabase';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
+import { useStationCounterStats } from '@/hooks/useStationCounterStats';
+import StationCounterResultsTable from '@/components/shared/StationCounterResultsTable';
+import { format } from 'date-fns';
 
 interface TileConfig {
   label: string;
@@ -31,6 +34,8 @@ export default function POSAccueil() {
   const navigate = useNavigate();
   const { session, logout } = usePOSSession();
   const [pendingRamassage, setPendingRamassage] = useState(0);
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const counterStats = useStationCounterStats(today, session?.station_id ?? null);
 
   useEffect(() => {
     if (!session?.station_id) return;
@@ -128,6 +133,15 @@ export default function POSAccueil() {
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             Sélectionnez une action pour commencer
           </p>
+        </div>
+
+        {/* Per-counter results for this station — real-time */}
+        <div className="mt-6">
+          <StationCounterResultsTable
+            stats={counterStats}
+            title="Résultats par guichet"
+            subtitle={session?.station_name ?? 'Ma gare'}
+          />
         </div>
       </main>
 
