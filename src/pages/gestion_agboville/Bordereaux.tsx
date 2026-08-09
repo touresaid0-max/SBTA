@@ -587,6 +587,3 @@ function ImportModal({ societes, segments, guichets, onClose, onImported }: {
     </div>
   )
 }
-
-
-export default ImportModal

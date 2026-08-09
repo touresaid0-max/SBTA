@@ -252,6 +252,85 @@ export async function fetchAnnualConsolidation(): Promise<AnnualConsolidation[]>
   return data ?? []
 }
 
+// ============================================================
+// Dépenses AO / HAO
+// ============================================================
+
+export interface AbgDepense {
+  id: string
+  date_depense: string
+  source_libelle: string
+  nature: string
+  montant: number
+  type_depense: 'AO' | 'HAO'
+  categorie: string | null
+  societe_code: string | null
+  car_matricule: string | null
+  gare_label: string | null
+  description: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface AbgDepenseCategory {
+  id: string
+  code: string
+  label: string
+  type_depense: 'AO' | 'HAO'
+  is_active: boolean
+  sort_order: number
+}
+
+export async function fetchDepenses(filters?: {
+  type?: string
+  categorie?: string
+  source?: string
+  dateFrom?: string
+  dateTo?: string
+}): Promise<AbgDepense[]> {
+  let q = supabase
+    .from('abg_depenses')
+    .select('*')
+    .order('date_depense', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (filters?.type) q = q.eq('type_depense', filters.type)
+  if (filters?.categorie) q = q.eq('categorie', filters.categorie)
+  if (filters?.source) q = q.eq('source_libelle', filters.source)
+  if (filters?.dateFrom) q = q.gte('date_depense', filters.dateFrom)
+  if (filters?.dateTo) q = q.lte('date_depense', filters.dateTo)
+
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchDepenseCategories(): Promise<AbgDepenseCategory[]> {
+  const { data, error } = await supabase
+    .from('abg_depense_categories')
+    .select('*')
+    .eq('is_active', true)
+    .order('type_depense')
+    .order('sort_order')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createDepense(depense: Omit<AbgDepense, 'id' | 'created_by' | 'created_at'>): Promise<AbgDepense> {
+  const { data, error } = await supabase
+    .from('abg_depenses')
+    .insert(depense)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteDepense(id: string): Promise<void> {
+  const { error } = await supabase.from('abg_depenses').delete().eq('id', id)
+  if (error) throw error
+}
+
 export function formatCFA(n: number | null | undefined): string {
   if (n === null || n === undefined) return '0'
   return Math.round(Number(n)).toLocaleString('fr-FR')
