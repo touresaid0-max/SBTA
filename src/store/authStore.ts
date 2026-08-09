@@ -460,5 +460,6 @@ export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   responsable_assurance: '/assurance/dashboard',
   responsable_logistique: '/logistique/dashboard',
   agent_qhse: '/rh/dashboard',
+  gestion_agboville: '/gestion-agboville/dashboard',
   client: '/client/search',
 };

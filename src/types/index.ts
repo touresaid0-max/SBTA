@@ -20,6 +20,8 @@ export type UserRole =
   | 'gerant_principal'
   | 'responsable_assurance'
   | 'responsable_logistique'
+  | 'agent_qhse'
+  | 'gestion_agboville'
   | 'client';
 
 export type LoyaltyTier = 'bronze' | 'silver' | 'gold' | 'platinum';

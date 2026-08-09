@@ -318,6 +318,16 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Synthèse bus',   path: '/logistique/bus-synthesis', icon: <Bus className="w-5 h-5" /> },
     { label: 'Bilan',          path: '/logistique/bilan',         icon: <ClipboardList className="w-5 h-5" /> },
   ],
+  gestion_agboville: [
+    { label: 'Tableau de bord',     path: '/gestion-agboville/dashboard',          icon: <LayoutDashboard className="w-5 h-5" /> },
+    { label: 'Bordereaux',          path: '/gestion-agboville/bordereaux',          icon: <FileText className="w-5 h-5" /> },
+    { label: 'Comptes journaliers', path: '/gestion-agboville/comptes-journaliers', icon: <BookOpen className="w-5 h-5" /> },
+    { label: 'Points',              path: '/gestion-agboville/points',              icon: <Calendar className="w-5 h-5" /> },
+    { label: 'Récap',               path: '/gestion-agboville/recap',               icon: <ClipboardList className="w-5 h-5" /> },
+    { label: 'Dépenses AO/HAO',     path: '/gestion-agboville/depenses',            icon: <Receipt className="w-5 h-5" /> },
+    { label: 'Résultat net',        path: '/gestion-agboville/resultat-net',        icon: <TrendingUp className="w-5 h-5" /> },
+    { label: 'Référentiels',        path: '/gestion-agboville/referentiels',        icon: <Settings className="w-5 h-5" /> },
+  ],
   agent_reservation: [
     { label: 'Tableau de bord',    path: '/agent-reservation/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Utilisateurs Mobile', path: '/agent-reservation/users',    icon: <Users className="w-5 h-5" /> },
