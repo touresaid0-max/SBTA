@@ -239,13 +239,7 @@ import AgentReservationPolicies from './pages/agent-reservation/CancellationPoli
 
 // Gestion Agboville module (LOT 0 — additive, no existing route modified)
 import GestionAgbovilleDashboard from './pages/gestion_agboville/Dashboard';
-import GestionAgbovilleBordereaux from './pages/gestion_agboville/Bordereaux';
-import GestionAgbovilleComptesJournaliers from './pages/gestion_agboville/ComptesJournaliers';
-import GestionAgbovillePoints from './pages/gestion_agboville/Points';
-import GestionAgbovilleRecap from './pages/gestion_agboville/Recap';
 import GestionAgbovilleDepenses from './pages/gestion_agboville/Depenses';
-import GestionAgbovilleResultatNet from './pages/gestion_agboville/ResultatNet';
-import GestionAgbovilleReferentiels from './pages/gestion_agboville/Referentiels';
 
 // POS module (LOT 0 — additive, no existing route modified)
 import POSConnexion from './pages/pos/Connexion';
@@ -563,13 +557,7 @@ function App() {
 
             {/* Gestion Agboville — LOT 0: additive module, cloisonné à la ligne Agboville */}
             <Route path="gestion-agboville/dashboard" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleDashboard /></ProtectedRoute>} />
-            <Route path="gestion-agboville/bordereaux" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleBordereaux /></ProtectedRoute>} />
-            <Route path="gestion-agboville/comptes-journaliers" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleComptesJournaliers /></ProtectedRoute>} />
-            <Route path="gestion-agboville/points" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovillePoints /></ProtectedRoute>} />
-            <Route path="gestion-agboville/recap" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleRecap /></ProtectedRoute>} />
             <Route path="gestion-agboville/depenses" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleDepenses /></ProtectedRoute>} />
-            <Route path="gestion-agboville/resultat-net" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleResultatNet /></ProtectedRoute>} />
-            <Route path="gestion-agboville/referentiels" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleReferentiels /></ProtectedRoute>} />
           </Route>
 
           {/* POS /guichet module — LOT 0+1: additive, standalone layout, offline-first */}
