@@ -331,6 +331,73 @@ export async function deleteDepense(id: string): Promise<void> {
   if (error) throw error
 }
 
+// ============================================================
+// Dispatches
+// ============================================================
+
+export interface AbgDispatch {
+  id: string
+  periode_type: 'hebdo' | 'mensuel' | 'annuel'
+  periode_value: string
+  societe_code: string
+  sous_groupe: string | null
+  responsable_nom: string | null
+  comptable_nom: string | null
+  recettes: number
+  depense_pr: number
+  total_ao: number
+  total_hao: number
+  resultat_net: number
+  statut: 'genere' | 'envoye' | 'recu'
+  envoye_at: string | null
+  envoye_par: string | null
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export async function fetchDispatches(periodeType?: string, periodeValue?: string): Promise<AbgDispatch[]> {
+  let q = supabase.from('abg_dispatches').select('*').order('periode_value', { ascending: false }).order('societe_code')
+  if (periodeType) q = q.eq('periode_type', periodeType)
+  if (periodeValue) q = q.eq('periode_value', periodeValue)
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+export async function upsertDispatch(dispatch: {
+  periode_type: 'hebdo' | 'mensuel' | 'annuel'
+  periode_value: string
+  societe_code: string
+  sous_groupe?: string | null
+  responsable_nom?: string | null
+  comptable_nom?: string | null
+  recettes: number
+  depense_pr: number
+  total_ao: number
+  total_hao: number
+  resultat_net: number
+}): Promise<AbgDispatch> {
+  const { data, error } = await supabase
+    .from('abg_dispatches')
+    .upsert(dispatch, { onConflict: 'periode_type,periode_value,societe_code' })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateDispatchStatut(id: string, statut: 'genere' | 'envoye' | 'recu', note?: string): Promise<void> {
+  const update: Record<string, unknown> = { statut, updated_at: new Date().toISOString() }
+  if (statut === 'envoye') {
+    update.envoye_at = new Date().toISOString()
+    update.envoye_par = null
+  }
+  if (note !== undefined) update.note = note
+  const { error } = await supabase.from('abg_dispatches').update(update).eq('id', id)
+  if (error) throw error
+}
+
 export function formatCFA(n: number | null | undefined): string {
   if (n === null || n === undefined) return '0'
   return Math.round(Number(n)).toLocaleString('fr-FR')

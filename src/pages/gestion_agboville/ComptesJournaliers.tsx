@@ -3,8 +3,9 @@ import {
   fetchDailyConsolidation, formatCFA,
   type DailyConsolidation,
 } from '@/services/abg.service'
-import { BookOpen, Calendar } from 'lucide-react'
+import { BookOpen, Calendar, FileDown, FileSpreadsheet } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { exportPDF, exportTableExcel } from '@/utils/abgExports'
 
 export default function ComptesJournaliers() {
   const [data, setData] = useState<DailyConsolidation[]>([])
@@ -25,6 +26,29 @@ export default function ComptesJournaliers() {
 
   useEffect(() => { load() }, [load])
 
+  const handleExportPDF = async () => {
+    const headers = ['Date', 'Gare', 'Société', 'Segment', 'N° Cars', 'Recettes', 'Dép. P/R', 'Résultats', 'Bagage']
+    const rows = data.map(r => [
+      new Date(r.date).toLocaleDateString('fr-FR'), r.gare_label, r.societe_code, r.segment_code ?? '—',
+      String(r.nb_bordereaux), formatCFA(r.recettes_totales), formatCFA(r.depense_pr), formatCFA(r.resultats), formatCFA(r.bagage_total),
+    ])
+    const totalsRow = ['TOTAL', '', '', '', String(totals.bordereaux), formatCFA(totals.recettes), formatCFA(totals.depense), formatCFA(totals.resultats), formatCFA(totals.bagage)]
+    const periodLabel = dateFrom || dateTo ? `${dateFrom || '…'} → ${dateTo || '…'}` : 'Toutes périodes'
+    await exportPDF('Comptes journaliers', `Période: ${periodLabel}`, headers, rows, totalsRow, 'comptes_journaliers.pdf')
+    toast.success('PDF exporté')
+  }
+
+  const handleExportExcel = () => {
+    const headers = ['Date', 'Gare', 'Société', 'Segment', 'N° Cars', 'Recettes', 'Dép. P/R', 'Résultats', 'Bagage']
+    const rows = data.map(r => [
+      new Date(r.date).toLocaleDateString('fr-FR'), r.gare_label, r.societe_code, r.segment_code ?? '—',
+      String(r.nb_bordereaux), formatCFA(r.recettes_totales), formatCFA(r.depense_pr), formatCFA(r.resultats), formatCFA(r.bagage_total),
+    ])
+    const totalsRow = ['TOTAL', '', '', '', String(totals.bordereaux), formatCFA(totals.recettes), formatCFA(totals.depense), formatCFA(totals.resultats), formatCFA(totals.bagage)]
+    exportTableExcel('Comptes journaliers', headers, rows, totalsRow, 'comptes_journaliers.xlsx')
+    toast.success('Excel exporté')
+  }
+
   const totals = data.reduce((acc, r) => ({
     seats: acc.seats + r.total_seats,
     recettes: acc.recettes + Number(r.recettes_totales),
@@ -36,9 +60,21 @@ export default function ComptesJournaliers() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#1a2a22]">Comptes journaliers</h1>
-        <p className="text-sm mt-0.5 text-[#6B7280]">Comptabilité journalière de la ligne Agboville — par gare / société / car</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1a2a22]">Comptes journaliers</h1>
+          <p className="text-sm mt-0.5 text-[#6B7280]">Comptabilité journalière de la ligne Agboville — par gare / société / car</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleExportPDF} disabled={data.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+            <FileDown className="w-4 h-4" /> PDF
+          </button>
+          <button onClick={handleExportExcel} disabled={data.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+            <FileSpreadsheet className="w-4 h-4" /> Excel
+          </button>
+        </div>
       </div>
 
       {/* Date filters */}

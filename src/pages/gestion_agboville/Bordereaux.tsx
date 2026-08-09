@@ -8,9 +8,10 @@ import {
 } from '@/services/abg.service'
 import {
   FileText, Search, Download, Upload, ChevronRight, CheckCircle2, AlertTriangle,
-  X, Plus, Trash2, Eye, Filter,
+  X, Plus, Trash2, Eye, Filter, Printer,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { exportPDF } from '@/utils/abgExports'
 
 type StatusFilter = 'all' | 'recu' | 'verifie' | 'ecart'
 
@@ -305,6 +306,21 @@ function BordereauDetail({ bordereau, lignes, loading, onClose, onVerify, onDisp
 }) {
   const st = STATUS_CONFIG[bordereau.status] ?? STATUS_CONFIG.recu
 
+  const handlePrint = async (b: Bordereau, lines: BordereauLigne[]) => {
+    const headers = ['Car (matricule)', 'N° Dép.', 'Sièges', 'MT Ticket', 'Dép. P/R', 'Solde', 'Bagage']
+    const rows = lines.map(l => [
+      l.car_matricule, l.departure_number?.toString() ?? '—', String(l.seats),
+      formatCFA(l.mt_ticket), formatCFA(l.depense_pr), formatCFA(l.solde_ticket), formatCFA(l.bagage),
+    ])
+    const totals = ['TOTAL', '', String(b.total_seats), formatCFA(b.total_mt_ticket), formatCFA(b.total_depense_pr), formatCFA(b.total_solde), formatCFA(b.total_baggage)]
+    await exportPDF(
+      `Bordereau — ${b.gare_label} · ${b.societe_code}`,
+      `Date: ${new Date(b.bordereau_date).toLocaleDateString('fr-FR')} | Segment: ${b.segment_code ?? '—'} | Source: ${b.source}`,
+      headers, rows, totals, `bordereau_${b.bordereau_date}_${b.societe_code}.pdf`,
+    )
+    toast.success('Bordereau exporté en PDF')
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/20" />
@@ -399,18 +415,24 @@ function BordereauDetail({ bordereau, lignes, loading, onClose, onVerify, onDisp
           </div>
 
           {/* Actions */}
-          {bordereau.status === 'recu' && (
-            <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-2 flex-wrap">
+            <button onClick={() => handlePrint(bordereau, lignes)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
+              <Printer className="w-4 h-4" /> Réimprimer
+            </button>
+            {bordereau.status === 'recu' && (
               <button onClick={onVerify}
                 className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors">
                 <CheckCircle2 className="w-4 h-4" /> Vérifier
               </button>
+            )}
+            {bordereau.status === 'recu' && (
               <button onClick={onDispute}
                 className="flex items-center gap-1.5 px-4 py-2 bg-orange-100 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-200 transition-colors">
                 <AlertTriangle className="w-4 h-4" /> Signaler un écart
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

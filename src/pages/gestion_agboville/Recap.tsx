@@ -4,10 +4,11 @@ import {
   type Bordereau, type AbgDepense, type AbgSociete, type AbgSegment,
 } from '@/services/abg.service'
 import {
-  ClipboardList, ChevronDown, ChevronRight, Calendar, TrendingUp,
+  ClipboardList, ChevronDown, ChevronRight, Calendar, TrendingUp, FileDown, FileSpreadsheet,
 } from 'lucide-react'
 import { Fragment } from 'react'
 import toast from 'react-hot-toast'
+import { exportPDF, exportTableExcel } from '@/utils/abgExports'
 
 type Period = 'hebdo' | 'mensuel' | 'annuel'
 
@@ -176,9 +177,21 @@ export default function Recap() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#1a2a22]">Récap consolidé</h1>
-        <p className="text-sm mt-0.5 text-[#6B7280]">Consolidation multi-sociétés par segment — ligne Agboville</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1a2a22]">Récap consolidé</h1>
+          <p className="text-sm mt-0.5 text-[#6B7280]">Consolidation multi-sociétés par segment — ligne Agboville</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleExportPDF} disabled={filteredBords.length === 0 && filteredDepenses.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+            <FileDown className="w-4 h-4" /> PDF
+          </button>
+          <button onClick={handleExportExcel} disabled={filteredBords.length === 0 && filteredDepenses.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+            <FileSpreadsheet className="w-4 h-4" /> Excel
+          </button>
+        </div>
       </div>
 
       {/* Period selector */}
@@ -388,6 +401,3 @@ function GrandCard({ label, value, highlight }: { label: string; value: string; 
     </div>
   )
 }
-
-
-export default GrandCard
