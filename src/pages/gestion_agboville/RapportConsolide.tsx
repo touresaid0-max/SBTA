@@ -130,7 +130,7 @@ export default function RapportConsolide() {
     let totalRecettes = 0
     for (const r of reservations) {
       if (!validScheduleIds.has(r.schedule_id)) continue
-      if (r.status !== 'confirmed' && r.status !== 'paid' && r.payment_status !== 'paid') continue
+      if (r.status !== 'confirmed' && r.status !== 'paid' && r.status !== 'confirmee' && r.payment_status !== 'paid' && r.payment_status !== 'payee') continue
       totalRecettes += safe(r.total_price) + safe(r.baggage_fee)
     }
 

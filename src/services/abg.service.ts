@@ -454,6 +454,32 @@ export async function fetchPosSchedules(filters?: {
   for (const seg of activeSegments) {
     segmentPairs.set(`${seg.departureStationId}|${seg.arrivalStationId}`, seg)
   }
+  const segmentByDeparture = new Map<string, AbgSegmentPair[]>()
+  for (const seg of activeSegments) {
+    const list = segmentByDeparture.get(seg.departureStationId) ?? []
+    list.push(seg)
+    segmentByDeparture.set(seg.departureStationId, list)
+  }
+
+  function matchSegment(s: { departure_station_id: string | null; arrival_station_id: string | null; route_name: string | null }): AbgSegmentPair | null {
+    if (!s.departure_station_id) return null
+    const pairKey = `${s.departure_station_id}|${s.arrival_station_id}`
+    const exact = segmentPairs.get(pairKey)
+    if (exact) return exact
+    const candidates = segmentByDeparture.get(s.departure_station_id)
+    if (!candidates) return null
+    if (s.arrival_station_id) {
+      const byArrival = candidates.find(c => c.arrivalStationId === s.arrival_station_id)
+      if (byArrival) return byArrival
+    }
+    const routeLower = (s.route_name ?? '').toLowerCase()
+    for (const c of candidates) {
+      const destLower = c.label.split('→')[1]?.trim().toLowerCase() ?? ''
+      if (destLower && routeLower.includes(destLower)) return c
+    }
+    if (candidates.length === 1) return candidates[0]
+    return null
+  }
 
   let q = supabase
     .from('schedules')
@@ -476,10 +502,7 @@ export async function fetchPosSchedules(filters?: {
   if (error) throw error
   if (!schedules || schedules.length === 0) return []
 
-  const filteredSchedules = schedules.filter(s => {
-    const pairKey = `${s.departure_station_id}|${s.arrival_station_id}`
-    return segmentPairs.has(pairKey)
-  })
+  const filteredSchedules = schedules.filter(s => matchSegment(s) !== null)
   if (filteredSchedules.length === 0) return []
 
   const busIds = [...new Set(filteredSchedules.map(s => s.bus_id).filter(Boolean))] as string[]
@@ -517,8 +540,7 @@ export async function fetchPosSchedules(filters?: {
   return filteredSchedules.map(s => {
     const bus = s.bus_id ? busMap.get(s.bus_id) : null
     const company = bus?.company_id ? companyMap.get(bus.company_id) : null
-    const pairKey = `${s.departure_station_id}|${s.arrival_station_id}`
-    const seg = segmentPairs.get(pairKey)
+    const seg = matchSegment(s)
     return {
       id: s.id,
       route_id: s.route_id,

@@ -116,7 +116,7 @@ export default function GestionAgbovilleDashboard() {
   const aggBySchedule = useMemo<ScheduleAgg[]>(() => {
     const resMap = new Map<string, { recettes: number; tickets: number; sieges: number }>()
     for (const r of reservations) {
-      if (r.status !== 'confirmed' && r.status !== 'paid' && r.payment_status !== 'paid') continue
+      if (r.status !== 'confirmed' && r.status !== 'paid' && r.status !== 'confirmee' && r.payment_status !== 'paid' && r.payment_status !== 'payee') continue
       const prev = resMap.get(r.schedule_id) ?? { recettes: 0, tickets: 0, sieges: 0 }
       prev.recettes += safe(r.total_price) + safe(r.baggage_fee)
       prev.tickets += 1

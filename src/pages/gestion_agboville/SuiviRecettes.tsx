@@ -155,7 +155,7 @@ export default function SuiviRecettes() {
   const rows: RecetteRow[] = useMemo(() => {
     const resMap = new Map<string, number>()
     for (const r of reservations) {
-      if (r.status !== 'confirmed' && r.status !== 'paid' && r.payment_status !== 'paid') continue
+      if (r.status !== 'confirmed' && r.status !== 'paid' && r.status !== 'confirmee' && r.payment_status !== 'paid' && r.payment_status !== 'payee') continue
       resMap.set(r.schedule_id, (resMap.get(r.schedule_id) ?? 0) + safe(r.total_price) + safe(r.baggage_fee))
     }
 
