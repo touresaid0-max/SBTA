@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   fetchDepenses, fetchDepenseCategories, createDepense, deleteDepense,
   createDepenseCategory, fetchBusesForAbg, fetchSocietes,
-  formatCFA, type AbgDepense, type AbgDepenseCategory,
+  formatCFA, type AbgDepense, type AbgDepenseCategory, type AbgSociete,
 } from '@/services/abg.service'
 import {
-  Receipt, Plus, Trash2, X, Filter, Wallet, Printer, FileSpreadsheet, ChevronDown, Check,
+  Receipt, Plus, Trash2, X, Filter, Wallet, Printer, FileSpreadsheet, ChevronDown, ChevronRight, Check,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
@@ -81,7 +81,7 @@ export default function Depenses() {
   const [depenses, setDepenses] = useState<AbgDepense[]>([])
   const [categories, setCategories] = useState<AbgDepenseCategory[]>([])
   const [buses, setBuses] = useState<{ id: string; registration_number: string }[]>([])
-  const [societes, setSocietes] = useState<{ code: string; name: string }[]>([])
+  const [societes, setSocietes] = useState<AbgSociete[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [showFilters, setShowFilters] = useState(true)
@@ -250,10 +250,7 @@ export default function Depenses() {
             </div>
             <div>
               <label className="text-xs text-[#6B7280] mb-1 block">Société</label>
-              <select value={filters.societe} onChange={e => setFilters(p => ({ ...p, societe: e.target.value }))} className={inputCls}>
-                <option value="">Toutes</option>
-                {societes.map(s => <option key={s.code} value={s.code}>{s.code} — {s.name}</option>)}
-              </select>
+              <SocieteTreeSelect societes={societes} value={filters.societe} onChange={v => setFilters(p => ({ ...p, societe: v }))} allowAll />
             </div>
           </div>
           <div className="flex justify-end">
@@ -357,6 +354,125 @@ function SubTotalCard({ label, value, color, bg, border }: { label: string; valu
         <p className="text-xs text-[#6B7280]">{label}</p>
       </div>
       <p className={`text-xl font-bold ${color}`}>{value}</p>
+    </div>
+  )
+}
+
+/* ── Hierarchical societe tree-select (groupes + filiales + autonomes) ── */
+function buildSocieteHierarchy(societes: AbgSociete[]) {
+  const groups = societes.filter(s => s.sub_group && societes.some(c => c.sub_group === s.sub_group && c.code !== s.code))
+  const seenGroup = new Set<string>()
+  const uniqueGroups = groups.filter(g => { if (seenGroup.has(g.sub_group!)) return false; seenGroup.add(g.sub_group!); return true })
+  const groupMap = new Map<string, AbgSociete[]>()
+  for (const g of uniqueGroups) {
+    const children = societes.filter(s => s.sub_group === g.sub_group && s.code !== g.code).sort((a, b) => a.code.localeCompare(b.code))
+    groupMap.set(g.sub_group!, children)
+  }
+  const filialeCodes = new Set<string>()
+  for (const children of groupMap.values()) for (const c of children) filialeCodes.add(c.code)
+  const groupCodes = new Set(uniqueGroups.map(g => g.code))
+  const autonomes = societes.filter(s => !groupCodes.has(s.code) && !filialeCodes.has(s.code)).sort((a, b) => a.code.localeCompare(b.code))
+  return { uniqueGroups, groupMap, autonomes }
+}
+
+function SocieteTreeSelect({
+  societes, value, onChange, allowAll, placeholder,
+}: {
+  societes: AbgSociete[]
+  value: string
+  onChange: (v: string) => void
+  allowAll?: boolean
+  placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const { uniqueGroups, groupMap, autonomes } = buildSocieteHierarchy(societes)
+  const selected = societes.find(s => s.code === value)
+  const displayValue = selected ? `${selected.code} (${selected.name})` : (value || placeholder || (allowAll ? 'Toutes' : 'Rechercher une société...'))
+  const q = query.toLowerCase().trim()
+  const matches = (s: AbgSociete) => !q || s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
+  const anyGroupMatch = (groupCode: string) => {
+    const children = groupMap.get(groupCode) ?? []
+    return children.some(matches)
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex gap-1">
+        <input
+          value={open ? query : displayValue}
+          onFocus={() => { setOpen(true); setQuery('') }}
+          onBlur={() => setTimeout(() => setOpen(false), 180)}
+          onChange={e => { setQuery(e.target.value); setOpen(true); setExpanded(new Set(uniqueGroups.map(g => g.sub_group!))) }}
+          placeholder={placeholder ?? (allowAll ? 'Toutes' : 'Rechercher une société...')}
+          className={inputCls}
+        />
+        <button type="button" onClick={() => setOpen(o => !o)}
+          className="flex-shrink-0 px-2 border border-[#E2EAE5] rounded-lg text-[#6B7280]">
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      </div>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full bg-white border border-[#E2EAE5] rounded-lg shadow-lg max-h-72 overflow-y-auto">
+          {allowAll && (
+            <button type="button" onMouseDown={() => { onChange(''); setOpen(false) }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-[#F8FAF8] flex items-center justify-between">
+              <span className="text-[#6B7280] italic">Toutes les sociétés</span>
+              {!value && <Check className="w-3.5 h-3.5 text-[#0B7439]" />}
+            </button>
+          )}
+          {uniqueGroups.length > 0 && (
+            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF] bg-[#F8FAF8]">Groupes</div>
+          )}
+          {uniqueGroups.map(g => {
+            const children = groupMap.get(g.sub_group!) ?? []
+            const isExpanded = expanded.has(g.sub_group!) || (q ? anyGroupMatch(g.sub_group!) : false)
+            const groupVisible = !q || matches(g) || anyGroupMatch(g.sub_group!)
+            if (!groupVisible) return null
+            return (
+              <div key={g.id}>
+                <button type="button"
+                  onMouseDown={() => setExpanded(prev => { const n = new Set(prev); if (n.has(g.sub_group!)) n.delete(g.sub_group!); else n.add(g.sub_group!); return n })}
+                  onClick={e => e.preventDefault()}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-[#F8FAF8] flex items-center gap-1.5">
+                  {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-[#6B7280]" /> : <ChevronRight className="w-3.5 h-3.5 text-[#6B7280]" />}
+                  <span className="font-semibold text-[#1a2a22]">{g.code}</span>
+                  <span className="text-[#6B7280] text-xs">— Groupe ({children.length} filiales)</span>
+                </button>
+                {isExpanded && children.filter(matches).map(c => {
+                  const isSelected = c.code === value
+                  return (
+                    <button key={c.id} type="button"
+                      onMouseDown={() => { onChange(c.code); setOpen(false) }}
+                      className="w-full text-left pl-10 pr-3 py-1.5 text-sm hover:bg-[#F8FAF8] flex items-center justify-between border-l-2 border-[#86efac] ml-3">
+                      <span className="text-[#374151]">↳ {c.code} <span className="text-[#9CA3AF]">({c.name})</span></span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-[#0B7439]" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+          {autonomes.length > 0 && (
+            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF] bg-[#F8FAF8] border-t border-[#E2EAE5]">Sociétés autonomes</div>
+          )}
+          {autonomes.filter(matches).map(s => {
+            const isSelected = s.code === value
+            return (
+              <button key={s.id} type="button"
+                onMouseDown={() => { onChange(s.code); setOpen(false) }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-[#F8FAF8] flex items-center justify-between">
+                <span className="text-[#374151] font-medium">{s.code} <span className="text-[#9CA3AF]">({s.name})</span></span>
+                {isSelected && <Check className="w-3.5 h-3.5 text-[#0B7439]" />}
+              </button>
+            )
+          })}
+          {societes.length === 0 && (
+            <div className="px-3 py-3 text-xs text-[#9CA3AF] text-center">Aucune société disponible</div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -487,7 +603,7 @@ function DepenseForm({
 }: {
   categories: AbgDepenseCategory[]
   buses: { id: string; registration_number: string }[]
-  societes: { code: string; name: string }[]
+  societes: AbgSociete[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -667,8 +783,8 @@ function DepenseForm({
                   ) : (
                     <div>
                       <label className="text-xs text-[#6B7280] mb-1 block">Société *</label>
-                      <Combobox
-                        options={societeOptions}
+                      <SocieteTreeSelect
+                        societes={societes}
                         value={row.societe_code}
                         onChange={v => updateRow(row.id, { societe_code: v })}
                         placeholder="Rechercher une société..."
