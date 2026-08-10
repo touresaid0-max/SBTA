@@ -31,7 +31,7 @@ interface StationOption {
 interface CityOption {
   id: string
   name: string
-  region: string
+  region: string | null
 }
 
 interface FuelStationCity {
@@ -146,7 +146,7 @@ export default function CarburantNewWithdrawal() {
   const filteredCities = useMemo(() => {
     const q = citySearch.toLowerCase().trim()
     if (!q) return cities.slice(0, 20)
-    return cities.filter(c => c.name.toLowerCase().includes(q) || c.region.toLowerCase().includes(q)).slice(0, 20)
+    return cities.filter(c => c.name.toLowerCase().includes(q) || (c.region ?? '').toLowerCase().includes(q)).slice(0, 20)
   }, [cities, citySearch])
 
   const selectCity = (city: CityOption) => {
