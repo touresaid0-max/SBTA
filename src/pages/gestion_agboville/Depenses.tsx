@@ -306,7 +306,7 @@ function DepenseForm({ categories, onClose, onSaved }: {
                     ? (t === 'AO' ? 'bg-blue-50 border-blue-400 text-blue-700' : 'bg-orange-50 border-orange-400 text-orange-700')
                     : 'bg-white border-[#E2EAE5] text-[#6B7280] hover:bg-[#F8FAF8]'
                 }`}>
-                {t === 'AO' ? 'AO — Acquisition d\'Ordinaire' : 'HAO — Hors Acquisition d\'Ordinaire'}
+                {t === 'AO' ? 'AO — Activités Ordinaires' : 'HAO — Hors Activités Ordinaires'}
               </button>
             ))}
           </div>
