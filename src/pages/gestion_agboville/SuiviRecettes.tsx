@@ -48,6 +48,7 @@ interface RecetteRow {
   carburant: number
   peages: number
   autres: number
+  totalDepenses: number
   resultat: number
 }
 
@@ -163,10 +164,12 @@ export default function SuiviRecettes() {
     for (const c of charges) {
       const prev = chgMap.get(c.schedule_id) ?? { rations: 0, carburant: 0, peages: 0, autres: 0 }
       const amt = safe(c.amount)
-      if (c.charge_type === 'ration') prev.rations += amt
-      else if (c.charge_type === 'carburant_complement') prev.carburant += amt
-      else if (c.charge_type === 'peage') prev.peages += amt
-      else prev.autres += amt
+      switch (c.charge_type) {
+        case 'ration':              prev.rations += amt; break
+        case 'carburant_complement': prev.carburant += amt; break
+        case 'peage':               prev.peages += amt; break
+        default:                    prev.autres += amt; break
+      }
       chgMap.set(c.schedule_id, prev)
     }
 
@@ -184,7 +187,7 @@ export default function SuiviRecettes() {
       .map(s => {
         const recettes = resMap.get(s.id) ?? 0
         const c = chgMap.get(s.id) ?? { rations: 0, carburant: 0, peages: 0, autres: 0 }
-        const totalCharges = c.rations + c.carburant + c.peages + c.autres
+        const totalDepenses = c.rations + c.carburant + c.peages + c.autres
         return {
           carMat: s.bus_registration ?? '—',
           depNum: s.departure_number ?? '—',
@@ -197,7 +200,8 @@ export default function SuiviRecettes() {
           carburant: c.carburant,
           peages: c.peages,
           autres: c.autres,
-          resultat: recettes - totalCharges,
+          totalDepenses,
+          resultat: recettes - totalDepenses,
         }
       })
       .sort((a, b) => b.recettes - a.recettes)
@@ -209,6 +213,7 @@ export default function SuiviRecettes() {
     carburant: rows.reduce((s, r) => s + r.carburant, 0),
     peages: rows.reduce((s, r) => s + r.peages, 0),
     autres: rows.reduce((s, r) => s + r.autres, 0),
+    totalDepenses: rows.reduce((s, r) => s + r.totalDepenses, 0),
     resultat: rows.reduce((s, r) => s + r.resultat, 0),
   }), [rows])
 
@@ -218,13 +223,14 @@ export default function SuiviRecettes() {
       'N° Car': r.carMat, 'N° Départ': r.depNum, 'Ligne': r.routeName, 'Gare': r.stationName,
       'Guichet': r.counterNumber, 'Société': r.companyCode,
       'Recettes totales': r.recettes, 'Rations': r.rations,
-      'Carburant': r.carburant, 'Péages': r.peages, 'Autres dépenses': r.autres, 'Résultat': r.resultat,
+      'Carburant': r.carburant, 'Péages': r.peages, 'Autres dépenses': r.autres,
+      'Total dépenses': r.totalDepenses, 'Résultat': r.resultat,
     }))
     data.push({
       'N° Car': 'TOTAL', 'N° Départ': '', 'Ligne': '', 'Gare': '', 'Guichet': '', 'Société': '',
       'Recettes totales': totals.recettes, 'Rations': totals.rations,
       'Carburant': totals.carburant, 'Péages': totals.peages, 'Autres dépenses': totals.autres,
-      'Résultat': totals.resultat,
+      'Total dépenses': totals.totalDepenses, 'Résultat': totals.resultat,
     })
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Suivi des recettes')
     XLSX.writeFile(wb, `suivi_recettes_${from}_${to}.xlsx`)
@@ -389,6 +395,7 @@ export default function SuiviRecettes() {
                   <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Carburant</th>
                   <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Péages</th>
                   <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Autres dépenses</th>
+                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Total dépenses</th>
                   <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Résultat</th>
                 </tr>
               </thead>
@@ -406,18 +413,20 @@ export default function SuiviRecettes() {
                     <td className="px-3 py-2.5 text-right text-blue-600 whitespace-nowrap">{fmt(r.carburant)}</td>
                     <td className="px-3 py-2.5 text-right text-[#0B7439] whitespace-nowrap">{fmt(r.peages)}</td>
                     <td className="px-3 py-2.5 text-right text-[#6B7280] whitespace-nowrap">{fmt(r.autres)}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-[#374151] whitespace-nowrap">{fmt(r.totalDepenses)}</td>
                     <td className={`px-3 py-2.5 text-right font-bold whitespace-nowrap ${r.resultat >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(r.resultat)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-[#0B7439]/5 border-t-2 border-[#0B7439]/20">
                 <tr className="font-bold">
-                  <td className="px-3 py-3 text-[#1a2a22]" colSpan={6}>TOTAL ({rows.length} lignes)</td>
+                  <td className="px-3 py-3 text-[#1a2a22]" colSpan={7}>TOTAL ({rows.length} lignes)</td>
                   <td className="px-3 py-3 text-right text-[#1a2a22] whitespace-nowrap">{fmt(totals.recettes)}</td>
                   <td className="px-3 py-3 text-right text-orange-700 whitespace-nowrap">{fmt(totals.rations)}</td>
                   <td className="px-3 py-3 text-right text-blue-700 whitespace-nowrap">{fmt(totals.carburant)}</td>
                   <td className="px-3 py-3 text-right text-[#0B7439] whitespace-nowrap">{fmt(totals.peages)}</td>
                   <td className="px-3 py-3 text-right text-[#6B7280] whitespace-nowrap">{fmt(totals.autres)}</td>
+                  <td className="px-3 py-3 text-right font-semibold text-[#374151] whitespace-nowrap">{fmt(totals.totalDepenses)}</td>
                   <td className={`px-3 py-3 text-right whitespace-nowrap ${totals.resultat >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(totals.resultat)}</td>
                 </tr>
               </tfoot>
