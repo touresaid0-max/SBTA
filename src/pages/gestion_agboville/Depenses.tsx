@@ -5,7 +5,7 @@ import {
   formatCFA, type AbgDepense, type AbgDepenseCategory, type AbgSociete,
 } from '@/services/abg.service'
 import {
-  Receipt, Plus, Trash2, X, Filter, Wallet, Printer, FileSpreadsheet, ChevronDown, ChevronRight, Check,
+  Receipt, Plus, Trash2, X, Filter, Wallet, Printer, FileSpreadsheet, ChevronDown, ChevronRight, Check, Bus,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
@@ -80,7 +80,7 @@ function emptyDraft(): DepenseRowDraft {
 export default function Depenses() {
   const [depenses, setDepenses] = useState<AbgDepense[]>([])
   const [categories, setCategories] = useState<AbgDepenseCategory[]>([])
-  const [buses, setBuses] = useState<{ id: string; registration_number: string }[]>([])
+  const [buses, setBuses] = useState<{ id: string; registration_number: string; model: string | null; manufacturer: string | null; company_id: string | null }[]>([])
   const [societes, setSocietes] = useState<AbgSociete[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -615,12 +615,79 @@ function CreateCategoryModal({
   )
 }
 
+/* ── Bus autocomplete with search ── */
+function BusAutocomplete({
+  buses, value, onChange, placeholder,
+}: {
+  buses: { id: string; registration_number: string; model: string | null; manufacturer: string | null; company_id: string | null }[]
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const q = query.toLowerCase().trim()
+  const filtered = q
+    ? buses.filter(b =>
+        b.registration_number.toLowerCase().includes(q) ||
+        (b.model ?? '').toLowerCase().includes(q) ||
+        (b.manufacturer ?? '').toLowerCase().includes(q))
+    : buses
+  const selected = buses.find(b => b.registration_number === value)
+
+  return (
+    <div className="relative">
+      <div className="flex">
+        <input
+          type="text"
+          value={open ? query : (selected ? selected.registration_number : value)}
+          onChange={e => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => { setOpen(true); setQuery('') }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder={placeholder || 'Rechercher un bus...'}
+          className={`w-full px-3 py-2 text-sm border border-[#E2EAE5] rounded-l-lg focus:outline-none focus:border-[#0B7439] focus:ring-1 focus:ring-[#0B7439]/20 ${selected ? 'font-semibold text-[#1a2a22]' : 'text-[#374151]'}`}
+        />
+        <button type="button" onClick={() => open ? setOpen(false) : (setOpen(true), setQuery(''))}
+          className="flex-shrink-0 px-2 border border-l-0 border-[#E2EAE5] rounded-r-lg text-[#6B7280]">
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      </div>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full bg-white border border-[#E2EAE5] rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-4 text-xs text-[#9CA3AF] text-center">Aucun bus trouvé</div>
+          ) : (
+            filtered.slice(0, 50).map(b => (
+              <button key={b.id} type="button" onMouseDown={() => { onChange(b.registration_number); setOpen(false); setQuery('') }}
+                className={`w-full text-left px-3 py-2 hover:bg-[#F0F7F2] flex items-center gap-2 border-b border-[#F0F4F1] last:border-b-0 ${value === b.registration_number ? 'bg-[#0B7439]/5' : ''}`}>
+                <Bus className="w-4 h-4 text-[#0B7439] flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-[#1a2a22] truncate">{b.registration_number}</div>
+                  {(b.manufacturer || b.model) && (
+                    <div className="text-xs text-[#6B7280] truncate">{[b.manufacturer, b.model].filter(Boolean).join(' — ')}</div>
+                  )}
+                </div>
+                {value === b.registration_number && <Check className="w-4 h-4 text-[#0B7439] flex-shrink-0" />}
+              </button>
+            ))
+          )}
+          {filtered.length > 50 && (
+            <div className="px-3 py-2 text-xs text-[#9CA3AF] text-center bg-[#F8FAF8]">
+              {filtered.length} bus — affinez votre recherche
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Multi-entry form ── */
 function DepenseForm({
   categories, buses, societes, onClose, onSaved,
 }: {
   categories: AbgDepenseCategory[]
-  buses: { id: string; registration_number: string }[]
+  buses: { id: string; registration_number: string; model: string | null; manufacturer: string | null; company_id: string | null }[]
   societes: AbgSociete[]
   onClose: () => void
   onSaved: () => void
@@ -635,7 +702,6 @@ function DepenseForm({
   const availableCats = tab === 'AO' ? aoCats : haoCats
   const catOptions = availableCats.map(c => ({ value: c.code, label: c.label }))
 
-  const busOptions = buses.map(b => ({ value: b.registration_number, label: b.registration_number }))
   const societeOptions = societes.map(s => ({ value: s.code, label: `${s.code} — ${s.name}` }))
 
   // Collect existing natures from categories + previously typed values
@@ -791,8 +857,8 @@ function DepenseForm({
                   {tab === 'AO' ? (
                     <div>
                       <label className="text-xs text-[#6B7280] mb-1 block">Matricule du car</label>
-                      <Combobox
-                        options={busOptions}
+                      <BusAutocomplete
+                        buses={buses}
                         value={row.car_matricule}
                         onChange={v => updateRow(row.id, { car_matricule: v })}
                         placeholder="Rechercher un véhicule..."

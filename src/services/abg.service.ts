@@ -389,13 +389,13 @@ export async function deleteDepenseCategory(id: string): Promise<void> {
   if (error) throw error
 }
 
-export async function fetchBusesForAbg(): Promise<{ id: string; registration_number: string }[]> {
+export async function fetchBusesForAbg(): Promise<{ id: string; registration_number: string; model: string | null; manufacturer: string | null; company_id: string | null }[]> {
   const { data, error } = await supabase
     .from('buses')
-    .select('id,registration_number')
+    .select('id, registration_number, model, manufacturer, company_id')
     .order('registration_number')
   if (error) throw error
-  return (data ?? []) as { id: string; registration_number: string }[]
+  return (data ?? []) as { id: string; registration_number: string; model: string | null; manufacturer: string | null; company_id: string | null }[]
 }
 
 // ============================================================
