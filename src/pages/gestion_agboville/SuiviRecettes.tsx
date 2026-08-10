@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
-  Search, Download, Printer, Loader2, Filter, Bus, X,
+  Download, Printer, Loader2, Filter, Bus, X,
 } from 'lucide-react'
 import { format, startOfWeek, startOfMonth, startOfYear, endOfWeek, endOfMonth, endOfYear } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -11,6 +11,7 @@ import jsPDF from 'jspdf'
 import {
   fetchPosSchedules, fetchPosReservations, fetchPosCharges,
   fetchCompaniesHierarchy, fetchBusesForAbg, fetchAgbovilleStations,
+  fetchCountersByStations, ABG_SEGMENTS,
   type PosScheduleRow, type PosReservationRow, type PosChargeRow,
 } from '@/services/abg.service'
 
@@ -40,6 +41,7 @@ interface RecetteRow {
   depNum: number | string
   routeName: string
   stationName: string
+  counterNumber: string
   companyCode: string
   recettes: number
   rations: number
@@ -53,11 +55,12 @@ interface Filters {
   periodId: PeriodId
   customFrom: string
   customTo: string
+  segmentCode: string
   companyCode: string
   groupCode: string
   subGroupCode: string
   stationId: string
-  ligne: string
+  counterId: string
   matricule: string
 }
 
@@ -66,7 +69,7 @@ export default function SuiviRecettes() {
 
   const [filters, setFilters] = useState<Filters>({
     periodId: 'mensuel', customFrom: format(new Date(), 'yyyy-MM-dd'), customTo: format(new Date(), 'yyyy-MM-dd'),
-    companyCode: '', groupCode: '', subGroupCode: '', stationId: '', ligne: '', matricule: '',
+    segmentCode: '', companyCode: '', groupCode: '', subGroupCode: '', stationId: '', counterId: '', matricule: '',
   })
   const [showFilters, setShowFilters] = useState(true)
 
@@ -78,27 +81,27 @@ export default function SuiviRecettes() {
   const [subGroups, setSubGroups] = useState<{ code: string; name: string; parent_code: string }[]>([])
   const [buses, setBuses] = useState<{ id: string; registration_number: string }[]>([])
   const [stations, setStations] = useState<{ id: string; name: string }[]>([])
+  const [counters, setCounters] = useState<{ id: string; counter_number: string; station_id: string }[]>([])
   const [loading, setLoading] = useState(true)
 
   const { from, to } = useMemo(() => getDateRange(filters.periodId, filters.customFrom, filters.customTo), [filters.periodId, filters.customFrom, filters.customTo])
 
-  // Load referentiels once
   useEffect(() => {
     (async () => {
       try {
-        const [hier, busList, stationList] = await Promise.all([
-          fetchCompaniesHierarchy(), fetchBusesForAbg(), fetchAgbovilleStations(),
+        const [hier, busList, stationList, counterList] = await Promise.all([
+          fetchCompaniesHierarchy(), fetchBusesForAbg(), fetchAgbovilleStations(), fetchCountersByStations(),
         ])
         setCompanies(hier.companies)
         setGroups(hier.groups)
         setSubGroups(hier.subGroups)
         setBuses(busList)
         setStations(stationList)
+        setCounters(counterList)
       } catch { /* non-critical */ }
     })()
   }, [])
 
-  // Filtered sub-groups based on selected group
   const availableSubGroups = useMemo(() => {
     if (!filters.groupCode) return subGroups
     const groupId = companies.find(c => c.code === filters.groupCode)?.id
@@ -106,14 +109,25 @@ export default function SuiviRecettes() {
     return subGroups.filter(sg => companies.find(c => c.code === sg.code)?.parent_id === groupId)
   }, [filters.groupCode, subGroups, companies])
 
-  // Independent companies (no parent) for the company filter
   const independentCompanies = useMemo(() => companies.filter(c => !c.is_group && !c.parent_id), [companies])
+
+  const availableCounters = useMemo(() => {
+    if (filters.stationId) return counters.filter(c => c.station_id === filters.stationId)
+    return counters
+  }, [filters.stationId, counters])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
+      const segmentCodes = filters.segmentCode ? [filters.segmentCode] : undefined
       const stationFilterIds = filters.stationId ? [filters.stationId] : undefined
-      const scheds = await fetchPosSchedules({ dateFrom: from, dateTo: to, stationIds: stationFilterIds })
+      const counterFilterIds = filters.counterId ? [filters.counterId] : undefined
+      const scheds = await fetchPosSchedules({
+        dateFrom: from, dateTo: to,
+        stationIds: stationFilterIds,
+        counterIds: counterFilterIds,
+        segmentCodes,
+      })
       setSchedules(scheds)
 
       const sIds = scheds.map(s => s.id)
@@ -128,9 +142,15 @@ export default function SuiviRecettes() {
     } catch { /* non-critical */ } finally {
       setLoading(false)
     }
-  }, [from, to, filters.stationId])
+  }, [from, to, filters.stationId, filters.counterId, filters.segmentCode])
 
   useEffect(() => { loadData() }, [loadData])
+
+  const counterMap = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of counters) m.set(c.id, c.counter_number)
+    return m
+  }, [counters])
 
   const rows: RecetteRow[] = useMemo(() => {
     const resMap = new Map<string, number>()
@@ -158,7 +178,6 @@ export default function SuiviRecettes() {
           const comp = companies.find(c => c.code === s.company_code)
           if (!comp || comp.parent_id !== companies.find(c => c.code === filters.groupCode)?.id) return false
         }
-        if (filters.ligne && !(s.route_name ?? '').toLowerCase().includes(filters.ligne.toLowerCase())) return false
         if (filters.matricule && !(s.bus_registration ?? '').toLowerCase().includes(filters.matricule.toLowerCase())) return false
         return true
       })
@@ -171,6 +190,7 @@ export default function SuiviRecettes() {
           depNum: s.departure_number ?? '—',
           routeName: s.route_name ?? '—',
           stationName: s.departure_station_name ?? '—',
+          counterNumber: s.counter_id ? counterMap.get(s.counter_id) ?? '—' : '—',
           companyCode: s.company_code ?? '—',
           recettes,
           rations: c.rations,
@@ -181,7 +201,7 @@ export default function SuiviRecettes() {
         }
       })
       .sort((a, b) => b.recettes - a.recettes)
-  }, [schedules, reservations, charges, filters, companies])
+  }, [schedules, reservations, charges, filters, companies, counterMap])
 
   const totals = useMemo(() => ({
     recettes: rows.reduce((s, r) => s + r.recettes, 0),
@@ -196,11 +216,12 @@ export default function SuiviRecettes() {
     const wb = XLSX.utils.book_new()
     const data = rows.map(r => ({
       'N° Car': r.carMat, 'N° Départ': r.depNum, 'Ligne': r.routeName, 'Gare': r.stationName,
-      'Société': r.companyCode, 'Recettes totales': r.recettes, 'Rations': r.rations,
+      'Guichet': r.counterNumber, 'Société': r.companyCode,
+      'Recettes totales': r.recettes, 'Rations': r.rations,
       'Carburant': r.carburant, 'Péages': r.peages, 'Autres dépenses': r.autres, 'Résultat': r.resultat,
     }))
     data.push({
-      'N° Car': 'TOTAL', 'N° Départ': '', 'Ligne': '', 'Gare': '', 'Société': '',
+      'N° Car': 'TOTAL', 'N° Départ': '', 'Ligne': '', 'Gare': '', 'Guichet': '', 'Société': '',
       'Recettes totales': totals.recettes, 'Rations': totals.rations,
       'Carburant': totals.carburant, 'Péages': totals.peages, 'Autres dépenses': totals.autres,
       'Résultat': totals.resultat,
@@ -227,10 +248,10 @@ export default function SuiviRecettes() {
   }
 
   const resetFilters = () => setFilters(f => ({
-    ...f, companyCode: '', groupCode: '', subGroupCode: '', stationId: '', ligne: '', matricule: '',
+    ...f, segmentCode: '', companyCode: '', groupCode: '', subGroupCode: '', stationId: '', counterId: '', matricule: '',
   }))
 
-  const hasActiveFilters = filters.companyCode || filters.groupCode || filters.subGroupCode || filters.stationId || filters.ligne || filters.matricule
+  const hasActiveFilters = filters.segmentCode || filters.companyCode || filters.groupCode || filters.subGroupCode || filters.stationId || filters.counterId || filters.matricule
 
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
@@ -238,7 +259,7 @@ export default function SuiviRecettes() {
         <div>
           <h1 className="text-xl font-bold text-[#1a2a22]">Suivi des recettes</h1>
           <p className="text-sm mt-1 text-[#6B7280]">
-            {PERIOD_LABELS[filters.periodId]} · du {format(new Date(from), 'dd/MM/yyyy', { locale: fr })} au {format(new Date(to), 'dd/MM/yyyy', { locale: fr })}
+            Données des guichets POS · {PERIOD_LABELS[filters.periodId]} · du {format(new Date(from), 'dd/MM/yyyy', { locale: fr })} au {format(new Date(to), 'dd/MM/yyyy', { locale: fr })}
           </p>
         </div>
         <div className="flex gap-2">
@@ -278,6 +299,14 @@ export default function SuiviRecettes() {
         <div className="bg-white rounded-xl border border-[#E2EAE5] p-4 mb-4">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             <div>
+              <label className="text-xs text-[#6B7280] mb-1 block">Ligne</label>
+              <select value={filters.segmentCode} onChange={e => setFilters(f => ({ ...f, segmentCode: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-[#E2EAE5] rounded-lg">
+                <option value="">Toutes les lignes</option>
+                {ABG_SEGMENTS.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="text-xs text-[#6B7280] mb-1 block">Société</label>
               <select value={filters.companyCode} onChange={e => setFilters(f => ({ ...f, companyCode: e.target.value }))}
                 className="w-full px-3 py-2 text-sm border border-[#E2EAE5] rounded-lg">
@@ -303,17 +332,19 @@ export default function SuiviRecettes() {
             </div>
             <div>
               <label className="text-xs text-[#6B7280] mb-1 block">Gare</label>
-              <select value={filters.stationId} onChange={e => setFilters(f => ({ ...f, stationId: e.target.value }))}
+              <select value={filters.stationId} onChange={e => setFilters(f => ({ ...f, stationId: e.target.value, counterId: '' }))}
                 className="w-full px-3 py-2 text-sm border border-[#E2EAE5] rounded-lg">
                 <option value="">Toutes</option>
                 {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-[#6B7280] mb-1 block">Ligne</label>
-              <input value={filters.ligne} onChange={e => setFilters(f => ({ ...f, ligne: e.target.value }))}
-                placeholder="ex: Yopougon, Agboville..."
-                className="w-full px-3 py-2 text-sm border border-[#E2EAE5] rounded-lg" />
+              <label className="text-xs text-[#6B7280] mb-1 block">Guichet</label>
+              <select value={filters.counterId} onChange={e => setFilters(f => ({ ...f, counterId: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-[#E2EAE5] rounded-lg">
+                <option value="">Tous</option>
+                {availableCounters.map(c => <option key={c.id} value={c.id}>{c.counter_number}</option>)}
+              </select>
             </div>
             <div>
               <label className="text-xs text-[#6B7280] mb-1 block">Matricule du car</label>
@@ -340,7 +371,7 @@ export default function SuiviRecettes() {
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40">
             <Bus className="w-10 h-10 text-gray-300 mb-2" />
-            <p className="text-sm text-[#9CA3AF]">Aucune donnée sur la période sélectionnée.</p>
+            <p className="text-sm text-[#9CA3AF]">Aucune donnée POS sur la période sélectionnée pour les 5 lignes.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -351,6 +382,7 @@ export default function SuiviRecettes() {
                   <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">N° Départ</th>
                   <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Ligne</th>
                   <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Gare</th>
+                  <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Guichet</th>
                   <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Société</th>
                   <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Recettes totales</th>
                   <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Rations</th>
@@ -367,6 +399,7 @@ export default function SuiviRecettes() {
                     <td className="px-3 py-2.5 text-[#374151]">{r.depNum}</td>
                     <td className="px-3 py-2.5 text-[#374151] max-w-[200px] truncate">{r.routeName}</td>
                     <td className="px-3 py-2.5 text-[#6B7280] whitespace-nowrap">{r.stationName}</td>
+                    <td className="px-3 py-2.5 text-[#6B7280] whitespace-nowrap">{r.counterNumber}</td>
                     <td className="px-3 py-2.5 text-[#6B7280] whitespace-nowrap">{r.companyCode}</td>
                     <td className="px-3 py-2.5 text-right font-semibold text-[#1a2a22] whitespace-nowrap">{fmt(r.recettes)}</td>
                     <td className="px-3 py-2.5 text-right text-orange-600 whitespace-nowrap">{fmt(r.rations)}</td>
@@ -379,7 +412,7 @@ export default function SuiviRecettes() {
               </tbody>
               <tfoot className="bg-[#0B7439]/5 border-t-2 border-[#0B7439]/20">
                 <tr className="font-bold">
-                  <td className="px-3 py-3 text-[#1a2a22]" colSpan={5}>TOTAL ({rows.length} lignes)</td>
+                  <td className="px-3 py-3 text-[#1a2a22]" colSpan={6}>TOTAL ({rows.length} lignes)</td>
                   <td className="px-3 py-3 text-right text-[#1a2a22] whitespace-nowrap">{fmt(totals.recettes)}</td>
                   <td className="px-3 py-3 text-right text-orange-700 whitespace-nowrap">{fmt(totals.rations)}</td>
                   <td className="px-3 py-3 text-right text-blue-700 whitespace-nowrap">{fmt(totals.carburant)}</td>
