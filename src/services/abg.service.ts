@@ -345,6 +345,22 @@ export async function createDepenseCategory(cat: {
   return data
 }
 
+export async function updateDepenseCategory(id: string, patch: { label?: string; is_active?: boolean; sort_order?: number }): Promise<AbgDepenseCategory> {
+  const { data, error } = await supabase
+    .from('abg_depense_categories')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteDepenseCategory(id: string): Promise<void> {
+  const { error } = await supabase.from('abg_depense_categories').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function fetchBusesForAbg(): Promise<{ id: string; registration_number: string }[]> {
   const { data, error } = await supabase
     .from('buses')

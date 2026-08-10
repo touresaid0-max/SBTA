@@ -321,6 +321,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   gestion_agboville: [
     { label: 'Tableau de bord',  path: '/gestion-agboville/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Dépenses AO/HAO',  path: '/gestion-agboville/depenses',   icon: <Receipt className="w-5 h-5" /> },
+    { label: 'Paramétrage',      path: '/gestion-agboville/parametrage', icon: <Settings className="w-5 h-5" /> },
   ],
   agent_reservation: [
     { label: 'Tableau de bord',    path: '/agent-reservation/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },

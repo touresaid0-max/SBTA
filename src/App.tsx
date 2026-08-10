@@ -240,6 +240,7 @@ import AgentReservationPolicies from './pages/agent-reservation/CancellationPoli
 // Gestion Agboville module (LOT 0 — additive, no existing route modified)
 import GestionAgbovilleDashboard from './pages/gestion_agboville/Dashboard';
 import GestionAgbovilleDepenses from './pages/gestion_agboville/Depenses';
+import GestionAgbovilleParametrage from './pages/gestion_agboville/Parametrage';
 
 // POS module (LOT 0 — additive, no existing route modified)
 import POSConnexion from './pages/pos/Connexion';
@@ -558,6 +559,7 @@ function App() {
             {/* Gestion Agboville — LOT 0: additive module, cloisonné à la ligne Agboville */}
             <Route path="gestion-agboville/dashboard" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleDashboard /></ProtectedRoute>} />
             <Route path="gestion-agboville/depenses" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleDepenses /></ProtectedRoute>} />
+            <Route path="gestion-agboville/parametrage" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleParametrage /></ProtectedRoute>} />
           </Route>
 
           {/* POS /guichet module — LOT 0+1: additive, standalone layout, offline-first */}
