@@ -155,13 +155,41 @@ export async function fetchBordereauLignes(bordereauId: string): Promise<Bordere
 }
 
 export async function fetchSocietes(): Promise<AbgSociete[]> {
-  const { data, error } = await supabase
+  // 1. Fetch companies (has hierarchy via parent_id / is_group)
+  const { data: companies, error: err1 } = await supabase
+    .from('companies')
+    .select('id, code, name, parent_id, is_group, is_active')
+    .order('code')
+  if (err1) throw err1
+
+  // Build parent-id → parent-code map
+  const parentCodeMap = new Map<string, string>()
+  for (const c of companies ?? []) parentCodeMap.set(c.id, c.code)
+
+  // Map companies to AbgSociete with sub_group derived from hierarchy:
+  //  - a group row gets sub_group = its own code (acts as the group key)
+  //  - a child row gets sub_group = its parent's code
+  //  - standalone rows get sub_group = null
+  const fromCompanies: AbgSociete[] = (companies ?? []).map(c => ({
+    id: c.id,
+    code: c.code,
+    name: c.name,
+    sub_group: c.is_group ? c.code : (c.parent_id ? parentCodeMap.get(c.parent_id) ?? null : null),
+    is_active: c.is_active,
+  }))
+
+  // 2. Fetch abg_societes for entries that exist only there (e.g. AUTRES)
+  const { data: abgOnly, error: err2 } = await supabase
     .from('abg_societes')
     .select('*')
     .eq('is_active', true)
     .order('code')
-  if (error) throw error
-  return data ?? []
+  if (err2) throw err2
+
+  const existingCodes = new Set(fromCompanies.map(s => s.code))
+  const extra = (abgOnly ?? []).filter(s => !existingCodes.has(s.code))
+
+  return [...fromCompanies, ...extra]
 }
 
 export async function fetchSegments(): Promise<AbgSegment[]> {

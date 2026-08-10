@@ -360,18 +360,30 @@ function SubTotalCard({ label, value, color, bg, border }: { label: string; valu
 
 /* ── Hierarchical societe tree-select (groupes + filiales + autonomes) ── */
 function buildSocieteHierarchy(societes: AbgSociete[]) {
-  const groups = societes.filter(s => s.sub_group && societes.some(c => c.sub_group === s.sub_group && c.code !== s.code))
-  const seenGroup = new Set<string>()
-  const uniqueGroups = groups.filter(g => { if (seenGroup.has(g.sub_group!)) return false; seenGroup.add(g.sub_group!); return true })
+  // Groups: rows whose sub_group equals their own code (self-referencing group key)
+  const uniqueGroups = societes
+    .filter(s => s.sub_group && s.sub_group === s.code)
+    .sort((a, b) => a.code.localeCompare(b.code))
+  const groupCodes = new Set(uniqueGroups.map(g => g.code))
+
+  // Children: rows whose sub_group matches a group code but are NOT the group row itself
   const groupMap = new Map<string, AbgSociete[]>()
   for (const g of uniqueGroups) {
-    const children = societes.filter(s => s.sub_group === g.sub_group && s.code !== g.code).sort((a, b) => a.code.localeCompare(b.code))
-    groupMap.set(g.sub_group!, children)
+    const children = societes
+      .filter(s => s.sub_group === g.code && s.code !== g.code)
+      .sort((a, b) => a.code.localeCompare(b.code))
+    groupMap.set(g.code, children)
   }
+
+  // Filiale codes (to exclude from autonomes)
   const filialeCodes = new Set<string>()
   for (const children of groupMap.values()) for (const c of children) filialeCodes.add(c.code)
-  const groupCodes = new Set(uniqueGroups.map(g => g.code))
-  const autonomes = societes.filter(s => !groupCodes.has(s.code) && !filialeCodes.has(s.code)).sort((a, b) => a.code.localeCompare(b.code))
+
+  // Autonomes: not a group and not a filiale
+  const autonomes = societes
+    .filter(s => !groupCodes.has(s.code) && !filialeCodes.has(s.code))
+    .sort((a, b) => a.code.localeCompare(b.code))
+
   return { uniqueGroups, groupMap, autonomes }
 }
 
@@ -396,19 +408,25 @@ function SocieteTreeSelect({
     const children = groupMap.get(groupCode) ?? []
     return children.some(matches)
   }
+  // Auto-expand all groups when the dropdown opens
+  const openDropdown = () => {
+    setOpen(true)
+    setQuery('')
+    setExpanded(new Set(uniqueGroups.map(g => g.code)))
+  }
 
   return (
     <div className="relative">
       <div className="flex gap-1">
         <input
           value={open ? query : displayValue}
-          onFocus={() => { setOpen(true); setQuery('') }}
+          onFocus={() => openDropdown()}
           onBlur={() => setTimeout(() => setOpen(false), 180)}
-          onChange={e => { setQuery(e.target.value); setOpen(true); setExpanded(new Set(uniqueGroups.map(g => g.sub_group!))) }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); setExpanded(new Set(uniqueGroups.map(g => g.code))) }}
           placeholder={placeholder ?? (allowAll ? 'Toutes' : 'Rechercher une société...')}
           className={inputCls}
         />
-        <button type="button" onClick={() => setOpen(o => !o)}
+        <button type="button" onClick={() => open ? setOpen(false) : openDropdown()}
           className="flex-shrink-0 px-2 border border-[#E2EAE5] rounded-lg text-[#6B7280]">
           <ChevronDown className="w-4 h-4" />
         </button>
@@ -426,14 +444,14 @@ function SocieteTreeSelect({
             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF] bg-[#F8FAF8]">Groupes</div>
           )}
           {uniqueGroups.map(g => {
-            const children = groupMap.get(g.sub_group!) ?? []
-            const isExpanded = expanded.has(g.sub_group!) || (q ? anyGroupMatch(g.sub_group!) : false)
-            const groupVisible = !q || matches(g) || anyGroupMatch(g.sub_group!)
+            const children = groupMap.get(g.code) ?? []
+            const isExpanded = expanded.has(g.code) || (q ? anyGroupMatch(g.code) : false)
+            const groupVisible = !q || matches(g) || anyGroupMatch(g.code)
             if (!groupVisible) return null
             return (
               <div key={g.id}>
                 <button type="button"
-                  onMouseDown={() => setExpanded(prev => { const n = new Set(prev); if (n.has(g.sub_group!)) n.delete(g.sub_group!); else n.add(g.sub_group!); return n })}
+                  onMouseDown={() => setExpanded(prev => { const n = new Set(prev); if (n.has(g.code)) n.delete(g.code); else n.add(g.code); return n })}
                   onClick={e => e.preventDefault()}
                   className="w-full text-left px-3 py-2 text-sm hover:bg-[#F8FAF8] flex items-center gap-1.5">
                   {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-[#6B7280]" /> : <ChevronRight className="w-3.5 h-3.5 text-[#6B7280]" />}
