@@ -381,53 +381,68 @@ export default function SuiviRecettes() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[#F8FAF8] sticky top-0">
+            <table className="min-w-[1100px] w-full text-xs table-fixed">
+              <colgroup>
+                <col className="w-[90px]" />
+                <col className="w-[70px]" />
+                <col className="w-[150px]" />
+                <col className="w-[110px]" />
+                <col className="w-[90px]" />
+                <col className="w-[70px]" />
+                <col className="w-[100px]" />
+                <col className="w-[80px]" />
+                <col className="w-[90px]" />
+                <col className="w-[80px]" />
+                <col className="w-[90px]" />
+                <col className="w-[95px]" />
+                <col className="w-[95px]" />
+              </colgroup>
+              <thead className="bg-[#F8FAF8] sticky top-0 z-10">
                 <tr>
-                  <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">N° Car</th>
-                  <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">N° Départ</th>
-                  <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Ligne</th>
-                  <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Gare</th>
-                  <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Guichet</th>
-                  <th className="text-left px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Société</th>
-                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Recettes totales</th>
-                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Rations</th>
-                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Carburant</th>
-                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Péages</th>
-                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Autres dépenses</th>
-                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Total dépenses</th>
-                  <th className="text-right px-3 py-3 text-[#4A6B55] font-semibold whitespace-nowrap">Résultat</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">N° Car</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">N° Départ</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Ligne</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Gare</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Guichet</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Société</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold whitespace-nowrap">Recettes totales</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Rations</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Carburant</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Péages</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold whitespace-nowrap">Autres dép.</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold whitespace-nowrap">Total dép.</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Résultat</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8] transition-colors">
-                    <td className="px-3 py-2.5 font-medium text-[#1a2a22] whitespace-nowrap">{r.carMat}</td>
-                    <td className="px-3 py-2.5 text-[#374151]">{r.depNum}</td>
-                    <td className="px-3 py-2.5 text-[#374151] max-w-[200px] truncate">{r.routeName}</td>
-                    <td className="px-3 py-2.5 text-[#6B7280] whitespace-nowrap">{r.stationName}</td>
-                    <td className="px-3 py-2.5 text-[#6B7280] whitespace-nowrap">{r.counterNumber}</td>
-                    <td className="px-3 py-2.5 text-[#6B7280] whitespace-nowrap">{r.companyCode}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold text-[#1a2a22] whitespace-nowrap">{fmt(r.recettes)}</td>
-                    <td className="px-3 py-2.5 text-right text-orange-600 whitespace-nowrap">{fmt(r.rations)}</td>
-                    <td className="px-3 py-2.5 text-right text-blue-600 whitespace-nowrap">{fmt(r.carburant)}</td>
-                    <td className="px-3 py-2.5 text-right text-[#0B7439] whitespace-nowrap">{fmt(r.peages)}</td>
-                    <td className="px-3 py-2.5 text-right text-[#6B7280] whitespace-nowrap">{fmt(r.autres)}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold text-[#374151] whitespace-nowrap">{fmt(r.totalDepenses)}</td>
-                    <td className={`px-3 py-2.5 text-right font-bold whitespace-nowrap ${r.resultat >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(r.resultat)}</td>
+                    <td className="px-2 py-2 font-medium text-[#1a2a22] truncate">{r.carMat}</td>
+                    <td className="px-2 py-2 text-[#374151]">{r.depNum}</td>
+                    <td className="px-2 py-2 text-[#374151] truncate" title={r.routeName}>{r.routeName}</td>
+                    <td className="px-2 py-2 text-[#6B7280] truncate" title={r.stationName}>{r.stationName}</td>
+                    <td className="px-2 py-2 text-[#6B7280] truncate">{r.counterNumber}</td>
+                    <td className="px-2 py-2 text-[#6B7280] truncate">{r.companyCode}</td>
+                    <td className="px-2 py-2 text-right font-semibold text-[#1a2a22] whitespace-nowrap">{fmt(r.recettes)}</td>
+                    <td className="px-2 py-2 text-right text-orange-600 whitespace-nowrap">{fmt(r.rations)}</td>
+                    <td className="px-2 py-2 text-right text-blue-600 whitespace-nowrap">{fmt(r.carburant)}</td>
+                    <td className="px-2 py-2 text-right text-[#0B7439] whitespace-nowrap">{fmt(r.peages)}</td>
+                    <td className="px-2 py-2 text-right text-[#6B7280] whitespace-nowrap">{fmt(r.autres)}</td>
+                    <td className="px-2 py-2 text-right font-semibold text-[#374151] whitespace-nowrap">{fmt(r.totalDepenses)}</td>
+                    <td className={`px-2 py-2 text-right font-bold whitespace-nowrap ${r.resultat >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(r.resultat)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-[#0B7439]/5 border-t-2 border-[#0B7439]/20">
                 <tr className="font-bold">
-                  <td className="px-3 py-3 text-[#1a2a22]" colSpan={7}>TOTAL ({rows.length} lignes)</td>
-                  <td className="px-3 py-3 text-right text-[#1a2a22] whitespace-nowrap">{fmt(totals.recettes)}</td>
-                  <td className="px-3 py-3 text-right text-orange-700 whitespace-nowrap">{fmt(totals.rations)}</td>
-                  <td className="px-3 py-3 text-right text-blue-700 whitespace-nowrap">{fmt(totals.carburant)}</td>
-                  <td className="px-3 py-3 text-right text-[#0B7439] whitespace-nowrap">{fmt(totals.peages)}</td>
-                  <td className="px-3 py-3 text-right text-[#6B7280] whitespace-nowrap">{fmt(totals.autres)}</td>
-                  <td className="px-3 py-3 text-right font-semibold text-[#374151] whitespace-nowrap">{fmt(totals.totalDepenses)}</td>
-                  <td className={`px-3 py-3 text-right whitespace-nowrap ${totals.resultat >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(totals.resultat)}</td>
+                  <td className="px-2 py-3 text-[#1a2a22]" colSpan={6}>TOTAL ({rows.length} lignes)</td>
+                  <td className="px-2 py-3 text-right text-[#1a2a22] whitespace-nowrap">{fmt(totals.recettes)}</td>
+                  <td className="px-2 py-3 text-right text-orange-700 whitespace-nowrap">{fmt(totals.rations)}</td>
+                  <td className="px-2 py-3 text-right text-blue-700 whitespace-nowrap">{fmt(totals.carburant)}</td>
+                  <td className="px-2 py-3 text-right text-[#0B7439] whitespace-nowrap">{fmt(totals.peages)}</td>
+                  <td className="px-2 py-3 text-right text-[#6B7280] whitespace-nowrap">{fmt(totals.autres)}</td>
+                  <td className="px-2 py-3 text-right font-semibold text-[#374151] whitespace-nowrap">{fmt(totals.totalDepenses)}</td>
+                  <td className={`px-2 py-3 text-right whitespace-nowrap ${totals.resultat >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(totals.resultat)}</td>
                 </tr>
               </tfoot>
             </table>
