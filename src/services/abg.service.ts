@@ -594,6 +594,7 @@ export interface PosChargeRow {
   id: string
   schedule_id: string
   charge_type: string
+  description: string | null
   amount: number
   status: string
 }
@@ -605,12 +606,24 @@ export async function fetchPosCharges(scheduleIds: string[]): Promise<PosChargeR
     const batch = scheduleIds.slice(i, i + 200)
     const { data, error } = await supabase
       .from('counter_charges')
-      .select('id, schedule_id, charge_type, amount, status')
+      .select('id, schedule_id, charge_type, description, amount, status')
       .in('schedule_id', batch)
     if (error) throw error
     if (data) all.push(...(data as PosChargeRow[]))
   }
   return all
+}
+
+export function classifyCharge(chargeType: string, description: string | null): 'rations' | 'carburant' | 'peages' | 'autres' {
+  const ct = chargeType.toLowerCase()
+  if (ct === 'ration') return 'rations'
+  if (ct === 'carburant_complement' || ct === 'carburant') return 'carburant'
+  if (ct === 'peage') return 'peages'
+  const desc = (description ?? '').toLowerCase().trim()
+  if (desc.includes('ration') || desc === 'ratios' || desc === 'ratio') return 'rations'
+  if (desc.includes('carburant') || desc.includes('essence')) return 'carburant'
+  if (desc.includes('peage') || desc.includes('péage') || desc.includes('toll')) return 'peages'
+  return 'autres'
 }
 
 export async function fetchAgbovilleStations(): Promise<{ id: string; name: string }[]> {

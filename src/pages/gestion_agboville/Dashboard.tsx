@@ -16,7 +16,7 @@ import jsPDF from 'jspdf'
 
 import {
   fetchPosSchedules, fetchPosReservations, fetchPosCharges,
-  fetchDepenses, fetchSocietes,
+  fetchDepenses, fetchSocietes, classifyCharge,
   type PosScheduleRow, type PosReservationRow, type PosChargeRow,
   type AbgDepense, type AbgSociete,
 } from '@/services/abg.service'
@@ -128,10 +128,8 @@ export default function GestionAgbovilleDashboard() {
     for (const c of charges) {
       const prev = chgMap.get(c.schedule_id) ?? { rations: 0, carburant: 0, peages: 0, autres: 0 }
       const amt = safe(c.amount)
-      if (c.charge_type === 'ration') prev.rations += amt
-      else if (c.charge_type === 'carburant_complement') prev.carburant += amt
-      else if (c.charge_type === 'peage') prev.peages += amt
-      else prev.autres += amt
+      const cat = classifyCharge(c.charge_type, c.description)
+      prev[cat] += amt
       chgMap.set(c.schedule_id, prev)
     }
 

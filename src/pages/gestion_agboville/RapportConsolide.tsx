@@ -10,7 +10,7 @@ import jsPDF from 'jspdf'
 
 import {
   fetchPosSchedules, fetchPosReservations, fetchPosCharges,
-  fetchDepenses, fetchCompaniesHierarchy, fetchAgbovilleStations,
+  fetchDepenses, fetchCompaniesHierarchy, fetchAgbovilleStations, classifyCharge,
   type PosScheduleRow, type PosReservationRow, type PosChargeRow,
   type AbgDepense,
 } from '@/services/abg.service'
@@ -138,9 +138,10 @@ export default function RapportConsolide() {
     for (const c of charges) {
       if (!validScheduleIds.has(c.schedule_id)) continue
       const amt = safe(c.amount)
-      if (c.charge_type === 'ration') rations += amt
-      else if (c.charge_type === 'carburant_complement') carburant += amt
-      else if (c.charge_type === 'peage') peages += amt
+      const cat = classifyCharge(c.charge_type, c.description)
+      if (cat === 'rations') rations += amt
+      else if (cat === 'carburant') carburant += amt
+      else if (cat === 'peages') peages += amt
       else autres += amt
     }
 

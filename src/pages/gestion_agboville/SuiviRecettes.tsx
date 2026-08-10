@@ -11,7 +11,7 @@ import jsPDF from 'jspdf'
 import {
   fetchPosSchedules, fetchPosReservations, fetchPosCharges,
   fetchCompaniesHierarchy, fetchBusesForAbg, fetchAgbovilleStations,
-  fetchCountersByStations, ABG_SEGMENTS,
+  fetchCountersByStations, ABG_SEGMENTS, classifyCharge,
   type PosScheduleRow, type PosReservationRow, type PosChargeRow,
 } from '@/services/abg.service'
 
@@ -164,12 +164,8 @@ export default function SuiviRecettes() {
     for (const c of charges) {
       const prev = chgMap.get(c.schedule_id) ?? { rations: 0, carburant: 0, peages: 0, autres: 0 }
       const amt = safe(c.amount)
-      switch (c.charge_type) {
-        case 'ration':              prev.rations += amt; break
-        case 'carburant_complement': prev.carburant += amt; break
-        case 'peage':               prev.peages += amt; break
-        default:                    prev.autres += amt; break
-      }
+      const cat = classifyCharge(c.charge_type, c.description)
+      prev[cat] += amt
       chgMap.set(c.schedule_id, prev)
     }
 
