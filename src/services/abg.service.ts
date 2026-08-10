@@ -331,6 +331,29 @@ export async function deleteDepense(id: string): Promise<void> {
   if (error) throw error
 }
 
+export async function createDepenseCategory(cat: {
+  code: string
+  label: string
+  type_depense: 'AO' | 'HAO'
+}): Promise<AbgDepenseCategory> {
+  const { data, error } = await supabase
+    .from('abg_depense_categories')
+    .insert({ code: cat.code, label: cat.label, type_depense: cat.type_depense, is_active: true, sort_order: 999 })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function fetchBusesForAbg(): Promise<{ id: string; registration_number: string }[]> {
+  const { data, error } = await supabase
+    .from('buses')
+    .select('id,registration_number')
+    .order('registration_number')
+  if (error) throw error
+  return (data ?? []) as { id: string; registration_number: string }[]
+}
+
 // ============================================================
 // Dispatches
 // ============================================================
