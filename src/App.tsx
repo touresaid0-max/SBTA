@@ -241,6 +241,8 @@ import AgentReservationPolicies from './pages/agent-reservation/CancellationPoli
 import GestionAgbovilleDashboard from './pages/gestion_agboville/Dashboard';
 import GestionAgbovilleDepenses from './pages/gestion_agboville/Depenses';
 import GestionAgbovilleParametrage from './pages/gestion_agboville/Parametrage';
+import GestionAgbovilleSuiviRecettes from './pages/gestion_agboville/SuiviRecettes';
+import GestionAgbovilleRapportConsolide from './pages/gestion_agboville/RapportConsolide';
 
 // POS module (LOT 0 — additive, no existing route modified)
 import POSConnexion from './pages/pos/Connexion';
@@ -560,6 +562,8 @@ function App() {
             <Route path="gestion-agboville/dashboard" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleDashboard /></ProtectedRoute>} />
             <Route path="gestion-agboville/depenses" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleDepenses /></ProtectedRoute>} />
             <Route path="gestion-agboville/parametrage" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleParametrage /></ProtectedRoute>} />
+            <Route path="gestion-agboville/suivi-recettes" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleSuiviRecettes /></ProtectedRoute>} />
+            <Route path="gestion-agboville/rapport-consolide" element={<ProtectedRoute roles={['gestion_agboville']}><GestionAgbovilleRapportConsolide /></ProtectedRoute>} />
           </Route>
 
           {/* POS /guichet module — LOT 0+1: additive, standalone layout, offline-first */}

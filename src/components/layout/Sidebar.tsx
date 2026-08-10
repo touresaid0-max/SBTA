@@ -320,6 +320,8 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   ],
   gestion_agboville: [
     { label: 'Tableau de bord',  path: '/gestion-agboville/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },
+    { label: 'Suivi des recettes', path: '/gestion-agboville/suivi-recettes', icon: <BarChart2 className="w-5 h-5" /> },
+    { label: 'Rapport consolidé', path: '/gestion-agboville/rapport-consolide', icon: <FileText className="w-5 h-5" /> },
     { label: 'Dépenses AO/HAO',  path: '/gestion-agboville/depenses',   icon: <Receipt className="w-5 h-5" /> },
     { label: 'Paramétrage',      path: '/gestion-agboville/parametrage', icon: <Settings className="w-5 h-5" /> },
   ],

@@ -399,6 +399,188 @@ export async function fetchBusesForAbg(): Promise<{ id: string; registration_num
 }
 
 // ============================================================
+// POS Revenue Tracking (Suivi des recettes)
+// ============================================================
+
+export interface PosScheduleRow {
+  id: string
+  route_id: string | null
+  route_name: string | null
+  bus_id: string | null
+  bus_registration: string | null
+  company_id: string | null
+  company_code: string | null
+  company_parent_id: string | null
+  departure_station_id: string | null
+  departure_station_name: string | null
+  departure_number: number | null
+  departure_datetime: string
+  status: string
+  seats_reserved: number
+  seats_available: number
+  price: number
+}
+
+export async function fetchPosSchedules(filters?: {
+  dateFrom?: string
+  dateTo?: string
+  stationIds?: string[]
+}): Promise<PosScheduleRow[]> {
+  let q = supabase
+    .from('schedules')
+    .select(`
+      id, route_id, route_name, bus_id, departure_station_id, departure_number,
+      departure_datetime, status, seats_reserved, seats_available, price
+    `)
+    .order('departure_datetime', { ascending: false })
+
+  if (filters?.dateFrom) q = q.gte('departure_datetime', filters.dateFrom)
+  if (filters?.dateTo) q = q.lte('departure_datetime', filters.dateTo + 'T23:59:59')
+  if (filters?.stationIds && filters.stationIds.length > 0) q = q.in('departure_station_id', filters.stationIds)
+
+  const { data: schedules, error } = await q
+  if (error) throw error
+  if (!schedules || schedules.length === 0) return []
+
+  const busIds = [...new Set(schedules.map(s => s.bus_id).filter(Boolean))] as string[]
+  const stationIds = [...new Set(schedules.map(s => s.departure_station_id).filter(Boolean))] as string[]
+
+  const [busesRes, stationsRes, companiesRes] = await Promise.all([
+    busIds.length > 0
+      ? supabase.from('buses').select('id, registration_number, company_id').in('id', busIds)
+      : Promise.resolve({ data: [], error: null }),
+    stationIds.length > 0
+      ? supabase.from('stations').select('id, name').in('id', stationIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('companies').select('id, code, parent_id'),
+  ])
+
+  if (busesRes.error) throw busesRes.error
+  if (stationsRes.error) throw stationsRes.error
+  if (companiesRes.error) throw companiesRes.error
+
+  const busMap = new Map<string, { registration_number: string; company_id: string | null }>()
+  for (const b of (busesRes.data ?? []) as { id: string; registration_number: string; company_id: string | null }[]) {
+    busMap.set(b.id, { registration_number: b.registration_number, company_id: b.company_id })
+  }
+
+  const stationMap = new Map<string, string>()
+  for (const s of (stationsRes.data ?? []) as { id: string; name: string }[]) {
+    stationMap.set(s.id, s.name)
+  }
+
+  const companyMap = new Map<string, { code: string; parent_id: string | null }>()
+  for (const c of (companiesRes.data ?? []) as { id: string; code: string; parent_id: string | null }[]) {
+    companyMap.set(c.id, { code: c.code, parent_id: c.parent_id })
+  }
+
+  return schedules.map(s => {
+    const bus = s.bus_id ? busMap.get(s.bus_id) : null
+    const company = bus?.company_id ? companyMap.get(bus.company_id) : null
+    return {
+      id: s.id,
+      route_id: s.route_id,
+      route_name: s.route_name,
+      bus_id: s.bus_id,
+      bus_registration: bus?.registration_number ?? null,
+      company_id: bus?.company_id ?? null,
+      company_code: company?.code ?? null,
+      company_parent_id: company?.parent_id ?? null,
+      departure_station_id: s.departure_station_id,
+      departure_station_name: s.departure_station_id ? stationMap.get(s.departure_station_id) ?? null : null,
+      departure_number: s.departure_number,
+      departure_datetime: s.departure_datetime,
+      status: s.status,
+      seats_reserved: s.seats_reserved ?? 0,
+      seats_available: s.seats_available ?? 0,
+      price: s.price ?? 0,
+    }
+  })
+}
+
+export interface PosReservationRow {
+  id: string
+  schedule_id: string
+  total_seats: number
+  total_price: number
+  baggage_fee: number
+  status: string
+  payment_status: string | null
+  created_at: string
+}
+
+export async function fetchPosReservations(scheduleIds: string[]): Promise<PosReservationRow[]> {
+  if (scheduleIds.length === 0) return []
+  const all: PosReservationRow[] = []
+  for (let i = 0; i < scheduleIds.length; i += 200) {
+    const batch = scheduleIds.slice(i, i + 200)
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, schedule_id, total_seats, total_price, baggage_fee, status, payment_status, created_at')
+      .in('schedule_id', batch)
+    if (error) throw error
+    if (data) all.push(...(data as PosReservationRow[]))
+  }
+  return all
+}
+
+export interface PosChargeRow {
+  id: string
+  schedule_id: string
+  charge_type: string
+  amount: number
+  status: string
+}
+
+export async function fetchPosCharges(scheduleIds: string[]): Promise<PosChargeRow[]> {
+  if (scheduleIds.length === 0) return []
+  const all: PosChargeRow[] = []
+  for (let i = 0; i < scheduleIds.length; i += 200) {
+    const batch = scheduleIds.slice(i, i + 200)
+    const { data, error } = await supabase
+      .from('counter_charges')
+      .select('id, schedule_id, charge_type, amount, status')
+      .in('schedule_id', batch)
+    if (error) throw error
+    if (data) all.push(...(data as PosChargeRow[]))
+  }
+  return all
+}
+
+export async function fetchAgbovilleStations(): Promise<{ id: string; name: string }[]> {
+  const { data, error } = await supabase
+    .from('stations')
+    .select('id, name')
+    .or('name.ilike.%yopougon%,name.ilike.%agboville%,name.ilike.%adjam%,name.ilike.%gagnoa%')
+    .order('name')
+  if (error) throw error
+  return (data ?? []) as { id: string; name: string }[]
+}
+
+export async function fetchCompaniesHierarchy(): Promise<{
+  companies: { id: string; code: string; name: string; parent_id: string | null; is_group: boolean }[]
+  groups: { code: string; name: string }[]
+  subGroups: { code: string; name: string; parent_code: string }[]
+}> {
+  const { data, error } = await supabase
+    .from('companies')
+    .select('id, code, name, parent_id, is_group')
+    .order('code')
+  if (error) throw error
+
+  const companies = (data ?? []) as { id: string; code: string; name: string; parent_id: string | null; is_group: boolean }[]
+  const idToCode = new Map<string, string>()
+  for (const c of companies) idToCode.set(c.id, c.code)
+
+  const groups = companies.filter(c => c.is_group).map(c => ({ code: c.code, name: c.name }))
+  const subGroups = companies
+    .filter(c => !c.is_group && c.parent_id)
+    .map(c => ({ code: c.code, name: c.name, parent_code: idToCode.get(c.parent_id!) ?? '' }))
+
+  return { companies, groups, subGroups }
+}
+
+// ============================================================
 // Dispatches
 // ============================================================
 
