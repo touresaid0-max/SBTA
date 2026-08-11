@@ -41,9 +41,12 @@ interface RecetteRow {
   depNum: number | string
   routeName: string
   stationName: string
+  arrivalStationName: string
   counterNumber: string
   companyCode: string
+  seatsSold: number
   recettes: number
+  baggage: number
   rations: number
   carburant: number
   peages: number
@@ -154,10 +157,14 @@ export default function SuiviRecettes() {
   }, [counters])
 
   const rows: RecetteRow[] = useMemo(() => {
-    const resMap = new Map<string, number>()
+    const resMap = new Map<string, { amount: number; baggage: number; seats: number }>()
     for (const r of reservations) {
       if (r.status !== 'confirmed' && r.status !== 'paid' && r.status !== 'confirmee' && r.payment_status !== 'paid' && r.payment_status !== 'payee') continue
-      resMap.set(r.schedule_id, (resMap.get(r.schedule_id) ?? 0) + safe(r.total_price) + safe(r.baggage_fee))
+      const prev = resMap.get(r.schedule_id) ?? { amount: 0, baggage: 0, seats: 0 }
+      prev.amount += safe(r.total_price)
+      prev.baggage += safe(r.baggage_fee)
+      prev.seats += 1
+      resMap.set(r.schedule_id, prev)
     }
 
     const chgMap = new Map<string, { rations: number; carburant: number; peages: number; autres: number }>()
@@ -181,7 +188,8 @@ export default function SuiviRecettes() {
         return true
       })
       .map(s => {
-        const recettes = resMap.get(s.id) ?? 0
+        const res = resMap.get(s.id) ?? { amount: 0, baggage: 0, seats: 0 }
+        const recettes = res.amount
         const c = chgMap.get(s.id) ?? { rations: 0, carburant: 0, peages: 0, autres: 0 }
         const totalDepenses = c.rations + c.carburant + c.peages + c.autres
         return {
@@ -189,9 +197,12 @@ export default function SuiviRecettes() {
           depNum: s.departure_number ?? '—',
           routeName: s.route_name ?? '—',
           stationName: s.departure_station_name ?? '—',
+          arrivalStationName: s.arrival_station_name ?? '—',
           counterNumber: s.counter_id ? counterMap.get(s.counter_id) ?? '—' : '—',
           companyCode: s.company_code ?? '—',
+          seatsSold: res.seats,
           recettes,
+          baggage: res.baggage,
           rations: c.rations,
           carburant: c.carburant,
           peages: c.peages,
@@ -205,6 +216,8 @@ export default function SuiviRecettes() {
 
   const totals = useMemo(() => ({
     recettes: rows.reduce((s, r) => s + r.recettes, 0),
+    baggage: rows.reduce((s, r) => s + r.baggage, 0),
+    seatsSold: rows.reduce((s, r) => s + r.seatsSold, 0),
     rations: rows.reduce((s, r) => s + r.rations, 0),
     carburant: rows.reduce((s, r) => s + r.carburant, 0),
     peages: rows.reduce((s, r) => s + r.peages, 0),
@@ -216,16 +229,18 @@ export default function SuiviRecettes() {
   const exportExcel = () => {
     const wb = XLSX.utils.book_new()
     const data = rows.map(r => ({
-      'N° Car': r.carMat, 'N° Départ': r.depNum, 'Ligne': r.routeName, 'Gare': r.stationName,
-      'Guichet': r.counterNumber, 'Société': r.companyCode,
-      'Recettes totales': r.recettes, 'Rations': r.rations,
-      'Carburant': r.carburant, 'Péages': r.peages, 'Autres dépenses': r.autres,
+      'N° Car': r.carMat, 'N° Départ': r.depNum, 'Ligne': r.routeName, 'Gare départ': r.stationName,
+      'Gare arrivée': r.arrivalStationName, 'Guichet': r.counterNumber, 'Société': r.companyCode,
+      'Sièges': r.seatsSold,
+      'Recettes totales': r.recettes, 'Bagages': r.baggage,
+      'Rations': r.rations, 'Carburant': r.carburant, 'Péages': r.peages, 'Autres dépenses': r.autres,
       'Total dépenses': r.totalDepenses, 'Résultat': r.resultat,
     }))
     data.push({
-      'N° Car': 'TOTAL', 'N° Départ': '', 'Ligne': '', 'Gare': '', 'Guichet': '', 'Société': '',
-      'Recettes totales': totals.recettes, 'Rations': totals.rations,
-      'Carburant': totals.carburant, 'Péages': totals.peages, 'Autres dépenses': totals.autres,
+      'N° Car': 'TOTAL', 'N° Départ': '', 'Ligne': '', 'Gare départ': '', 'Gare arrivée': '', 'Guichet': '', 'Société': '',
+      'Sièges': totals.seatsSold,
+      'Recettes totales': totals.recettes, 'Bagages': totals.baggage,
+      'Rations': totals.rations, 'Carburant': totals.carburant, 'Péages': totals.peages, 'Autres dépenses': totals.autres,
       'Total dépenses': totals.totalDepenses, 'Résultat': totals.resultat,
     })
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Suivi des recettes')
@@ -377,31 +392,37 @@ export default function SuiviRecettes() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[1100px] w-full text-xs table-fixed">
+            <table className="min-w-[1400px] w-full text-xs table-fixed">
               <colgroup>
-                <col className="w-[90px]" />
-                <col className="w-[70px]" />
-                <col className="w-[150px]" />
-                <col className="w-[110px]" />
-                <col className="w-[90px]" />
-                <col className="w-[70px]" />
-                <col className="w-[100px]" />
                 <col className="w-[80px]" />
-                <col className="w-[90px]" />
-                <col className="w-[80px]" />
-                <col className="w-[90px]" />
+                <col className="w-[60px]" />
+                <col className="w-[130px]" />
                 <col className="w-[95px]" />
                 <col className="w-[95px]" />
+                <col className="w-[75px]" />
+                <col className="w-[60px]" />
+                <col className="w-[50px]" />
+                <col className="w-[90px]" />
+                <col className="w-[70px]" />
+                <col className="w-[70px]" />
+                <col className="w-[80px]" />
+                <col className="w-[65px]" />
+                <col className="w-[70px]" />
+                <col className="w-[85px]" />
+                <col className="w-[85px]" />
               </colgroup>
               <thead className="bg-[#F8FAF8] sticky top-0 z-10">
                 <tr>
                   <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">N° Car</th>
-                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">N° Départ</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold whitespace-nowrap">N° Dép.</th>
                   <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Ligne</th>
-                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Gare</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Gare dép.</th>
+                  <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Gare arr.</th>
                   <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Guichet</th>
                   <th className="text-left px-2 py-2.5 text-[#4A6B55] font-semibold">Société</th>
-                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold whitespace-nowrap">Recettes totales</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Sièges</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold whitespace-nowrap">Recettes tot.</th>
+                  <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Bagages</th>
                   <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Rations</th>
                   <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Carburant</th>
                   <th className="text-right px-2 py-2.5 text-[#4A6B55] font-semibold">Péages</th>
@@ -417,9 +438,12 @@ export default function SuiviRecettes() {
                     <td className="px-2 py-2 text-[#374151]">{r.depNum}</td>
                     <td className="px-2 py-2 text-[#374151] truncate" title={r.routeName}>{r.routeName}</td>
                     <td className="px-2 py-2 text-[#6B7280] truncate" title={r.stationName}>{r.stationName}</td>
+                    <td className="px-2 py-2 text-[#6B7280] truncate" title={r.arrivalStationName}>{r.arrivalStationName}</td>
                     <td className="px-2 py-2 text-[#6B7280] truncate">{r.counterNumber}</td>
                     <td className="px-2 py-2 text-[#6B7280] truncate">{r.companyCode}</td>
+                    <td className="px-2 py-2 text-right text-[#374151] whitespace-nowrap">{r.seatsSold}</td>
                     <td className="px-2 py-2 text-right font-semibold text-[#1a2a22] whitespace-nowrap">{fmt(r.recettes)}</td>
+                    <td className="px-2 py-2 text-right text-[#6B7280] whitespace-nowrap">{fmt(r.baggage)}</td>
                     <td className="px-2 py-2 text-right text-orange-600 whitespace-nowrap">{fmt(r.rations)}</td>
                     <td className="px-2 py-2 text-right text-blue-600 whitespace-nowrap">{fmt(r.carburant)}</td>
                     <td className="px-2 py-2 text-right text-[#0B7439] whitespace-nowrap">{fmt(r.peages)}</td>
@@ -431,8 +455,10 @@ export default function SuiviRecettes() {
               </tbody>
               <tfoot className="bg-[#0B7439]/5 border-t-2 border-[#0B7439]/20">
                 <tr className="font-bold">
-                  <td className="px-2 py-3 text-[#1a2a22]" colSpan={6}>TOTAL ({rows.length} lignes)</td>
+                  <td className="px-2 py-3 text-[#1a2a22]" colSpan={7}>TOTAL ({rows.length} lignes)</td>
+                  <td className="px-2 py-3 text-right text-[#374151] whitespace-nowrap">{totals.seatsSold}</td>
                   <td className="px-2 py-3 text-right text-[#1a2a22] whitespace-nowrap">{fmt(totals.recettes)}</td>
+                  <td className="px-2 py-3 text-right text-[#6B7280] whitespace-nowrap">{fmt(totals.baggage)}</td>
                   <td className="px-2 py-3 text-right text-orange-700 whitespace-nowrap">{fmt(totals.rations)}</td>
                   <td className="px-2 py-3 text-right text-blue-700 whitespace-nowrap">{fmt(totals.carburant)}</td>
                   <td className="px-2 py-3 text-right text-[#0B7439] whitespace-nowrap">{fmt(totals.peages)}</td>
