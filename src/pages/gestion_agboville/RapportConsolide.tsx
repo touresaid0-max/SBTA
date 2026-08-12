@@ -10,7 +10,7 @@ import jsPDF from 'jspdf'
 
 import {
   fetchPosSchedules, fetchPosReservations, fetchPosCharges,
-  fetchDepenses, fetchCompaniesHierarchy, fetchAgbovilleStations, classifyCharge,
+  fetchDepenses, fetchCompaniesHierarchy, fetchAgbovilleStations, fetchBusesForAbg, classifyCharge,
   type PosScheduleRow, type PosReservationRow, type PosChargeRow,
   type AbgDepense,
 } from '@/services/abg.service'
@@ -63,6 +63,7 @@ export default function RapportConsolide() {
   const [groups, setGroups] = useState<{ code: string; name: string }[]>([])
   const [subGroups, setSubGroups] = useState<{ code: string; name: string; parent_code: string }[]>([])
   const [stations, setStations] = useState<{ id: string; name: string }[]>([])
+  const [buses, setBuses] = useState<{ id: string; registration_number: string; company_id: string | null }[]>([])
   const [loading, setLoading] = useState(true)
 
   const { from, to } = useMemo(() => getDateRange(filters.periodId, filters.customFrom, filters.customTo), [filters.periodId, filters.customFrom, filters.customTo])
@@ -70,8 +71,8 @@ export default function RapportConsolide() {
   useEffect(() => {
     (async () => {
       try {
-        const [hier, stationList] = await Promise.all([fetchCompaniesHierarchy(), fetchAgbovilleStations()])
-        setCompanies(hier.companies); setGroups(hier.groups); setSubGroups(hier.subGroups); setStations(stationList)
+        const [hier, stationList, busList] = await Promise.all([fetchCompaniesHierarchy(), fetchAgbovilleStations(), fetchBusesForAbg()])
+        setCompanies(hier.companies); setGroups(hier.groups); setSubGroups(hier.subGroups); setStations(stationList); setBuses(busList.map(b => ({ id: b.id, registration_number: b.registration_number, company_id: b.company_id })))
       } catch { /* non-critical */ }
     })()
   }, [])
@@ -147,14 +148,41 @@ export default function RapportConsolide() {
 
     const totalChargesPr = rations + carburant + peages + autres
 
-    const totalDepensesAo = depenses.filter(d => d.type_depense === 'AO').reduce((s, d) => s + safe(d.montant), 0)
-    const totalDepensesHao = depenses.filter(d => d.type_depense === 'HAO').reduce((s, d) => s + safe(d.montant), 0)
+    const companyIdToCode = new Map<string, string>()
+    for (const c of companies) companyIdToCode.set(c.id, c.code)
+    const matriculeToCompanyCode = new Map<string, string | null>()
+    for (const b of buses) {
+      const code = b.company_id ? companyIdToCode.get(b.company_id) ?? null : null
+      matriculeToCompanyCode.set(b.registration_number, code)
+    }
+
+    function depenseMatchesCompany(d: AbgDepense): boolean {
+      let depCompanyCode: string | null = null
+      if (d.type_depense === 'HAO') {
+        depCompanyCode = d.societe_code
+      } else {
+        depCompanyCode = d.car_matricule ? matriculeToCompanyCode.get(d.car_matricule) ?? null : d.societe_code
+      }
+      if (!depCompanyCode) return false
+      if (filters.companyCode && depCompanyCode !== filters.companyCode) return false
+      if (filters.subGroupCode && depCompanyCode !== filters.subGroupCode) return false
+      if (filters.groupCode) {
+        const comp = companies.find(c => c.code === depCompanyCode)
+        if (!comp || comp.parent_id !== companies.find(c => c.code === filters.groupCode)?.id) return false
+      }
+      return true
+    }
+
+    const filteredDepenses = depenses.filter(depenseMatchesCompany)
+
+    const totalDepensesAo = filteredDepenses.filter(d => d.type_depense === 'AO').reduce((s, d) => s + safe(d.montant), 0)
+    const totalDepensesHao = filteredDepenses.filter(d => d.type_depense === 'HAO').reduce((s, d) => s + safe(d.montant), 0)
 
     const totalChargesGeneral = totalChargesPr + totalDepensesAo + totalDepensesHao
     const beneficeNet = totalRecettes - totalChargesGeneral
 
     return { totalRecettes, rations, carburant, peages, autres, totalChargesPr, totalDepensesAo, totalDepensesHao, totalChargesGeneral, beneficeNet }
-  }, [filteredSchedules, reservations, charges, depenses])
+  }, [filteredSchedules, reservations, charges, depenses, filters, companies, buses])
 
   const exportExcel = () => {
     const wb = XLSX.utils.book_new()
