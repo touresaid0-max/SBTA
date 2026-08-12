@@ -42,27 +42,35 @@ interface UserRow {
 }
 
 const ROLES: { value: UserRole; label: string; color: string; group: string }[] = [
-  { value: 'admin',             label: 'Admin',             color: '#AF3029', group: 'Direction' },
-  { value: 'daf',               label: 'DAF',               color: '#1D6FA4', group: 'Direction' },
-  { value: 'comptable',         label: 'Comptable',         color: '#D97706', group: 'Direction' },
-  { value: 'rh',                label: 'Responsable RH',    color: '#0B7439', group: 'Direction' },
-  { value: 'gestionnaire',      label: 'Gestionnaire',      color: '#0B7439', group: 'Direction' },
-  { value: 'planificateur',     label: 'Planificateur',     color: '#0B7439', group: 'Direction' },
-  { value: 'chauffeur',         label: 'Chauffeur',         color: '#1D6FA4', group: 'Opérationnel' },
-  { value: 'guichetier',        label: 'Guichetier',        color: '#0B7439', group: 'Opérationnel' },
-  { value: 'chef_garage',       label: 'Chef Garage',       color: '#D97706', group: 'Opérationnel' },
-  { value: 'chef_gare',         label: 'Chef Gare',         color: '#D97706', group: 'Opérationnel' },
-  { value: 'mecanicien',        label: 'Mécanicien',        color: '#1D6FA4', group: 'Opérationnel' },
-  { value: 'pompiste',          label: 'Pompiste',          color: '#6B7280', group: 'Opérationnel' },
-  { value: 'bagagiste',         label: 'Bagagiste',         color: '#1D6FA4', group: 'Opérationnel' },
-  { value: 'agent_colis',       label: 'Agent Courrier',       color: '#0B7439', group: 'Courrier' },
-  { value: 'superviseur_colis', label: 'Superviseur Courrier', color: '#1D6FA4', group: 'Courrier' },
-  { value: 'client',            label: 'Client',            color: '#6B7280', group: 'Autre' },
+  { value: 'admin',                   label: 'Admin',                        color: '#AF3029', group: 'Direction' },
+  { value: 'daf',                     label: 'DAF',                          color: '#1D6FA4', group: 'Direction' },
+  { value: 'comptable',               label: 'Comptable',                    color: '#D97706', group: 'Direction' },
+  { value: 'rh',                      label: 'Responsable RH',               color: '#0B7439', group: 'Direction' },
+  { value: 'gestionnaire',            label: 'Gestionnaire',                 color: '#0B7439', group: 'Direction' },
+  { value: 'planificateur',           label: 'Planificateur',                color: '#0B7439', group: 'Direction' },
+  { value: 'charge_achat',            label: "Chargé d'Achat",              color: '#0B7439', group: 'Direction' },
+  { value: 'gerant_principal',        label: 'Gérant Principal',             color: '#0B7439', group: 'Direction' },
+  { value: 'responsable_assurance',   label: 'Responsable Service Assurance',color: '#0B7439', group: 'Direction' },
+  { value: 'responsable_logistique',  label: 'Responsable Logistique',       color: '#0B7439', group: 'Direction' },
+  { value: 'agent_qhse',              label: 'Agent QHSE',                   color: '#0B7439', group: 'Direction' },
+  { value: 'gestion_agboville',       label: 'Gestion Agboville',            color: '#0B7439', group: 'Direction' },
+  { value: 'chauffeur',               label: 'Chauffeur',                    color: '#1D6FA4', group: 'Opérationnel' },
+  { value: 'guichetier',              label: 'Guichetier',                   color: '#0B7439', group: 'Opérationnel' },
+  { value: 'agent_reservation',       label: 'Agent Réservation',            color: '#0B7439', group: 'Opérationnel' },
+  { value: 'chef_garage',             label: 'Chef Garage',                  color: '#D97706', group: 'Opérationnel' },
+  { value: 'chef_gare',               label: 'Chef Gare',                    color: '#D97706', group: 'Opérationnel' },
+  { value: 'mecanicien',              label: 'Mécanicien',                   color: '#1D6FA4', group: 'Opérationnel' },
+  { value: 'pompiste',                label: 'Pompiste',                     color: '#6B7280', group: 'Opérationnel' },
+  { value: 'carburant',               label: 'Carburant',                    color: '#1D6FA4', group: 'Opérationnel' },
+  { value: 'bagagiste',               label: 'Bagagiste',                    color: '#1D6FA4', group: 'Opérationnel' },
+  { value: 'agent_colis',             label: 'Agent Courrier',               color: '#0B7439', group: 'Courrier' },
+  { value: 'superviseur_colis',       label: 'Superviseur Courrier',         color: '#1D6FA4', group: 'Courrier' },
+  { value: 'client',                  label: 'Client',                       color: '#6B7280', group: 'Autre' },
 ];
 
 const OPERATIONAL_ROLES: UserRole[] = [
   'chauffeur', 'guichetier', 'chef_garage', 'mecanicien', 'pompiste', 'chef_gare', 'gestionnaire',
-  'agent_colis', 'bagagiste',
+  'agent_colis', 'bagagiste', 'agent_reservation', 'carburant',
 ];
 
 // Rôles nécessitant une gare d'affectation

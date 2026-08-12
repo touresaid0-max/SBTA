@@ -11,6 +11,7 @@ const ROLE_LABELS: Record<string, string> = {
   rh: 'Responsable RH',
   gestionnaire: 'Gestionnaire',
   planificateur: 'Planificateur',
+  charge_achat: "Chargé d'Achat",
   chauffeur: 'Chauffeur',
   guichetier: 'Guichetier',
   agent_reservation: 'Agent Réservation',
@@ -19,9 +20,14 @@ const ROLE_LABELS: Record<string, string> = {
   mecanicien: 'Mécanicien',
   pompiste: 'Pompiste',
   bagagiste: 'Bagagiste',
+  carburant: 'Carburant',
+  agent_colis: 'Agent Courrier',
+  superviseur_colis: 'Superviseur Courrier',
   gerant_principal: 'Gérant Principal',
   responsable_assurance: 'Responsable Service Assurance',
   responsable_logistique: 'Responsable Logistique',
+  agent_qhse: 'Agent QHSE',
+  gestion_agboville: 'Gestion Agboville',
 };
 
 function passwordStrength(pwd: string): { score: number; label: string; color: string } {
