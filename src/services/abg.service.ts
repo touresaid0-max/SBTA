@@ -444,7 +444,7 @@ export const ABG_SEGMENTS: AbgSegmentPair[] = [
   { code: 'AGBOVILLE_YOPOUGON', label: 'Agboville → Yopougon', departureStationIds: [STATION_AGBOVILLE], arrivalStationIds: [STATION_YOPOUGON] },
   { code: 'ADJAME_MIRADOR_AGBOVILLE', label: 'Adjamé Mirador → Agboville', departureStationIds: [STATION_ADJAME, STATION_MIRADOR], arrivalStationIds: [STATION_AGBOVILLE] },
   { code: 'AGBOVILLE_ADJAME', label: 'Agboville → Adjamé', departureStationIds: [STATION_AGBOVILLE], arrivalStationIds: [STATION_ADJAME, STATION_ABOBO] },
-  { code: 'AGBOVILLE_GAGNOA_AGBOVILLE', label: 'Agboville → Gagnoa → Agboville', departureStationIds: [STATION_AGBOVILLE], arrivalStationIds: [STATION_GAGNOA] },
+  { code: 'AGBOVILLE_GAGNOA_AGBOVILLE', label: 'Agboville → Gagnoa → Agboville', departureStationIds: [STATION_AGBOVILLE, STATION_GAGNOA], arrivalStationIds: [STATION_GAGNOA, STATION_AGBOVILLE] },
 ]
 
 export async function fetchPosSchedules(filters?: {
@@ -458,7 +458,6 @@ export async function fetchPosSchedules(filters?: {
     ? ABG_SEGMENTS.filter(s => filters.segmentCodes!.includes(s.code))
     : ABG_SEGMENTS
 
-  const agbovilleStationIds = new Set([STATION_AGBOVILLE])
   const allDepStationIds = [...new Set(activeSegments.flatMap(s => s.departureStationIds))]
   const allArrivalStationIds = [...new Set(activeSegments.flatMap(s => s.arrivalStationIds))]
   const segmentByDeparture = new Map<string, AbgSegmentPair[]>()
@@ -470,36 +469,11 @@ export async function fetchPosSchedules(filters?: {
     }
   }
 
-  function matchSegment(s: { departure_station_id: string | null; arrival_station_id: string | null; route_name: string | null }): AbgSegmentPair | null {
-    if (!s.departure_station_id) return null
+  function matchSegment(s: { departure_station_id: string | null; arrival_station_id: string | null }): AbgSegmentPair | null {
+    if (!s.departure_station_id || !s.arrival_station_id) return null
     const candidates = segmentByDeparture.get(s.departure_station_id)
-    if (candidates && candidates.length > 0) {
-      if (s.arrival_station_id) {
-        const byArrival = candidates.find(c => c.arrivalStationIds.includes(s.arrival_station_id!))
-        if (byArrival) return byArrival
-      }
-      const routeLower = (s.route_name ?? '').toLowerCase()
-      for (const c of candidates) {
-        const destLower = c.label.split('→')[1]?.trim().toLowerCase() ?? ''
-        if (destLower && routeLower.includes(destLower)) return c
-      }
-      if (candidates.length === 1) return candidates[0]
-    }
-    if (s.arrival_station_id && agbovilleStationIds.has(s.arrival_station_id) && allArrivalStationIds.includes(s.arrival_station_id)) {
-      const agbovilleInbound = activeSegments.find(seg => seg.arrivalStationIds.includes(s.arrival_station_id!))
-      if (agbovilleInbound) return agbovilleInbound
-    }
-    const routeLower = (s.route_name ?? '').toLowerCase()
-    if (routeLower.includes('agboville')) {
-      const isFromAgboville = s.departure_station_id && agbovilleStationIds.has(s.departure_station_id)
-      const matching = activeSegments.find(seg =>
-        isFromAgboville
-          ? seg.departureStationIds.includes(s.departure_station_id!)
-          : seg.arrivalStationIds.includes(STATION_AGBOVILLE)
-      )
-      if (matching) return matching
-    }
-    return null
+    if (!candidates || candidates.length === 0) return null
+    return candidates.find(c => c.arrivalStationIds.includes(s.arrival_station_id!)) ?? null
   }
 
   let q = supabase
