@@ -73,8 +73,10 @@ const OPERATIONAL_ROLES: UserRole[] = [
   'agent_colis', 'bagagiste', 'agent_reservation', 'carburant',
 ];
 
-// Rôles nécessitant une gare d'affectation
+// Rôles nécessitant une gare d'affectation (obligatoire)
 const REQUIRES_STATION: UserRole[] = ['agent_colis', 'chef_gare'];
+// Rôles pouvant être affectés à une gare (facultatif)
+const CAN_HAVE_STATION: UserRole[] = [...OPERATIONAL_ROLES, 'guichetier', 'bagagiste', 'agent_reservation', 'carburant'];
 
 const LICENSE_CATEGORIES = ['A', 'B', 'C', 'D', 'E', 'F'];
 
@@ -250,7 +252,7 @@ export default function Users() {
         };
         if (!formData.send_invitation) payload.password = formData.password;
         if (OPERATIONAL_ROLES.includes(formData.role)) payload.company_id = formData.company_id || null;
-        if (REQUIRES_STATION.includes(formData.role)) payload.station_id = formData.station_id || null;
+        if (CAN_HAVE_STATION.includes(formData.role)) payload.station_id = formData.station_id || null;
         if (formData.role === 'chauffeur') {
           payload.license_number = formData.license_number || null;
           payload.license_expiry = formData.license_expiry || null;
@@ -295,8 +297,10 @@ export default function Users() {
           status: formData.status,
           is_active: formData.status === 'active',
         };
-        if (REQUIRES_STATION.includes(formData.role)) {
+        if (CAN_HAVE_STATION.includes(formData.role)) {
           updateData.station_id = formData.station_id || null;
+        } else {
+          updateData.station_id = null;
         }
         if (formData.role === 'chauffeur') {
           updateData.license_number = formData.license_number || null;
@@ -1016,16 +1020,16 @@ export default function Users() {
                   </select>
                 </div>
               )}
-              {REQUIRES_STATION.includes(formData.role) && (
+              {CAN_HAVE_STATION.includes(formData.role) && (
                 <div className="p-4 rounded-lg" style={{ backgroundColor: '#f0faf4', border: '1px solid #0B7439' }}>
                   <div className="flex gap-2 mb-2">
                     <AlertCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#0B7439' }} />
                     <label className="text-sm font-medium" style={{ color: '#0B7439' }}>
-                      Gare d'affectation <span style={{ color: 'var(--danger)' }}>*</span>
+                      Gare d'affectation{REQUIRES_STATION.includes(formData.role) ? ' *' : ''}
                     </label>
                   </div>
-                  <select value={formData.station_id} onChange={(e) => setFormData({ ...formData, station_id: e.target.value })} required className="w-full px-3 py-2 rounded-lg border bg-white" style={{ borderColor: '#0B7439' }}>
-                    <option value="">— Sélectionner une gare —</option>
+                  <select value={formData.station_id} onChange={(e) => setFormData({ ...formData, station_id: e.target.value })} required={REQUIRES_STATION.includes(formData.role)} className="w-full px-3 py-2 rounded-lg border bg-white" style={{ borderColor: '#0B7439' }}>
+                    <option value="">{REQUIRES_STATION.includes(formData.role) ? '— Sélectionner une gare —' : '— Aucune (non affecté) —'}</option>
                     {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>

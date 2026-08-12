@@ -200,7 +200,7 @@ Deno.serve(async (req: Request) => {
       phone: phone || null,
       role,
       company_id: OPERATIONAL_ROLES.includes(role) ? (company_id || null) : null,
-      station_id: REQUIRES_STATION.includes(role) ? (station_id || null) : null,
+      station_id: station_id || null,
       employee_id: employee_id || null,
       status: send_invitation ? "pending_confirmation" : "active",
       is_active: !send_invitation,
