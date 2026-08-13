@@ -126,8 +126,8 @@ Deno.serve(async (req: Request) => {
           company_id, contract_type, hire_date, account_status,
           license_number, license_expiry, license_category,
           bus_id, probation_end_date, probation_treated_at,
-          assigned_route_id,
-          companies(id, name, code),
+          assigned_route_id, contract_nature,
+          companies(id, name, code, parent_id, is_group),
           routes!employees_assigned_route_id_fkey(id, name)
         `)
         .eq("role", "chauffeur")
@@ -168,6 +168,7 @@ Deno.serve(async (req: Request) => {
         license_category:     row.license_category ?? null,
         company_id:           row.company_id ?? null,
         company_name:         (row.companies as any)?.name ?? null,
+        company_code:         (row.companies as any)?.code ?? null,
         contract_type:        row.contract_type ?? null,
         hire_date:            row.hire_date ?? null,
         employee_id:          row.employee_id ?? null,
@@ -179,6 +180,9 @@ Deno.serve(async (req: Request) => {
         probation_treated_at: row.probation_treated_at ?? null,
         assigned_route_id:    row.assigned_route_id ?? null,
         assigned_route_name:  (row.routes as any)?.name ?? null,
+        contract_nature:      row.contract_nature ?? null,
+        company_parent_id:    (row.companies as any)?.parent_id ?? null,
+        company_is_group:     (row.companies as any)?.is_group ?? null,
       });
 
       // employee rows take priority; suppress any user row with same id

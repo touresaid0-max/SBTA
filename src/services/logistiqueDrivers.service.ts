@@ -11,7 +11,10 @@ export interface LogistiqueDriver {
   license_category:     string | null
   company_id:           string | null
   company_name:         string | null
+  company_code:         string | null
   contract_type:        string | null
+  bus_id:               string | null
+  bus_registration:     string | null
   hire_date:            string | null
   employee_id:          string | null
   status:               string
@@ -21,6 +24,9 @@ export interface LogistiqueDriver {
   probation_treated_at: string | null
   assigned_route_id:    string | null
   assigned_route_name:  string | null
+  contract_nature:      string | null
+  company_parent_id:    string | null
+  company_is_group:     boolean | null
 }
 
 export interface LogistiqueBusWithDrivers {

@@ -317,6 +317,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Rapports',        path: '/logistique/reports',   icon: <BarChart2 className="w-5 h-5" /> },
     { label: 'Synthèse bus',   path: '/logistique/bus-synthesis', icon: <Bus className="w-5 h-5" /> },
     { label: 'Bilan',          path: '/logistique/bilan',         icon: <ClipboardList className="w-5 h-5" /> },
+    { label: 'Rapport conducteur', path: '/logistique/driver-report', icon: <FileText className="w-5 h-5" /> },
   ],
   gestion_agboville: [
     { label: 'Tableau de bord',  path: '/gestion-agboville/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },

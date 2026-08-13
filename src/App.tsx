@@ -228,6 +228,7 @@ import LogistiqueServiceTypes from './pages/logistique/ServiceTypes';
 import LogistiqueReports from './pages/logistique/Reports';
 import LogistiqueBusSynthesis from './pages/logistique/BusSynthesis';
 import LogistiqueFleetBilan from './pages/logistique/FleetBilan';
+import LogistiqueDriverReport from './pages/logistique/DriverReport';
 import AgentReservationDashboard from './pages/agent-reservation/Dashboard';
 import AgentReservationUsers from './pages/agent-reservation/MobileUsers';
 import AgentReservationTickets from './pages/agent-reservation/Tickets';
@@ -500,6 +501,7 @@ function App() {
             <Route path="logistique/reports"           element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueReports /></ProtectedRoute>} />
             <Route path="logistique/bus-synthesis"     element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueBusSynthesis /></ProtectedRoute>} />
             <Route path="logistique/bilan"            element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueFleetBilan /></ProtectedRoute>} />
+            <Route path="logistique/driver-report"    element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDriverReport /></ProtectedRoute>} />
 
             <Route path="agent-reservation/dashboard"  element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationDashboard /></ProtectedRoute>} />
             <Route path="agent-reservation/users"      element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationUsers /></ProtectedRoute>} />
