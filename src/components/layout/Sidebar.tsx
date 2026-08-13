@@ -310,7 +310,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   responsable_logistique: [
     { label: 'Tableau de bord', path: '/logistique/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Parc véhicules',  path: '/logistique/vehicles',  icon: <Bus className="w-5 h-5" /> },
-    { label: 'Bus / Chauffeurs', path: '/logistique/drivers',   icon: <Users className="w-5 h-5" /> },
+    { label: 'Gestion chauffeurs', path: '/logistique/gestion-chauffeurs', icon: <Users className="w-5 h-5" /> },
     { label: 'Documents',       path: '/logistique/documents', icon: <FileText className="w-5 h-5" /> },
     { label: 'Prestataires',    path: '/logistique/providers', icon: <Building2 className="w-5 h-5" /> },
     { label: 'Types de services', path: '/logistique/service-types', icon: <Settings className="w-5 h-5" /> },
