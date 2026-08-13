@@ -10,7 +10,13 @@ import { fetchBusesWithDrivers, type LogistiqueDriver } from '@/services/logisti
 import ExportButton from '@/components/shared/ExportButton'
 
 interface Company extends CompanyWithHierarchy {}
-interface RouteOption { id: string; name: string }
+interface RouteOption { id: string; name: string; origin_station_id: string | null }
+interface StationOption {
+  id: string
+  name: string
+  station_manager_id: string | null
+  station_manager: { first_name: string | null; last_name: string | null; phone: string | null } | null
+}
 interface BusOption { id: string; registration_number: string; company_id: string | null }
 
 interface ReportRow {
@@ -63,6 +69,7 @@ export default function DriverReport() {
   const [drivers, setDrivers] = useState<LogistiqueDriver[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [routes, setRoutes] = useState<RouteOption[]>([])
+  const [stations, setStations] = useState<StationOption[]>([])
   const [buses, setBuses] = useState<BusOption[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -76,10 +83,11 @@ export default function DriverReport() {
     async function load() {
       setLoading(true)
       try {
-        const [driverData, companiesRes, routesRes, busesRes] = await Promise.all([
+        const [driverData, companiesRes, routesRes, stationsRes, busesRes] = await Promise.all([
           fetchBusesWithDrivers(),
           supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
-          supabase.from('routes').select('id, name').eq('is_active', true).order('name'),
+          supabase.from('routes').select('id, name, origin_station_id').eq('is_active', true).order('name'),
+          supabase.from('stations').select('id, name, station_manager_id, station_manager:station_manager_id(first_name, last_name, phone)').order('name'),
           supabase.from('buses').select('id, registration_number, company_id').order('registration_number'),
         ])
         const allDrivers: LogistiqueDriver[] = []
@@ -94,6 +102,7 @@ export default function DriverReport() {
         setDrivers(allDrivers)
         if (companiesRes.data) setCompanies(companiesRes.data as Company[])
         if (routesRes.data) setRoutes(routesRes.data as RouteOption[])
+        if (stationsRes.data) setStations(stationsRes.data as StationOption[])
         if (busesRes.data) setBuses(busesRes.data as BusOption[])
       } catch {
         toast.error('Erreur lors du chargement des chauffeurs')
@@ -199,12 +208,34 @@ export default function DriverReport() {
     return Array.from(names).sort()
   }, [reportRows])
 
+  const selectedRoute = useMemo(
+    () => routes.find(route => route.name === routeFilter) ?? null,
+    [routes, routeFilter],
+  )
+
+  const selectedDepartureStation = useMemo(
+    () => selectedRoute?.origin_station_id
+      ? stations.find(station => station.id === selectedRoute.origin_station_id) ?? null
+      : null,
+    [selectedRoute, stations],
+  )
+
+  const reportLineName = selectedRoute?.name ?? '—'
+  const stationManager = selectedDepartureStation?.station_manager
+  const reportStationManagerName = stationManager
+    ? `${stationManager.first_name ?? ''} ${stationManager.last_name ?? ''}`.trim() || '—'
+    : '—'
+  const reportStationManagerPhone = stationManager?.phone ?? '—'
+
   // Export Excel
   async function exportExcel() {
     const { utils, writeFile } = await import('xlsx')
     const headers = ['Nom et Prénom', 'Téléphone', 'Matricule du car', 'Type', 'Ligne', 'Statut', 'Société', 'Sous-groupe']
     const aoa: unknown[][] = [
       ['RAPPORT CONDUCTEUR — SBTA'],
+      [`LIGNE : ${reportLineName}`],
+      [`CHEF DE GARE : ${reportStationManagerName}`],
+      [`Tél. : ${reportStationManagerPhone}`],
       [`Date: ${new Date().toLocaleDateString('fr-FR')}`],
       [`Total: ${filtered.length} chauffeur(s)`],
       [],
@@ -247,6 +278,14 @@ export default function DriverReport() {
     pdf.text(`SBTA — ${new Date().toLocaleDateString('fr-FR')}`, pageW - margin - 5, margin + 7, { align: 'right' })
     pdf.text(`Total: ${filtered.length} chauffeur(s)`, pageW - margin - 5, margin + 13, { align: 'right' })
 
+    pdf.setTextColor(30, 30, 30)
+    pdf.setFontSize(10)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(`LIGNE : ${reportLineName.toUpperCase()}`, margin, margin + 26)
+    pdf.setFont('helvetica', 'normal')
+    pdf.text(`CHEF DE GARE : ${reportStationManagerName.toUpperCase()}`, margin, margin + 33)
+    pdf.text(`Tél. : ${reportStationManagerPhone}`, margin, margin + 39)
+
     // Column positions
     const cols = [
       { label: 'Nom et Prénom', x: margin + 3, w: 48 },
@@ -259,7 +298,7 @@ export default function DriverReport() {
       { label: 'Sous-groupe',   x: margin + 236, w: 51 },
     ]
 
-    let y = margin + 22
+    let y = margin + 47
 
     // Table header
     pdf.setFillColor(11, 116, 57)
