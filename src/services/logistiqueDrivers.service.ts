@@ -25,6 +25,7 @@ export interface LogistiqueDriver {
   assigned_route_id:    string | null
   assigned_route_name:  string | null
   contract_nature:      string | null
+  employee_status:      string | null
   company_parent_id:    string | null
   company_is_group:     boolean | null
 }
@@ -94,6 +95,7 @@ export async function createDriverFromLogistique(input: {
   hire_date: string
   contract_type: string
   contract_nature?: string | null
+  employee_status?: string | null
   salary?: number | null
   daily_rate?: number | null
   cnps_number?: string | null

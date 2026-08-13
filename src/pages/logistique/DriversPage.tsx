@@ -1044,6 +1044,17 @@ function DriverFormModal({ mode, driver, companies, stations, busOptions, routes
               <FieldGroup label="Matricule" hint="Auto-généré si vide">
                 <input value={form.employee_id} onChange={set('employee_id')} className={inputCls} placeholder="EMP-2026-0001" />
               </FieldGroup>
+              <div className="sm:col-start-2">
+                <FieldGroup label="Statut" required>
+                  <SelectWrap>
+                    <select value={form.employee_status} onChange={set('employee_status')} className={selectCls}>
+                      <option value="">—</option>
+                      <option value="salarie">SALARIÉ</option>
+                      <option value="non_salarie">NON SALARIÉ</option>
+                    </select>
+                  </SelectWrap>
+                </FieldGroup>
+              </div>
               {form.contract_type === 'titulaire' && (
                 <FieldGroup label="Salaire (FCFA)" required>
                   <input type="number" value={form.salary} onChange={set('salary')} className={inputCls} placeholder="150000" />

@@ -126,7 +126,7 @@ Deno.serve(async (req: Request) => {
           company_id, contract_type, hire_date, account_status,
           license_number, license_expiry, license_category,
           bus_id, probation_end_date, probation_treated_at,
-          assigned_route_id, contract_nature,
+          assigned_route_id, contract_nature, employee_status,
           companies(id, name, code, parent_id, is_group),
           routes!employees_assigned_route_id_fkey(id, name)
         `)
@@ -181,6 +181,7 @@ Deno.serve(async (req: Request) => {
         assigned_route_id:    row.assigned_route_id ?? null,
         assigned_route_name:  (row.routes as any)?.name ?? null,
         contract_nature:      row.contract_nature ?? null,
+        employee_status:      row.employee_status ?? null,
         company_parent_id:    (row.companies as any)?.parent_id ?? null,
         company_is_group:     (row.companies as any)?.is_group ?? null,
       });
@@ -292,6 +293,7 @@ Deno.serve(async (req: Request) => {
           station_id:      body.station_id ?? null,
           contract_type:   body.contract_type,
           contract_nature: body.contract_nature ?? null,
+          employee_status: body.employee_status ?? null,
           hire_date:       body.hire_date,
           salary:          body.salary ?? null,
           daily_rate:      body.daily_rate ?? null,
