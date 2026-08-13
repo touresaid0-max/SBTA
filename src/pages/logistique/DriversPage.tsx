@@ -358,7 +358,7 @@ export default function LogistiqueDriversPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#1A2E22]">Bus / Chauffeurs</h1>
+          <h1 className="text-2xl font-bold text-[#1A2E22]">Gestion chauffeurs</h1>
           <p className="text-sm text-[#6B7280] mt-1">
             Consultez les bus, créez les chauffeurs et affectez-les aux véhicules
           </p>
