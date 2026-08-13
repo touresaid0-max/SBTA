@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Users, Bus, Plus, Search, X, Pencil, Trash2, UserPlus,
   AlertTriangle, Star, ChevronDown, Car, Phone, Calendar,
-  CheckCircle2, User, Building2,
+  CheckCircle2, User, Building2, Route as RouteIcon,
 } from 'lucide-react'
+import AutocompleteSelect from '@/components/pos/AutocompleteSelect'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { resolveCompanyIds } from '@/utils/companyGroups'
@@ -625,6 +626,11 @@ function DriverRow({ driver, onEdit, onUnassign }: {
         </div>
         <div className="flex items-center gap-3 text-xs text-[#8AA898] mt-0.5">
           <span>{driver.employee_id ?? '—'}</span>
+          {driver.assigned_route_name && (
+            <span className="flex items-center gap-1 text-[#0B7439] font-medium">
+              <RouteIcon className="w-3 h-3" />{driver.assigned_route_name}
+            </span>
+          )}
           {driver.phone && (
             <span className="flex items-center gap-1">
               <Phone className="w-3 h-3" />{driver.phone}
@@ -1126,16 +1132,15 @@ function DriverFormModal({ mode, driver, companies, stations, busOptions, routes
               <FieldGroup label="Expiration du permis">
                 <input type="date" value={form.license_expiry} onChange={set('license_expiry')} className={inputCls} />
               </FieldGroup>
-              {isContractuel && (
-                <FieldGroup label="Itinéraire affecté">
-                  <SelectWrap>
-                    <select value={form.assigned_route_id} onChange={set('assigned_route_id')} className={selectCls}>
-                      <option value="">—</option>
-                      {routes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  </SelectWrap>
-                </FieldGroup>
-              )}
+              <FieldGroup label="Itinéraire affecté" hint="Lignes configurées dans Admin → Routes">
+                <AutocompleteSelect
+                  options={routes.map(r => ({ id: r.id, label: r.name }))}
+                  value={form.assigned_route_id}
+                  onChange={v => setForm(p => ({ ...p, assigned_route_id: v }))}
+                  placeholder="Rechercher une ligne..."
+                  emptyText="Aucune ligne trouvée"
+                />
+              </FieldGroup>
             </div>
           </div>
 

@@ -19,6 +19,8 @@ export interface LogistiqueDriver {
   avatar_url:           string | null
   probation_end_date:   string | null
   probation_treated_at: string | null
+  assigned_route_id:    string | null
+  assigned_route_name:  string | null
 }
 
 export interface LogistiqueBusWithDrivers {
