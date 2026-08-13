@@ -185,12 +185,44 @@ Deno.serve(async (req: Request) => {
         company_is_group:     (row.companies as any)?.is_group ?? null,
       });
 
-      // employee rows take priority; suppress any user row with same id
-      const empIds = new Set((empRows ?? []).map((e: any) => e.id));
-      const allDrivers = [
-        ...(empRows ?? []).map((e: any) => toDriver(e, "employees")),
-        ...(usrRows ?? []).filter((u: any) => !empIds.has(u.id)).map((u: any) => toDriver(u, "users")),
-      ];
+      // Deduplicate by employee_id first, then by normalized name+phone.
+      // employees table takes priority; a users row is only kept if no
+      // employees row matches it on employee_id OR (name+phone).
+      const empRowsArr = (empRows ?? []) as Record<string, any>[];
+      const usrRowsArr = (usrRows ?? []) as Record<string, any>[];
+
+      const normName = (r: Record<string, any>) =>
+        `${(r.first_name ?? "").trim().toLowerCase()}|${(r.last_name ?? "").trim().toLowerCase()}`;
+      const normPhone = (r: Record<string, any>) => (r.phone ?? "").replace(/\D/g, "");
+
+      const empEmpIds = new Set(
+        empRowsArr.map((e) => e.employee_id).filter(Boolean),
+      );
+      const empNameKeys = new Set(
+        empRowsArr
+          .filter((e) => normPhone(e))
+          .map((e) => `${normName(e)}|${normPhone(e)}`),
+      );
+
+      const seenKeys = new Set<string>();
+      const allDrivers: ReturnType<typeof toDriver>[] = [];
+
+      for (const e of empRowsArr) {
+        const d = toDriver(e, "employees");
+        const key = d.id;
+        if (!seenKeys.has(key)) { seenKeys.add(key); allDrivers.push(d); }
+      }
+
+      for (const u of usrRowsArr) {
+        const eid = u.employee_id as string | undefined;
+        if (eid && empEmpIds.has(eid)) continue;
+
+        const nameKey = `${normName(u)}|${normPhone(u)}`;
+        if (normPhone(u) && empNameKeys.has(nameKey)) continue;
+
+        const d = toDriver(u, "users");
+        if (!seenKeys.has(d.id)) { seenKeys.add(d.id); allDrivers.push(d); }
+      }
 
       // ── Group buses with their drivers ───────────────────────────────
       const buses = (busRows ?? []).map((b: any) => ({
@@ -219,6 +251,31 @@ Deno.serve(async (req: Request) => {
 
       // Force company_id for gestionnaire — never trust the client value
       const company_id = isGestionnaire ? callerCompanyId : (body.company_id ?? null);
+
+      // Pre-creation duplicate check: reject if a chauffeur with the same
+      // employee_id already exists, or if one with same name+phone exists.
+      const normFn = (body.first_name ?? "").trim().toLowerCase();
+      const normLn = (body.last_name ?? "").trim().toLowerCase();
+      const normPh = (body.phone ?? "").replace(/\D/g, "");
+
+      const dupChecks: Promise<any>[] = [];
+      if (body.employee_id) {
+        dupChecks.push(
+          admin.from("employees").select("id").eq("role", "chauffeur").eq("employee_id", body.employee_id).maybeSingle(),
+        );
+      }
+      if (normPh) {
+        dupChecks.push(
+          admin.from("employees").select("id").eq("role", "chauffeur").ilike("first_name", body.first_name).ilike("last_name", body.last_name).eq("phone", body.phone).maybeSingle(),
+        );
+      }
+
+      if (dupChecks.length > 0) {
+        const results = await Promise.all(dupChecks);
+        if (results.some((r) => r.data)) {
+          return err("Un chauffeur avec ces informations existe déjà", 409);
+        }
+      }
 
       const { data: newEmp, error: insErr } = await admin
         .from("employees")
