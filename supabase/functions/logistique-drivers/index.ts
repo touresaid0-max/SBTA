@@ -143,7 +143,7 @@ Deno.serve(async (req: Request) => {
         .from("users")
         .select(`
           id, first_name, last_name, phone, avatar_url, employee_id,
-          company_id, contract_type, hire_date, status,
+          company_id, contract_type, hire_date, status, employee_status,
           license_number, license_expiry, license_category,
           bus_id,
           companies(id, name, code)

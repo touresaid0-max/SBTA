@@ -24,6 +24,7 @@ interface ReportRow {
   contract_type: string | null
   assigned_route_name: string | null
   contract_nature: string | null
+  employee_status: string | null
   company_name: string | null
   company_code: string | null
   subgroup_name: string | null
@@ -147,6 +148,7 @@ export default function DriverReport() {
       contract_type: d.contract_type ?? null,
       assigned_route_name: d.assigned_route_name ?? (d.assigned_route_id ? routeNameMap.get(d.assigned_route_id) ?? null : null),
       contract_nature: d.contract_nature ?? null,
+      employee_status: d.employee_status ?? null,
       company_name: d.company_name ?? (d.company_id ? companyMap.get(d.company_id)?.name ?? null : null),
       company_code: d.company_code ?? (d.company_id ? companyMap.get(d.company_id)?.code ?? null : null),
       subgroup_name: getSubgroupName(d.company_id),
@@ -171,7 +173,7 @@ export default function DriverReport() {
     }
 
     if (statusFilter) {
-      result = result.filter(r => r.contract_nature === statusFilter)
+      result = result.filter(r => r.employee_status === statusFilter)
     }
 
     if (search.trim()) {
@@ -213,7 +215,7 @@ export default function DriverReport() {
         r.bus_registration ?? '—',
         contractLabel(r.contract_type),
         r.assigned_route_name ?? '—',
-        statusLabel(r.contract_nature),
+        statusLabel(r.employee_status),
         r.company_name ?? '—',
         r.subgroup_name ?? '—',
       ]),
@@ -301,7 +303,7 @@ export default function DriverReport() {
         r.bus_registration ?? '—',
         contractLabel(r.contract_type),
         r.assigned_route_name ?? '—',
-        statusLabel(r.contract_nature),
+        statusLabel(r.employee_status),
         r.company_name ?? '—',
         r.subgroup_name ?? '—',
       ]
@@ -347,7 +349,7 @@ export default function DriverReport() {
           { label: 'Total chauffeurs', value: filtered.length, color: '#0B7439' },
           { label: 'Titulaires', value: filtered.filter(r => r.contract_type === 'titulaire').length, color: '#1D6FA4' },
           { label: 'Contractuels', value: filtered.filter(r => r.contract_type === 'contractuel').length, color: '#D97706' },
-          { label: 'Salariés', value: filtered.filter(r => r.contract_nature === 'salarie').length, color: '#059669' },
+          { label: 'Salariés', value: filtered.filter(r => r.employee_status === 'salarie').length, color: '#059669' },
         ].map(kpi => (
           <div key={kpi.label} className="bg-white rounded-2xl border border-[#E2EAE5] p-4 flex items-center gap-3">
             <div className="w-2 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: kpi.color }} />
@@ -527,8 +529,8 @@ export default function DriverReport() {
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-lg text-xs font-medium ${statusBadgeClass(r.contract_nature)}`}>
-                        {statusLabel(r.contract_nature)}
+                      <span className={`px-2 py-1 rounded-lg text-xs font-medium ${statusBadgeClass(r.employee_status)}`}>
+                        {statusLabel(r.employee_status)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
