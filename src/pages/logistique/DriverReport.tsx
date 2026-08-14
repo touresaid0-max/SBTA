@@ -230,7 +230,7 @@ export default function DriverReport() {
   // Export Excel
   async function exportExcel() {
     const { utils, writeFile } = await import('xlsx')
-    const headers = ['Nom et Prénom', 'Téléphone', 'Matricule du car', 'Type', 'Ligne', 'Statut', 'Société', 'Sous-groupe']
+    const headers = ['Nom et Prénom', 'Téléphone', 'Matricule du car', 'Type', 'Ligne', 'Statut', 'Société']
     const aoa: unknown[][] = [
       ['RAPPORT CONDUCTEUR — SBTA'],
       [`LIGNE : ${reportLineName}`],
@@ -248,11 +248,10 @@ export default function DriverReport() {
         r.assigned_route_name ?? '—',
         statusLabel(r.employee_status),
         r.company_name ?? '—',
-        r.subgroup_name ?? '—',
       ]),
     ]
     const ws = utils.aoa_to_sheet(aoa)
-    ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 22 }, { wch: 22 }]
+    ws['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 24 }, { wch: 16 }, { wch: 24 }]
     const wb = utils.book_new()
     utils.book_append_sheet(wb, ws, 'Rapport Conducteur')
     writeFile(wb, 'rapport_conducteur.xlsx')
@@ -288,14 +287,13 @@ export default function DriverReport() {
 
     // Column positions
     const cols = [
-      { label: 'Nom et Prénom', x: margin + 3, w: 48 },
-      { label: 'Téléphone',     x: margin + 52, w: 26 },
-      { label: 'Matricule',     x: margin + 79, w: 22 },
-      { label: 'Type',          x: margin + 102, w: 24 },
-      { label: 'Ligne',         x: margin + 127, w: 38 },
-      { label: 'Statut',        x: margin + 166, w: 26 },
-      { label: 'Société',       x: margin + 193, w: 42 },
-      { label: 'Sous-groupe',   x: margin + 236, w: 51 },
+      { label: 'Nom et Prénom', x: margin + 3, w: 59 },
+      { label: 'Téléphone',     x: margin + 63, w: 32 },
+      { label: 'Matricule',     x: margin + 96, w: 27 },
+      { label: 'Type',          x: margin + 124, w: 29 },
+      { label: 'Ligne',         x: margin + 154, w: 47 },
+      { label: 'Statut',        x: margin + 202, w: 32 },
+      { label: 'Société',       x: margin + 235, w: 52 },
     ]
 
     let y = margin + 47
@@ -344,7 +342,6 @@ export default function DriverReport() {
         r.assigned_route_name ?? '—',
         statusLabel(r.employee_status),
         r.company_name ?? '—',
-        r.subgroup_name ?? '—',
       ]
       vals.forEach((v, idx) => {
         const text = v.length > 22 ? v.substring(0, 21) + '…' : v
@@ -538,7 +535,6 @@ export default function DriverReport() {
                   <th className="px-4 py-3">Ligne</th>
                   <th className="px-4 py-3">Statut</th>
                   <th className="px-4 py-3">Société</th>
-                  <th className="px-4 py-3">Sous-groupe</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0F4F1]">
@@ -576,7 +572,6 @@ export default function DriverReport() {
                       <div className="font-medium text-[#1A2E22]">{r.company_name ?? '—'}</div>
                       {r.company_code && <div className="text-xs text-[#8AA898]">{r.company_code}</div>}
                     </td>
-                    <td className="px-4 py-3 text-[#4A6B55]">{r.subgroup_name ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
