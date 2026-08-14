@@ -222,12 +222,16 @@ export default function DriverReport() {
     [routes, routeFilter],
   )
 
-  const selectedDepartureStation = useMemo(
-    () => selectedRoute?.origin_station_id
-      ? stations.find(station => station.id === selectedRoute.origin_station_id) ?? null
-      : null,
-    [selectedRoute, stations],
-  )
+  const selectedDepartureStation = useMemo(() => {
+    if (!selectedRoute) return null
+    if (selectedRoute.origin_station_id) {
+      return stations.find(s => s.id === selectedRoute.origin_station_id) ?? null
+    }
+    // Fallback: extract departure city from route name and match a station
+    const departureCity = selectedRoute.name.split(' - ')[0]?.trim()
+    if (!departureCity) return null
+    return stations.find(s => s.name.toLowerCase().includes(departureCity.toLowerCase())) ?? null
+  }, [selectedRoute, stations])
 
   const selectedChefGare = useMemo(
     () => selectedDepartureStation
