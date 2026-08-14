@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   Search, X, Building2, Route as RouteIcon, FileText, Filter,
-  ChevronDown, Users as UsersIcon,
+  ChevronDown, Users as UsersIcon, User as UserIcon, Phone,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
@@ -15,9 +15,14 @@ interface StationOption {
   id: string
   name: string
   station_manager_id: string | null
-  station_manager: { first_name: string | null; last_name: string | null; phone: string | null } | null
 }
 interface BusOption { id: string; registration_number: string; company_id: string | null }
+interface ChefGareAccount {
+  station_id: string | null
+  first_name: string | null
+  last_name: string | null
+  phone: string | null
+}
 
 interface ReportRow {
   id: string
@@ -70,6 +75,7 @@ export default function DriverReport() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [routes, setRoutes] = useState<RouteOption[]>([])
   const [stations, setStations] = useState<StationOption[]>([])
+  const [chefGareAccounts, setChefGareAccounts] = useState<ChefGareAccount[]>([])
   const [buses, setBuses] = useState<BusOption[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -83,13 +89,15 @@ export default function DriverReport() {
     async function load() {
       setLoading(true)
       try {
-        const [driverData, companiesRes, routesRes, stationsRes, busesRes] = await Promise.all([
+        const [driverData, companiesRes, routesRes, stationsRes, chefGareRes, busesRes] = await Promise.all([
           fetchBusesWithDrivers(),
           supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
           supabase.from('routes').select('id, name, origin_station_id').eq('is_active', true).order('name'),
-          supabase.from('stations').select('id, name, station_manager_id, station_manager:station_manager_id(first_name, last_name, phone)').order('name'),
+          supabase.from('stations').select('id, name, station_manager_id').order('name'),
+          supabase.from('users').select('station_id, first_name, last_name, phone').eq('role', 'chef_gare').eq('is_active', true),
           supabase.from('buses').select('id, registration_number, company_id').order('registration_number'),
         ])
+        if (chefGareRes.error) throw chefGareRes.error
         const allDrivers: LogistiqueDriver[] = []
         for (const bus of driverData.buses) {
           for (const d of bus.drivers) {
@@ -103,6 +111,7 @@ export default function DriverReport() {
         if (companiesRes.data) setCompanies(companiesRes.data as Company[])
         if (routesRes.data) setRoutes(routesRes.data as RouteOption[])
         if (stationsRes.data) setStations(stationsRes.data as StationOption[])
+        if (chefGareRes.data) setChefGareAccounts(chefGareRes.data as ChefGareAccount[])
         if (busesRes.data) setBuses(busesRes.data as BusOption[])
       } catch {
         toast.error('Erreur lors du chargement des chauffeurs')
@@ -220,8 +229,15 @@ export default function DriverReport() {
     [selectedRoute, stations],
   )
 
+  const selectedChefGare = useMemo(
+    () => selectedDepartureStation
+      ? chefGareAccounts.find(account => account.station_id === selectedDepartureStation.id) ?? null
+      : null,
+    [selectedDepartureStation, chefGareAccounts],
+  )
+
   const reportLineName = selectedRoute?.name ?? '—'
-  const stationManager = selectedDepartureStation?.station_manager
+  const stationManager = selectedChefGare
   const reportStationManagerName = stationManager
     ? `${stationManager.first_name ?? ''} ${stationManager.last_name ?? ''}`.trim() || '—'
     : '—'
@@ -378,6 +394,36 @@ export default function DriverReport() {
         </div>
         <ExportButton onExportPDF={exportPdf} onExportExcel={exportExcel} />
       </div>
+
+      {/* Chef de gare info — synced with Admin → Comptes utilisateurs */}
+      {routeFilter && selectedDepartureStation && (
+        <div className="bg-gradient-to-r from-[#0B7439] to-[#0A5C2E] rounded-2xl p-5 text-white shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <UserIcon className="w-5 h-5" />
+            <h2 className="font-semibold text-sm uppercase tracking-wide">Chef de Gare — {selectedDepartureStation.name}</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                <UserIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs text-white/70 font-medium">Nom</p>
+                <p className="text-base font-bold">{reportStationManagerName}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                <Phone className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs text-white/70 font-medium">Téléphone</p>
+                <p className="text-base font-bold tabular-nums">{reportStationManagerPhone}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* KPI summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
