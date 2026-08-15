@@ -203,6 +203,14 @@ export async function createSortie(s: {
   if (error) throw error
 }
 
+export async function createSorties(rows: Array<{
+  date: string; car_id: string | null; groupe_id: string | null; demandeur: string;
+  piece_id: string; quantite: number; prix_unitaire: number; effectue_par: string;
+}>): Promise<void> {
+  const { error } = await supabase.from('garage_sorties_pieces').insert(rows)
+  if (error) throw error
+}
+
 // ── Réparations ──────────────────────────────────────────────
 export async function fetchReparations(): Promise<GarageReparation[]> {
   const { data, error } = await supabase
