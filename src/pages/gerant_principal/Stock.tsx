@@ -17,6 +17,7 @@ export default function GarageStockPage() {
   const [pieces, setPieces] = useState<GaragePiece[]>([])
   const [fournisseurs, setFournisseurs] = useState<GarageFournisseur[]>([])
   const [cars, setCars] = useState<GarageBus[]>([])
+  const [carsLoading, setCarsLoading] = useState(false)
   const [groupes, setGroupes] = useState<GarageCompany[]>([])
   const [loading, setLoading] = useState(true)
   const [correcting, setCorrecting] = useState<GarageStock | null>(null)
@@ -39,10 +40,16 @@ export default function GarageStockPage() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([fetchStock(), fetchEntrees(), fetchSorties(), fetchPieces(), fetchFournisseurs(), fetchBusesForGarage(), fetchCompaniesForGarage()])
-      .then(([s, e, so, p, f, c, g]) => { setStock(s); setEntrees(e); setSorties(so); setPieces(p); setFournisseurs(f); setCars(c); setGroupes(g) })
+    Promise.all([fetchStock(), fetchEntrees(), fetchSorties(), fetchPieces(), fetchFournisseurs(), fetchCompaniesForGarage()])
+      .then(([s, e, so, p, f, g]) => { setStock(s); setEntrees(e); setSorties(so); setPieces(p); setFournisseurs(f); setGroupes(g) })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
+
+    setCarsLoading(true)
+    fetchBusesForGarage()
+      .then(setCars)
+      .catch(() => toast.error('Impossible de charger la liste des cars'))
+      .finally(() => setCarsLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -338,6 +345,7 @@ export default function GarageStockPage() {
                     row={row}
                     pieces={pieces}
                     cars={cars}
+                    carsLoading={carsLoading}
                     groupes={groupes}
                     onChange={(patch) => updateExitRow(idx, patch)}
                     onSelectPiece={(pieceId) => selectPieceForRow(idx, pieceId)}
@@ -368,11 +376,12 @@ export default function GarageStockPage() {
 
 // ── Autocomplete exit row ────────────────────────────────────
 function ExitRow({
-  row, pieces, cars, groupes, onChange, onSelectPiece, onSelectCar, onRemove, canRemove,
+  row, pieces, cars, carsLoading, groupes, onChange, onSelectPiece, onSelectCar, onRemove, canRemove,
 }: {
   row: { piece_id: string; quantite: number; prix_unitaire: number; car_id: string; groupe_id: string; pieceSearch: string; carSearch: string }
   pieces: GaragePiece[]
   cars: GarageBus[]
+  carsLoading: boolean
   groupes: GarageCompany[]
   onChange: (patch: Partial<typeof row>) => void
   onSelectPiece: (pieceId: string) => void
@@ -393,9 +402,13 @@ function ExitRow({
       }).slice(0, 10)
     : pieces.slice(0, 10)
 
-  const filteredCars = row.carSearch.trim()
-    ? cars.filter(c => c.immatriculation.toLowerCase().includes(row.carSearch.toLowerCase())).slice(0, 10)
-    : cars.slice(0, 10)
+  const carQuery = row.carSearch.trim().toLowerCase()
+  const filteredCars = carQuery
+    ? cars.filter(c =>
+        c.immatriculation.toLowerCase().includes(carQuery) ||
+        (c.company?.name ?? '').toLowerCase().includes(carQuery)
+      ).slice(0, 20)
+    : cars.slice(0, 20)
 
   const selectedPiece = pieces.find(p => p.id === row.piece_id)
   const selectedBus = cars.find(c => c.id === row.car_id)
@@ -489,22 +502,36 @@ function ExitRow({
               onChange={e => { onChange({ carSearch: e.target.value, car_id: '', groupe_id: '' }); setShowCarList(true) }}
               onFocus={() => setShowCarList(true)}
               onBlur={() => setTimeout(() => setShowCarList(false), 200)}
-              placeholder="Matricule du car..."
+              placeholder="Matricule ou société..."
               className="w-full pl-8 pr-3 py-2 rounded-lg border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20"
             />
+            {carsLoading && (
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
           </div>
-          {showCarList && filteredCars.length > 0 && (
-            <div className="absolute z-20 mt-1 w-full bg-white border border-[#E2EAE5] rounded-xl shadow-lg max-h-48 overflow-y-auto">
-              {filteredCars.map(c => (
-                <button
-                  key={c.id}
-                  onMouseDown={() => onSelectCar(c.id)}
-                  className="w-full text-left px-3 py-2 hover:bg-[#F0F7F2] border-b border-[#F0F4F1] last:border-0"
-                >
-                  <div className="text-sm font-medium text-[#1A2E22]">{c.immatriculation}</div>
-                  <div className="text-xs text-[#6B7280]">{c.company?.name ?? '—'}</div>
-                </button>
-              ))}
+          {showCarList && (
+            <div className="absolute z-20 mt-1 w-full bg-white border border-[#E2EAE5] rounded-xl shadow-lg max-h-56 overflow-y-auto">
+              {carsLoading ? (
+                <div className="px-3 py-4 text-sm text-[#6B7280] flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+                  Chargement des cars...
+                </div>
+              ) : filteredCars.length > 0 ? (
+                filteredCars.map(c => (
+                  <button
+                    key={c.id}
+                    onMouseDown={() => onSelectCar(c.id)}
+                    className="w-full text-left px-3 py-2 hover:bg-[#F0F7F2] border-b border-[#F0F4F1] last:border-0"
+                  >
+                    <div className="text-sm font-medium text-[#1A2E22]">{c.immatriculation}</div>
+                    <div className="text-xs text-[#6B7280]">{c.company?.name ?? '—'}</div>
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-4 text-sm text-[#6B7280]">Aucun car trouvé</div>
+              )}
             </div>
           )}
         </div>

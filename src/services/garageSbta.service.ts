@@ -29,16 +29,29 @@ export async function deleteGroupe(id: string): Promise<void> {
 
 // ── Buses & Companies (from admin tables) ───────────────────
 export async function fetchBusesForGarage(): Promise<GarageBus[]> {
-  const { data, error } = await supabase
+  const { data: buses, error } = await supabase
     .from('buses')
-    .select('id, registration_number, company_id, company:companies(id, name)')
+    .select('id, registration_number, company_id')
     .order('registration_number')
   if (error) throw error
-  return (data ?? []).map((b: GarageBus & { registration_number: string }) => ({
+
+  const companyIds = [...new Set((buses ?? []).map(b => b.company_id).filter((id): id is string => Boolean(id)))]
+  let companiesById = new Map<string, { id: string; name: string }>()
+  if (companyIds.length) {
+    const { data: companies, error: companiesError } = await supabase
+      .from('companies')
+      .select('id, name')
+      .in('id', companyIds)
+    if (!companiesError && companies) {
+      companiesById = new Map(companies.map(c => [c.id, c]))
+    }
+  }
+
+  return (buses ?? []).map((b: { id: string; registration_number: string | null; company_id: string | null }) => ({
     id: b.id,
-    immatriculation: b.registration_number ?? b.immatriculation ?? '',
+    immatriculation: b.registration_number ?? '',
     company_id: b.company_id,
-    company: b.company,
+    company: b.company_id ? companiesById.get(b.company_id) ?? null : null,
   }))
 }
 export async function fetchCompaniesForGarage(): Promise<GarageCompany[]> {
