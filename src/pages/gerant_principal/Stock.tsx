@@ -399,6 +399,7 @@ function ExitRow({
 
   const selectedPiece = pieces.find(p => p.id === row.piece_id)
   const selectedBus = cars.find(c => c.id === row.car_id)
+  const selectedGroupe = groupes.find(g => g.id === row.groupe_id)
   const lineTotal = row.piece_id ? row.quantite * row.prix_unitaire : 0
 
   return (
