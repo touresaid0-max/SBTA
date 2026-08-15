@@ -1,230 +1,158 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, useMemo } from 'react'
+import { Wrench, AlertCircle, Package, ArrowDownToLine, ArrowUpCircle, Calendar } from 'lucide-react'
 import {
-  Package, Disc, DollarSign, ArrowDownCircle, ArrowUpCircle,
-  AlertTriangle, BarChart2, Loader2, RefreshCw, XCircle,
-} from 'lucide-react'
-import toast from 'react-hot-toast'
-import { supabase } from '@/services/supabase'
-import { fetchDashboardKPIs, fetchArticles } from '@/services/stock.service'
-import type { StockDashboardKPIs, StockArticle } from '@/types/stock.types'
+  fetchReparations, fetchSorties, fetchEntrees, fetchPneus, fetchCommandes, fetchCars, fetchGroupes,
+} from '@/services/garageSbta.service'
+import type { GarageReparation, GarageSortiePiece, GarageEntreeStock, GarageGroupe, GarageCar } from '@/types/garage.types'
+import { currentMonthName, formatDate } from '@/components/garage/reportHelpers'
 
-const fmt = (n: number) => new Intl.NumberFormat('fr-CI', { maximumFractionDigits: 0 }).format(n)
-
-export default function GerantPrincipalDashboard() {
-  const navigate = useNavigate()
-  const [kpis, setKpis] = useState<StockDashboardKPIs | null>(null)
-  const [lowStock, setLowStock] = useState<StockArticle[]>([])
-  const [topArticles, setTopArticles] = useState<{ designation: string; total_qty: number }[]>([])
-  const [topCompanies, setTopCompanies] = useState<{ name: string; total: number }[]>([])
-  const [topBuses, setTopBuses] = useState<{ reg: string; total: number }[]>([])
+export default function GarageDashboard() {
+  const [reparations, setReparations] = useState<GarageReparation[]>([])
+  const [sorties, setSorties] = useState<GarageSortiePiece[]>([])
+  const [entrees, setEntrees] = useState<GarageEntreeStock[]>([])
+  const [groupes, setGroupes] = useState<GarageGroupe[]>([])
+  const [cars, setCars] = useState<GarageCar[]>([])
   const [loading, setLoading] = useState(true)
 
-  const load = async () => {
-    setLoading(true)
-    try {
-      const [k, articles, exitsRes] = await Promise.all([
-        fetchDashboardKPIs(),
-        fetchArticles(),
-        supabase.from('gp_stock_exits').select(`
-          quantity, total_amount, article_id,
-          article:gp_stock_articles(designation),
-          company:companies!gp_stock_exits_company_id_fkey(name),
-          bus:buses!gp_stock_exits_bus_id_fkey(registration_number)
-        `).gte('exit_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)),
-      ])
-      setKpis(k)
+  useEffect(() => {
+    Promise.all([fetchReparations(), fetchSorties(), fetchEntrees(), fetchGroupes(), fetchCars()])
+      .then(([r, s, e, g, c]) => { setReparations(r); setSorties(s); setEntrees(e); setGroupes(g); setCars(c) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
 
-      setLowStock(articles.filter(a => {
-        const stock = a.computed_stock ?? 0
-        return stock <= a.alert_threshold
-      }).sort((a, b) => (a.computed_stock ?? 0) - (b.computed_stock ?? 0)).slice(0, 10))
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const inMonth = (d: string) => new Date(d) >= monthStart && new Date(d) <= now
 
-      const exits = (exitsRes.data ?? []) as any[]
-      const artMap = new Map<string, { designation: string; total_qty: number }>()
-      const compMap = new Map<string, number>()
-      const busMap = new Map<string, number>()
+  const reparationsThisMonth = useMemo(() => reparations.filter(r => inMonth(r.date)), [reparations])
+  const reparationsEnCours = useMemo(() => reparations.filter(r => r.statut === 'en cours'), [reparations])
+  const sortiesThisMonth = useMemo(() => sorties.filter(s => inMonth(s.date)), [sorties])
+  const entreesThisMonth = useMemo(() => entrees.filter(e => inMonth(e.date)), [entrees])
 
-      for (const e of exits) {
-        const des = e.article?.designation ?? 'Inconnu'
-        const prev = artMap.get(des)
-        artMap.set(des, { designation: des, total_qty: (prev?.total_qty ?? 0) + e.quantity })
+  const totalPiecesSorties = sortiesThisMonth.reduce((sum, s) => sum + s.quantite, 0)
 
-        if (e.company?.name) {
-          compMap.set(e.company.name, (compMap.get(e.company.name) ?? 0) + Number(e.total_amount))
-        }
-        if (e.bus?.registration_number) {
-          busMap.set(e.bus.registration_number, (busMap.get(e.bus.registration_number) ?? 0) + Number(e.total_amount))
-        }
-      }
+  const last5Sorties = useMemo(() =>
+    [...sorties].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5),
+    [sorties])
 
-      setTopArticles([...artMap.values()].sort((a, b) => b.total_qty - a.total_qty).slice(0, 8))
-      setTopCompanies([...compMap.entries()].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 6))
-      setTopBuses([...busMap.entries()].map(([reg, total]) => ({ reg, total })).sort((a, b) => b.total - a.total).slice(0, 6))
-    } catch {
-      toast.error('Erreur chargement tableau de bord')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const pointsParGroupe = useMemo(() => {
+    return groupes.map(g => {
+      const carsVenus = new Set(
+        reparationsThisMonth.filter(r => r.car?.groupe_id === g.id).map(r => r.car_id)
+      ).size
+      const sortiesGroupe = sortiesThisMonth.filter(s => s.groupe_id === g.id)
+      const piecesUniques = new Set(sortiesGroupe.map(s => s.piece_id)).size
+      const piecesTotal = sortiesGroupe.reduce((sum, s) => sum + s.quantite, 0)
+      return { groupe: g.nom, carsVenus, piecesUniques, piecesTotal }
+    }).filter(r => r.carsVenus > 0 || r.piecesTotal > 0)
+  }, [groupes, reparationsThisMonth, sortiesThisMonth])
 
-  useEffect(() => { load() }, [])
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-[#0B7439]" />
-      </div>
-    )
-  }
-
-  const kpiCards = [
-    { label: 'Articles au catalogue', value: fmt(kpis?.total_articles ?? 0), icon: Package, color: '#3B82F6', bg: '#EFF6FF' },
-    { label: 'Stock total disponible', value: fmt(kpis?.total_stock ?? 0), icon: Disc, color: '#8B5CF6', bg: '#F5F3FF' },
-    { label: 'Valeur totale du stock', value: `${fmt(kpis?.stock_value ?? 0)} F`, icon: DollarSign, color: '#0B7439', bg: '#F0FDF4' },
-    { label: 'Entrees du mois', value: `${fmt(kpis?.entries_month_count ?? 0)} (${fmt(kpis?.entries_month_value ?? 0)} F)`, icon: ArrowDownCircle, color: '#0891B2', bg: '#ECFEFF' },
-    { label: 'Sorties du mois', value: `${fmt(kpis?.exits_month_count ?? 0)} (${fmt(kpis?.exits_month_value ?? 0)} F)`, icon: ArrowUpCircle, color: '#DC2626', bg: '#FEF2F2' },
-    { label: 'Stock faible', value: String(kpis?.low_stock_count ?? 0), icon: AlertTriangle, color: '#D97706', bg: '#FFFBEB' },
-    { label: 'En rupture', value: String(kpis?.out_of_stock_count ?? 0), icon: XCircle, color: '#AF3029', bg: '#FEF2F2' },
+  const cards = [
+    { label: 'Réparations total', value: reparationsThisMonth.length, icon: Wrench, color: '#0B7439', bg: '#E8F5EC' },
+    { label: 'Réparations en cours', value: reparationsEnCours.length, icon: AlertCircle, color: '#D97706', bg: '#FEF3C7' },
+    { label: 'Demande de sortie de pièce', value: sortiesThisMonth.length, icon: ArrowUpCircle, color: '#1D6FA4', bg: '#E3F0F9' },
+    { label: 'Pièce total sortie', value: totalPiecesSorties, icon: Package, color: '#7C3AED', bg: '#EDE9FE' },
+    { label: 'Entrées de stocks', value: entreesThisMonth.length, icon: ArrowDownToLine, color: '#0E7490', bg: '#CFFAFE' },
   ]
 
+  if (loading) {
+    return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-4 border-[#0B7439] border-t-transparent rounded-full animate-spin" /></div>
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[#1A2E22]">Stock Principal</h1>
-          <p className="text-sm text-[#6B7C72] mt-1">Tableau de bord - Stock calcule a partir des mouvements reels</p>
+          <h1 className="text-2xl font-bold text-[#1A2E22]">Tableau de bord</h1>
+          <p className="text-sm text-[#6B7280] mt-1">
+            NB : LES CHIFFRES SUR CE TABLEAU DE BORD SONT LES CHIFFRES DU MOIS EN COURS ({currentMonthName()})
+          </p>
         </div>
-        <button onClick={load} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#E2EAE5] text-sm font-medium text-[#4A6B55] hover:bg-[#F4F7F5] transition-colors">
-          <RefreshCw className="w-4 h-4" /> Actualiser
-        </button>
+        <div className="flex items-center gap-2 text-sm text-[#6B7280]">
+          <Calendar className="w-4 h-4" />
+          {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-        {kpiCards.map(k => (
-          <div key={k.label} className="bg-white rounded-2xl border border-[#E2EAE5] p-4 hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: k.bg }}>
-                <k.icon className="w-5 h-5" style={{ color: k.color }} />
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {cards.map(c => {
+          const Icon = c.icon
+          return (
+            <div key={c.label} className="bg-white rounded-2xl border border-[#E2EAE5] p-5 hover:shadow-md transition-shadow">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: c.bg }}>
+                <Icon className="w-5 h-5" style={{ color: c.color }} />
               </div>
+              <p className="text-2xl font-bold text-[#1A2E22]">{c.value}</p>
+              <p className="text-xs font-medium text-[#6B7280] mt-1">{c.label}</p>
             </div>
-            <p className="text-xs text-[#6B7C72] mb-1">{k.label}</p>
-            <p className="text-lg font-bold text-[#1A2E22]">{k.value}</p>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-[#1A2E22]">Alertes stock faible / rupture</h3>
-            <button onClick={() => navigate('/gerant-principal/articles')} className="text-xs font-medium text-[#0B7439]">Voir tout</button>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Last 5 sorties */}
+        <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#E2EAE5] bg-[#F8FAF8]">
+            <h2 className="font-bold text-[#1A2E22]">Les 5 dernières sorties de pièces</h2>
           </div>
-          {lowStock.length === 0 ? (
-            <p className="text-sm text-[#8AA898] py-4 text-center">Aucune alerte</p>
-          ) : (
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {lowStock.map(a => {
-                const stock = a.computed_stock ?? 0
-                const isOut = stock <= 0
-                return (
-                  <div key={a.id} className={`flex items-center justify-between px-3 py-2.5 rounded-xl border ${
-                    isOut ? 'bg-[#FEE2E2] border-[#FECACA]' : 'bg-[#FEF3C7] border-[#FDE68A]'
-                  }`}>
-                    <div>
-                      <p className="text-sm font-medium text-[#1A2E22]">{a.designation}</p>
-                      <p className="text-xs text-[#6B7C72]">{a.brand} {a.reference && `- ${a.reference}`}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-bold ${isOut ? 'text-[#DC2626]' : 'text-[#D97706]'}`}>{stock}</p>
-                      <p className="text-[10px] text-[#6B7C72]">Seuil: {a.alert_threshold}</p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-[#1A2E22]">Articles les plus sortis (mois)</h3>
-            <button onClick={() => navigate('/gerant-principal/reports')} className="text-xs font-medium text-[#0B7439]">Rapports</button>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#E2EAE5]">
+                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Date</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Demandeur</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-[#4A6B55]">Nombre de pièce</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Effectué par</th>
+                </tr>
+              </thead>
+              <tbody>
+                {last5Sorties.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-8 text-[#8AA898]">Aucune sortie</td></tr>
+                ) : last5Sorties.map(s => (
+                  <tr key={s.id} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8]">
+                    <td className="px-4 py-2.5 text-[#4A6B55]">{formatDate(s.date)}</td>
+                    <td className="px-4 py-2.5 text-[#1A2E22] font-medium">{s.demandeur || '—'}</td>
+                    <td className="px-4 py-2.5 text-right text-[#1A2E22] font-bold">{s.quantite}</td>
+                    <td className="px-4 py-2.5 text-[#4A6B55]">{s.effectue_par || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          {topArticles.length === 0 ? (
-            <p className="text-sm text-[#8AA898] py-4 text-center">Aucune sortie ce mois</p>
-          ) : (
-            <div className="space-y-2">
-              {topArticles.map((a, i) => {
-                const max = topArticles[0]?.total_qty ?? 1
-                return (
-                  <div key={i} className="flex items-center gap-3">
-                    <span className="text-xs text-[#6B7C72] w-5 text-right">{i + 1}</span>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-[#1A2E22] truncate">{a.designation}</span>
-                        <span className="text-sm font-bold text-[#0B7439] ml-2">{a.total_qty}</span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-[#E2EAE5]">
-                        <div className="h-full rounded-full bg-[#0B7439] transition-all" style={{ width: `${(a.total_qty / max) * 100}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
         </div>
 
-        <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
-          <h3 className="font-bold text-[#1A2E22] mb-4">Consommation par societe</h3>
-          {topCompanies.length === 0 ? (
-            <p className="text-sm text-[#8AA898] py-4 text-center">Aucune donnee</p>
-          ) : (
-            <div className="space-y-2">
-              {topCompanies.map((c, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                  <span className="text-sm font-medium text-[#1A2E22]">{c.name}</span>
-                  <span className="text-sm font-bold text-[#AF3029]">{fmt(c.total)} FCFA</span>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Points par groupe */}
+        <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#E2EAE5] bg-[#F8FAF8]">
+            <h2 className="font-bold text-[#1A2E22]">Points par groupe</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#E2EAE5]">
+                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Groupe</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-[#4A6B55]">Cars venus au garage</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-[#4A6B55]">Pièces sorties unique</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-[#4A6B55]">Pièces sorties total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pointsParGroupe.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-8 text-[#8AA898]">Aucune donnée ce mois</td></tr>
+                ) : pointsParGroupe.map(r => (
+                  <tr key={r.groupe} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8]">
+                    <td className="px-4 py-2.5 font-medium text-[#1A2E22]">{r.groupe}</td>
+                    <td className="px-4 py-2.5 text-right text-[#4A6B55]">{r.carsVenus}</td>
+                    <td className="px-4 py-2.5 text-right text-[#4A6B55]">{r.piecesUniques}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-[#1A2E22]">{r.piecesTotal}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-
-        <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
-          <h3 className="font-bold text-[#1A2E22] mb-4">Consommation par bus</h3>
-          {topBuses.length === 0 ? (
-            <p className="text-sm text-[#8AA898] py-4 text-center">Aucune donnee</p>
-          ) : (
-            <div className="space-y-2">
-              {topBuses.map((b, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                  <span className="text-sm font-medium text-[#1A2E22]">{b.reg}</span>
-                  <span className="text-sm font-bold text-[#AF3029]">{fmt(b.total)} FCFA</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Entree de stock', path: '/gerant-principal/entries', icon: ArrowDownCircle, color: '#0891B2' },
-          { label: 'Sortie de stock', path: '/gerant-principal/exits', icon: ArrowUpCircle, color: '#DC2626' },
-          { label: 'Gestion pneus', path: '/gerant-principal/tires', icon: Disc, color: '#8B5CF6' },
-          { label: 'Rapports', path: '/gerant-principal/reports', icon: BarChart2, color: '#0B7439' },
-        ].map(a => (
-          <button
-            key={a.label}
-            onClick={() => navigate(a.path)}
-            className="bg-white rounded-2xl border border-[#E2EAE5] p-5 text-left hover:shadow-md hover:border-[#0B7439]/30 transition-all group"
-          >
-            <a.icon className="w-6 h-6 mb-3 transition-transform group-hover:scale-110" style={{ color: a.color }} />
-            <p className="font-bold text-sm text-[#1A2E22]">{a.label}</p>
-          </button>
-        ))}
       </div>
     </div>
   )

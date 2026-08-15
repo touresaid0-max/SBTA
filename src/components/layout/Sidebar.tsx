@@ -300,12 +300,22 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Rapports',        path: '/assurance/reports',    icon: <FileText className="w-5 h-5" /> },
   ],
   gerant_principal: [
-    { label: 'Tableau de bord',    path: '/gerant-principal/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },
-    { label: 'Articles & Pièces',  path: '/gerant-principal/articles',   icon: <Package className="w-5 h-5" /> },
-    { label: 'Entrées de stock',   path: '/gerant-principal/entries',    icon: <ArrowDownCircle className="w-5 h-5" /> },
-    { label: 'Sorties de stock',   path: '/gerant-principal/exits',      icon: <ArrowUpCircle className="w-5 h-5" /> },
-    { label: 'Gestion pneus',      path: '/gerant-principal/tires',      icon: <Fuel className="w-5 h-5" /> },
-    { label: 'Rapports',           path: '/gerant-principal/reports',    icon: <FileText className="w-5 h-5" /> },
+    { label: 'Tableau de bord',      path: '/gerant-principal/dashboard',   icon: <LayoutDashboard className="w-5 h-5" /> },
+    { label: 'Gestion des pièces',   path: '/gerant-principal/articles',    icon: <Package className="w-5 h-5" /> },
+    { label: 'Gestion des réparations', path: '/gerant-principal/reparations', icon: <Wrench className="w-5 h-5" /> },
+    { label: 'Gestion du stock',     path: '/gerant-principal/stock',       icon: <ArrowDownToLine className="w-5 h-5" /> },
+    {
+      label: 'Paramètres',
+      icon: <Settings className="w-5 h-5" />,
+      children: [
+        { label: 'Fournisseurs',         path: '/gerant-principal/parametres', icon: <Building2 className="w-5 h-5" /> },
+        { label: 'Cars',                 path: '/gerant-principal/parametres', icon: <Bus className="w-5 h-5" /> },
+        { label: 'Type de techniciens',  path: '/gerant-principal/parametres', icon: <Wrench className="w-5 h-5" /> },
+        { label: 'Familles',             path: '/gerant-principal/parametres', icon: <Package className="w-5 h-5" /> },
+        { label: 'Sous familles',        path: '/gerant-principal/parametres', icon: <Package className="w-5 h-5" /> },
+        { label: 'Rapports',             path: '/gerant-principal/reports',    icon: <FileText className="w-5 h-5" /> },
+      ],
+    },
   ],
   responsable_logistique: [
     { label: 'Tableau de bord', path: '/logistique/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },

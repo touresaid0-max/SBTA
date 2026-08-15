@@ -1,455 +1,362 @@
-import { useEffect, useState } from 'react'
-import { FileText, Download, Calendar, ArrowDownCircle, ArrowUpCircle, Building2, Bus, Package, CircleDot, BarChart2 } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { FileText, Download, Printer, CircleDot } from 'lucide-react'
+import jsPDF from 'jspdf'
 import toast from 'react-hot-toast'
-import { fetchEntries, fetchExits, fetchArticles, fetchTires, fetchCompanies } from '@/services/stock.service'
-import type { StockEntry, StockExit, StockArticle, StockTire, CompanyOption } from '@/types/stock.types'
+import { useAuthStore } from '@/store/authStore'
+import {
+  fetchSorties, fetchPneus, fetchCommandes, fetchGroupes, fetchSettings, updateSetting, fetchStock,
+} from '@/services/garageSbta.service'
+import type { GarageSortiePiece, GaragePneu, GarageCommandePiece, GarageGroupe, GarageSetting } from '@/types/garage.types'
+import { addReportHeader, addReportFooter, ensureSpace, formatDate, formatFCFA, formatFCFAShort, type ReportFilters } from '@/components/garage/reportHelpers'
 
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR').format(Math.round(n)) }
+type ReportType = 'pieces_groupe' | 'pneus_michelin' | 'pneus_long_march' | 'commandes_groupe'
 
-function exportCSV(filename: string, rows: string[][], headers: string[]) {
-  const content = [headers, ...rows].map(r => r.join(';')).join('\n')
-  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${filename}_${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-type ReportType = 'entries' | 'exits' | 'by_company' | 'by_bus' | 'by_article' | 'tires_brand' | 'monthly' | 'custom'
-
-const REPORT_TYPES: { value: ReportType; label: string; icon: React.ComponentType<{ className?: string }>; color: string }[] = [
-  { value: 'entries', label: 'Entrées de stock', icon: ArrowDownCircle, color: '#1D6FA4' },
-  { value: 'exits', label: 'Sorties de stock', icon: ArrowUpCircle, color: '#AF3029' },
-  { value: 'by_company', label: 'Par société', icon: Building2, color: '#0B7439' },
-  { value: 'by_bus', label: 'Par bus', icon: Bus, color: '#D97706' },
-  { value: 'by_article', label: 'Par article', icon: Package, color: '#1D6FA4' },
-  { value: 'tires_brand', label: 'Pneus par marque', icon: CircleDot, color: '#D97706' },
-  { value: 'monthly', label: 'Rapport mensuel', icon: Calendar, color: '#0B7439' },
-  { value: 'custom', label: 'Période personnalisée', icon: BarChart2, color: '#6B7280' },
-]
-
-export default function Reports() {
-  const [reportType, setReportType] = useState<ReportType>('entries')
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 1)
-    return d.toISOString().slice(0, 10)
+export default function GarageReports({ groupes: propGroupes, settings: propSettings, onReload }: {
+  groupes: GarageGroupe[]; settings: GarageSetting[]; onReload: () => void;
+}) {
+  const { user } = useAuthStore()
+  const [reportType, setReportType] = useState<ReportType>('pieces_groupe')
+  const [sorties, setSorties] = useState<GarageSortiePiece[]>([])
+  const [pneus, setPneus] = useState<GaragePneu[]>([])
+  const [commandes, setCommandes] = useState<GarageCommandePiece[]>([])
+  const [filters, setFilters] = useState<ReportFilters>({
+    dateFrom: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+    dateTo: new Date().toISOString().slice(0, 10),
+    groupeId: null,
   })
-  const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10))
-  const [entries, setEntries] = useState<StockEntry[]>([])
-  const [exits, setExits] = useState<StockExit[]>([])
-  const [articles, setArticles] = useState<StockArticle[]>([])
-  const [tires, setTires] = useState<StockTire[]>([])
-  const [companies, setCompanies] = useState<CompanyOption[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [prixMichelin, setPrixMichelin] = useState(325000)
+  const [prixLongMarch, setPrixLongMarch] = useState(135000)
+  const [editingPrices, setEditingPrices] = useState(false)
 
-  const loadData = () => {
-    setLoading(true)
-    Promise.all([
-      fetchEntries({ date_from: dateFrom, date_to: dateTo }),
-      fetchExits({ date_from: dateFrom, date_to: dateTo }),
-      fetchArticles(),
-      fetchTires(),
-      fetchCompanies(),
-    ])
-      .then(([en, ex, art, ti, co]) => {
-        setEntries(en); setExits(ex); setArticles(art); setTires(ti); setCompanies(co)
-      })
+  useEffect(() => {
+    Promise.all([fetchSorties(), fetchPneus(), fetchCommandes()])
+      .then(([s, p, c]) => { setSorties(s); setPneus(p); setCommandes(c) })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    const pm = propSettings.find(s => s.key === 'prix_michelin')
+    const plm = propSettings.find(s => s.key === 'prix_long_march')
+    if (pm) setPrixMichelin(Number(pm.value))
+    if (plm) setPrixLongMarch(Number(plm.value))
+  }, [propSettings])
+
+  const filteredData = useMemo(() => {
+    const from = new Date(filters.dateFrom)
+    const to = new Date(filters.dateTo)
+    const inRange = (d: string) => new Date(d) >= from && new Date(d) <= to
+    const byGroupe = (gid: string | null) => !filters.groupeId || gid === filters.groupeId
+
+    if (reportType === 'pieces_groupe') return sorties.filter(s => inRange(s.date) && byGroupe(s.groupe_id))
+    if (reportType === 'pneus_michelin') return pneus.filter(p => inRange(p.date) && p.type_pneu === 'MICHELIN' && byGroupe(p.groupe_id))
+    if (reportType === 'pneus_long_march') return pneus.filter(p => inRange(p.date) && p.type_pneu === 'LONG-MARCH' && byGroupe(p.groupe_id))
+    if (reportType === 'commandes_groupe') return commandes.filter(c => inRange(c.date) && byGroupe(c.groupe_id))
+    return []
+  }, [reportType, sorties, pneus, commandes, filters])
+
+  const grouped = useMemo(() => {
+    const groups: Record<string, GarageSortiePiece[] | GaragePneu[] | GarageCommandePiece[]> = {}
+    for (const item of filteredData) {
+      const gid = (item as GarageSortiePiece).groupe_id ?? null
+      const gname = propGroupes.find(g => g.id === gid)?.nom ?? 'Sans groupe'
+      if (!groups[gname]) groups[gname] = []
+      groups[gname].push(item as GarageSortiePiece)
+    }
+    return groups
+  }, [filteredData, propGroupes])
+
+  const reportTypes: { key: ReportType; label: string }[] = [
+    { key: 'pieces_groupe', label: 'Point financier des sorties de pièces par groupe' },
+    { key: 'pneus_michelin', label: 'Fiche de point des pneus MICHELIN' },
+    { key: 'pneus_long_march', label: 'Fiche de point des pneus LONG-MARCH' },
+    { key: 'commandes_groupe', label: 'Point des nouvelles pièces de commande par groupe' },
+    ]
+
+  const handleSavePrices = async () => {
+    try {
+      await updateSetting('prix_michelin', prixMichelin)
+      await updateSetting('prix_long_march', prixLongMarch)
+      toast.success('Prix mis à jour')
+      setEditingPrices(false)
+      onReload()
+    } catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
   }
 
-  useEffect(() => { loadData() }, [dateFrom, dateTo])
+  // ── PDF generation ──
+  const generatePDF = () => {
+    const doc = new jsPDF()
+    const pw = doc.internal.pageSize.getWidth()
+    const ph = doc.internal.pageSize.getHeight()
+    const margin = 14
 
-  const handleExport = () => {
-    switch (reportType) {
-      case 'entries': {
-        exportCSV('rapport_entrees', entries.map(e => [
-          new Date(e.entry_date).toLocaleDateString('fr-FR'),
-          e.article?.designation ?? '', e.article?.brand ?? '', e.article?.reference ?? '',
-          String(e.quantity), String(e.unit_price), String(e.total_amount ?? 0),
-          e.supplier, e.invoice_number,
-        ]), ['Date', 'Article', 'Marque', 'Réf.', 'Qté', 'Prix unit.', 'Total', 'Fournisseur', 'N° Facture'])
-        break
-      }
-      case 'exits': {
-        exportCSV('rapport_sorties', exits.map(e => [
-          new Date(e.exit_date).toLocaleDateString('fr-FR'),
-          e.article?.designation ?? '', e.article?.brand ?? '',
-          String(e.quantity), String(e.unit_price), String(e.total_amount ?? 0),
-          e.company?.name ?? '', e.company?.code ?? '',
-          e.bus?.registration_number ?? '', e.exit_reason, e.requester_name, e.validator_name,
-        ]), ['Date', 'Article', 'Marque', 'Qté', 'Prix unit.', 'Total', 'Société', 'Code', 'Bus', 'Motif', 'Demandeur', 'Validateur'])
-        break
-      }
-      case 'by_company': {
-        const grouped = new Map<string, { name: string; code: string; qty: number; val: number }>()
-        exits.forEach(e => {
-          const key = e.company?.id ?? 'none'
-          const cur = grouped.get(key) ?? { name: e.company?.name ?? 'Sans société', code: e.company?.code ?? '', qty: 0, val: 0 }
-          cur.qty += e.quantity; cur.val += Number(e.total_amount ?? 0)
-          grouped.set(key, cur)
-        })
-        exportCSV('rapport_par_societe', [...grouped.values()].map(c => [c.name, c.code, String(c.qty), String(c.val)]),
-          ['Société', 'Code', 'Qté sorties', 'Valeur FCFA'])
-        break
-      }
-      case 'by_bus': {
-        const grouped = new Map<string, { reg: string; qty: number; val: number }>()
-        exits.forEach(e => {
-          if (!e.bus_id) return
-          const key = e.bus_id
-          const cur = grouped.get(key) ?? { reg: e.bus?.registration_number ?? '', qty: 0, val: 0 }
-          cur.qty += e.quantity; cur.val += Number(e.total_amount ?? 0)
-          grouped.set(key, cur)
-        })
-        exportCSV('rapport_par_bus', [...grouped.values()].map(b => [b.reg, String(b.qty), String(b.val)]),
-          ['Bus', 'Qté sorties', 'Valeur FCFA'])
-        break
-      }
-      case 'by_article': {
-        exportCSV('rapport_par_article', articles.map(a => {
-          const stock = a.computed_stock ?? 0
-          const price = Number(a.last_entry_price ?? a.unit_price)
-          const totalExitVal = exits.filter(e => e.article_id === a.id).reduce((s, e) => s + Number(e.total_amount ?? 0), 0)
-          return [
-            a.designation, a.brand, a.reference,
-            String(a.total_entries ?? 0), String(a.total_exits ?? 0), String(stock),
-            String(price), String(stock * price), String(totalExitVal),
-          ]
-        }), ['Article', 'Marque', 'Réf.', 'Qté entrée', 'Qté sortie', 'Stock restant', 'Prix unit.', 'Valeur stock', 'Montant total sorties'])
-        break
-      }
-      case 'tires_brand': {
-        const grouped = new Map<string, { brand: string; total: number; en_stock: number; monte: number; use: number; reforme: number }>()
-        tires.forEach(t => {
-          const cur = grouped.get(t.brand) ?? { brand: t.brand, total: 0, en_stock: 0, monte: 0, use: 0, reforme: 0 }
-          cur.total++
-          if (t.status === 'en_stock') cur.en_stock++
-          else if (t.status === 'monte') cur.monte++
-          else if (t.status === 'use') cur.use++
-          else if (t.status === 'reforme') cur.reforme++
-          grouped.set(t.brand, cur)
-        })
-        exportCSV('rapport_pneus_marque', [...grouped.values()].map(b => [
-          b.brand, String(b.total), String(b.en_stock), String(b.monte), String(b.use), String(b.reforme),
-        ]), ['Marque', 'Total', 'En stock', 'Montés', 'Usés', 'Réformés'])
-        break
-      }
-      case 'monthly':
-      case 'custom': {
-        const totalEntVal = entries.reduce((s, e) => s + Number(e.total_amount ?? 0), 0)
-        const totalExitVal = exits.reduce((s, e) => s + Number(e.total_amount ?? 0), 0)
-        exportCSV('rapport_synthese', [
-          ['Nombre entrées', String(entries.length), String(entries.reduce((s, e) => s + e.quantity, 0)), String(totalEntVal)],
-          ['Nombre sorties', String(exits.length), String(exits.reduce((s, e) => s + e.quantity, 0)), String(totalExitVal)],
-          ['Solde net', '', '', String(totalEntVal - totalExitVal)],
-        ], ['Type', 'Nb opérations', 'Qté totale', 'Valeur FCFA'])
-        break
-      }
-    }
-    toast.success('Export CSV généré')
-  }
-
-  const renderPreview = () => {
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center h-32">
-          <div className="w-8 h-8 border-4 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
-        </div>
-      )
+    const titles: Record<ReportType, string> = {
+      pieces_groupe: 'Point financier des sorties de pièces de rechange par groupe',
+      pneus_michelin: 'Fiche de point des pneus MICHELIN (GARAGE-SBTA)',
+      pneus_long_march: 'Fiche de point des pneus LONG-MARCH (GARAGE-SBTA)',
+      commandes_groupe: 'Point des nouvelles pièces de commande par groupe',
     }
 
-    switch (reportType) {
-      case 'entries':
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between bg-[#E3F0F9] rounded-xl p-4">
-              <div>
-                <p className="text-sm text-[#1D6FA4]">Total entrées: <strong>{entries.length}</strong></p>
-                <p className="text-xs text-[#6B7280]">{entries.reduce((s, e) => s + e.quantity, 0)} unités</p>
-              </div>
-              <p className="text-lg font-bold text-[#1D6FA4]">{fmt(entries.reduce((s, e) => s + Number(e.total_amount ?? 0), 0))} F</p>
-            </div>
-            <div className="overflow-x-auto max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-[#F8FAF8]">
-                  <tr>
-                    <th className="text-left px-3 py-2 text-[#4A6B55]">Date</th>
-                    <th className="text-left px-3 py-2 text-[#4A6B55]">Article</th>
-                    <th className="text-right px-3 py-2 text-[#4A6B55]">Qté</th>
-                    <th className="text-right px-3 py-2 text-[#4A6B55]">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.slice(0, 20).map(e => (
-                    <tr key={e.id} className="border-t border-[#E2EAE5]">
-                      <td className="px-3 py-1.5">{new Date(e.entry_date).toLocaleDateString('fr-FR')}</td>
-                      <td className="px-3 py-1.5">{e.article?.designation}</td>
-                      <td className="px-3 py-1.5 text-right font-medium text-[#0B7439]">+{e.quantity}</td>
-                      <td className="px-3 py-1.5 text-right">{fmt(Number(e.total_amount ?? 0))} F</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )
-      case 'exits':
-        return (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between bg-[#FEF2F2] rounded-xl p-4">
-              <div>
-                <p className="text-sm text-[#AF3029]">Total sorties: <strong>{exits.length}</strong></p>
-                <p className="text-xs text-[#6B7280]">{exits.reduce((s, e) => s + e.quantity, 0)} unités</p>
-              </div>
-              <p className="text-lg font-bold text-[#AF3029]">{fmt(exits.reduce((s, e) => s + Number(e.total_amount ?? 0), 0))} F</p>
-            </div>
-            <div className="overflow-x-auto max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-[#F8FAF8]">
-                  <tr>
-                    <th className="text-left px-3 py-2 text-[#4A6B55]">Date</th>
-                    <th className="text-left px-3 py-2 text-[#4A6B55]">Article</th>
-                    <th className="text-left px-3 py-2 text-[#4A6B55]">Société</th>
-                    <th className="text-right px-3 py-2 text-[#4A6B55]">Qté</th>
-                    <th className="text-right px-3 py-2 text-[#4A6B55]">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {exits.slice(0, 20).map(e => (
-                    <tr key={e.id} className="border-t border-[#E2EAE5]">
-                      <td className="px-3 py-1.5">{new Date(e.exit_date).toLocaleDateString('fr-FR')}</td>
-                      <td className="px-3 py-1.5">{e.article?.designation}</td>
-                      <td className="px-3 py-1.5">{e.company?.name ?? '—'}</td>
-                      <td className="px-3 py-1.5 text-right font-medium text-[#AF3029]">-{e.quantity}</td>
-                      <td className="px-3 py-1.5 text-right">{fmt(Number(e.total_amount ?? 0))} F</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )
-      case 'by_company': {
-        const grouped = new Map<string, { name: string; code: string; qty: number; val: number }>()
-        exits.forEach(e => {
-          const key = e.company?.id ?? 'none'
-          const cur = grouped.get(key) ?? { name: e.company?.name ?? 'Sans société', code: e.company?.code ?? '', qty: 0, val: 0 }
-          cur.qty += e.quantity; cur.val += Number(e.total_amount ?? 0)
-          grouped.set(key, cur)
+    let y = addReportHeader(doc, {
+      title: titles[reportType],
+      subtitle: filters.groupeId ? `Groupe : ${propGroupes.find(g => g.id === filters.groupeId)?.nom ?? '—'}` : undefined,
+      userName: user?.full_name ?? '—',
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+    }, pw)
+
+    if (reportType === 'pieces_groupe') {
+      let grandTotal = 0
+      for (const [gname, items] of Object.entries(grouped)) {
+        y = ensureSpace(doc, y, 30, ph, pw)
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
+        doc.text(`GROUPE : ${gname}`, margin, y); y += 6
+
+        doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
+        const cols = [margin, margin + 10, margin + 80, margin + 105, margin + 130, margin + 160]
+        doc.text('#', cols[0], y); doc.text('Pièces', cols[1], y); doc.text('Marque', cols[2], y)
+        doc.text('Qté', cols[3], y, { align: 'right' }); doc.text('Prix unit.', cols[4], y, { align: 'right' }); doc.text('Total', cols[5], y, { align: 'right' })
+        y += 3; doc.line(margin, y, pw - margin, y); y += 4
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
+
+        let groupTotal = 0
+        ;(items as GarageSortiePiece[]).forEach((s, i) => {
+          y = ensureSpace(doc, y, 6, ph, pw)
+          doc.text(String(i + 1), cols[0], y)
+          doc.text(s.piece?.nom ?? '—', cols[1], y, { max_width: 65 })
+          doc.text(s.piece?.marque ?? '—', cols[2], y, { max_width: 20 })
+          doc.text(String(s.quantite), cols[3], y, { align: 'right' })
+          doc.text(formatFCFAShort(s.prix_unitaire), cols[4], y, { align: 'right' })
+          doc.text(formatFCFAShort(s.montant), cols[5], y, { align: 'right' })
+          groupTotal += Number(s.montant); y += 5
         })
-        const rows = [...grouped.values()].sort((a, b) => b.val - a.val)
-        return (
-          <div className="space-y-2">
-            {rows.map((r, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                <div>
-                  <p className="text-sm font-medium text-[#1A2E22]">{r.name}</p>
-                  <p className="text-xs text-[#6B7280]">{r.code} - {r.qty} pièces sorties</p>
-                </div>
-                <p className="font-bold text-[#AF3029]">{fmt(r.val)} F</p>
-              </div>
-            ))}
-            {rows.length === 0 && <p className="text-center text-[#8AA898] py-8 text-sm">Aucune donnée</p>}
-          </div>
-        )
+        y = ensureSpace(doc, y, 10, ph, pw)
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(11, 116, 57)
+        doc.text(`TOTAL DU GROUPE : ${gname} — ${formatFCFA(groupTotal)}`, pw - margin, y, { align: 'right' })
+        grandTotal += groupTotal; y += 8
       }
-      case 'by_bus': {
-        const grouped = new Map<string, { reg: string; qty: number; val: number }>()
-        exits.forEach(e => {
-          if (!e.bus_id) return
-          const cur = grouped.get(e.bus_id) ?? { reg: e.bus?.registration_number ?? '', qty: 0, val: 0 }
-          cur.qty += e.quantity; cur.val += Number(e.total_amount ?? 0)
-          grouped.set(e.bus_id, cur)
-        })
-        const rows = [...grouped.values()].sort((a, b) => b.val - a.val)
-        return (
-          <div className="space-y-2">
-            {rows.map((r, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                <div>
-                  <p className="text-sm font-medium font-mono text-[#0B7439]">{r.reg}</p>
-                  <p className="text-xs text-[#6B7280]">{r.qty} pièces utilisées</p>
-                </div>
-                <p className="font-bold text-[#AF3029]">{fmt(r.val)} F</p>
-              </div>
-            ))}
-            {rows.length === 0 && <p className="text-center text-[#8AA898] py-8 text-sm">Aucune donnée</p>}
-          </div>
-        )
-      }
-      case 'by_article': {
-        const sorted = [...articles].sort((a, b) => {
-          const valB = (b.computed_stock ?? 0) * Number(b.last_entry_price ?? b.unit_price)
-          const valA = (a.computed_stock ?? 0) * Number(a.last_entry_price ?? a.unit_price)
-          return valB - valA
-        })
-        return (
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-[#F8FAF8]">
-                <tr>
-                  <th className="text-left px-3 py-2 text-[#4A6B55]">Article</th>
-                  <th className="text-right px-3 py-2 text-[#4A6B55]">Qté entrée</th>
-                  <th className="text-right px-3 py-2 text-[#4A6B55]">Qté sortie</th>
-                  <th className="text-right px-3 py-2 text-[#4A6B55]">Stock restant</th>
-                  <th className="text-right px-3 py-2 text-[#4A6B55]">Prix unit.</th>
-                  <th className="text-right px-3 py-2 text-[#4A6B55]">Valeur stock</th>
-                  <th className="text-right px-3 py-2 text-[#4A6B55]">Total sorties</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.slice(0, 20).map(a => {
-                  const stock = a.computed_stock ?? 0
-                  const price = Number(a.last_entry_price ?? a.unit_price)
-                  const totalExitVal = exits.filter(e => e.article_id === a.id).reduce((s, e) => s + Number(e.total_amount ?? 0), 0)
-                  return (
-                    <tr key={a.id} className="border-t border-[#E2EAE5]">
-                      <td className="px-3 py-1.5">
-                        <p className="font-medium text-[#1A2E22]">{a.designation}</p>
-                        <p className="text-[10px] text-[#6B7280]">{a.brand}</p>
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-[#1D6FA4] font-medium">{a.total_entries ?? 0}</td>
-                      <td className="px-3 py-1.5 text-right text-[#AF3029] font-medium">{a.total_exits ?? 0}</td>
-                      <td className={`px-3 py-1.5 text-right font-bold ${stock <= 0 ? 'text-[#DC2626]' : stock <= a.alert_threshold ? 'text-[#D97706]' : 'text-[#0B7439]'}`}>
-                        {stock}
-                      </td>
-                      <td className="px-3 py-1.5 text-right">{fmt(price)} F</td>
-                      <td className="px-3 py-1.5 text-right font-medium text-[#0B7439]">{fmt(stock * price)} F</td>
-                      <td className="px-3 py-1.5 text-right font-medium text-[#AF3029]">{fmt(totalExitVal)} F</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
-      }
-      case 'tires_brand': {
-        const grouped = new Map<string, { total: number; en_stock: number; monte: number; use: number; reforme: number }>()
-        tires.forEach(t => {
-          const cur = grouped.get(t.brand) ?? { total: 0, en_stock: 0, monte: 0, use: 0, reforme: 0 }
-          cur.total++
-          if (t.status === 'en_stock') cur.en_stock++
-          else if (t.status === 'monte') cur.monte++
-          else if (t.status === 'use') cur.use++
-          else cur.reforme++
-          grouped.set(t.brand, cur)
-        })
-        return (
-          <div className="space-y-2">
-            {[...grouped.entries()].sort((a, b) => b[1].total - a[1].total).map(([brand, d]) => (
-              <div key={brand} className="p-3 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-bold text-[#1A2E22]">{brand}</p>
-                  <p className="text-sm font-bold text-[#D97706]">{d.total} pneus</p>
-                </div>
-                <div className="flex gap-3 text-xs">
-                  <span className="px-2 py-0.5 rounded bg-[#E8F5EC] text-[#0B7439]">Stock: {d.en_stock}</span>
-                  <span className="px-2 py-0.5 rounded bg-[#E3F0F9] text-[#1D6FA4]">Montés: {d.monte}</span>
-                  <span className="px-2 py-0.5 rounded bg-[#FEF3C7] text-[#D97706]">Usés: {d.use}</span>
-                  <span className="px-2 py-0.5 rounded bg-[#FEF2F2] text-[#AF3029]">Réformés: {d.reforme}</span>
-                </div>
-              </div>
-            ))}
-            {grouped.size === 0 && <p className="text-center text-[#8AA898] py-8 text-sm">Aucun pneu</p>}
-          </div>
-        )
-      }
-      case 'monthly':
-      case 'custom': {
-        const totalEntVal = entries.reduce((s, e) => s + Number(e.total_amount ?? 0), 0)
-        const totalExitVal = exits.reduce((s, e) => s + Number(e.total_amount ?? 0), 0)
-        return (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="p-4 rounded-xl bg-[#E3F0F9] text-center">
-                <p className="text-lg font-bold text-[#1D6FA4]">{fmt(totalEntVal)} F</p>
-                <p className="text-xs text-[#1D6FA4]">Entrées</p>
-              </div>
-              <div className="p-4 rounded-xl bg-[#FEF2F2] text-center">
-                <p className="text-lg font-bold text-[#AF3029]">{fmt(totalExitVal)} F</p>
-                <p className="text-xs text-[#AF3029]">Sorties</p>
-              </div>
-              <div className="p-4 rounded-xl text-center" style={{ backgroundColor: totalEntVal >= totalExitVal ? '#E8F5EC' : '#FEF2F2' }}>
-                <p className="text-lg font-bold" style={{ color: totalEntVal >= totalExitVal ? '#0B7439' : '#AF3029' }}>
-                  {fmt(totalEntVal - totalExitVal)} F
-                </p>
-                <p className="text-xs" style={{ color: totalEntVal >= totalExitVal ? '#0B7439' : '#AF3029' }}>Solde net</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="p-3 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                <p className="text-[#6B7280]">Nb entrées</p>
-                <p className="font-bold text-[#1A2E22]">{entries.length} ({entries.reduce((s, e) => s + e.quantity, 0)} unités)</p>
-              </div>
-              <div className="p-3 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                <p className="text-[#6B7280]">Nb sorties</p>
-                <p className="font-bold text-[#1A2E22]">{exits.length} ({exits.reduce((s, e) => s + e.quantity, 0)} unités)</p>
-              </div>
-              <div className="p-3 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                <p className="text-[#6B7280]">Articles en stock</p>
-                <p className="font-bold text-[#1A2E22]">{articles.length}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-[#F8FAF8] border border-[#E2EAE5]">
-                <p className="text-[#6B7280]">Pneus enregistrés</p>
-                <p className="font-bold text-[#1A2E22]">{tires.length}</p>
-              </div>
-            </div>
-          </div>
-        )
-      }
+      y = ensureSpace(doc, y, 10, ph, pw)
+      doc.setFillColor(11, 116, 57); doc.rect(margin, y - 4, pw - 2 * margin, 8, 'F')
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255)
+      doc.text(`TOTAL GÉNÉRAL : ${formatFCFA(grandTotal)}`, pw - margin, y, { align: 'right' })
     }
+
+    if (reportType === 'pneus_michelin' || reportType === 'pneus_long_march') {
+      const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'
+      let totalQty = 0; let totalMontant = 0
+
+      for (const [gname, items] of Object.entries(grouped)) {
+        y = ensureSpace(doc, y, 30, ph, pw)
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
+        doc.text(`GROUPE : ${gname}`, margin, y); y += 6
+
+        doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
+        doc.text('Date', margin, y); doc.text('Désignation', margin + 30, y)
+        doc.text('Qté', margin + 130, y, { align: 'right' }); doc.text('Prix unit.', margin + 155, y, { align: 'right' }); doc.text('Montant', pw - margin, y, { align: 'right' })
+        y += 3; doc.line(margin, y, pw - margin, y); y += 4
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
+
+        let subQty = 0; let subMontant = 0
+        ;(items as GaragePneu[]).forEach(p => {
+          y = ensureSpace(doc, y, 6, ph, pw)
+          doc.text(formatDate(p.date), margin, y)
+          doc.text(`${typeLabel} - ${p.car?.immatriculation ?? '—'}`, margin + 30, y, { max_width: 90 })
+          doc.text(String(p.quantite), margin + 130, y, { align: 'right' })
+          doc.text(formatFCFAShort(p.prix_unitaire), margin + 155, y, { align: 'right' })
+          doc.text(formatFCFAShort(p.montant), pw - margin, y, { align: 'right' })
+          subQty += p.quantite; subMontant += Number(p.montant); y += 5
+        })
+        y = ensureSpace(doc, y, 10, ph, pw)
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(11, 116, 57)
+        doc.text(`Sous-total quantité : ${subQty}`, margin + 130, y, { align: 'right' })
+        doc.text(`TOTAL ${gname} : ${formatFCFA(subMontant)}`, pw - margin, y, { align: 'right' })
+        totalQty += subQty; totalMontant += subMontant; y += 8
+      }
+
+      // Récap
+      y = ensureSpace(doc, y, 30, ph, pw)
+      y += 4; doc.line(margin, y, pw - margin, y); y += 6
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
+      doc.text('RÉCAPITULATIF', margin, y); y += 6
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+      doc.text(`Pneus sortis (total) : ${totalQty} pièces`, margin, y); y += 5
+      doc.text(`Montant total : ${formatFCFA(totalMontant)}`, margin, y); y += 5
+      const stockPneu = reportType === 'pneus_michelin' ? 'Voir gestion stock' : 'Voir gestion stock'
+      doc.text(`Stock actuel : ${stockPneu}`, margin, y)
+    }
+
+    if (reportType === 'commandes_groupe') {
+      let grandQty = 0; let grandMontant = 0
+      for (const [gname, items] of Object.entries(grouped)) {
+        y = ensureSpace(doc, y, 30, ph, pw)
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
+        doc.text(`GROUPE : ${gname}`, margin, y); y += 6
+
+        doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
+        doc.text('Date', margin, y); doc.text('Désignation/Type', margin + 30, y)
+        doc.text('N° Car', margin + 100, y); doc.text('Qté', margin + 130, y, { align: 'right' })
+        doc.text('Prix unit.', margin + 155, y, { align: 'right' }); doc.text('Montant', pw - margin, y, { align: 'right' })
+        y += 3; doc.line(margin, y, pw - margin, y); y += 4
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
+
+        let gQty = 0; let gMontant = 0
+        ;(items as GarageCommandePiece[]).forEach(c => {
+          y = ensureSpace(doc, y, 6, ph, pw)
+          doc.text(formatDate(c.date), margin, y)
+          doc.text(c.designation, margin + 30, y, { max_width: 60 })
+          doc.text(c.car?.immatriculation ?? '—', margin + 100, y, { max_width: 25 })
+          doc.text(String(c.quantite), margin + 130, y, { align: 'right' })
+          doc.text(formatFCFAShort(c.prix_unitaire), margin + 155, y, { align: 'right' })
+          doc.text(formatFCFAShort(c.montant), pw - margin, y, { align: 'right' })
+          gQty += c.quantite; gMontant += Number(c.montant); y += 5
+        })
+        y = ensureSpace(doc, y, 10, ph, pw)
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(11, 116, 57)
+        doc.text(`TOTAL ${gname} : ${gQty} pièces — ${formatFCFA(gMontant)}`, pw - margin, y, { align: 'right' })
+        grandQty += gQty; grandMontant += gMontant; y += 8
+      }
+      y = ensureSpace(doc, y, 10, ph, pw)
+      doc.setFillColor(11, 116, 57); doc.rect(margin, y - 4, pw - 2 * margin, 8, 'F')
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255)
+      doc.text(`TOTAL GÉNÉRAL : ${grandQty} pièces — ${formatFCFA(grandMontant)}`, pw - margin, y, { align: 'right' })
+    }
+
+    addReportFooter(doc, ph, pw)
+    doc.save(`rapport_garage_${reportType}_${new Date().toISOString().slice(0, 10)}.pdf`)
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-[#1A2E22]">Rapports Stock</h1>
-        <p className="text-sm text-[#6B7280] mt-1">Exports et analyses du stock</p>
+        <h2 className="text-xl font-bold text-[#1A2E22]">Rapports</h2>
+        <p className="text-sm text-[#6B7280] mt-1">Génération de rapports garage</p>
       </div>
 
       {/* Report type selector */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {REPORT_TYPES.map(rt => (
-          <button key={rt.value} onClick={() => setReportType(rt.value)}
-            className={`flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${
-              reportType === rt.value ? 'ring-2 shadow-md bg-white' : 'bg-white hover:shadow-sm'
-            }`}
-            style={{ borderColor: reportType === rt.value ? rt.color : '#E2EAE5', ...(reportType === rt.value ? { ringColor: rt.color } : {}) }}>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: rt.color + '18' }}>
-              <rt.icon className="w-4 h-4" style={{ color: rt.color }} />
-            </div>
-            <span className="text-sm font-medium text-[#1A2E22]">{rt.label}</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {reportTypes.map(r => (
+          <button key={r.key} onClick={() => setReportType(r.key)}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-colors ${reportType === r.key ? 'bg-[#0B7439] text-white' : 'bg-white border border-[#E2EAE5] text-[#4A6B55] hover:bg-[#F8FAF8]'}`}>
+            <FileText className="w-5 h-5 flex-shrink-0" /> {r.label}
           </button>
         ))}
       </div>
 
-      {/* Date filters + export */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white rounded-2xl border border-[#E2EAE5] p-4">
-        <div className="flex items-center gap-3">
-          <Calendar className="w-4 h-4 text-[#8AA898]" />
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-[#E2EAE5] text-sm" />
-          <span className="text-[#8AA898]">au</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-[#E2EAE5] text-sm" />
+      {/* Filters */}
+      <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Du</label>
+            <input type="date" value={filters.dateFrom} onChange={e => setFilters({ ...filters, dateFrom: e.target.value })}
+              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Au</label>
+            <input type="date" value={filters.dateTo} onChange={e => setFilters({ ...filters, dateTo: e.target.value })}
+              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Groupe (optionnel)</label>
+            <select value={filters.groupeId ?? ''} onChange={e => setFilters({ ...filters, groupeId: e.target.value || null })}
+              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm">
+              <option value="">Tous les groupes</option>
+              {propGroupes.map(g => <option key={g.id} value={g.id}>{g.nom}</option>)}
+            </select>
+          </div>
         </div>
-        <button onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-xl font-medium hover:bg-[#095e2e] transition-colors">
-          <Download className="w-4 h-4" /> Exporter CSV
-        </button>
+        <div className="flex gap-3 mt-4">
+          <button onClick={generatePDF} disabled={loading}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#0B7439] text-white rounded-xl font-medium hover:bg-[#095e2e] disabled:opacity-50 transition-colors">
+            <Download className="w-4 h-4" /> Exporter PDF
+          </button>
+          <button onClick={() => window.print()} disabled={loading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E2EAE5] text-sm font-medium text-[#4A6B55] hover:bg-[#F8FAF8] disabled:opacity-50 transition-colors">
+            <Printer className="w-4 h-4" /> Imprimer
+          </button>
+        </div>
       </div>
 
-      {/* Preview */}
-      <div className="bg-white rounded-2xl border border-[#E2EAE5] p-6">
-        <h3 className="font-bold text-[#1A2E22] mb-4 flex items-center gap-2">
-          <FileText className="w-4 h-4 text-[#4A6B55]" />
-          {REPORT_TYPES.find(r => r.value === reportType)?.label}
-        </h3>
-        {renderPreview()}
+      {/* Tire price settings (visible for tire reports) */}
+      {(reportType === 'pneus_michelin' || reportType === 'pneus_long_march') && (
+        <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-[#1A2E22]">Prix de référence des pneus</h3>
+            <button onClick={() => setEditingPrices(!editingPrices)} className="text-sm text-[#0B7439] hover:underline">
+              {editingPrices ? 'Annuler' : 'Modifier'}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-[#4A6B55] mb-1">Prix Michelin (FCFA)</label>
+              <input type="number" disabled={!editingPrices} value={prixMichelin} onChange={e => setPrixMichelin(Number(e.target.value))}
+                className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm disabled:bg-[#F8FAF8]" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#4A6B55] mb-1">Prix Long-March (FCFA)</label>
+              <input type="number" disabled={!editingPrices} value={prixLongMarch} onChange={e => setPrixLongMarch(Number(e.target.value))}
+                className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm disabled:bg-[#F8FAF8]" />
+            </div>
+          </div>
+          {editingPrices && (
+            <button onClick={handleSavePrices} className="mt-3 px-4 py-2 bg-[#0B7439] text-white rounded-xl text-sm font-medium hover:bg-[#095e2e]">Enregistrer les prix</button>
+          )}
+        </div>
+      )}
+
+      {/* On-screen preview */}
+      <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#E2EAE5] bg-[#F8FAF8]">
+          <h3 className="font-bold text-[#1A2E22]">{reportTypes.find(r => r.key === reportType)?.label}</h3>
+          <p className="text-xs text-[#6B7280] mt-1">
+            Edité par : {user?.full_name ?? '—'} (Le {new Date().toLocaleString('fr-FR')}) Via : Logiciel GARAGE SBTA
+          </p>
+        </div>
+        <div className="p-5">
+          {Object.keys(grouped).length === 0 ? (
+            <p className="text-center py-12 text-[#8AA898]">Aucune donnée pour cette période</p>
+          ) : Object.entries(grouped).map(([gname, items]) => (
+            <div key={gname} className="mb-6">
+              <h4 className="font-bold text-[#1A2E22] mb-2 pb-1 border-b border-[#E2EAE5]">GROUPE : {gname}</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {(items as GarageSortiePiece[]).map((item, i) => (
+                      <tr key={item.id} className="border-b border-[#F4F7F5]">
+                        <td className="py-2 text-[#6B7280] w-8">{i + 1}</td>
+                        {reportType === 'pieces_groupe' && (<>
+                          <td className="py-2 text-[#1A2E22]">{(item as GarageSortiePiece).piece?.nom ?? '—'}</td>
+                          <td className="py-2 text-[#4A6B55]">{(item as GarageSortiePiece).piece?.marque ?? '—'}</td>
+                          <td className="py-2 text-right text-[#1A2E22]">{item.quantite}</td>
+                          <td className="py-2 text-right text-[#4A6B55]">{formatFCFA(item.prix_unitaire)}</td>
+                          <td className="py-2 text-right font-bold text-[#1A2E22]">{formatFCFA(item.montant)}</td>
+                        </>)}
+                        {reportType === 'pneus_michelin' || reportType === 'pneus_long_march' ? (<>
+                          <td className="py-2 text-[#4A6B55]">{formatDate(item.date)}</td>
+                          <td className="py-2 text-[#1A2E22]">{reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'} - {(item as GaragePneu).car?.immatriculation ?? '—'}</td>
+                          <td className="py-2 text-right text-[#1A2E22]">{item.quantite}</td>
+                          <td className="py-2 text-right text-[#4A6B55]">{formatFCFA(item.prix_unitaire)}</td>
+                          <td className="py-2 text-right font-bold text-[#1A2E22]">{formatFCFA(item.montant)}</td>
+                        </>) : null}
+                        {reportType === 'commandes_groupe' && (<>
+                          <td className="py-2 text-[#4A6B55]">{formatDate(item.date)}</td>
+                          <td className="py-2 text-[#1A2E22]">{(item as GarageCommandePiece).designation}</td>
+                          <td className="py-2 text-[#4A6B55]">{(item as GarageCommandePiece).car?.immatriculation ?? '—'}</td>
+                          <td className="py-2 text-right text-[#1A2E22]">{item.quantite}</td>
+                          <td className="py-2 text-right text-[#4A6B55]">{formatFCFA(item.prix_unitaire)}</td>
+                          <td className="py-2 text-right font-bold text-[#1A2E22]">{formatFCFA(item.montant)}</td>
+                        </>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-right mt-2 font-bold text-[#0B7439]">
+                TOTAL {gname} : {formatFCFA((items as GarageSortiePiece[]).reduce((s, i) => s + Number(i.montant), 0))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

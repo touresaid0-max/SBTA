@@ -1,96 +1,140 @@
-export type GarageType   = 'central' | 'sous_garage'
-export type GarageStatus = 'actif' | 'inactif' | 'archive'
-export type UrgencyLevel = 'faible' | 'normale' | 'elevee' | 'critique'
-export type QuoteStatus  = 'brouillon' | 'soumis_comptable' | 'valide'
-                         | 'rejete' | 'converti_en_ot' | 'annule'
-
-export interface Garage {
-  id:               string
-  name:             string
-  code:             string
-  garage_type:      GarageType
-  parent_garage_id: string | null
-  parent_name:      string | null
-  address:          string | null
-  city:             string
-  region:           string | null
-  phone:            string | null
-  email:            string | null
-  station_id:       string | null
-  station_name:     string | null
-  // PAS de company_id — le garage est indépendant des sociétés
-  chef_garage_id:   string | null
-  chef_name:        string | null
-  max_vehicles:     number
-  status:           GarageStatus
-  observations:     string | null
-  // Stats (vue garage_stats)
-  staff_count:         number
-  buses_in_garage:     number
-  companies_served:    number
-  quotes_pending:      number
-  ots_in_progress:     number
-  cost_this_month:     number
-  cost_total:          number
-  created_at:          string
+export interface GarageGroupe {
+  id: string
+  nom: string
+  created_at: string
 }
 
-export interface PartsItem {
-  part_name:  string
-  qty:        number
-  unit_price: number
-  total:      number
-  from_stock: boolean
-  available:  boolean
+export interface GarageCar {
+  id: string
+  immatriculation: string
+  groupe_id: string | null
+  groupe?: GarageGroupe | null
+  created_at: string
 }
 
-export interface MaintenanceQuote {
-  id:                      string
-  quote_number:            string
-  garage_id:               string
-  garage_name:             string
-  bus_id:                  string
-  bus_registration:        string
-  bus_company_id:          string
-  bus_company_name:        string
-  created_by:              string
-  created_by_name:         string
-  maintenance_type:        string
-  urgency_level:           UrgencyLevel
-  title:                   string
-  problem_description:     string
-  proposed_solution:       string | null
-  labor_hours:             number
-  labor_hourly_rate:       number
-  labor_cost:              number
-  parts_items:             PartsItem[]
-  parts_cost:              number
-  total_estimated_cost:    number
-  observations:            string | null
-  photos_urls:             string[]
-  mileage:                 number | null
-  status:                  QuoteStatus
-  submitted_at:            string | null
-  submitted_to_name:       string | null
-  validated_by_name:       string | null
-  validated_at:            string | null
-  rejection_reason:        string | null
-  work_order_id:           string | null
-  planned_start_date:      string | null
-  estimated_duration_days: number | null
-  created_at:              string
+export interface GarageFamille {
+  id: string
+  nom: string
+  created_at: string
 }
 
-export interface GarageStaffMember {
-  id:             string
-  garage_id:      string
-  user_id:        string
-  role_in_garage: 'chef_garage' | 'mecanicien' | 'aide_mecanicien' | 'technicien'
-  assigned_at:    string
-  is_active:      boolean
-  notes:          string | null
-  user?: {
-    full_name: string
-    email:     string
-  }
+export interface GarageSousFamille {
+  id: string
+  nom: string
+  famille_id: string
+  famille?: GarageFamille | null
+  created_at: string
+}
+
+export interface GarageFournisseur {
+  id: string
+  nom: string
+  telephone: string
+  adresse: string
+  email: string
+  created_at: string
+}
+
+export interface GarageTypeTechnicien {
+  id: string
+  nom: string
+  created_at: string
+}
+
+export interface GaragePiece {
+  id: string
+  reference: string
+  nom: string
+  modele_serie: string
+  marque: string
+  seuil_alerte: number
+  famille_id: string | null
+  sous_famille_id: string | null
+  prix_unitaire: number
+  famille?: GarageFamille | null
+  sous_famille?: GarageSousFamille | null
+  created_at: string
+}
+
+export interface GarageStock {
+  id: string
+  piece_id: string
+  quantite: number
+  date_maj: string
+  piece?: GaragePiece | null
+}
+
+export interface GarageEntreeStock {
+  id: string
+  piece_id: string
+  quantite: number
+  date: string
+  fournisseur_id: string | null
+  effectue_par: string
+  created_at: string
+  piece?: GaragePiece | null
+  fournisseur?: GarageFournisseur | null
+}
+
+export interface GarageSortiePiece {
+  id: string
+  date: string
+  car_id: string | null
+  groupe_id: string | null
+  demandeur: string
+  piece_id: string
+  quantite: number
+  prix_unitaire: number
+  montant: number
+  effectue_par: string
+  created_at: string
+  piece?: GaragePiece | null
+  car?: GarageCar | null
+  groupe?: GarageGroupe | null
+}
+
+export interface GarageReparation {
+  id: string
+  car_id: string
+  date: string
+  statut: 'en cours' | 'terminée'
+  type_technicien_id: string | null
+  description: string
+  created_at: string
+  car?: GarageCar | null
+  type_technicien?: GarageTypeTechnicien | null
+}
+
+export interface GarageCommandePiece {
+  id: string
+  date: string
+  designation: string
+  car_id: string | null
+  groupe_id: string | null
+  quantite: number
+  prix_unitaire: number
+  montant: number
+  created_at: string
+  car?: GarageCar | null
+  groupe?: GarageGroupe | null
+}
+
+export interface GaragePneu {
+  id: string
+  date: string
+  car_id: string | null
+  groupe_id: string | null
+  type_pneu: 'MICHELIN' | 'LONG-MARCH'
+  quantite: number
+  prix_unitaire: number
+  montant: number
+  created_at: string
+  car?: GarageCar | null
+  groupe?: GarageGroupe | null
+}
+
+export interface GarageSetting {
+  id: string
+  key: string
+  value: number
 }
