@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Pencil, AlertTriangle, ArrowDownToLine, ArrowUpCircle, Wrench, Plus, Trash2, X, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
-import { fetchStock, correctStock, fetchEntrees, fetchSorties, createEntree, createSortie, createSorties, fetchPieces, fetchFournisseurs, fetchCars, fetchGroupes } from '@/services/garageSbta.service'
-import type { GarageStock, GaragePiece, GarageFournisseur, GarageCar, GarageGroupe, GarageEntreeStock, GarageSortiePiece } from '@/types/garage.types'
+import { fetchStock, correctStock, fetchEntrees, fetchSorties, createEntree, createSortie, createSorties, fetchPieces, fetchFournisseurs, fetchBusesForGarage, fetchCompaniesForGarage } from '@/services/garageSbta.service'
+import type { GarageStock, GaragePiece, GarageFournisseur, GarageBus, GarageCompany, GarageEntreeStock, GarageSortiePiece } from '@/types/garage.types'
 import { formatDate, formatFCFA } from '@/components/garage/reportHelpers'
 import { useAuthStore } from '@/store/authStore'
 
@@ -16,8 +16,8 @@ export default function GarageStockPage() {
   const [sorties, setSorties] = useState<GarageSortiePiece[]>([])
   const [pieces, setPieces] = useState<GaragePiece[]>([])
   const [fournisseurs, setFournisseurs] = useState<GarageFournisseur[]>([])
-  const [cars, setCars] = useState<GarageCar[]>([])
-  const [groupes, setGroupes] = useState<GarageGroupe[]>([])
+  const [cars, setCars] = useState<GarageBus[]>([])
+  const [groupes, setGroupes] = useState<GarageCompany[]>([])
   const [loading, setLoading] = useState(true)
   const [correcting, setCorrecting] = useState<GarageStock | null>(null)
   const [correctQty, setCorrectQty] = useState(0)
@@ -39,7 +39,7 @@ export default function GarageStockPage() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([fetchStock(), fetchEntrees(), fetchSorties(), fetchPieces(), fetchFournisseurs(), fetchCars(), fetchGroupes()])
+    Promise.all([fetchStock(), fetchEntrees(), fetchSorties(), fetchPieces(), fetchFournisseurs(), fetchBusesForGarage(), fetchCompaniesForGarage()])
       .then(([s, e, so, p, f, c, g]) => { setStock(s); setEntrees(e); setSorties(so); setPieces(p); setFournisseurs(f); setCars(c); setGroupes(g) })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
@@ -123,7 +123,7 @@ export default function GarageStockPage() {
     updateExitRow(idx, {
       car_id: carId,
       carSearch: c?.immatriculation ?? '',
-      groupe_id: c?.groupe_id ?? '',
+      groupe_id: c?.company_id ?? '',
     })
   }
 
@@ -213,12 +213,12 @@ export default function GarageStockPage() {
       {tab === 'sorties' && (
         <ListPage
           title="" data={sorties} loading={loading}
-          searchFields={['piece.reference', 'piece.nom', 'demandeur', 'car.immatriculation']}
+          searchFields={['piece.reference', 'piece.nom', 'demandeur', 'car.registration_number']}
           columns={[
             { key: 'date', label: 'Date', render: (s: GarageSortiePiece) => formatDate(s.date) },
             { key: 'piece.reference', label: 'Référence', render: (s: GarageSortiePiece) => <span className="font-mono text-[#0B7439]">{s.piece?.reference ?? '—'}</span> },
             { key: 'piece.nom', label: 'Pièce', render: (s: GarageSortiePiece) => s.piece?.nom ?? '—' },
-            { key: 'car.immatriculation', label: 'N° Car', render: (s: GarageSortiePiece) => <span className="font-mono text-[#0B7439]">{s.car?.immatriculation ?? '—'}</span> },
+            { key: 'car.registration_number', label: 'N° Car', render: (s: GarageSortiePiece) => <span className="font-mono text-[#0B7439]">{s.car?.registration_number ?? '—'}</span> },
             { key: 'quantite', label: 'Quantité', className: 'text-right', render: (s: GarageSortiePiece) => <span className="font-bold text-[#AF3029]">-{s.quantite}</span> },
             { key: 'prix_unitaire', label: 'Prix unitaire', className: 'text-right', render: (s: GarageSortiePiece) => formatFCFA(s.prix_unitaire) },
             { key: 'montant', label: 'Montant', className: 'text-right', render: (s: GarageSortiePiece) => <span className="font-bold text-[#1A2E22]">{formatFCFA(s.montant)}</span> },
@@ -372,8 +372,8 @@ function ExitRow({
 }: {
   row: { piece_id: string; quantite: number; prix_unitaire: number; car_id: string; groupe_id: string; pieceSearch: string; carSearch: string }
   pieces: GaragePiece[]
-  cars: GarageCar[]
-  groupes: GarageGroupe[]
+  cars: GarageBus[]
+  groupes: GarageCompany[]
   onChange: (patch: Partial<typeof row>) => void
   onSelectPiece: (pieceId: string) => void
   onSelectCar: (carId: string) => void
@@ -398,7 +398,7 @@ function ExitRow({
     : cars.slice(0, 10)
 
   const selectedPiece = pieces.find(p => p.id === row.piece_id)
-  const selectedGroupe = groupes.find(g => g.id === row.groupe_id)
+  const selectedBus = cars.find(c => c.id === row.car_id)
   const lineTotal = row.piece_id ? row.quantite * row.prix_unitaire : 0
 
   return (
@@ -501,7 +501,7 @@ function ExitRow({
                   className="w-full text-left px-3 py-2 hover:bg-[#F0F7F2] border-b border-[#F0F4F1] last:border-0"
                 >
                   <div className="text-sm font-medium text-[#1A2E22]">{c.immatriculation}</div>
-                  <div className="text-xs text-[#6B7280]">{c.groupe?.nom ?? '—'}</div>
+                  <div className="text-xs text-[#6B7280]">{c.company?.name ?? '—'}</div>
                 </button>
               ))}
             </div>
@@ -512,7 +512,7 @@ function ExitRow({
         <div>
           <label className="block text-xs font-medium text-[#4A6B55] mb-1">Groupe / Société</label>
           <div className="px-3 py-2 rounded-lg bg-[#F0F4F1] text-sm text-[#1A2E22] border border-[#E2EAE5]">
-            {selectedGroupe?.nom ?? '—'}
+            {selectedGroupe?.name ?? selectedBus?.company?.name ?? '—'}
           </div>
         </div>
 

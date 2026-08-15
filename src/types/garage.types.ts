@@ -12,6 +12,18 @@ export interface GarageCar {
   created_at: string
 }
 
+export interface GarageBus {
+  id: string
+  immatriculation: string
+  company_id: string | null
+  company?: { id: string; name: string } | null
+}
+
+export interface GarageCompany {
+  id: string
+  name: string
+}
+
 export interface GarageFamille {
   id: string
   nom: string
@@ -89,8 +101,8 @@ export interface GarageSortiePiece {
   effectue_par: string
   created_at: string
   piece?: GaragePiece | null
-  car?: GarageCar | null
-  groupe?: GarageGroupe | null
+  car?: { id: string; registration_number: string } | null
+  groupe?: { id: string; name: string } | null
 }
 
 export interface GarageReparation {
@@ -115,8 +127,8 @@ export interface GarageCommandePiece {
   prix_unitaire: number
   montant: number
   created_at: string
-  car?: GarageCar | null
-  groupe?: GarageGroupe | null
+  car?: { id: string; registration_number: string } | null
+  groupe?: { id: string; name: string } | null
 }
 
 export interface GaragePneu {
@@ -129,8 +141,8 @@ export interface GaragePneu {
   prix_unitaire: number
   montant: number
   created_at: string
-  car?: GarageCar | null
-  groupe?: GarageGroupe | null
+  car?: { id: string; registration_number: string } | null
+  groupe?: { id: string; name: string } | null
 }
 
 export interface GarageSetting {

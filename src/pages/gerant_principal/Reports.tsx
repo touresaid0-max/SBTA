@@ -161,7 +161,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         ;(items as GaragePneu[]).forEach(p => {
           y = ensureSpace(doc, y, 6, ph, pw)
           doc.text(formatDate(p.date), margin, y)
-          doc.text(`${typeLabel} - ${p.car?.immatriculation ?? '—'}`, margin + 30, y, { max_width: 90 })
+          doc.text(`${typeLabel} - ${p.car?.registration_number ?? '—'}`, margin + 30, y, { max_width: 90 })
           doc.text(String(p.quantite), margin + 130, y, { align: 'right' })
           doc.text(formatFCFAShort(p.prix_unitaire), margin + 155, y, { align: 'right' })
           doc.text(formatFCFAShort(p.montant), pw - margin, y, { align: 'right' })
@@ -205,7 +205,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
           y = ensureSpace(doc, y, 6, ph, pw)
           doc.text(formatDate(c.date), margin, y)
           doc.text(c.designation, margin + 30, y, { max_width: 60 })
-          doc.text(c.car?.immatriculation ?? '—', margin + 100, y, { max_width: 25 })
+          doc.text(c.car?.registration_number ?? '—', margin + 100, y, { max_width: 25 })
           doc.text(String(c.quantite), margin + 130, y, { align: 'right' })
           doc.text(formatFCFAShort(c.prix_unitaire), margin + 155, y, { align: 'right' })
           doc.text(formatFCFAShort(c.montant), pw - margin, y, { align: 'right' })
@@ -333,7 +333,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
                         </>)}
                         {reportType === 'pneus_michelin' || reportType === 'pneus_long_march' ? (<>
                           <td className="py-2 text-[#4A6B55]">{formatDate(item.date)}</td>
-                          <td className="py-2 text-[#1A2E22]">{reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'} - {(item as GaragePneu).car?.immatriculation ?? '—'}</td>
+                          <td className="py-2 text-[#1A2E22]">{reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'} - {(item as GaragePneu).car?.registration_number ?? '—'}</td>
                           <td className="py-2 text-right text-[#1A2E22]">{item.quantite}</td>
                           <td className="py-2 text-right text-[#4A6B55]">{formatFCFA(item.prix_unitaire)}</td>
                           <td className="py-2 text-right font-bold text-[#1A2E22]">{formatFCFA(item.montant)}</td>
@@ -341,7 +341,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
                         {reportType === 'commandes_groupe' && (<>
                           <td className="py-2 text-[#4A6B55]">{formatDate(item.date)}</td>
                           <td className="py-2 text-[#1A2E22]">{(item as GarageCommandePiece).designation}</td>
-                          <td className="py-2 text-[#4A6B55]">{(item as GarageCommandePiece).car?.immatriculation ?? '—'}</td>
+                          <td className="py-2 text-[#4A6B55]">{(item as GarageCommandePiece).car?.registration_number ?? '—'}</td>
                           <td className="py-2 text-right text-[#1A2E22]">{item.quantite}</td>
                           <td className="py-2 text-right text-[#4A6B55]">{formatFCFA(item.prix_unitaire)}</td>
                           <td className="py-2 text-right font-bold text-[#1A2E22]">{formatFCFA(item.montant)}</td>

@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import type {
-  GarageGroupe, GarageCar, GarageFamille, GarageSousFamille,
+  GarageGroupe, GarageCar, GarageBus, GarageCompany, GarageFamille, GarageSousFamille,
   GarageFournisseur, GarageTypeTechnicien, GaragePiece, GarageStock,
   GarageEntreeStock, GarageSortiePiece, GarageReparation,
   GarageCommandePiece, GaragePneu, GarageSetting,
@@ -27,7 +27,27 @@ export async function deleteGroupe(id: string): Promise<void> {
   if (error) throw error
 }
 
-// ── Cars ─────────────────────────────────────────────────────
+// ── Buses & Companies (from admin tables) ───────────────────
+export async function fetchBusesForGarage(): Promise<GarageBus[]> {
+  const { data, error } = await supabase
+    .from('buses')
+    .select('id, registration_number, company_id, company:companies(id, name)')
+    .order('registration_number')
+  if (error) throw error
+  return (data ?? []).map((b: GarageBus & { registration_number: string }) => ({
+    id: b.id,
+    immatriculation: b.registration_number ?? b.immatriculation ?? '',
+    company_id: b.company_id,
+    company: b.company,
+  }))
+}
+export async function fetchCompaniesForGarage(): Promise<GarageCompany[]> {
+  const { data, error } = await supabase.from('companies').select('id, name').order('name')
+  if (error) throw error
+  return data ?? []
+}
+
+// ── Cars (legacy garage_cars table) ──────────────────────────
 export async function fetchCars(): Promise<GarageCar[]> {
   const { data, error } = await supabase.from('garage_cars').select('*, groupe:garage_groupes(*)').order('immatriculation')
   if (error) throw error
@@ -190,7 +210,7 @@ export async function createEntree(e: { piece_id: string; quantite: number; date
 export async function fetchSorties(): Promise<GarageSortiePiece[]> {
   const { data, error } = await supabase
     .from('garage_sorties_pieces')
-    .select('*, piece:garage_pieces(*), car:garage_cars(*), groupe:garage_groupes(*)')
+    .select('*, piece:garage_pieces(*), car:buses(id, registration_number), groupe:companies(id, name)')
     .order('date', { ascending: false })
   if (error) throw error
   return data ?? []
@@ -245,7 +265,7 @@ export async function deleteReparation(id: string): Promise<void> {
 export async function fetchCommandes(): Promise<GarageCommandePiece[]> {
   const { data, error } = await supabase
     .from('garage_commandes_pieces')
-    .select('*, car:garage_cars(*), groupe:garage_groupes(*)')
+    .select('*, car:buses(id, registration_number), groupe:companies(id, name)')
     .order('date', { ascending: false })
   if (error) throw error
   return data ?? []
@@ -262,7 +282,7 @@ export async function createCommande(c: {
 export async function fetchPneus(): Promise<GaragePneu[]> {
   const { data, error } = await supabase
     .from('garage_pneus')
-    .select('*, car:garage_cars(*), groupe:garage_groupes(*)')
+    .select('*, car:buses(id, registration_number), groupe:companies(id, name)')
     .order('date', { ascending: false })
   if (error) throw error
   return data ?? []
