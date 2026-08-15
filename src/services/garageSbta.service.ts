@@ -210,10 +210,27 @@ export async function createEntree(e: { piece_id: string; quantite: number; date
 export async function fetchSorties(): Promise<GarageSortiePiece[]> {
   const { data, error } = await supabase
     .from('garage_sorties_pieces')
-    .select('*, piece:garage_pieces(*), car:buses(id, registration_number), groupe:companies(id, name)')
+    .select('*, piece:garage_pieces(*)')
     .order('date', { ascending: false })
   if (error) throw error
-  return data ?? []
+
+  const sorties = data ?? []
+  const carIds = [...new Set(sorties.map(row => row.car_id).filter((id): id is string => Boolean(id)))]
+  const companyIds = [...new Set(sorties.map(row => row.groupe_id).filter((id): id is string => Boolean(id)))]
+  const [{ data: buses, error: busesError }, { data: companies, error: companiesError }] = await Promise.all([
+    carIds.length ? supabase.from('buses').select('id, registration_number').in('id', carIds) : Promise.resolve({ data: [], error: null }),
+    companyIds.length ? supabase.from('companies').select('id, name').in('id', companyIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  if (busesError) throw busesError
+  if (companiesError) throw companiesError
+
+  const busesById = new Map((buses ?? []).map(bus => [bus.id, bus]))
+  const companiesById = new Map((companies ?? []).map(company => [company.id, company]))
+  return sorties.map(row => ({
+    ...row,
+    car: row.car_id ? busesById.get(row.car_id) ?? null : null,
+    groupe: row.groupe_id ? companiesById.get(row.groupe_id) ?? null : null,
+  }))
 }
 export async function createSortie(s: {
   date: string; car_id: string | null; groupe_id: string | null; demandeur: string;
@@ -265,10 +282,27 @@ export async function deleteReparation(id: string): Promise<void> {
 export async function fetchCommandes(): Promise<GarageCommandePiece[]> {
   const { data, error } = await supabase
     .from('garage_commandes_pieces')
-    .select('*, car:buses(id, registration_number), groupe:companies(id, name)')
+    .select('*')
     .order('date', { ascending: false })
   if (error) throw error
-  return data ?? []
+
+  const rows = data ?? []
+  const carIds = [...new Set(rows.map(r => r.car_id).filter((id): id is string => Boolean(id)))]
+  const companyIds = [...new Set(rows.map(r => r.groupe_id).filter((id): id is string => Boolean(id)))]
+  const [{ data: buses, error: busesError }, { data: companies, error: companiesError }] = await Promise.all([
+    carIds.length ? supabase.from('buses').select('id, registration_number').in('id', carIds) : Promise.resolve({ data: [], error: null }),
+    companyIds.length ? supabase.from('companies').select('id, name').in('id', companyIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  if (busesError) throw busesError
+  if (companiesError) throw companiesError
+
+  const busesById = new Map((buses ?? []).map(b => [b.id, b]))
+  const companiesById = new Map((companies ?? []).map(c => [c.id, c]))
+  return rows.map(r => ({
+    ...r,
+    car: r.car_id ? busesById.get(r.car_id) ?? null : null,
+    groupe: r.groupe_id ? companiesById.get(r.groupe_id) ?? null : null,
+  }))
 }
 export async function createCommande(c: {
   date: string; designation: string; car_id: string | null; groupe_id: string | null;
@@ -282,10 +316,27 @@ export async function createCommande(c: {
 export async function fetchPneus(): Promise<GaragePneu[]> {
   const { data, error } = await supabase
     .from('garage_pneus')
-    .select('*, car:buses(id, registration_number), groupe:companies(id, name)')
+    .select('*')
     .order('date', { ascending: false })
   if (error) throw error
-  return data ?? []
+
+  const rows = data ?? []
+  const carIds = [...new Set(rows.map(r => r.car_id).filter((id): id is string => Boolean(id)))]
+  const companyIds = [...new Set(rows.map(r => r.groupe_id).filter((id): id is string => Boolean(id)))]
+  const [{ data: buses, error: busesError }, { data: companies, error: companiesError }] = await Promise.all([
+    carIds.length ? supabase.from('buses').select('id, registration_number').in('id', carIds) : Promise.resolve({ data: [], error: null }),
+    companyIds.length ? supabase.from('companies').select('id, name').in('id', companyIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  if (busesError) throw busesError
+  if (companiesError) throw companiesError
+
+  const busesById = new Map((buses ?? []).map(b => [b.id, b]))
+  const companiesById = new Map((companies ?? []).map(c => [c.id, c]))
+  return rows.map(r => ({
+    ...r,
+    car: r.car_id ? busesById.get(r.car_id) ?? null : null,
+    groupe: r.groupe_id ? companiesById.get(r.groupe_id) ?? null : null,
+  }))
 }
 export async function createPneu(p: {
   date: string; car_id: string | null; groupe_id: string | null;
