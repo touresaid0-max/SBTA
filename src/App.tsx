@@ -211,7 +211,6 @@ import GerantPrincipalArticles from './pages/gerant_principal/Articles';
 import GerantPrincipalReparations from './pages/gerant_principal/Reparations';
 import GerantPrincipalStock from './pages/gerant_principal/Stock';
 import GerantPrincipalParametres from './pages/gerant_principal/Parametres';
-import GerantPrincipalReports from './pages/gerant_principal/Reports';
 import AssuranceDashboard from './pages/assurance/Dashboard';
 import AssuranceInsurancesList from './pages/assurance/InsurancesList';
 import AssuranceInsuranceForm from './pages/assurance/InsuranceForm';
@@ -390,7 +389,7 @@ function App() {
             <Route path="gerant-principal/reparations" element={<ProtectedRoute roles={['gerant_principal']}><GerantPrincipalReparations /></ProtectedRoute>} />
             <Route path="gerant-principal/stock" element={<ProtectedRoute roles={['gerant_principal']}><GerantPrincipalStock /></ProtectedRoute>} />
             <Route path="gerant-principal/parametres" element={<ProtectedRoute roles={['gerant_principal']}><GerantPrincipalParametres /></ProtectedRoute>} />
-            <Route path="gerant-principal/reports" element={<ProtectedRoute roles={['gerant_principal']}><GerantPrincipalReports /></ProtectedRoute>} />
+            <Route path="gerant-principal/reports" element={<ProtectedRoute roles={['gerant_principal']}><GerantPrincipalParametres /></ProtectedRoute>} />
             <Route path="reports/breakdowns" element={<ProtectedRoute roles={['admin', 'daf', 'gestionnaire', 'comptable']}><BreakdownRevenueReport /></ProtectedRoute>} />
             <Route path="daf/breakdown-distributions" element={<ProtectedRoute roles={['admin', 'daf']}><BreakdownDistributions /></ProtectedRoute>} />
             <Route path="chauffeur/dashboard" element={<ProtectedRoute roles={['chauffeur']}><ChauffeurDashboard /></ProtectedRoute>} />

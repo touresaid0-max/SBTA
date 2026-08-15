@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { X, Pencil, Plus, Truck, Wrench, Building2, Layers, GitBranch, FileText, CircleDot } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
@@ -15,8 +16,17 @@ import GarageReports from './Reports'
 
 type Section = 'fournisseurs' | 'cars' | 'types_techniciens' | 'familles' | 'sous_familles' | 'rapports'
 
+const VALID_SECTIONS: Section[] = ['fournisseurs', 'cars', 'types_techniciens', 'familles', 'sous_familles', 'rapports']
+
 export default function GarageParametres() {
-  const [section, setSection] = useState<Section>('fournisseurs')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const sectionParam = searchParams.get('section') as Section | null
+  const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : 'fournisseurs'
+
+  const setSection = useCallback((s: Section) => {
+    setSearchParams({ section: s }, { replace: true })
+  }, [setSearchParams])
+
   const [fournisseurs, setFournisseurs] = useState<GarageFournisseur[]>([])
   const [cars, setCars] = useState<GarageCar[]>([])
   const [typesTech, setTypesTech] = useState<GarageTypeTechnicien[]>([])
@@ -24,17 +34,52 @@ export default function GarageParametres() {
   const [sousFamilles, setSousFamilles] = useState<GarageSousFamille[]>([])
   const [groupes, setGroupes] = useState<GarageGroupe[]>([])
   const [settings, setSettings] = useState<GarageSetting[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
 
-  const load = () => {
+  const loadFournisseurs = useCallback(async () => {
     setLoading(true)
-    Promise.all([fetchFournisseurs(), fetchCars(), fetchTypesTechniciens(), fetchFamilles(), fetchSousFamilles(), fetchGroupes(), fetchSettings()])
-      .then(([f, c, t, fam, sf, g, s]) => { setFournisseurs(f); setCars(c); setTypesTech(t); setFamilles(fam); setSousFamilles(sf); setGroupes(g); setSettings(s) })
-      .catch(() => toast.error('Erreur de chargement'))
-      .finally(() => setLoading(false))
-  }
+    try { setFournisseurs(await fetchFournisseurs()) } catch { toast.error('Erreur de chargement') }
+    finally { setLoading(false) }
+  }, [])
 
-  useEffect(() => { load() }, [])
+  const loadCars = useCallback(async () => {
+    setLoading(true)
+    try { const c = await fetchCars(); setCars(c); setGroupes(await fetchGroupes()) } catch { toast.error('Erreur de chargement') }
+    finally { setLoading(false) }
+  }, [])
+
+  const loadTypesTech = useCallback(async () => {
+    setLoading(true)
+    try { setTypesTech(await fetchTypesTechniciens()) } catch { toast.error('Erreur de chargement') }
+    finally { setLoading(false) }
+  }, [])
+
+  const loadFamilles = useCallback(async () => {
+    setLoading(true)
+    try { setFamilles(await fetchFamilles()) } catch { toast.error('Erreur de chargement') }
+    finally { setLoading(false) }
+  }, [])
+
+  const loadSousFamilles = useCallback(async () => {
+    setLoading(true)
+    try { setSousFamilles(await fetchSousFamilles()); setFamilles(await fetchFamilles()) } catch { toast.error('Erreur de chargement') }
+    finally { setLoading(false) }
+  }, [])
+
+  const loadRapports = useCallback(async () => {
+    setLoading(true)
+    try { setGroupes(await fetchGroupes()); setSettings(await fetchSettings()) } catch { toast.error('Erreur de chargement') }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    if (section === 'fournisseurs') loadFournisseurs()
+    else if (section === 'cars') loadCars()
+    else if (section === 'types_techniciens') loadTypesTech()
+    else if (section === 'familles') loadFamilles()
+    else if (section === 'sous_familles') loadSousFamilles()
+    else if (section === 'rapports') loadRapports()
+  }, [section, loadFournisseurs, loadCars, loadTypesTech, loadFamilles, loadSousFamilles, loadRapports])
 
   const sections: { key: Section; label: string; icon: typeof Truck }[] = [
     { key: 'fournisseurs', label: 'Fournisseurs', icon: Building2 },
@@ -45,8 +90,16 @@ export default function GarageParametres() {
     { key: 'rapports', label: 'Rapports', icon: FileText },
   ]
 
-  // ── Modal state helpers ──
   const [modal, setModal] = useState<{ type: string; data: unknown } | null>(null)
+
+  const reload = useCallback(() => {
+    if (section === 'fournisseurs') loadFournisseurs()
+    else if (section === 'cars') loadCars()
+    else if (section === 'types_techniciens') loadTypesTech()
+    else if (section === 'familles') loadFamilles()
+    else if (section === 'sous_familles') loadSousFamilles()
+    else if (section === 'rapports') loadRapports()
+  }, [section, loadFournisseurs, loadCars, loadTypesTech, loadFamilles, loadSousFamilles, loadRapports])
 
   return (
     <div className="space-y-5 p-6">
@@ -67,12 +120,12 @@ export default function GarageParametres() {
         })}
       </div>
 
-      {section === 'fournisseurs' && <FournisseursSection data={fournisseurs} loading={loading} onReload={load} modal={modal} setModal={setModal} />}
-      {section === 'cars' && <CarsSection data={cars} groupes={groupes} loading={loading} onReload={load} modal={modal} setModal={setModal} />}
-      {section === 'types_techniciens' && <TypesTechSection data={typesTech} loading={loading} onReload={load} modal={modal} setModal={setModal} />}
-      {section === 'familles' && <FamillesSection data={familles} loading={loading} onReload={load} modal={modal} setModal={setModal} />}
-      {section === 'sous_familles' && <SousFamillesSection data={sousFamilles} familles={familles} loading={loading} onReload={load} modal={modal} setModal={setModal} />}
-      {section === 'rapports' && <GarageReports groupes={groupes} settings={settings} onReload={load} />}
+      {section === 'fournisseurs' && <FournisseursSection data={fournisseurs} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
+      {section === 'cars' && <CarsSection data={cars} groupes={groupes} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
+      {section === 'types_techniciens' && <TypesTechSection data={typesTech} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
+      {section === 'familles' && <FamillesSection data={familles} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
+      {section === 'sous_familles' && <SousFamillesSection data={sousFamilles} familles={familles} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
+      {section === 'rapports' && <GarageReports groupes={groupes} settings={settings} onReload={reload} />}
     </div>
   )
 }
