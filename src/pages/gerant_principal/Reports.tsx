@@ -123,6 +123,9 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     } catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
   }
 
+  const isTireReport = reportType === 'pneus_michelin' || reportType === 'pneus_long_march'
+  const tireLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'LONG-MARCH'
+
   // ── PDF generation ──
   const generatePDF = () => {
     const doc = new jsPDF()
@@ -138,13 +141,27 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       commandes_groupe: 'Point des nouvelles pièces de commande par groupe',
     }
 
-    let y = addReportHeader(doc, {
-      title: titles[reportType],
-      subtitle: filters.groupeId ? `Groupe : ${companies.find(c => c.id === filters.groupeId)?.name ?? propGroupes.find(g => g.id === filters.groupeId)?.nom ?? '—'}` : undefined,
-      userName: user?.full_name ?? '—',
-      dateFrom: filters.dateFrom,
-      dateTo: filters.dateTo,
-    }, pw)
+    let y: number
+    if (isTireReport) {
+      const tireTitle = reportType === 'pneus_michelin'
+        ? 'FICHE DE POINT DES PNEUS MICHELINS (GARAGE-SBTA)'
+        : 'FICHE DE POINT DES PNEUS LONG-MARCH (GARAGE-SBTA)'
+      doc.setFillColor(255, 232, 166); doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.8)
+      doc.rect(margin, 12, contentW, 10, 'FD')
+      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20)
+      doc.text(tireTitle, pw / 2, 19, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal')
+      doc.text(`Période du ${formatDate(filters.dateFrom)} au ${formatDate(filters.dateTo)}`, pw / 2, 29, { align: 'center' })
+      y = 35
+    } else {
+      y = addReportHeader(doc, {
+        title: titles[reportType],
+        subtitle: filters.groupeId ? `Groupe : ${companies.find(c => c.id === filters.groupeId)?.name ?? propGroupes.find(g => g.id === filters.groupeId)?.nom ?? '—'}` : undefined,
+        userName: user?.full_name ?? '—',
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+      }, pw)
+    }
 
     if (reportType === 'pieces_groupe') {
       const cols = [margin, margin + 8, margin + contentW * 0.46, margin + contentW * 0.60, margin + contentW * 0.80]
@@ -189,57 +206,77 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     }
 
     if (reportType === 'pneus_michelin' || reportType === 'pneus_long_march') {
-      const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'
+      const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'LONG-MARCH'
       const colDate = margin
-      const colDesign = margin + contentW * 0.18
+      const colLibelle = margin + contentW * 0.18
+      const colCar = margin + contentW * 0.38
       const colQty = margin + contentW * 0.62
       const colPrix = margin + contentW * 0.80
       const colMontant = pw - margin
       let totalQty = 0; let totalMontant = 0
 
       for (const [gname, items] of Object.entries(grouped)) {
-        y = ensureSpace(doc, y, 30, ph, pw)
-        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
-        doc.text(`GROUPE : ${gname}`, margin, y); y += 6
+        y = ensureSpace(doc, y, 28, ph, pw)
+        doc.setFillColor(255, 232, 166); doc.setDrawColor(0, 0, 0); doc.rect(margin, y - 4, contentW, 7, 'FD')
+        doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20)
+        doc.text(`GROUPE ${gname}`, margin + 2, y + 1); y += 7
 
-        let subQty = 0; let subMontant = 0
-        for (const { registration, items: carItems } of groupItemsByCar(items as GaragePneu[])) {
-          y = ensureSpace(doc, y, 18, ph, pw)
-          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, contentW, 6, 'F')
-          doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
-          doc.text(`CAR : ${registration}`, margin + 2, y); y += 5
-          doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
-          doc.text('Date', colDate, y); doc.text('Désignation', colDesign, y)
-          drawPdfRight(doc, 'Qté', colQty, y); drawPdfRight(doc, 'Prix unit.', colPrix, y); drawPdfRight(doc, 'Montant', colMontant, y)
-          y += 3; doc.line(margin, y, pw - margin, y); y += 4
-          doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
-          carItems.forEach(p => {
-            y = ensureSpace(doc, y, 6, ph, pw)
-            doc.text(formatDate(p.date), colDate, y)
-            doc.text(typeLabel, colDesign, y, { max_width: colQty - colDesign - 4 })
-            drawPdfRight(doc, String(p.quantite), colQty, y)
-            drawPdfRight(doc, formatPdfAmount(p.prix_unitaire), colPrix, y)
-            drawPdfRight(doc, formatPdfAmount(p.montant), colMontant, y)
-            subQty += p.quantite; subMontant += Number(p.montant); y += 5
-          })
-        }
-        y = ensureSpace(doc, y, 10, ph, pw)
-        doc.setFont('helvetica', 'bold'); doc.setTextColor(11, 116, 57)
-        drawPdfRight(doc, `Sous-total quantité : ${subQty}`, colQty, y)
-        drawPdfRight(doc, `TOTAL ${gname} : ${formatPdfAmount(subMontant)}`, pw - margin, y)
-        totalQty += subQty; totalMontant += subMontant; y += 8
+        const groupItems = items as GaragePneu[]
+        let groupQty = 0; let groupMontant = 0
+        y = ensureSpace(doc, y, 18, ph, pw)
+        doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 40, 70)
+        doc.rect(margin, y - 4, contentW, 12)
+        doc.line(colLibelle, y - 4, colLibelle, y + 8); doc.line(colCar, y - 4, colCar, y + 8)
+        doc.line(colQty, y - 4, colQty, y + 8); doc.line(colPrix, y - 4, colPrix, y + 8)
+        doc.line(colMontant, y - 4, colMontant, y + 8)
+        doc.text('DATES', margin + 2, y + 3)
+        doc.text('DESIGNATIONS', colLibelle + 2, y)
+        doc.text('LIBELLES', colLibelle + 2, y + 5)
+        doc.text('N° DE CARS', colCar + 2, y + 5)
+        drawPdfRight(doc, 'QTE', colQty, y + 3)
+        drawPdfRight(doc, 'P.UNITAIRE', colPrix, y + 3)
+        drawPdfRight(doc, 'MONTANTS', colMontant, y + 3)
+        y += 12
+
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(20, 20, 20)
+        groupItems.forEach(p => {
+          y = ensureSpace(doc, y, 6, ph, pw)
+          doc.rect(margin, y - 4, contentW, 6)
+          doc.line(colLibelle, y - 4, colLibelle, y + 2); doc.line(colCar, y - 4, colCar, y + 2)
+          doc.line(colQty, y - 4, colQty, y + 2); doc.line(colPrix, y - 4, colPrix, y + 2); doc.line(colMontant, y - 4, colMontant, y + 2)
+          doc.text(formatDate(p.date), margin + 2, y)
+          doc.text(typeLabel, colLibelle + 2, y)
+          doc.text(p.car?.registration_number ?? '—', colCar + 2, y)
+          drawPdfRight(doc, String(p.quantite), colQty, y)
+          drawPdfRight(doc, formatPdfAmount(p.prix_unitaire), colPrix, y)
+          drawPdfRight(doc, formatPdfAmount(p.montant), colMontant, y)
+          groupQty += p.quantite; groupMontant += Number(p.montant); y += 6
+        })
+
+        y = ensureSpace(doc, y, 9, ph, pw)
+        doc.setFont('helvetica', 'bold'); doc.setFillColor(255, 226, 204)
+        doc.rect(colQty, y - 4, colMontant - colQty, 8, 'FD')
+        doc.setTextColor(20, 20, 20)
+        drawPdfRight(doc, String(groupQty), colQty - 2, y + 1)
+        doc.text('TOTAL', colQty + 2, y + 1)
+        drawPdfRight(doc, formatPdfAmount(groupMontant), colMontant - 2, y + 1)
+        totalQty += groupQty; totalMontant += groupMontant; y += 10
       }
 
-      // Récap
-      y = ensureSpace(doc, y, 30, ph, pw)
-      y += 4; doc.line(margin, y, pw - margin, y); y += 6
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
-      doc.text('RÉCAPITULATIF', margin, y); y += 6
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
-      doc.text(`Pneus sortis (total) : ${totalQty} pièces`, margin, y); y += 5
-      doc.text(`Montant total : ${formatPdfAmount(totalMontant)}`, margin, y); y += 5
-      const stockPneu = reportType === 'pneus_michelin' ? 'Voir gestion stock' : 'Voir gestion stock'
-      doc.text(`Stock actuel : ${stockPneu}`, margin, y)
+      y = ensureSpace(doc, y, 35, ph, pw)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(20, 20, 20)
+      doc.setFillColor(255, 255, 255); doc.rect(margin, y, contentW * 0.34, 18, 'FD')
+      doc.setFillColor(255, 226, 204); doc.rect(margin, y + 6, contentW * 0.34, 6, 'FD'); doc.rect(margin, y + 12, contentW * 0.34, 6, 'FD')
+      doc.text('ARRIVAGE ACTUEL = — pcs', margin + 2, y + 4)
+      doc.text(`PNEUS SORTIS = ${totalQty} pcs`, margin + 2, y + 10)
+      doc.text('STOCK ACTUEL = — pcs', margin + 2, y + 16)
+
+      const totalX = margin + contentW * 0.62
+      doc.setFillColor(255, 246, 0); doc.rect(totalX, y, pw - margin - totalX, 9, 'FD')
+      doc.setFontSize(10); doc.setTextColor(20, 40, 70)
+      drawPdfRight(doc, `TOTAUX ${formatPdfAmount(totalMontant)}`, pw - margin - 2, y + 6)
+      doc.setFontSize(8); doc.setTextColor(20, 20, 20)
+      doc.text(`Fait à Abidjan, le ${formatDate(new Date())}`, pw / 2, y + 25, { align: 'center' })
     }
 
     if (reportType === 'commandes_groupe') {
@@ -386,6 +423,77 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         <div className="p-5">
           {Object.keys(grouped).length === 0 ? (
             <p className="text-center py-12 text-[#8AA898]">Aucune donnée pour cette période</p>
+          ) : isTireReport ? (
+            <div className="space-y-4">
+              {Object.entries(grouped).map(([gname, items]) => {
+                const groupItems = items as GaragePneu[]
+                const groupQty = groupItems.reduce((s, i) => s + i.quantite, 0)
+                const groupMontant = groupItems.reduce((s, i) => s + Number(i.montant), 0)
+                return (
+                  <div key={gname} className="border border-gray-300 rounded overflow-hidden">
+                    <div className="bg-[#FFE8A6] border-b-2 border-black px-3 py-2 font-bold text-gray-900 uppercase">
+                      GROUPE {gname}
+                    </div>
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="border-b-2 border-gray-700 bg-gray-50 text-gray-800">
+                          <th className="px-2 py-1.5 text-center font-bold border-r border-gray-300" rowSpan={2}>DATES</th>
+                          <th className="px-2 py-1 text-center font-bold border-r border-gray-300" colSpan={2}>DESIGNATIONS</th>
+                          <th className="px-2 py-1.5 text-center font-bold border-r border-gray-300" rowSpan={2}>QTE</th>
+                          <th className="px-2 py-1.5 text-center font-bold border-r border-gray-300" rowSpan={2}>P.UNITAIRE</th>
+                          <th className="px-2 py-1.5 text-center font-bold" rowSpan={2}>MONTANTS</th>
+                        </tr>
+                        <tr className="border-b border-gray-300 bg-gray-50 text-gray-700 text-xs">
+                          <th className="px-2 py-1 text-center font-semibold border-r border-gray-300">LIBELLES</th>
+                          <th className="px-2 py-1 text-center font-semibold border-r border-gray-300">N° DE CARS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupItems.map(p => (
+                          <tr key={p.id} className="border-b border-gray-200 text-gray-900">
+                            <td className="px-2 py-1 text-center border-r border-gray-200">{formatDate(p.date)}</td>
+                            <td className="px-2 py-1 border-r border-gray-200">{tireLabel}</td>
+                            <td className="px-2 py-1 border-r border-gray-200">{p.car?.registration_number ?? '—'}</td>
+                            <td className="px-2 py-1 text-center border-r border-gray-200">{p.quantite}</td>
+                            <td className="px-2 py-1 text-right border-r border-gray-200">{formatFCFA(p.prix_unitaire)}</td>
+                            <td className="px-2 py-1 text-right font-bold">{formatFCFA(p.montant)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#FFE2CC] border-t-2 border-gray-700 font-bold text-gray-900">
+                          <td className="px-2 py-1.5 text-right border-r border-gray-300" colSpan={3}>TOTAL</td>
+                          <td className="px-2 py-1.5 text-center border-r border-gray-300">{groupQty}</td>
+                          <td className="px-2 py-1.5 border-r border-gray-300"></td>
+                          <td className="px-2 py-1.5 text-right">{formatFCFA(groupMontant)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )
+              })}
+              {(() => {
+                const allItems = Object.values(grouped).flat() as GaragePneu[]
+                const totalQty = allItems.reduce((s, i) => s + i.quantite, 0)
+                const totalMontant = allItems.reduce((s, i) => s + Number(i.montant), 0)
+                return (
+                  <div className="mt-4 border-t-2 border-gray-300 pt-4">
+                    <div className="flex justify-between items-end">
+                      <div className="space-y-1 text-sm text-gray-700">
+                        <div className="px-3 py-1 bg-gray-100 rounded">ARRIVAGE ACTUEL = — pcs</div>
+                        <div className="px-3 py-1 bg-[#FFE2CC] rounded font-semibold">PNEUS SORTIS = {totalQty} pcs</div>
+                        <div className="px-3 py-1 bg-gray-100 rounded">STOCK ACTUEL = — pcs</div>
+                      </div>
+                      <div className="bg-yellow-400 border border-black px-4 py-2 text-right">
+                        <div className="text-xs font-semibold text-gray-700 uppercase">Totaux</div>
+                        <div className="text-lg font-bold text-gray-900">{formatFCFA(totalMontant)}</div>
+                      </div>
+                    </div>
+                    <p className="text-center text-xs text-gray-500 mt-3">Fait à Abidjan, le {formatDate(new Date())}</p>
+                  </div>
+                )
+              })()}
+            </div>
           ) : Object.entries(grouped).map(([gname, items]) => (
             <div key={gname} className="mb-6">
               <div className="bg-[#B8B8B8] px-3 py-2 font-bold text-[#1A2E22]">GROUPE : {gname}</div>
@@ -398,7 +506,6 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
                         <tr className="border-y border-[#9CA3AF] text-[#1A2E22]">
                           <th className="px-2 py-1 text-left font-medium w-10">#</th>
                           {reportType === 'pieces_groupe' && <th className="px-2 py-1 text-left font-medium">Pièces</th>}
-                          {reportType === 'pneus_michelin' || reportType === 'pneus_long_march' ? <th className="px-2 py-1 text-left font-medium">Désignation</th> : null}
                           {reportType === 'commandes_groupe' && <th className="px-2 py-1 text-left font-medium">Désignation/Type</th>}
                           {reportType === 'pieces_groupe' && <th className="px-2 py-1 text-right font-medium">Quantité</th>}
                           {reportType !== 'pieces_groupe' && <th className="px-2 py-1 text-right font-medium">Qté</th>}
@@ -411,7 +518,6 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
                           <tr key={item.id} className="border-b border-[#E5E7EB] text-[#1A2E22]">
                             <td className="px-2 py-1">{i + 1}</td>
                             {reportType === 'pieces_groupe' && <td className="px-2 py-1">{(item as GarageSortiePiece).piece?.nom ?? '—'}{(item as GarageSortiePiece).piece?.marque ? ` ${(item as GarageSortiePiece).piece?.marque}` : ''}</td>}
-                            {reportType === 'pneus_michelin' || reportType === 'pneus_long_march' ? <td className="px-2 py-1">{reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'}</td> : null}
                             {reportType === 'commandes_groupe' && <td className="px-2 py-1">{(item as GarageCommandePiece).designation}</td>}
                             <td className="px-2 py-1 text-right">{item.quantite}</td>
                             <td className="px-2 py-1 text-right">{formatFCFA(item.prix_unitaire)}</td>
