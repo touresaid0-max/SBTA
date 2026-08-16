@@ -24,6 +24,7 @@ interface KPIs {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock?: number;
+  expense_garage_pieces?: number;
   vehicle_expenses_amount: number;
   fuel_carburant_comptable: number;
   trip_count: number;
@@ -123,12 +124,12 @@ export default function GestionnaireDashboard() {
 
   // Résultat brut = Résultat guichetier - Carburant cuve - Réparations - Charges achat - Charge carburant comptable - Autres
   const brutResult = guichetierResult - (kpis
-    ? kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0)
+    ? kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0) + (kpis.expense_garage_pieces ?? 0)
     : 0);
   const margin = kpis && kpis.total_revenue > 0 ? (brutResult / kpis.total_revenue) * 100 : 0;
 
   const totalExpenses = kpis
-    ? guichetierCharges + kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0)
+    ? guichetierCharges + kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0) + (kpis.expense_garage_pieces ?? 0)
     : 0;
 
   const topBuses = [...buses].sort((a, b) => b.margin - a.margin).slice(0, 5);
@@ -144,6 +145,7 @@ export default function GestionnaireDashboard() {
     { name: 'Charge carburant (agent)',value: kpis.fuel_carburant_comptable ?? 0, color: '#F59E0B' },
     { name: 'Articles stock',             value: kpis.expense_autres,                color: '#8B5CF6' },
     { name: 'Charge stock',               value: kpis.expense_charge_stock ?? 0,     color: '#7C3AED' },
+    { name: 'Sorties pieces garage',      value: kpis.expense_garage_pieces ?? 0,    color: '#B45309' },
   ].filter(e => e.value > 0) : [];
 
   const chartData = series.map(d => ({
@@ -229,6 +231,7 @@ export default function GestionnaireDashboard() {
             { label: 'Charge carburant (agent)', val: kpis?.fuel_carburant_comptable ?? 0,      color: '#F59E0B' },
             { label: 'Articles stock',              val: kpis?.expense_autres ?? 0,                color: '#8B5CF6' },
             { label: 'Charge stock',                val: kpis?.expense_charge_stock ?? 0,          color: '#7C3AED' },
+            { label: 'Sorties pieces garage',       val: kpis?.expense_garage_pieces ?? 0,         color: '#B45309' },
           ].map(item => (
             <div key={item.label} className="rounded-xl border p-4" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
               <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{item.label}</p>

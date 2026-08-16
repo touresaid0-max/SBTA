@@ -98,6 +98,7 @@ interface BusRow {
   fuel_enlev: number;
   expense_reparation: number;
   expense_charge_stock: number;
+  expense_garage_pieces: number;
   expense_autres: number;
   vehicle_exp: number;
   fuel_carburant_comptable: number;
@@ -228,10 +229,10 @@ export default function DAFConsolidatedReport() {
           const cc_carburant = safe(r.cc_carburant), cc_ration = safe(r.cc_ration), cc_peage = safe(r.cc_peage);
           const cc_autres = safe(r.cc_autres);
           const fuel_enlev = safe(r.fuel_enlev), expense_reparation = safe(r.expense_reparation);
-          const expense_charge_stock = safe(r.expense_charge_stock), expense_autres = safe(r.expense_autres);
+          const expense_charge_stock = safe(r.expense_charge_stock), expense_garage_pieces = safe(r.expense_garage_pieces), expense_autres = safe(r.expense_autres);
           const vehicle_exp = safe(r.vehicle_exp), fuel_carburant_comptable = safe(r.fuel_carburant_comptable);
           const variable_charges = cc_carburant + cc_ration + cc_peage + cc_autres + fuel_enlev
-            + expense_reparation + expense_charge_stock + expense_autres + vehicle_exp + fuel_carburant_comptable;
+            + expense_reparation + expense_charge_stock + expense_garage_pieces + expense_autres + vehicle_exp + fuel_carburant_comptable;
           const revenue = safe(r.revenue);
           return {
             bus_id: String(r.bus_id ?? ''),
@@ -239,7 +240,7 @@ export default function DAFConsolidatedReport() {
             company_name: String(r.company_name ?? ''),
             trip_count: safe(r.trip_count), revenue,
             cc_carburant, cc_ration, cc_peage, cc_autres, fuel_enlev,
-            expense_reparation, expense_charge_stock, expense_autres, vehicle_exp, fuel_carburant_comptable,
+            expense_reparation, expense_charge_stock, expense_garage_pieces, expense_autres, vehicle_exp, fuel_carburant_comptable,
             variable_charges, ebe: revenue - variable_charges,
           } as BusRow;
         }));
@@ -402,7 +403,7 @@ export default function DAFConsolidatedReport() {
         Rang: i + 1, Immatriculation: b.registration_number, Societe: b.company_name,
         Voyages: b.trip_count, Recettes: b.revenue, Carburant: b.cc_carburant + b.fuel_enlev + b.fuel_carburant_comptable,
         Peages: b.cc_peage, Rations: b.cc_ration, Reparations: b.expense_reparation,
-        'Charge stock': b.expense_charge_stock, Autres: b.expense_autres + b.vehicle_exp,
+        'Charge stock': b.expense_charge_stock, 'Sorties pieces garage': b.expense_garage_pieces, Autres: b.expense_autres + b.vehicle_exp,
         'Total CV': b.variable_charges, 'EBE bus': b.ebe,
         'Marge %': b.revenue > 0 ? ((b.ebe / b.revenue) * 100).toFixed(1) + '%' : '--',
       }))
@@ -581,7 +582,7 @@ export default function DAFConsolidatedReport() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                  {['Immat', 'Societe', 'Voyages', 'Recettes', 'Carburant', 'Peages', 'Rations', 'Reparations', 'Ch. stock', 'Autres CV', 'Total CV', 'EBE Bus', 'Marge %'].map(h => (
+                  {['Immat', 'Societe', 'Voyages', 'Recettes', 'Carburant', 'Peages', 'Rations', 'Reparations', 'Ch. stock', 'SP garage', 'Autres CV', 'Total CV', 'EBE Bus', 'Marge %'].map(h => (
                     <th key={h} className="text-left px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                   ))}
                 </tr>
@@ -601,6 +602,7 @@ export default function DAFConsolidatedReport() {
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#6366F1' }}>{fmtN(b.cc_ration)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#EF4444' }}>{fmtN(b.expense_reparation)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#7C3AED' }}>{fmtN(b.expense_charge_stock)}</td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: '#B45309' }}>{fmtN(b.expense_garage_pieces)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtN(b.expense_autres + b.vehicle_exp)}</td>
                       <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmtN(b.variable_charges)}</td>
                       <td className="px-3 py-2.5 text-xs font-bold" style={{ color: col }}>{fmtN(b.ebe)}</td>
@@ -611,7 +613,7 @@ export default function DAFConsolidatedReport() {
                   );
                 })}
                 {rankedBuses.length === 0 && (
-                  <tr><td colSpan={13} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnee sur cette periode</td></tr>
+                  <tr><td colSpan={14} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnee sur cette periode</td></tr>
                 )}
               </tbody>
             </table>

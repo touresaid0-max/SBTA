@@ -37,6 +37,7 @@ interface KPIs {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock?: number;
+  expense_garage_pieces?: number;
   vehicle_expenses_amount: number;
   fuel_carburant_comptable: number;
   trip_count: number;
@@ -59,6 +60,7 @@ interface CompanyRow {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock: number;
+  expense_garage_pieces: number;
   vehicle_exp: number;
   fuel_carburant_comptable: number;
   total_expense: number;
@@ -83,6 +85,7 @@ interface BusRow {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock: number;
+  expense_garage_pieces: number;
   vehicle_exp: number;
   fuel_carburant_comptable: number;
   total_expense: number;
@@ -178,6 +181,7 @@ export default function DAFDashboard() {
         expense_reparation: Number(raw.expense_reparation ?? 0),
         expense_autres: Number(raw.expense_autres ?? 0),
         expense_charge_stock: Number(raw.expense_charge_stock ?? 0),
+        expense_garage_pieces: Number(raw.expense_garage_pieces ?? 0),
         vehicle_expenses_amount: Number(raw.vehicle_expenses_amount ?? 0),
         fuel_carburant_comptable: Number(raw.fuel_carburant_comptable ?? 0),
         trip_count: Number(raw.trip_count ?? 0),
@@ -202,6 +206,7 @@ export default function DAFDashboard() {
           expense_reparation: Number(r.expense_reparation ?? 0),
           expense_autres: Number(r.expense_autres ?? 0),
           expense_charge_stock: Number(r.expense_charge_stock ?? 0),
+          expense_garage_pieces: Number(r.expense_garage_pieces ?? 0),
           vehicle_exp: Number(r.vehicle_exp ?? 0),
           fuel_carburant_comptable: Number(r.fuel_carburant_comptable ?? 0),
           trip_count: Number(r.trip_count ?? 0),
@@ -211,7 +216,7 @@ export default function DAFDashboard() {
           margin: 0,
         };
         row.total_expense = row.cc_carburant + row.cc_ration + row.cc_peage + row.fuel_enlev
-          + row.expense_reparation + row.expense_autres + row.expense_charge_stock + row.vehicle_exp + row.fuel_carburant_comptable;
+          + row.expense_reparation + row.expense_autres + row.expense_charge_stock + row.expense_garage_pieces + row.vehicle_exp + row.fuel_carburant_comptable;
         row.margin = row.revenue - row.total_expense;
         return row;
       });
@@ -227,10 +232,11 @@ export default function DAFDashboard() {
         const expense_reparation = Number(r.expense_reparation ?? 0);
         const expense_autres = Number(r.expense_autres ?? 0);
         const expense_charge_stock = Number(r.expense_charge_stock ?? 0);
+        const expense_garage_pieces = Number(r.expense_garage_pieces ?? 0);
         const vehicle_exp = Number(r.vehicle_exp ?? 0);
         const fuel_carburant_comptable = Number(r.fuel_carburant_comptable ?? 0);
         const total_expense = cc_carburant + cc_ration + cc_peage + fuel_enlev
-          + expense_reparation + expense_autres + expense_charge_stock + vehicle_exp + fuel_carburant_comptable;
+          + expense_reparation + expense_autres + expense_charge_stock + expense_garage_pieces + vehicle_exp + fuel_carburant_comptable;
         return {
           bus_id: r.bus_id as string,
           registration_number: r.registration_number as string,
@@ -239,7 +245,7 @@ export default function DAFDashboard() {
           company_name: r.company_name as string,
           trip_count: Number(r.trip_count ?? 0),
           revenue, cc_carburant, cc_ration, cc_peage, fuel_enlev,
-          expense_reparation, expense_autres, expense_charge_stock, vehicle_exp, fuel_carburant_comptable,
+          expense_reparation, expense_autres, expense_charge_stock, expense_garage_pieces, vehicle_exp, fuel_carburant_comptable,
           total_expense, margin: revenue - total_expense,
         };
       }));
@@ -264,11 +270,11 @@ export default function DAFDashboard() {
   const guichetResult  = kpis ? kpis.total_revenue - guichetCharges : 0;
   const totalExpenses  = kpis
     ? guichetCharges + kpis.fuel_enlevements_amount + kpis.expense_reparation
-      + kpis.expense_autres + (kpis.expense_charge_stock ?? 0) + kpis.vehicle_expenses_amount + kpis.fuel_carburant_comptable
+      + kpis.expense_autres + (kpis.expense_charge_stock ?? 0) + (kpis.expense_garage_pieces ?? 0) + kpis.vehicle_expenses_amount + kpis.fuel_carburant_comptable
     : 0;
   const brutResult = guichetResult - (kpis
     ? kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.expense_autres
-      + (kpis.expense_charge_stock ?? 0) + kpis.vehicle_expenses_amount + kpis.fuel_carburant_comptable
+      + (kpis.expense_charge_stock ?? 0) + (kpis.expense_garage_pieces ?? 0) + kpis.vehicle_expenses_amount + kpis.fuel_carburant_comptable
     : 0);
   const marginPct = kpis && kpis.total_revenue > 0 ? (brutResult / kpis.total_revenue) * 100 : 0;
 
@@ -288,6 +294,7 @@ export default function DAFDashboard() {
     { name: 'Autres dép.',      val: kpis.expense_reparation,         color: '#EF4444' },
     { name: 'Articles stock',   val: kpis.expense_autres,             color: '#8B5CF6' },
     { name: 'Charge stock',    val: kpis.expense_charge_stock ?? 0,  color: '#7C3AED' },
+    { name: 'Sorties pieces garage', val: kpis.expense_garage_pieces ?? 0, color: '#B45309' },
     { name: 'Charges achat',    val: kpis.vehicle_expenses_amount,    color: '#06B6D4' },
     { name: 'Carb. agent',      val: kpis.fuel_carburant_comptable,   color: '#D97706' },
   ].filter(e => e.val > 0) : [];
@@ -317,6 +324,7 @@ export default function DAFDashboard() {
       'Autres dépenses (comptable)': kpis?.expense_reparation ?? 0,
       'Articles stock (comptable)': kpis?.expense_autres ?? 0,
       'Charge stock': kpis?.expense_charge_stock ?? 0,
+      'Sorties pieces garage': kpis?.expense_garage_pieces ?? 0,
       'Charges achat': kpis?.vehicle_expenses_amount ?? 0,
       'Charge carburant (agent)': kpis?.fuel_carburant_comptable ?? 0,
       'Total charges': totalExpenses,
@@ -332,7 +340,7 @@ export default function DAFDashboard() {
         Recettes: c.revenue, 'Total charges': c.total_expense, Marge: c.margin,
         'Carb. compl.': c.cc_carburant, Rations: c.cc_ration, Péages: c.cc_peage,
         'Carb. cuve': c.fuel_enlev, 'Autres dép.': c.expense_reparation,
-        'Articles stock': c.expense_autres, 'Charge stock': c.expense_charge_stock, 'Charges achat': c.vehicle_exp,
+        'Articles stock': c.expense_autres, 'Charge stock': c.expense_charge_stock, 'Sorties pieces garage': c.expense_garage_pieces, 'Charges achat': c.vehicle_exp,
         'Carb. agent': c.fuel_carburant_comptable,
         Voyages: c.trip_count, Bus: c.bus_count, Chauffeurs: c.driver_count,
       }))
@@ -343,7 +351,7 @@ export default function DAFDashboard() {
         Voyages: b.trip_count, Recettes: b.revenue, 'Total charges': b.total_expense, Marge: b.margin,
         'Carb. compl.': b.cc_carburant, Rations: b.cc_ration, Péages: b.cc_peage,
         'Carb. cuve': b.fuel_enlev, 'Autres dép.': b.expense_reparation,
-        'Articles stock': b.expense_autres, 'Charge stock': b.expense_charge_stock, 'Charges achat': b.vehicle_exp,
+        'Articles stock': b.expense_autres, 'Charge stock': b.expense_charge_stock, 'Sorties pieces garage': b.expense_garage_pieces, 'Charges achat': b.vehicle_exp,
         'Carb. agent': b.fuel_carburant_comptable,
       }))
     ), 'Par bus');
@@ -467,6 +475,7 @@ export default function DAFDashboard() {
             { label: 'Autres dép.',   val: kpis?.expense_reparation ?? 0,      color: '#EF4444', icon: <Wrench className="w-3.5 h-3.5" /> },
             { label: 'Articles stock',val: kpis?.expense_autres ?? 0,          color: '#8B5CF6', icon: <Package className="w-3.5 h-3.5" /> },
             { label: 'Charge stock', val: kpis?.expense_charge_stock ?? 0,   color: '#7C3AED', icon: <Package className="w-3.5 h-3.5" /> },
+            { label: 'Sorties pieces garage', val: kpis?.expense_garage_pieces ?? 0, color: '#B45309', icon: <Package className="w-3.5 h-3.5" /> },
             { label: 'Charges achat', val: kpis?.vehicle_expenses_amount ?? 0, color: '#06B6D4', icon: <ShoppingCart className="w-3.5 h-3.5" /> },
             { label: 'Carb. agent',   val: kpis?.fuel_carburant_comptable ?? 0,color: '#D97706', icon: <Fuel className="w-3.5 h-3.5" /> },
           ].map(k => (
@@ -595,6 +604,7 @@ export default function DAFDashboard() {
                   { label: '  Autres dép. (comptable)',   val: kpis?.expense_reparation ?? 0,      bold: false, colorKey: 'exp' },
                   { label: '  Articles stock (comptable)',val: kpis?.expense_autres ?? 0,          bold: false, colorKey: 'exp' },
                   { label: '  Charge stock (GP)',         val: kpis?.expense_charge_stock ?? 0,    bold: false, colorKey: 'exp' },
+                  { label: '  Sorties pieces garage',     val: kpis?.expense_garage_pieces ?? 0,   bold: false, colorKey: 'exp' },
                   { label: '  Charges achat',             val: kpis?.vehicle_expenses_amount ?? 0, bold: false, colorKey: 'exp' },
                   { label: '  Charge carburant (agent)',  val: kpis?.fuel_carburant_comptable ?? 0,bold: false, colorKey: 'exp' },
                   { label: 'Résultat brut',               val: brutResult,                         bold: true,  colorKey: 'brut', res: brutResult },
@@ -628,7 +638,7 @@ export default function DAFDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                  {['Société', 'Recettes', 'Charges', 'Résultat', 'Marge %', 'Carb. cuve', 'Autres dép.', 'Articles stock', 'Charge stock', 'Charges achat', 'Voyages', 'Bus', 'Chauf.'].map(h => (
+                  {['Société', 'Recettes', 'Charges', 'Résultat', 'Marge %', 'Carb. cuve', 'Autres dép.', 'Articles stock', 'Charge stock', 'Sorties pieces garage', 'Charges achat', 'Voyages', 'Bus', 'Chauf.'].map(h => (
                     <th key={h} className="text-left px-3 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                   ))}
                 </tr>
@@ -667,6 +677,7 @@ export default function DAFDashboard() {
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#EF4444' }}>{fmtN(c.expense_reparation)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtN(c.expense_autres)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#7C3AED' }}>{fmtN(c.expense_charge_stock)}</td>
+                        <td className="px-3 py-2.5 text-xs" style={{ color: '#B45309' }}>{fmtN(c.expense_garage_pieces)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#06B6D4' }}>{fmtN(c.vehicle_exp)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>{c.trip_count}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>{c.bus_count}</td>
@@ -675,7 +686,7 @@ export default function DAFDashboard() {
                     </React.Fragment>
                   );
                 })}
-                {compRows.length === 0 && <tr><td colSpan={13} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                {compRows.length === 0 && <tr><td colSpan={14} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
               </tbody>
             </table>
           </div>
@@ -737,7 +748,7 @@ export default function DAFDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                    {['Bus', 'Société', 'Voyages', 'Recettes', 'Carb.compl.', 'Rations', 'Péages', 'Carb.cuve', 'Autres dép.', 'Art.stock', 'Ch.stock', 'Ch.achat', 'Carb.agent', 'Total ch.', 'Marge', 'Statut'].map(h => (
+                    {['Bus', 'Société', 'Voyages', 'Recettes', 'Carb.compl.', 'Rations', 'Péages', 'Carb.cuve', 'Autres dép.', 'Art.stock', 'Ch.stock', 'SP garage', 'Ch.achat', 'Carb.agent', 'Total ch.', 'Marge', 'Statut'].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                     ))}
                   </tr>
@@ -759,6 +770,7 @@ export default function DAFDashboard() {
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#EF4444' }}>{fmtN(b.expense_reparation)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtN(b.expense_autres)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#7C3AED' }}>{fmtN(b.expense_charge_stock)}</td>
+                        <td className="px-3 py-2.5 text-xs" style={{ color: '#B45309' }}>{fmtN(b.expense_garage_pieces)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#06B6D4' }}>{fmtN(b.vehicle_exp)}</td>
                         <td className="px-3 py-2.5 text-xs" style={{ color: '#D97706' }}>{fmtN(b.fuel_carburant_comptable)}</td>
                         <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmtN(b.total_expense)}</td>
@@ -770,7 +782,7 @@ export default function DAFDashboard() {
                       </tr>
                     );
                   })}
-                  {busRows.length === 0 && <tr><td colSpan={16} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                  {busRows.length === 0 && <tr><td colSpan={17} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -828,7 +840,7 @@ export default function DAFDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                    {['Société', 'Carb.compl.', 'Rations', 'Péages', 'Carb.cuve', 'Autres dép.', 'Articles stock', 'Charge stock', 'Charges achat', 'Carb.agent', 'Total charges'].map(h => (
+                    {['Société', 'Carb.compl.', 'Rations', 'Péages', 'Carb.cuve', 'Autres dép.', 'Articles stock', 'Charge stock', 'Sorties pieces garage', 'Charges achat', 'Carb.agent', 'Total charges'].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                     ))}
                   </tr>
@@ -844,12 +856,13 @@ export default function DAFDashboard() {
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#EF4444' }}>{fmtN(c.expense_reparation)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtN(c.expense_autres)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#7C3AED' }}>{fmtN(c.expense_charge_stock)}</td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: '#B45309' }}>{fmtN(c.expense_garage_pieces)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#06B6D4' }}>{fmtN(c.vehicle_exp)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#D97706' }}>{fmtN(c.fuel_carburant_comptable)}</td>
                       <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmtN(c.total_expense)}</td>
                     </tr>
                   ))}
-                  {compRows.length === 0 && <tr><td colSpan={11} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                  {compRows.length === 0 && <tr><td colSpan={12} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
                 </tbody>
               </table>
             </div>

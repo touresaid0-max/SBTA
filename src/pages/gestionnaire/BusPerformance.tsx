@@ -27,6 +27,7 @@ interface BusRow {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock: number;
+  expense_garage_pieces: number;
   vehicle_exp: number;
   fuel_carburant_comptable: number;
   total_expense: number;
@@ -75,6 +76,7 @@ function parseRow(raw: Record<string, unknown>): BusRow {
     expense_reparation: Number(raw.expense_reparation ?? 0),
     expense_autres: Number(raw.expense_autres ?? 0),
     expense_charge_stock: Number(raw.expense_charge_stock ?? 0),
+    expense_garage_pieces: Number(raw.expense_garage_pieces ?? 0),
     vehicle_exp: Number(raw.vehicle_exp ?? 0),
     fuel_carburant_comptable: Number(raw.fuel_carburant_comptable ?? 0),
     total_expense: Number(raw.total_expense ?? 0),

@@ -36,6 +36,7 @@ interface CompanyRow {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock: number;
+  expense_garage_pieces: number;
   vehicle_exp: number;
   fuel_carburant_comptable: number;
   total_expense: number;
@@ -84,10 +85,11 @@ function parseRow(r: Record<string, unknown>): CompanyRow {
   const expense_reparation = safe(r.expense_reparation);
   const expense_autres = safe(r.expense_autres);
   const expense_charge_stock = safe(r.expense_charge_stock);
+  const expense_garage_pieces = safe(r.expense_garage_pieces);
   const vehicle_exp = safe(r.vehicle_exp);
   const fuel_carburant_comptable = safe(r.fuel_carburant_comptable);
   const total_expense = cc_carburant + cc_ration + cc_peage + cc_autres + fuel_enlev
-    + expense_reparation + expense_autres + expense_charge_stock + vehicle_exp + fuel_carburant_comptable;
+    + expense_reparation + expense_autres + expense_charge_stock + expense_garage_pieces + vehicle_exp + fuel_carburant_comptable;
   return {
     company_id: String(r.company_id ?? ''),
     company_name: String(r.company_name ?? ''),
@@ -95,7 +97,7 @@ function parseRow(r: Record<string, unknown>): CompanyRow {
     parent_id: r.parent_id as string | null,
     is_group: Boolean(r.is_group),
     revenue, cc_carburant, cc_ration, cc_peage, cc_autres, fuel_enlev,
-    expense_reparation, expense_autres, expense_charge_stock, vehicle_exp, fuel_carburant_comptable,
+    expense_reparation, expense_autres, expense_charge_stock, expense_garage_pieces, vehicle_exp, fuel_carburant_comptable,
     total_expense, margin: revenue - total_expense,
     trip_count: safe(r.trip_count),
     bus_count: safe(r.bus_count),
@@ -265,6 +267,7 @@ export default function DAFFinancialReport() {
       'Ch. achat': c.vehicle_exp,
       'Art. stock': c.expense_autres,
       'Charge stock': c.expense_charge_stock,
+      'Sorties pieces garage': c.expense_garage_pieces,
     }));
     sheetData.push({
       'Societe': 'TOTAL CONSOLIDE',
@@ -277,7 +280,7 @@ export default function DAFFinancialReport() {
       'Rep. panne recues': totals.breakdown_received,
       'Rep. panne transferees': totals.breakdown_transferred,
       'Carb. BE': 0, 'Rations': 0, 'Peages': 0, 'Autres charges': 0, 'Carb. cuve': 0,
-      'Carb. agent': 0, 'Reparations': 0, 'Ch. achat': 0, 'Art. stock': 0, 'Charge stock': 0,
+      'Carb. agent': 0, 'Reparations': 0, 'Ch. achat': 0, 'Art. stock': 0, 'Charge stock': 0, 'Sorties pieces garage': 0,
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetData), 'Rapport financier');
 
@@ -533,6 +536,7 @@ export default function DAFFinancialReport() {
                   <SortTh label="Ch. achat"           field="vehicle_exp" />
                   <SortTh label="Art. stock"          field="expense_autres" />
                   <SortTh label="Charge stock"       field="expense_charge_stock" />
+                  <SortTh label="SP garage"          field="expense_garage_pieces" />
                 </tr>
               </thead>
               <tbody>
@@ -571,6 +575,7 @@ export default function DAFFinancialReport() {
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#06B6D4' }}>{fmtN(c.vehicle_exp)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtN(c.expense_autres)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#7C3AED' }}>{fmtN(c.expense_charge_stock)}</td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: '#B45309' }}>{fmtN(c.expense_garage_pieces)}</td>
                     </tr>
                   );
                 })}
@@ -595,7 +600,7 @@ export default function DAFFinancialReport() {
                 )}
 
                 {sorted.length === 0 && (
-                  <tr><td colSpan={18} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnee sur cette periode</td></tr>
+                  <tr><td colSpan={19} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnee sur cette periode</td></tr>
                 )}
               </tbody>
             </table>

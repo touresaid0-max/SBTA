@@ -41,6 +41,7 @@ interface BusRow {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock: number;
+  expense_garage_pieces: number;
   vehicle_exp: number;
   fuel_carburant_comptable: number;
   total_expense: number;
@@ -93,10 +94,11 @@ function parseBusRow(r: Record<string, unknown>): BusRow {
   const expense_reparation = safe(r.expense_reparation);
   const expense_autres = safe(r.expense_autres);
   const expense_charge_stock = safe(r.expense_charge_stock);
+  const expense_garage_pieces = safe(r.expense_garage_pieces);
   const vehicle_exp = safe(r.vehicle_exp);
   const fuel_carburant_comptable = safe(r.fuel_carburant_comptable);
   const total_expense = cc_carburant + cc_ration + cc_peage + fuel_enlev
-    + expense_reparation + expense_autres + expense_charge_stock + vehicle_exp + fuel_carburant_comptable;
+    + expense_reparation + expense_autres + expense_charge_stock + expense_garage_pieces + vehicle_exp + fuel_carburant_comptable;
   return {
     bus_id: String(r.bus_id ?? ''),
     registration_number: String(r.registration_number ?? ''),
@@ -108,7 +110,7 @@ function parseBusRow(r: Record<string, unknown>): BusRow {
     total_passengers: safe(r.total_passengers),
     avg_fill_rate: safe(r.avg_fill_rate),
     revenue, cc_carburant, cc_ration, cc_peage, fuel_enlev,
-    expense_reparation, expense_autres, expense_charge_stock, vehicle_exp, fuel_carburant_comptable,
+    expense_reparation, expense_autres, expense_charge_stock, expense_garage_pieces, vehicle_exp, fuel_carburant_comptable,
     total_expense, margin: revenue - total_expense,
     breakdown_received: safe(r.breakdown_received),
     breakdown_transferred: safe(r.breakdown_transferred),
@@ -231,6 +233,7 @@ export default function DAFBusPerformance() {
         Peages: b.cc_peage,
         'Autres charges': b.cc_ration + b.expense_autres + b.vehicle_exp,
         'Charge stock': b.expense_charge_stock,
+        'Sorties pieces garage': b.expense_garage_pieces,
         'Rep. panne recues': b.breakdown_received,
         'Rep. panne transferees': b.breakdown_transferred,
         Statut: perf(b.margin, b.revenue).label,
@@ -491,6 +494,7 @@ export default function DAFBusPerformance() {
                   <SortTh label="Peages"             field="cc_peage" />
                   <SortTh label="Autres ch."         field="expense_autres" />
                   <SortTh label="Charge stock"       field="expense_charge_stock" />
+                  <SortTh label="SP garage"          field="expense_garage_pieces" />
                   <SortTh label="Rep. panne"         field="breakdown_received" />
                   <th className="text-left px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>Statut</th>
                 </tr>
@@ -540,6 +544,7 @@ export default function DAFBusPerformance() {
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#14B8A6' }}>{fmtN(b.cc_peage)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtN(autresCharges)}</td>
                       <td className="px-3 py-2.5 text-xs" style={{ color: '#7C3AED' }}>{fmtN(b.expense_charge_stock)}</td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: '#B45309' }}>{fmtN(b.expense_garage_pieces)}</td>
                       <td className="px-3 py-2.5 text-xs">
                         <span style={{ color: '#0EA5E9' }}>{fmtN(b.breakdown_received)}</span>
                         {' / '}
@@ -555,7 +560,7 @@ export default function DAFBusPerformance() {
                   );
                 })}
                 {sorted.length === 0 && (
-                  <tr><td colSpan={17} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnee</td></tr>
+                  <tr><td colSpan={18} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnee</td></tr>
                 )}
               </tbody>
             </table>

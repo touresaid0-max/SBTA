@@ -21,6 +21,7 @@ interface KPIs {
   expense_reparation: number;
   expense_autres: number;
   expense_charge_stock?: number;
+  expense_garage_pieces?: number;
   vehicle_expenses_amount: number;
   fuel_carburant_comptable: number;
   trip_count: number;
@@ -31,7 +32,7 @@ interface KPIs {
 interface BusRow {
   bus_id: string; registration_number: string; model: string; trip_count: number; revenue: number;
   cc_carburant: number; cc_ration: number; cc_peage: number;
-  fuel_enlev: number; expense_reparation: number; expense_autres: number; expense_charge_stock: number; vehicle_exp: number;
+  fuel_enlev: number; expense_reparation: number; expense_autres: number; expense_charge_stock: number; expense_garage_pieces: number; vehicle_exp: number;
   fuel_carburant_comptable: number;
   total_expense: number; margin: number;
 }
@@ -116,10 +117,10 @@ export default function FinancialReport() {
   const guichetierResult = kpis ? kpis.total_revenue - guichetierCharges : 0;
   // Résultat brut = Résultat guichetier - Carburant cuve - Réparations (comptable) - Charges achat - Charge carburant comptable - Autres
   const brutResult = guichetierResult - (kpis
-    ? kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0)
+    ? kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0) + (kpis.expense_garage_pieces ?? 0)
     : 0);
   const totalExpenses = kpis
-    ? guichetierCharges + kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0)
+    ? guichetierCharges + kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0) + (kpis.expense_garage_pieces ?? 0)
     : 0;
   const marginPct = kpis && kpis.total_revenue > 0 ? (brutResult / kpis.total_revenue * 100) : 0;
 
@@ -145,6 +146,7 @@ export default function FinancialReport() {
       'Charge carburant (Comptable)': kpis?.fuel_carburant_comptable ?? 0,
       'Articles stock (Comptable)': kpis?.expense_autres ?? 0,
       'Charge stock': kpis?.expense_charge_stock ?? 0,
+      'Sorties pieces garage': kpis?.expense_garage_pieces ?? 0,
       'Total charges': totalExpenses,
       'Résultat brut': brutResult,
       'Marge %': marginPct.toFixed(2),
@@ -156,6 +158,7 @@ export default function FinancialReport() {
       'Autres dépenses (comptable)': b.expense_reparation,
       'Articles stock (comptable)': b.expense_autres ?? 0,
       'Charge stock': b.expense_charge_stock ?? 0,
+      'Sorties pieces garage': b.expense_garage_pieces ?? 0,
       'Charge carburant (agent)': b.fuel_carburant_comptable ?? 0,
       'Total charges': b.total_expense, Marge: b.margin,
     }))), 'Par bus');
@@ -275,6 +278,7 @@ export default function FinancialReport() {
                 { label: 'Charge carburant (agent)',val: kpis?.fuel_carburant_comptable ?? 0,      color: '#F59E0B' },
                 { label: 'Articles stock',              val: kpis?.expense_autres ?? 0,                color: '#8B5CF6' },
                 { label: 'Charge stock',                val: kpis?.expense_charge_stock ?? 0,          color: '#7C3AED' },
+                { label: 'Sorties pieces garage',       val: kpis?.expense_garage_pieces ?? 0,         color: '#B45309' },
               ].map(e => (
                 <div key={e.label} className="rounded-lg border p-3" style={{ borderColor: 'var(--border)' }}>
                   <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{e.label}</p>
@@ -348,6 +352,7 @@ export default function FinancialReport() {
                       { label: '  Charge carburant (Comptable)',          val: kpis?.fuel_carburant_comptable ?? 0,      bold: false, colorKey: 'exp' },
                       { label: '  Articles stock (comptable)',            val: kpis?.expense_autres ?? 0,                bold: false, colorKey: 'exp' },
                       { label: '  Charge stock',                           val: kpis?.expense_charge_stock ?? 0,          bold: false, colorKey: 'exp' },
+                      { label: '  Sorties pieces garage',                  val: kpis?.expense_garage_pieces ?? 0,         bold: false, colorKey: 'exp' },
                       { label: 'Résultat brut',                val: brutResult,                         bold: true, colorKey: 'brut', res: brutResult },
                       { label: 'Total charges',                val: totalExpenses,                      bold: true, colorKey: 'tot' },
                     ].map((row, i) => {
@@ -378,7 +383,7 @@ export default function FinancialReport() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                      {['Bus', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Carb. cuve', 'Autres dép. (comptable)', 'Articles stock', 'Charge stock', 'Carb. agent', 'Total charges', 'Résultat', 'Marge %'].map(h => (
+                      {['Bus', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Carb. cuve', 'Autres dép. (comptable)', 'Articles stock', 'Charge stock', 'Sorties pieces garage', 'Carb. agent', 'Total charges', 'Résultat', 'Marge %'].map(h => (
                         <th key={h} className="text-left px-3 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                       ))}
                     </tr>
@@ -398,6 +403,7 @@ export default function FinancialReport() {
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#EF4444' }}>{fmt(b.expense_reparation)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmt(b.expense_autres ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#7C3AED' }}>{fmt(b.expense_charge_stock ?? 0)}</td>
+                          <td className="px-3 py-2.5 text-xs" style={{ color: '#B45309' }}>{fmt(b.expense_garage_pieces ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#F59E0B' }}>{fmt(b.fuel_carburant_comptable ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmt(b.total_expense)}</td>
                           <td className="px-3 py-2.5 text-xs font-bold" style={{ color: b.margin >= 0 ? '#10B981' : '#EF4444' }}>{fmt(b.margin)}</td>
@@ -410,7 +416,7 @@ export default function FinancialReport() {
                         </tr>
                       );
                     })}
-                    {buses.length === 0 && <tr><td colSpan={13} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                    {buses.length === 0 && <tr><td colSpan={14} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
                   </tbody>
                 </table>
               </div>
