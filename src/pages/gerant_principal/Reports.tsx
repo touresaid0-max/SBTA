@@ -4,9 +4,9 @@ import jsPDF from 'jspdf'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import {
-  fetchSorties, fetchPneus, fetchCommandes, fetchGroupes, fetchSettings, updateSetting, fetchStock,
+  fetchSorties, fetchPneus, fetchCommandes, fetchGroupes, fetchSettings, updateSetting, fetchStock, fetchCompaniesForGarage,
 } from '@/services/garageSbta.service'
-import type { GarageSortiePiece, GaragePneu, GarageCommandePiece, GarageGroupe, GarageSetting } from '@/types/garage.types'
+import type { GarageSortiePiece, GaragePneu, GarageCommandePiece, GarageGroupe, GarageSetting, GarageCompany } from '@/types/garage.types'
 import { addReportHeader, addReportFooter, ensureSpace, formatDate, formatFCFA, formatFCFAShort, type ReportFilters } from '@/components/garage/reportHelpers'
 
 type ReportType = 'pieces_groupe' | 'pneus_michelin' | 'pneus_long_march' | 'commandes_groupe'
@@ -19,6 +19,8 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
   const [sorties, setSorties] = useState<GarageSortiePiece[]>([])
   const [pneus, setPneus] = useState<GaragePneu[]>([])
   const [commandes, setCommandes] = useState<GarageCommandePiece[]>([])
+  const [companies, setCompanies] = useState<GarageCompany[]>([])
+  const [selectedSocieteId, setSelectedSocieteId] = useState('')
   const [filters, setFilters] = useState<ReportFilters>({
     dateFrom: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
     dateTo: new Date().toISOString().slice(0, 10),
@@ -30,11 +32,30 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
   const [editingPrices, setEditingPrices] = useState(false)
 
   useEffect(() => {
-    Promise.all([fetchSorties(), fetchPneus(), fetchCommandes()])
-      .then(([s, p, c]) => { setSorties(s); setPneus(p); setCommandes(c) })
+    Promise.all([fetchSorties(), fetchPneus(), fetchCommandes(), fetchCompaniesForGarage()])
+      .then(([s, p, c, comps]) => { setSorties(s); setPneus(p); setCommandes(c); setCompanies(comps) })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
   }, [])
+
+  // Sociétés = parent companies (groups + standalone without parent)
+  const societes = useMemo(() => companies.filter(c => !c.parent_id).sort((a, b) => a.name.localeCompare(b.name)), [companies])
+  // Sous-groupes = children of the selected societe
+  const sousGroupes = useMemo(() => {
+    if (!selectedSocieteId) return []
+    return companies.filter(c => c.parent_id === selectedSocieteId).sort((a, b) => a.name.localeCompare(b.name))
+  }, [companies, selectedSocieteId])
+
+  const handleSelectSociete = (id: string) => {
+    setSelectedSocieteId(id)
+    // If the societe is a group, selecting it without a sous-groupe means "all children"
+    // We store the societe ID as groupeId; byGroupe will match societe + children
+    setFilters(f => ({ ...f, groupeId: id || null }))
+  }
+
+  const handleSelectSousGroupe = (id: string) => {
+    setFilters(f => ({ ...f, groupeId: id || (selectedSocieteId || null) }))
+  }
 
   useEffect(() => {
     const pm = propSettings.find(s => s.key === 'prix_michelin')
@@ -47,7 +68,13 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     const from = new Date(filters.dateFrom)
     const to = new Date(filters.dateTo)
     const inRange = (d: string) => new Date(d) >= from && new Date(d) <= to
-    const byGroupe = (gid: string | null) => !filters.groupeId || gid === filters.groupeId
+    const byGroupe = (gid: string | null) => {
+      if (!filters.groupeId) return true
+      if (gid === filters.groupeId) return true
+      // If filter is a group/societe, also match all its children
+      const isChildOfFilter = companies.some(c => c.id === gid && c.parent_id === filters.groupeId)
+      return isChildOfFilter
+    }
 
     if (reportType === 'pieces_groupe') return sorties.filter(s => inRange(s.date) && byGroupe(s.groupe_id))
     if (reportType === 'pneus_michelin') return pneus.filter(p => inRange(p.date) && p.type_pneu === 'MICHELIN' && byGroupe(p.groupe_id))
@@ -60,12 +87,12 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     const groups: Record<string, GarageSortiePiece[] | GaragePneu[] | GarageCommandePiece[]> = {}
     for (const item of filteredData) {
       const gid = (item as GarageSortiePiece).groupe_id ?? null
-      const gname = propGroupes.find(g => g.id === gid)?.nom ?? 'Sans groupe'
+      const gname = companies.find(c => c.id === gid)?.name ?? propGroupes.find(g => g.id === gid)?.nom ?? 'Sans groupe'
       if (!groups[gname]) groups[gname] = []
       groups[gname].push(item as GarageSortiePiece)
     }
     return groups
-  }, [filteredData, propGroupes])
+  }, [filteredData, propGroupes, companies])
 
   const reportTypes: { key: ReportType; label: string }[] = [
     { key: 'pieces_groupe', label: 'Point financier des sorties de pièces par groupe' },
@@ -100,7 +127,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
 
     let y = addReportHeader(doc, {
       title: titles[reportType],
-      subtitle: filters.groupeId ? `Groupe : ${propGroupes.find(g => g.id === filters.groupeId)?.nom ?? '—'}` : undefined,
+      subtitle: filters.groupeId ? `Groupe : ${companies.find(c => c.id === filters.groupeId)?.name ?? propGroupes.find(g => g.id === filters.groupeId)?.nom ?? '—'}` : undefined,
       userName: user?.full_name ?? '—',
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
@@ -245,7 +272,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-[#4A6B55] mb-1">Du</label>
             <input type="date" value={filters.dateFrom} onChange={e => setFilters({ ...filters, dateFrom: e.target.value })}
@@ -257,11 +284,21 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
               className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Groupe (optionnel)</label>
-            <select value={filters.groupeId ?? ''} onChange={e => setFilters({ ...filters, groupeId: e.target.value || null })}
-              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm">
-              <option value="">Tous les groupes</option>
-              {propGroupes.map(g => <option key={g.id} value={g.id}>{g.nom}</option>)}
+            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Société (optionnel)</label>
+            <select value={selectedSocieteId} onChange={e => handleSelectSociete(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20">
+              <option value="">Toutes les sociétés</option>
+              {societes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Sous-groupe (optionnel)</label>
+            <select value={sousGroupes.some(s => s.id === filters.groupeId) ? filters.groupeId ?? '' : ''}
+              onChange={e => handleSelectSousGroupe(e.target.value)}
+              disabled={!selectedSocieteId || sousGroupes.length === 0}
+              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20 disabled:bg-[#F8FAF8] disabled:text-[#9AB4A0]">
+              <option value="">{selectedSocieteId ? (sousGroupes.length ? 'Tous les sous-groupes' : 'Aucun sous-groupe') : 'Sélectionner une société'}</option>
+              {sousGroupes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         </div>

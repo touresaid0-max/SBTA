@@ -22,6 +22,8 @@ export interface GarageBus {
 export interface GarageCompany {
   id: string
   name: string
+  parent_id?: string | null
+  is_group?: boolean
 }
 
 export interface GarageFamille {

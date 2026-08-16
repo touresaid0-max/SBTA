@@ -55,7 +55,7 @@ export async function fetchBusesForGarage(): Promise<GarageBus[]> {
   }))
 }
 export async function fetchCompaniesForGarage(): Promise<GarageCompany[]> {
-  const { data, error } = await supabase.from('companies').select('id, name').order('name')
+  const { data, error } = await supabase.from('companies').select('id, name, parent_id, is_group').order('name')
   if (error) throw error
   return data ?? []
 }
