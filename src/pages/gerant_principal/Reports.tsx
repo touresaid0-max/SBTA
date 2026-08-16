@@ -117,6 +117,13 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     { key: 'commandes_groupe', label: 'Point des nouvelles pièces de commande par groupe' },
     ]
 
+  const titles: Record<ReportType, string> = {
+    pieces_groupe: 'Point financier des sorties de pièces de rechange par groupe',
+    pneus_michelin: 'Fiche de point des pneus MICHELIN (GARAGE-SBTA)',
+    pneus_long_march: 'Fiche de point des pneus LONG-MARCH (GARAGE-SBTA)',
+    commandes_groupe: 'Point des nouvelles pièces de commande par groupe',
+  }
+
   const handleSavePrices = async () => {
     try {
       await updateSetting('prix_michelin', prixMichelin)
@@ -134,13 +141,6 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     const ph = doc.internal.pageSize.getHeight()
     const margin = 10
     const contentW = pw - 2 * margin
-
-    const titles: Record<ReportType, string> = {
-      pieces_groupe: 'Point financier des sorties de pièces de rechange par groupe',
-      pneus_michelin: 'Fiche de point des pneus MICHELIN (GARAGE-SBTA)',
-      pneus_long_march: 'Fiche de point des pneus LONG-MARCH (GARAGE-SBTA)',
-      commandes_groupe: 'Point des nouvelles pièces de commande par groupe',
-    }
 
     let y = addReportHeader(doc, {
       title: titles[reportType],
