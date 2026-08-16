@@ -20,7 +20,6 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
   const [pneus, setPneus] = useState<GaragePneu[]>([])
   const [commandes, setCommandes] = useState<GarageCommandePiece[]>([])
   const [companies, setCompanies] = useState<GarageCompany[]>([])
-  const [selectedSocieteId, setSelectedSocieteId] = useState('')
   const [filters, setFilters] = useState<ReportFilters>({
     dateFrom: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
     dateTo: new Date().toISOString().slice(0, 10),
@@ -38,23 +37,16 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       .finally(() => setLoading(false))
   }, [])
 
-  // Sociétés = parent companies (groups + standalone without parent)
   const societes = useMemo(() => companies.filter(c => !c.parent_id).sort((a, b) => a.name.localeCompare(b.name)), [companies])
-  // Sous-groupes = children of the selected societe
-  const sousGroupes = useMemo(() => {
-    if (!selectedSocieteId) return []
-    return companies.filter(c => c.parent_id === selectedSocieteId).sort((a, b) => a.name.localeCompare(b.name))
-  }, [companies, selectedSocieteId])
+  const sousGroupesBySociete = useMemo(() => {
+    return new Map(societes.map(societe => [
+      societe.id,
+      companies.filter(company => company.parent_id === societe.id).sort((a, b) => a.name.localeCompare(b.name)),
+    ]))
+  }, [companies, societes])
 
   const handleSelectSociete = (id: string) => {
-    setSelectedSocieteId(id)
-    // If the societe is a group, selecting it without a sous-groupe means "all children"
-    // We store the societe ID as groupeId; byGroupe will match societe + children
     setFilters(f => ({ ...f, groupeId: id || null }))
-  }
-
-  const handleSelectSousGroupe = (id: string) => {
-    setFilters(f => ({ ...f, groupeId: id || (selectedSocieteId || null) }))
   }
 
   useEffect(() => {
@@ -272,7 +264,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-[#E2EAE5] p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-[#4A6B55] mb-1">Du</label>
             <input type="date" value={filters.dateFrom} onChange={e => setFilters({ ...filters, dateFrom: e.target.value })}
@@ -285,20 +277,17 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
           </div>
           <div>
             <label className="block text-sm font-medium text-[#4A6B55] mb-1">Société (optionnel)</label>
-            <select value={selectedSocieteId} onChange={e => handleSelectSociete(e.target.value)}
+            <select value={filters.groupeId ?? ''} onChange={e => handleSelectSociete(e.target.value)}
               className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20">
               <option value="">Toutes les sociétés</option>
-              {societes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Sous-groupe (optionnel)</label>
-            <select value={sousGroupes.some(s => s.id === filters.groupeId) ? filters.groupeId ?? '' : ''}
-              onChange={e => handleSelectSousGroupe(e.target.value)}
-              disabled={!selectedSocieteId || sousGroupes.length === 0}
-              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20 disabled:bg-[#F8FAF8] disabled:text-[#9AB4A0]">
-              <option value="">{selectedSocieteId ? (sousGroupes.length ? 'Tous les sous-groupes' : 'Aucun sous-groupe') : 'Sélectionner une société'}</option>
-              {sousGroupes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {societes.map(s => (
+                <optgroup key={s.id} label={s.name}>
+                  <option value={s.id}>{s.name}</option>
+                  {sousGroupesBySociete.get(s.id)?.map(sg => (
+                    <option key={sg.id} value={sg.id}>  └ {sg.name}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </div>
         </div>
