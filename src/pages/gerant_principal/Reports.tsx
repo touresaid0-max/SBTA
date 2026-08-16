@@ -205,8 +205,9 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       const colLibelle = margin + contentW * 0.18
       const colCar = margin + contentW * 0.34
       const colQty = margin + contentW * 0.58
-      const colPrix = margin + contentW * 0.76
-      const colMontant = pw - margin
+      const colPrix = margin + contentW * 0.72
+      const colMontant = margin + contentW * 0.86
+      const colRight = pw - margin
       let totalQty = 0
       let totalMontant = 0
 
@@ -227,6 +228,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         doc.line(colQty, headerTop, colQty, headerTop + headerHeight)
         doc.line(colPrix, headerTop, colPrix, headerTop + headerHeight)
         doc.line(colMontant, headerTop, colMontant, headerTop + headerHeight)
+        doc.line(colRight, headerTop, colRight, headerTop + headerHeight)
         doc.line(colCar, headerSplit, colCar, headerTop + headerHeight)
         doc.line(colLibelle, headerSplit, colQty, headerSplit)
         doc.setFontSize(8); doc.setFont('helvetica', 'bold')
@@ -234,9 +236,9 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         doc.text('DESIGNATIONS', colLibelle + 2, headerTop + 7)
         doc.text('LIBELLES', colLibelle + 2, headerTop + 17)
         doc.text('N° DE CARS', colCar + 2, headerTop + 17)
-        drawPdfRight(doc, 'QTE', colQty - 2, headerTop + 12)
-        drawPdfRight(doc, 'P.UNITAIRE', colPrix - 2, headerTop + 12)
-        drawPdfRight(doc, 'MONTANTS', colMontant - 2, headerTop + 12)
+        drawPdfRight(doc, 'QTE', colPrix - 2, headerTop + 12)
+        drawPdfRight(doc, 'P.UNITAIRE', colMontant - 2, headerTop + 12)
+        drawPdfRight(doc, 'MONTANTS', colRight - 2, headerTop + 12)
         y = headerTop + headerHeight + 7
       }
 
@@ -263,9 +265,9 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
           doc.text(formatDate(p.date), colDate + 2, rowTop + 7)
           doc.text(typeLabel, colLibelle + 2, rowTop + 7)
           doc.text(p.car?.registration_number ?? '—', colCar + 2, rowTop + 7)
-          drawPdfRight(doc, formatPdfNumber(p.quantite), colQty - 2, rowTop + 7)
-          drawPdfRight(doc, formatPdfNumber(p.prix_unitaire), colPrix - 2, rowTop + 7)
-          drawPdfRight(doc, formatPdfNumber(p.montant), colMontant - 2, rowTop + 7)
+          drawPdfRight(doc, formatPdfNumber(p.quantite), colPrix - 2, rowTop + 7)
+          drawPdfRight(doc, formatPdfNumber(p.prix_unitaire), colMontant - 2, rowTop + 7)
+          drawPdfRight(doc, formatPdfNumber(p.montant), colRight - 2, rowTop + 7)
           groupQty += p.quantite; groupMontant += Number(p.montant); y = rowTop + rowHeight + 3
         })
         y = ensureSpace(doc, y, 16, ph, pw)
@@ -277,8 +279,8 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         doc.line(colPrix, totalTop, colPrix, totalTop + 11)
         doc.setFont('helvetica', 'bold'); doc.setFontSize(8)
         doc.text('TOTAL', margin + 2, totalTop + 7)
-        drawPdfRight(doc, formatPdfNumber(groupQty), colQty - 2, totalTop + 7)
-        drawPdfRight(doc, formatPdfNumber(groupMontant), colMontant - 2, totalTop + 7)
+        drawPdfRight(doc, formatPdfNumber(groupQty), colPrix - 2, totalTop + 7)
+        drawPdfRight(doc, formatPdfNumber(groupMontant), colRight - 2, totalTop + 7)
         totalQty += groupQty; totalMontant += groupMontant; y = totalTop + 15
       }
 
@@ -291,8 +293,8 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       doc.line(colPrix, totalsTop, colPrix, totalsTop + 11)
       doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20)
       doc.text('TOTAUX', margin + 2, totalsTop + 7)
-      drawPdfRight(doc, formatPdfNumber(totalQty), colQty - 2, totalsTop + 7)
-      drawPdfRight(doc, formatPdfNumber(totalMontant), colMontant - 2, totalsTop + 7)
+      drawPdfRight(doc, formatPdfNumber(totalQty), colPrix - 2, totalsTop + 7)
+      drawPdfRight(doc, formatPdfNumber(totalMontant), colRight - 2, totalsTop + 7)
       y = totalsTop + 18
       doc.setFontSize(8); doc.setFont('helvetica', 'normal')
       doc.text(`ARRIVAGE ACTUEL = ${formatPdfNumber(totalQty)} pcs`, margin, y); y += 5
@@ -529,38 +531,38 @@ function TireReportPreview({ reportType, grouped, filters, titles }: {
             <div className="bg-[#FFE89E] px-3 py-1.5 font-bold uppercase text-black text-sm border-b border-black">
               GROUPE {gname.toUpperCase()}
             </div>
-            <table className="w-full text-sm border-collapse" style={{ lineHeight: 1.4 }}>
+            <table className="garage-tire-report-table w-full text-sm border-collapse" style={{ lineHeight: 1.3 }}>
               <thead>
                 <tr className="bg-[#F7F8FA] text-black border-b border-black">
-                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px' }}>DATES</th>
-                  <th colSpan={2} className="px-2 py-2 text-center font-bold border border-black" style={{ minHeight: '28px' }}>DESIGNATIONS</th>
-                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px' }}>QTE</th>
-                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px' }}>P.UNITAIRE</th>
-                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px' }}>MONTANTS</th>
+                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>DATES</th>
+                  <th colSpan={2} className="px-2 py-2 text-center font-bold border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>DESIGNATIONS</th>
+                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>QTE</th>
+                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>P.UNITAIRE</th>
+                  <th rowSpan={2} className="px-2 py-2 text-center font-bold border border-black align-middle" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>MONTANTS</th>
                 </tr>
                 <tr className="bg-[#F7F8FA] text-black border-b border-black">
-                  <th className="px-2 py-2 text-center font-bold border border-black" style={{ minHeight: '28px' }}>LIBELLES</th>
-                  <th className="px-2 py-2 text-center font-bold border border-black" style={{ minHeight: '28px' }}>N° DE CARS</th>
+                  <th className="px-2 py-2 text-center font-bold border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>LIBELLES</th>
+                  <th className="px-2 py-2 text-center font-bold border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>N° DE CARS</th>
                 </tr>
               </thead>
               <tbody>
                 {tireItems.map((p, i) => (
                   <tr key={p.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFC]'} style={{ height: 'auto' }}>
-                    <td className="px-2 py-2 text-center border border-black" style={{ minHeight: '28px' }}>{formatDate(p.date)}</td>
-                    <td className="px-2 py-2 border border-black" style={{ minHeight: '28px' }}>{typeLabel}</td>
-                    <td className="px-2 py-2 font-mono border border-black" style={{ minHeight: '28px' }}>{p.car?.registration_number ?? '—'}</td>
-                    <td className="px-2 py-2 text-right border border-black" style={{ minHeight: '28px' }}>{fmtNum(p.quantite)}</td>
-                    <td className="px-2 py-2 text-right border border-black" style={{ minHeight: '28px' }}>{fmtNum(p.prix_unitaire)}</td>
-                    <td className="px-2 py-2 text-right font-semibold border border-black" style={{ minHeight: '28px' }}>{fmtNum(p.montant)}</td>
+                    <td className="px-2 py-2 text-center border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{formatDate(p.date)}</td>
+                    <td className="px-2 py-2 border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{typeLabel}</td>
+                    <td className="px-2 py-2 font-mono border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{p.car?.registration_number ?? '—'}</td>
+                    <td className="px-2 py-2 text-right border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{fmtNum(p.quantite)}</td>
+                    <td className="px-2 py-2 text-right border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{fmtNum(p.prix_unitaire)}</td>
+                    <td className="px-2 py-2 text-right font-semibold border border-black" style={{ minHeight: '28px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{fmtNum(p.montant)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="bg-[#FFE0CD] font-bold" style={{ marginTop: '4px' }}>
-                  <td colSpan={3} className="px-2 py-2.5 text-right border border-black" style={{ minHeight: '32px' }}>TOTAL</td>
-                  <td className="px-2 py-2.5 text-right border border-black" style={{ minHeight: '32px' }}>{fmtNum(groupQty)}</td>
-                  <td className="px-2 py-2.5 border border-black" style={{ minHeight: '32px' }}></td>
-                  <td className="px-2 py-2.5 text-right border border-black" style={{ minHeight: '32px' }}>{fmtNum(groupMontant)}</td>
+                  <td colSpan={3} className="px-2 py-2.5 text-right border border-black" style={{ minHeight: '32px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>TOTAL</td>
+                  <td className="px-2 py-2.5 text-right border border-black" style={{ minHeight: '32px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{fmtNum(groupQty)}</td>
+                  <td className="px-2 py-2.5 border border-black" style={{ minHeight: '32px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}></td>
+                  <td className="px-2 py-2.5 text-right border border-black" style={{ minHeight: '32px', verticalAlign: 'middle', lineHeight: 1.3, padding: '8px 6px' }}>{fmtNum(groupMontant)}</td>
                 </tr>
               </tfoot>
             </table>
