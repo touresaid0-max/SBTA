@@ -92,7 +92,11 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       return isChildOfFilter
     }
 
-    if (reportType === 'pieces_groupe') return sorties.filter(s => inRange(s.date) && byGroupe(s.groupe_id))
+    if (reportType === 'pieces_groupe') return sorties.filter(s => {
+      if (!inRange(s.date) || !byGroupe(s.groupe_id)) return false
+      const nom = s.piece?.nom?.toUpperCase() ?? ''
+      return nom !== 'PNEU MICHELIN' && nom !== 'LONG-MARCH'
+    })
     if (reportType === 'pneus_michelin') return pneus.filter(p => inRange(p.date) && p.type_pneu === 'MICHELIN' && byGroupe(p.groupe_id))
     if (reportType === 'pneus_long_march') return pneus.filter(p => inRange(p.date) && p.type_pneu === 'LONG-MARCH' && byGroupe(p.groupe_id))
     if (reportType === 'commandes_groupe') return commandes.filter(c => inRange(c.date) && byGroupe(c.groupe_id))
