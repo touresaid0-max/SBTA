@@ -92,13 +92,16 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       return isChildOfFilter
     }
 
+    const isTirePiece = (s: GarageSortiePiece) => {
+      const nom = s.piece?.nom?.toUpperCase() ?? ''
+      return nom === 'PNEU MICHELIN' || nom === 'LONG-MARCH'
+    }
     if (reportType === 'pieces_groupe') return sorties.filter(s => {
       if (!inRange(s.date) || !byGroupe(s.groupe_id)) return false
-      const nom = s.piece?.nom?.toUpperCase() ?? ''
-      return nom !== 'PNEU MICHELIN' && nom !== 'LONG-MARCH'
+      return !isTirePiece(s)
     })
-    if (reportType === 'pneus_michelin') return pneus.filter(p => inRange(p.date) && p.type_pneu === 'MICHELIN' && byGroupe(p.groupe_id))
-    if (reportType === 'pneus_long_march') return pneus.filter(p => inRange(p.date) && p.type_pneu === 'LONG-MARCH' && byGroupe(p.groupe_id))
+    if (reportType === 'pneus_michelin') return sorties.filter(s => inRange(s.date) && byGroupe(s.groupe_id) && s.piece?.nom?.toUpperCase() === 'PNEU MICHELIN')
+    if (reportType === 'pneus_long_march') return sorties.filter(s => inRange(s.date) && byGroupe(s.groupe_id) && s.piece?.nom?.toUpperCase() === 'LONG-MARCH')
     if (reportType === 'commandes_groupe') return commandes.filter(c => inRange(c.date) && byGroupe(c.groupe_id))
     return []
   }, [reportType, sorties, pneus, commandes, filters])
@@ -232,7 +235,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       }
 
       for (const [gname, items] of Object.entries(grouped)) {
-        const tireItems = items as GaragePneu[]
+        const tireItems = items as GarageSortiePiece[]
         y = ensureSpace(doc, y, 28, ph, pw)
         doc.setFillColor(255, 232, 158); doc.setDrawColor(20, 20, 20)
         doc.rect(margin, y - 4, contentW, 7, 'FD')
@@ -495,7 +498,7 @@ function TireReportPreview({ reportType, grouped, filters, titles }: {
       </div>
 
       {Object.entries(grouped).map(([gname, items]) => {
-        const tireItems = items as GaragePneu[]
+        const tireItems = items as GarageSortiePiece[]
         const groupQty = tireItems.reduce((s, p) => s + p.quantite, 0)
         const groupMontant = tireItems.reduce((s, p) => s + Number(p.montant), 0)
         grandQty += groupQty
