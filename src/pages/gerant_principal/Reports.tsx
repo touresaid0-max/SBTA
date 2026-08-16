@@ -23,8 +23,12 @@ function groupItemsByCar<T extends GarageReportItem>(items: T[]): Array<{ regist
   return Array.from(groups, ([registration, groupedItems]) => ({ registration, items: groupedItems }))
 }
 
+function formatPdfNumber(value: number | string | null | undefined): string {
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(value ?? 0)).replace(/[\u00A0\u202F]/g, ' ')
+}
+
 function formatPdfAmount(value: number | string | null | undefined): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(value ?? 0)).replace(/[\u00A0\u202F]/g, ' ') + ' F CFA'
+  return `${formatPdfNumber(value)} F CFA`
 }
 
 function drawPdfRight(doc: jsPDF, text: string, right: number, y: number): void {
@@ -189,57 +193,85 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     }
 
     if (reportType === 'pneus_michelin' || reportType === 'pneus_long_march') {
-      const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'
+      const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'LONG-MARCH'
       const colDate = margin
-      const colDesign = margin + contentW * 0.18
-      const colQty = margin + contentW * 0.62
-      const colPrix = margin + contentW * 0.80
+      const colLibelle = margin + contentW * 0.18
+      const colCar = margin + contentW * 0.34
+      const colQty = margin + contentW * 0.58
+      const colPrix = margin + contentW * 0.76
       const colMontant = pw - margin
-      let totalQty = 0; let totalMontant = 0
+      let totalQty = 0
+      let totalMontant = 0
 
-      for (const [gname, items] of Object.entries(grouped)) {
-        y = ensureSpace(doc, y, 30, ph, pw)
-        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
-        doc.text(`GROUPE : ${gname}`, margin, y); y += 6
+      doc.setFillColor(255, 232, 158); doc.setDrawColor(20, 20, 20); doc.setLineWidth(0.6)
+      doc.rect(margin, y - 5, contentW, 8, 'FD')
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20)
+      doc.text(titles[reportType].toUpperCase(), pw / 2, y, { align: 'center' }); y += 8
+      doc.setFontSize(9); doc.setFont('helvetica', 'normal')
+      doc.text(`Période du ${formatDate(filters.dateFrom)} au ${formatDate(filters.dateTo)}`, pw / 2, y, { align: 'center' }); y += 7
 
-        let subQty = 0; let subMontant = 0
-        for (const { registration, items: carItems } of groupItemsByCar(items as GaragePneu[])) {
-          y = ensureSpace(doc, y, 18, ph, pw)
-          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, contentW, 6, 'F')
-          doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
-          doc.text(`CAR : ${registration}`, margin + 2, y); y += 5
-          doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
-          doc.text('Date', colDate, y); doc.text('Désignation', colDesign, y)
-          drawPdfRight(doc, 'Qté', colQty, y); drawPdfRight(doc, 'Prix unit.', colPrix, y); drawPdfRight(doc, 'Montant', colMontant, y)
-          y += 3; doc.line(margin, y, pw - margin, y); y += 4
-          doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
-          carItems.forEach(p => {
-            y = ensureSpace(doc, y, 6, ph, pw)
-            doc.text(formatDate(p.date), colDate, y)
-            doc.text(typeLabel, colDesign, y, { max_width: colQty - colDesign - 4 })
-            drawPdfRight(doc, String(p.quantite), colQty, y)
-            drawPdfRight(doc, formatPdfAmount(p.prix_unitaire), colPrix, y)
-            drawPdfRight(doc, formatPdfAmount(p.montant), colMontant, y)
-            subQty += p.quantite; subMontant += Number(p.montant); y += 5
-          })
-        }
-        y = ensureSpace(doc, y, 10, ph, pw)
-        doc.setFont('helvetica', 'bold'); doc.setTextColor(11, 116, 57)
-        drawPdfRight(doc, `Sous-total quantité : ${subQty}`, colQty, y)
-        drawPdfRight(doc, `TOTAL ${gname} : ${formatPdfAmount(subMontant)}`, pw - margin, y)
-        totalQty += subQty; totalMontant += subMontant; y += 8
+      const drawTireHeader = () => {
+        doc.setFillColor(247, 248, 250); doc.setDrawColor(20, 20, 20); doc.setLineWidth(0.35)
+        doc.rect(margin, y - 4, contentW, 12, 'FD')
+        doc.line(colLibelle, y - 4, colLibelle, y + 8); doc.line(colQty, y - 4, colQty, y + 8)
+        doc.line(colPrix, y - 4, colPrix, y + 8); doc.line(colMontant, y - 4, colMontant, y + 8)
+        doc.line(colCar, y, colCar, y + 8)
+        doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+        doc.text('DATES', colDate + 2, y + 1)
+        doc.text('DESIGNATIONS', colLibelle + 2, y - 1)
+        doc.text('LIBELLES', colLibelle + 2, y + 6)
+        doc.text('N° DE CARS', colCar + 2, y + 6)
+        drawPdfRight(doc, 'QTE', colQty - 2, y + 3)
+        drawPdfRight(doc, 'P.UNITAIRE', colPrix - 2, y + 3)
+        drawPdfRight(doc, 'MONTANTS', colMontant - 2, y + 3)
+        y += 12
       }
 
-      // Récap
-      y = ensureSpace(doc, y, 30, ph, pw)
-      y += 4; doc.line(margin, y, pw - margin, y); y += 6
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
-      doc.text('RÉCAPITULATIF', margin, y); y += 6
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
-      doc.text(`Pneus sortis (total) : ${totalQty} pièces`, margin, y); y += 5
-      doc.text(`Montant total : ${formatPdfAmount(totalMontant)}`, margin, y); y += 5
-      const stockPneu = reportType === 'pneus_michelin' ? 'Voir gestion stock' : 'Voir gestion stock'
-      doc.text(`Stock actuel : ${stockPneu}`, margin, y)
+      for (const [gname, items] of Object.entries(grouped)) {
+        const tireItems = items as GaragePneu[]
+        y = ensureSpace(doc, y, 28, ph, pw)
+        doc.setFillColor(255, 232, 158); doc.setDrawColor(20, 20, 20)
+        doc.rect(margin, y - 4, contentW, 7, 'FD')
+        doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20)
+        doc.text(`GROUPE ${gname.toUpperCase()}`, margin + 2, y + 1); y += 8
+        drawTireHeader()
+        let groupQty = 0; let groupMontant = 0
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(20, 20, 20)
+        tireItems.forEach(p => {
+          y = ensureSpace(doc, y, 7, ph, pw)
+          doc.setDrawColor(40, 40, 40); doc.rect(margin, y - 4, contentW, 7)
+          doc.line(colLibelle, y - 4, colLibelle, y + 3); doc.line(colCar, y - 4, colCar, y + 3)
+          doc.line(colQty, y - 4, colQty, y + 3); doc.line(colPrix, y - 4, colPrix, y + 3)
+          doc.setFontSize(8)
+          doc.text(formatDate(p.date), colDate + 2, y)
+          doc.text(typeLabel, colLibelle + 2, y)
+          doc.text(p.car?.registration_number ?? '—', colCar + 2, y)
+          drawPdfRight(doc, formatPdfNumber(p.quantite), colQty - 2, y)
+          drawPdfRight(doc, formatPdfNumber(p.prix_unitaire), colPrix - 2, y)
+          drawPdfRight(doc, formatPdfNumber(p.montant), colMontant - 2, y)
+          groupQty += p.quantite; groupMontant += Number(p.montant); y += 3
+        })
+        y = ensureSpace(doc, y, 8, ph, pw)
+        doc.setFillColor(255, 224, 205); doc.rect(colQty, y - 4, colMontant - colQty, 7, 'FD')
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8)
+        drawPdfRight(doc, formatPdfNumber(groupQty), colQty - 2, y)
+        doc.text('TOTAL', colQty + 2, y)
+        drawPdfRight(doc, formatPdfNumber(groupMontant), colMontant - 2, y)
+        totalQty += groupQty; totalMontant += groupMontant; y += 9
+      }
+
+      y = ensureSpace(doc, y, 28, ph, pw)
+      doc.setFillColor(255, 244, 161); doc.rect(colQty, y - 4, colMontant - colQty, 7, 'FD')
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20)
+      drawPdfRight(doc, formatPdfNumber(totalQty), colQty - 2, y)
+      doc.text('TOTAUX', colQty + 2, y)
+      drawPdfRight(doc, formatPdfNumber(totalMontant), colMontant - 2, y)
+      y += 10
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+      doc.text(`ARRIVAGE ACTUEL = ${formatPdfNumber(totalQty)} pcs`, margin, y); y += 5
+      doc.text(`PNEUS SORTIS = ${formatPdfNumber(totalQty)} pcs`, margin, y); y += 5
+      doc.text('STOCK ACTUEL = 0 pcs', margin, y)
+      doc.text(`Fait à Abidjan le ${formatDate(new Date())}`, pw - margin, y, { align: 'right' })
     }
 
     if (reportType === 'commandes_groupe') {
@@ -386,6 +418,8 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         <div className="p-5">
           {Object.keys(grouped).length === 0 ? (
             <p className="text-center py-12 text-[#8AA898]">Aucune donnée pour cette période</p>
+          ) : (reportType === 'pneus_michelin' || reportType === 'pneus_long_march') ? (
+            <TireReportPreview reportType={reportType} grouped={grouped} filters={filters} titles={titles} />
           ) : Object.entries(grouped).map(([gname, items]) => (
             <div key={gname} className="mb-6">
               <div className="bg-[#B8B8B8] px-3 py-2 font-bold text-[#1A2E22]">GROUPE : {gname}</div>
@@ -398,7 +432,6 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
                         <tr className="border-y border-[#9CA3AF] text-[#1A2E22]">
                           <th className="px-2 py-1 text-left font-medium w-10">#</th>
                           {reportType === 'pieces_groupe' && <th className="px-2 py-1 text-left font-medium">Pièces</th>}
-                          {reportType === 'pneus_michelin' || reportType === 'pneus_long_march' ? <th className="px-2 py-1 text-left font-medium">Désignation</th> : null}
                           {reportType === 'commandes_groupe' && <th className="px-2 py-1 text-left font-medium">Désignation/Type</th>}
                           {reportType === 'pieces_groupe' && <th className="px-2 py-1 text-right font-medium">Quantité</th>}
                           {reportType !== 'pieces_groupe' && <th className="px-2 py-1 text-right font-medium">Qté</th>}
@@ -411,7 +444,6 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
                           <tr key={item.id} className="border-b border-[#E5E7EB] text-[#1A2E22]">
                             <td className="px-2 py-1">{i + 1}</td>
                             {reportType === 'pieces_groupe' && <td className="px-2 py-1">{(item as GarageSortiePiece).piece?.nom ?? '—'}{(item as GarageSortiePiece).piece?.marque ? ` ${(item as GarageSortiePiece).piece?.marque}` : ''}</td>}
-                            {reportType === 'pneus_michelin' || reportType === 'pneus_long_march' ? <td className="px-2 py-1">{reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'}</td> : null}
                             {reportType === 'commandes_groupe' && <td className="px-2 py-1">{(item as GarageCommandePiece).designation}</td>}
                             <td className="px-2 py-1 text-right">{item.quantite}</td>
                             <td className="px-2 py-1 text-right">{formatFCFA(item.prix_unitaire)}</td>
@@ -428,6 +460,106 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tire report preview (Michelin / Long-March) ──────────────
+function TireReportPreview({ reportType, grouped, filters, titles }: {
+  reportType: 'pneus_michelin' | 'pneus_long_march'
+  grouped: Record<string, GarageSortiePiece[] | GaragePneu[] | GarageCommandePiece[]>
+  filters: ReportFilters
+  titles: Record<ReportType, string>
+}) {
+  const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'LONG-MARCH'
+  const fmtNum = (n: number | string | null | undefined) =>
+    new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(n ?? 0))
+
+  let grandQty = 0
+  let grandMontant = 0
+
+  return (
+    <div className="space-y-4">
+      {/* Titre encadré jaune */}
+      <div className="bg-[#FFE89E] border-2 border-black text-center py-2 rounded">
+        <h2 className="text-base font-bold uppercase text-black tracking-wide">{titles[reportType]}</h2>
+        <p className="text-xs text-black/80 mt-0.5">
+          Période du {formatDate(filters.dateFrom)} au {formatDate(filters.dateTo)}
+        </p>
+      </div>
+
+      {Object.entries(grouped).map(([gname, items]) => {
+        const tireItems = items as GaragePneu[]
+        const groupQty = tireItems.reduce((s, p) => s + p.quantite, 0)
+        const groupMontant = tireItems.reduce((s, p) => s + Number(p.montant), 0)
+        grandQty += groupQty
+        grandMontant += groupMontant
+        return (
+          <div key={gname} className="border border-black overflow-x-auto">
+            {/* Bannière groupe jaune */}
+            <div className="bg-[#FFE89E] px-3 py-1.5 font-bold uppercase text-black text-sm border-b border-black">
+              GROUPE {gname.toUpperCase()}
+            </div>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-[#F7F8FA] text-black border-b border-black">
+                  <th rowSpan={2} className="px-2 py-1 text-center font-bold border border-black align-middle">DATES</th>
+                  <th colSpan={2} className="px-2 py-1 text-center font-bold border border-black">DESIGNATIONS</th>
+                  <th rowSpan={2} className="px-2 py-1 text-center font-bold border border-black align-middle">QTE</th>
+                  <th rowSpan={2} className="px-2 py-1 text-center font-bold border border-black align-middle">P.UNITAIRE</th>
+                  <th rowSpan={2} className="px-2 py-1 text-center font-bold border border-black align-middle">MONTANTS</th>
+                </tr>
+                <tr className="bg-[#F7F8FA] text-black border-b border-black">
+                  <th className="px-2 py-1 text-center font-bold border border-black">LIBELLES</th>
+                  <th className="px-2 py-1 text-center font-bold border border-black">N° DE CARS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tireItems.map((p, i) => (
+                  <tr key={p.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFC]'}>
+                    <td className="px-2 py-1 text-center border border-black">{formatDate(p.date)}</td>
+                    <td className="px-2 py-1 border border-black">{typeLabel}</td>
+                    <td className="px-2 py-1 font-mono border border-black">{p.car?.registration_number ?? '—'}</td>
+                    <td className="px-2 py-1 text-right border border-black">{fmtNum(p.quantite)}</td>
+                    <td className="px-2 py-1 text-right border border-black">{fmtNum(p.prix_unitaire)}</td>
+                    <td className="px-2 py-1 text-right font-semibold border border-black">{fmtNum(p.montant)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-[#FFE0CD] font-bold">
+                  <td colSpan={3} className="px-2 py-1.5 text-right border border-black">TOTAL</td>
+                  <td className="px-2 py-1.5 text-right border border-black">{fmtNum(groupQty)}</td>
+                  <td className="px-2 py-1.5 border border-black"></td>
+                  <td className="px-2 py-1.5 text-right border border-black">{fmtNum(groupMontant)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )
+      })}
+
+      {/* Bilan / Stock */}
+      <div className="border-2 border-black">
+        <div className="bg-[#FFF4A1] px-3 py-1.5 font-bold uppercase text-black text-sm border-b border-black text-center">
+          BILAN DES PNEUS
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black">
+          <div className="px-3 py-2 text-sm text-black">
+            ARRIVAGE ACTUEL = <span className="font-bold">{fmtNum(grandQty)}</span> pcs
+          </div>
+          <div className="px-3 py-2 text-sm text-black">
+            PNEUS SORTIS = <span className="font-bold">{fmtNum(grandQty)}</span> pcs
+          </div>
+          <div className="px-3 py-2 text-sm text-black">
+            STOCK ACTUEL = <span className="font-bold">0</span> pcs
+          </div>
+        </div>
+        <div className="border-t border-black px-3 py-2 flex items-center justify-between">
+          <span className="font-bold text-black text-sm">TOTAUX {fmtNum(grandMontant)}</span>
+          <span className="text-xs text-black/80">Fait à Abidjan le {formatDate(new Date())}</span>
         </div>
       </div>
     </div>
