@@ -1,10 +1,10 @@
 import { useEffect, useState, useMemo } from 'react'
-import { FileText, Download, Printer, CircleDot } from 'lucide-react'
+import { FileText, Download, Printer } from 'lucide-react'
 import jsPDF from 'jspdf'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import {
-  fetchSorties, fetchPneus, fetchCommandes, fetchGroupes, fetchSettings, updateSetting, fetchStock, fetchCompaniesForGarage,
+  fetchSorties, fetchPneus, fetchCommandes, fetchSettings, updateSetting, fetchCompaniesForGarage,
 } from '@/services/garageSbta.service'
 import type { GarageSortiePiece, GaragePneu, GarageCommandePiece, GarageGroupe, GarageSetting, GarageCompany } from '@/types/garage.types'
 import { addReportHeader, addReportFooter, ensureSpace, formatDate, formatFCFA, formatFCFAShort, type ReportFilters } from '@/components/garage/reportHelpers'
@@ -120,7 +120,8 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     const doc = new jsPDF()
     const pw = doc.internal.pageSize.getWidth()
     const ph = doc.internal.pageSize.getHeight()
-    const margin = 14
+    const margin = 10
+    const contentW = pw - 2 * margin
 
     const titles: Record<ReportType, string> = {
       pieces_groupe: 'Point financier des sorties de pièces de rechange par groupe',
@@ -138,31 +139,33 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     }, pw)
 
     if (reportType === 'pieces_groupe') {
+      const cols = [margin, margin + 8, margin + contentW * 0.46, margin + contentW * 0.60, margin + contentW * 0.80]
       let grandTotal = 0
       for (const [gname, items] of Object.entries(grouped)) {
         y = ensureSpace(doc, y, 30, ph, pw)
         doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
         doc.text(`GROUPE : ${gname}`, margin, y); y += 6
 
-        const cols = [margin, margin + 10, margin + 80, margin + 105, margin + 130, margin + 160]
         let groupTotal = 0
         for (const { registration, items: carItems } of groupItemsByCar(items as GarageSortiePiece[])) {
           y = ensureSpace(doc, y, 18, ph, pw)
-          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, pw - 2 * margin, 6, 'F')
+          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, contentW, 6, 'F')
           doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
           doc.text(`CAR : ${registration}`, margin + 2, y); y += 5
           doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
-          doc.text('#', cols[0], y); doc.text('Pièces', cols[1], y); doc.text('Qté', cols[3], y, { align: 'right' })
-          doc.text('Prix unit.', cols[4], y, { align: 'right' }); doc.text('Total', cols[5], y, { align: 'right' })
+          doc.text('#', cols[0], y); doc.text('Pièces', cols[1], y)
+          doc.text('Qté', cols[2], y, { align: 'right' })
+          doc.text('Prix unit.', cols[3], y, { align: 'right' })
+          doc.text('Total', cols[4], y, { align: 'right' })
           y += 3; doc.line(margin, y, pw - margin, y); y += 4
           doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
           carItems.forEach((s, i) => {
             y = ensureSpace(doc, y, 6, ph, pw)
             doc.text(String(i + 1), cols[0], y)
-            doc.text(`${s.piece?.nom ?? '—'}${s.piece?.marque ? ` ${s.piece.marque}` : ''}`, cols[1], y, { max_width: 65 })
-            doc.text(String(s.quantite), cols[3], y, { align: 'right' })
-            doc.text(formatFCFAShort(s.prix_unitaire), cols[4], y, { align: 'right' })
-            doc.text(formatFCFAShort(s.montant), cols[5], y, { align: 'right' })
+            doc.text(`${s.piece?.nom ?? '—'}${s.piece?.marque ? ` ${s.piece.marque}` : ''}`, cols[1], y, { max_width: cols[2] - cols[1] - 4 })
+            doc.text(String(s.quantite), cols[2], y, { align: 'right' })
+            doc.text(formatFCFAShort(s.prix_unitaire), cols[3], y, { align: 'right' })
+            doc.text(formatFCFAShort(s.montant), cols[4], y, { align: 'right' })
             groupTotal += Number(s.montant); y += 5
           })
         }
@@ -172,13 +175,18 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         grandTotal += groupTotal; y += 8
       }
       y = ensureSpace(doc, y, 10, ph, pw)
-      doc.setFillColor(11, 116, 57); doc.rect(margin, y - 4, pw - 2 * margin, 8, 'F')
+      doc.setFillColor(11, 116, 57); doc.rect(margin, y - 4, contentW, 8, 'F')
       doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255)
       doc.text(`TOTAL GÉNÉRAL : ${formatFCFA(grandTotal)}`, pw - margin, y, { align: 'right' })
     }
 
     if (reportType === 'pneus_michelin' || reportType === 'pneus_long_march') {
       const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'PNEU LONG-MARCH'
+      const colDate = margin
+      const colDesign = margin + contentW * 0.18
+      const colQty = margin + contentW * 0.62
+      const colPrix = margin + contentW * 0.80
+      const colMontant = pw - margin
       let totalQty = 0; let totalMontant = 0
 
       for (const [gname, items] of Object.entries(grouped)) {
@@ -189,27 +197,27 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         let subQty = 0; let subMontant = 0
         for (const { registration, items: carItems } of groupItemsByCar(items as GaragePneu[])) {
           y = ensureSpace(doc, y, 18, ph, pw)
-          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, pw - 2 * margin, 6, 'F')
+          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, contentW, 6, 'F')
           doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
           doc.text(`CAR : ${registration}`, margin + 2, y); y += 5
           doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
-          doc.text('Date', margin, y); doc.text('Désignation', margin + 30, y)
-          doc.text('Qté', margin + 130, y, { align: 'right' }); doc.text('Prix unit.', margin + 155, y, { align: 'right' }); doc.text('Montant', pw - margin, y, { align: 'right' })
+          doc.text('Date', colDate, y); doc.text('Désignation', colDesign, y)
+          doc.text('Qté', colQty, y, { align: 'right' }); doc.text('Prix unit.', colPrix, y, { align: 'right' }); doc.text('Montant', colMontant, y, { align: 'right' })
           y += 3; doc.line(margin, y, pw - margin, y); y += 4
           doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
           carItems.forEach(p => {
             y = ensureSpace(doc, y, 6, ph, pw)
-            doc.text(formatDate(p.date), margin, y)
-            doc.text(typeLabel, margin + 30, y, { max_width: 90 })
-            doc.text(String(p.quantite), margin + 130, y, { align: 'right' })
-            doc.text(formatFCFAShort(p.prix_unitaire), margin + 155, y, { align: 'right' })
-            doc.text(formatFCFAShort(p.montant), pw - margin, y, { align: 'right' })
+            doc.text(formatDate(p.date), colDate, y)
+            doc.text(typeLabel, colDesign, y, { max_width: colQty - colDesign - 4 })
+            doc.text(String(p.quantite), colQty, y, { align: 'right' })
+            doc.text(formatFCFAShort(p.prix_unitaire), colPrix, y, { align: 'right' })
+            doc.text(formatFCFAShort(p.montant), colMontant, y, { align: 'right' })
             subQty += p.quantite; subMontant += Number(p.montant); y += 5
           })
         }
         y = ensureSpace(doc, y, 10, ph, pw)
         doc.setFont('helvetica', 'bold'); doc.setTextColor(11, 116, 57)
-        doc.text(`Sous-total quantité : ${subQty}`, margin + 130, y, { align: 'right' })
+        doc.text(`Sous-total quantité : ${subQty}`, colQty, y, { align: 'right' })
         doc.text(`TOTAL ${gname} : ${formatFCFA(subMontant)}`, pw - margin, y, { align: 'right' })
         totalQty += subQty; totalMontant += subMontant; y += 8
       }
@@ -227,6 +235,11 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
     }
 
     if (reportType === 'commandes_groupe') {
+      const colDate = margin
+      const colDesign = margin + contentW * 0.18
+      const colQty = margin + contentW * 0.62
+      const colPrix = margin + contentW * 0.80
+      const colMontant = pw - margin
       let grandQty = 0; let grandMontant = 0
       for (const [gname, items] of Object.entries(grouped)) {
         y = ensureSpace(doc, y, 30, ph, pw)
@@ -236,21 +249,21 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         let gQty = 0; let gMontant = 0
         for (const { registration, items: carItems } of groupItemsByCar(items as GarageCommandePiece[])) {
           y = ensureSpace(doc, y, 18, ph, pw)
-          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, pw - 2 * margin, 6, 'F')
+          doc.setFillColor(190, 190, 190); doc.rect(margin, y - 4, contentW, 6, 'F')
           doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 46, 34)
           doc.text(`CAR : ${registration}`, margin + 2, y); y += 5
           doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(74, 107, 85)
-          doc.text('Date', margin, y); doc.text('Désignation/Type', margin + 30, y)
-          doc.text('Qté', margin + 130, y, { align: 'right' }); doc.text('Prix unit.', margin + 155, y, { align: 'right' }); doc.text('Montant', pw - margin, y, { align: 'right' })
+          doc.text('Date', colDate, y); doc.text('Désignation/Type', colDesign, y)
+          doc.text('Qté', colQty, y, { align: 'right' }); doc.text('Prix unit.', colPrix, y, { align: 'right' }); doc.text('Montant', colMontant, y, { align: 'right' })
           y += 3; doc.line(margin, y, pw - margin, y); y += 4
           doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 40)
           carItems.forEach(c => {
             y = ensureSpace(doc, y, 6, ph, pw)
-            doc.text(formatDate(c.date), margin, y)
-            doc.text(c.designation, margin + 30, y, { max_width: 60 })
-            doc.text(String(c.quantite), margin + 130, y, { align: 'right' })
-            doc.text(formatFCFAShort(c.prix_unitaire), margin + 155, y, { align: 'right' })
-            doc.text(formatFCFAShort(c.montant), pw - margin, y, { align: 'right' })
+            doc.text(formatDate(c.date), colDate, y)
+            doc.text(c.designation, colDesign, y, { max_width: colQty - colDesign - 4 })
+            doc.text(String(c.quantite), colQty, y, { align: 'right' })
+            doc.text(formatFCFAShort(c.prix_unitaire), colPrix, y, { align: 'right' })
+            doc.text(formatFCFAShort(c.montant), colMontant, y, { align: 'right' })
             gQty += c.quantite; gMontant += Number(c.montant); y += 5
           })
         }
@@ -260,7 +273,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         grandQty += gQty; grandMontant += gMontant; y += 8
       }
       y = ensureSpace(doc, y, 10, ph, pw)
-      doc.setFillColor(11, 116, 57); doc.rect(margin, y - 4, pw - 2 * margin, 8, 'F')
+      doc.setFillColor(11, 116, 57); doc.rect(margin, y - 4, contentW, 8, 'F')
       doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255)
       doc.text(`TOTAL GÉNÉRAL : ${grandQty} pièces — ${formatFCFA(grandMontant)}`, pw - margin, y, { align: 'right' })
     }

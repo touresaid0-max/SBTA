@@ -8,11 +8,11 @@ export interface ReportFilters {
 
 export function formatFCFA(n: number | string | null | undefined): string {
   const num = Number(n ?? 0)
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(num) + ' FCFA'
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(num).replace(/\u00A0/g, ' ') + ' F CFA'
 }
 
 export function formatFCFAShort(n: number | string | null | undefined): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(n ?? 0))
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(n ?? 0)).replace(/\u00A0/g, ' ')
 }
 
 export function formatDate(d: string | Date): string {
