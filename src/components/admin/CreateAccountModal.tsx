@@ -17,7 +17,7 @@ const ROLE_LABELS: Record<string, string> = {
   agent_reservation: 'Agent Réservation',
   chef_garage: 'Chef Garage',
   chef_gare: 'Chef Gare',
-  mecanicien: 'Mécanicien',
+  mecanicien: 'Technicien',
   pompiste: 'Pompiste',
   bagagiste: 'Bagagiste',
   carburant: 'Carburant',

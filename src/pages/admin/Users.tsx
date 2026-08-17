@@ -59,7 +59,7 @@ const ROLES: { value: UserRole; label: string; color: string; group: string }[] 
   { value: 'agent_reservation',       label: 'Agent Réservation',            color: '#0B7439', group: 'Opérationnel' },
   { value: 'chef_garage',             label: 'Chef Garage',                  color: '#D97706', group: 'Opérationnel' },
   { value: 'chef_gare',               label: 'Chef Gare',                    color: '#D97706', group: 'Opérationnel' },
-  { value: 'mecanicien',              label: 'Mécanicien',                   color: '#1D6FA4', group: 'Opérationnel' },
+  { value: 'mecanicien',              label: 'Technicien',                   color: '#1D6FA4', group: 'Opérationnel' },
   { value: 'pompiste',                label: 'Pompiste',                     color: '#6B7280', group: 'Opérationnel' },
   { value: 'carburant',               label: 'Carburant',                    color: '#1D6FA4', group: 'Opérationnel' },
   { value: 'bagagiste',               label: 'Bagagiste',                    color: '#1D6FA4', group: 'Opérationnel' },
