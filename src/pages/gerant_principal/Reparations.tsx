@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
-import { X, Pencil, Info, Wrench, Trash2 } from 'lucide-react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { X, Pencil, Info, Wrench, Trash2, Search, ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
 import {
@@ -21,6 +21,13 @@ export function ReparationStatusBadge({ statut }: { statut: ReparationStatut }) 
   return <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${c.bg} ${c.text}`}>{c.label}</span>
 }
 
+interface Technicien {
+  id: string
+  full_name: string
+  type_technicien_id: string | null
+  type_technicien_nom: string | null
+}
+
 interface FormState {
   bus_id: string
   date: string
@@ -30,11 +37,139 @@ interface FormState {
   description: string
 }
 
+function TechnicienAutocomplete({
+  techniciens,
+  value,
+  onChange,
+  inputCls,
+}: {
+  techniciens: Technicien[]
+  value: string
+  onChange: (id: string, typeTechnicienId: string | null) => void
+  inputCls: string
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [highlighted, setHighlighted] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const selected = useMemo(() => techniciens.find(t => t.id === value), [techniciens, value])
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return techniciens
+    const q = query.toLowerCase().trim()
+    return techniciens.filter(t =>
+      t.full_name.toLowerCase().includes(q) ||
+      (t.type_technicien_nom?.toLowerCase().includes(q) ?? false),
+    )
+  }, [techniciens, query])
+
+  useEffect(() => {
+    if (highlighted >= filtered.length) setHighlighted(0)
+  }, [filtered.length, highlighted])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        if (selected) setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [selected])
+
+  const handleSelect = (tech: Technicien) => {
+    onChange(tech.id, tech.type_technicien_id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setOpen(true)
+        e.preventDefault()
+      }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlighted(h => Math.min(h + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlighted(h => Math.max(h - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filtered[highlighted]) handleSelect(filtered[highlighted])
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+      setQuery('')
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      {open ? (
+        <div className={`flex items-center gap-2 ${inputCls}`}>
+          <Search className="w-4 h-4 flex-shrink-0 text-[#6B7280]" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => { setQuery(e.target.value); setOpen(true); setHighlighted(0) }}
+            onKeyDown={handleKeyDown}
+            placeholder="Rechercher un technicien..."
+            className="flex-1 bg-transparent outline-none text-sm"
+            autoFocus
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={`flex items-center justify-between gap-2 ${inputCls} text-left`}
+        >
+          <span className={selected ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}>
+            {selected ? selected.full_name : 'Rechercher un technicien...'}
+          </span>
+          <ChevronDown className="w-4 h-4 flex-shrink-0 text-[#6B7280]" />
+        </button>
+      )}
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border border-[#E2EAE5] bg-white max-h-56 overflow-y-auto shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-center text-[#6B7280]">Aucun technicien trouvé</div>
+          ) : (
+            filtered.map((tech, idx) => (
+              <button
+                key={tech.id}
+                type="button"
+                onMouseEnter={() => setHighlighted(idx)}
+                onClick={() => handleSelect(tech)}
+                className="w-full text-left px-3 py-2.5 flex flex-col gap-0.5 transition-colors"
+                style={{ backgroundColor: idx === highlighted ? '#F0F7F4' : 'transparent' }}
+              >
+                <span className={`text-sm font-medium truncate ${tech.id === value ? 'text-[#0B7439]' : 'text-[#1A2E22]'}`}>
+                  {tech.full_name}
+                </span>
+                {tech.type_technicien_nom && (
+                  <span className="text-xs text-[#6B7280] truncate">{tech.type_technicien_nom}</span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function GarageReparations() {
   const [reparations, setReparations] = useState<GarageReparation[]>([])
   const [buses, setBuses] = useState<GarageBus[]>([])
   const [typesTech, setTypesTech] = useState<GarageTypeTechnicien[]>([])
-  const [techniciens, setTechniciens] = useState<{ id: string; full_name: string; type_technicien_id: string | null }[]>([])
+  const [techniciens, setTechniciens] = useState<Technicien[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<GarageReparation | null>(null)
@@ -82,6 +217,10 @@ export default function GarageReparations() {
     setShowModal(true)
   }
 
+  const handleTechnicienChange = (techId: string, typeTechId: string | null) => {
+    setForm(f => ({ ...f, technicien_id: techId, type_technicien_id: typeTechId ?? '' }))
+  }
+
   const handleSave = async () => {
     if (!form.bus_id) { toast.error('Sélectionnez un car'); return }
     try {
@@ -106,6 +245,11 @@ export default function GarageReparations() {
   }
 
   const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]'
+
+  const selectedTypeTechNom = useMemo(() => {
+    if (!form.type_technicien_id) return null
+    return typesTech.find(t => t.id === form.type_technicien_id)?.nom ?? null
+  }, [form.type_technicien_id, typesTech])
 
   return (
     <>
@@ -164,29 +308,28 @@ export default function GarageReparations() {
                   <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={inputCls} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[#4A6B55] mb-1">Statut</label>
-                  <select value={form.statut} onChange={e => setForm({ ...form, statut: e.target.value as ReparationStatut })} className={inputCls}>
-                    <option value="BROUILLON">BROUILLON</option>
-                    <option value="EN RÉPARATION">EN RÉPARATION</option>
-                    <option value="LIBÉRÉ">LIBÉRÉ</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#4A6B55] mb-1">Type de technicien</label>
-                  <select value={form.type_technicien_id} onChange={e => setForm({ ...form, type_technicien_id: e.target.value })} className={inputCls}>
-                    <option value="">—</option>
-                    {typesTech.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Statut</label>
+                <select value={form.statut} onChange={e => setForm({ ...form, statut: e.target.value as ReparationStatut })} className={inputCls}>
+                  <option value="BROUILLON">BROUILLON</option>
+                  <option value="EN RÉPARATION">EN RÉPARATION</option>
+                  <option value="LIBÉRÉ">LIBÉRÉ</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#4A6B55] mb-1">Technicien</label>
-                <select value={form.technicien_id} onChange={e => setForm({ ...form, technicien_id: e.target.value })} className={inputCls}>
-                  <option value="">—</option>
-                  {techniciens.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                </select>
+                <TechnicienAutocomplete
+                  techniciens={techniciens}
+                  value={form.technicien_id}
+                  onChange={handleTechnicienChange}
+                  inputCls={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Type de technicien</label>
+                <div className={`${inputCls} bg-[#F4F7F5] flex items-center ${selectedTypeTechNom ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}`}>
+                  {selectedTypeTechNom ?? (form.technicien_id ? 'Aucun type associé' : 'Sélectionnez un technicien')}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#4A6B55] mb-1">Description</label>

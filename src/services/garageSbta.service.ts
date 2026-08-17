@@ -349,19 +349,32 @@ export async function fetchCarsDisponibles(): Promise<GarageCarDisponible[]> {
   return data ?? []
 }
 
-// ── Techniciens (employees with role mecanicien) ─────────────
-export async function fetchTechniciens(): Promise<{ id: string; full_name: string; type_technicien_id: string | null }[]> {
-  const { data, error } = await supabase
-    .from('employees')
+// ── Techniciens (comptes utilisateurs actifs avec le rôle technicien) ──
+export async function fetchTechniciens(): Promise<{ id: string; full_name: string; type_technicien_id: string | null; type_technicien_nom: string | null }[]> {
+  const { data: users, error: usersError } = await supabase
+    .from('users')
     .select('id, first_name, last_name, technician_type_id')
     .eq('role', 'mecanicien')
-    .neq('account_status', 'inactive')
+    .eq('status', 'active')
+    .eq('is_active', true)
     .order('first_name')
-  if (error) throw error
-  return (data ?? []).map((e: { id: string; first_name: string | null; last_name: string | null; technician_type_id: string | null }) => ({
-    id: e.id,
-    full_name: `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim(),
-    type_technicien_id: e.technician_type_id,
+    .order('last_name')
+  if (usersError) throw usersError
+
+  const technicianTypeIds = [...new Set(
+    (users ?? []).map(user => user.technician_type_id).filter((id): id is string => Boolean(id)),
+  )]
+  const { data: types, error: typesError } = technicianTypeIds.length
+    ? await supabase.from('garage_types_techniciens').select('id, nom').in('id', technicianTypeIds)
+    : { data: [], error: null }
+  if (typesError) throw typesError
+
+  const typesById = new Map((types ?? []).map(type => [type.id, type.nom.trim()]))
+  return (users ?? []).map(user => ({
+    id: user.id,
+    full_name: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.id.slice(0, 8),
+    type_technicien_id: user.technician_type_id,
+    type_technicien_nom: user.technician_type_id ? typesById.get(user.technician_type_id) ?? null : null,
   }))
 }
 
