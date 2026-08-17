@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, DollarSign, Fuel, Wrench, Clock, Package, Bus, Award, Users, TrendingUp, PackagePlus, UserCheck } from 'lucide-react';
+import { BarChart3, DollarSign, Fuel, Wrench, Clock, Package, Bus, Award, Users, TrendingUp, PackagePlus, UserCheck, PackageCheck } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
 interface ReportCard {
@@ -88,6 +88,14 @@ const reports: ReportCard[] = [
 ];
 
 const DAF_REPORTS: ReportCard[] = [
+  {
+    id: 'garage-reports',
+    title: 'Rapports Pièces',
+    description: 'Sorties de pièces de rechange par groupe : pièces sorties, pneus Michelin / Long-March, nouvelles commandes',
+    icon: PackageCheck,
+    path: '/daf/garage-reports',
+    color: '#16a34a'
+  },
   {
     id: 'parcel-report',
     title: 'Rapport Courrier',

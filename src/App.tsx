@@ -81,6 +81,7 @@ import DAFParcelReport from './pages/daf/ParcelReport';
 import DAFBreakdownReport from './pages/daf/BreakdownReport';
 import DAFBreakdowns from './pages/daf/Breakdowns';
 import DAFCompteResultat from './pages/daf/CompteResultat';
+import DAFGarageReports from './pages/daf/GarageReports';
 import ComptableDashboard from './pages/comptable/Dashboard';
 import GestionnaireDashboard from './pages/gestionnaire/Dashboard';
 import GestionnaireReports from './pages/gestionnaire/Reports';
@@ -354,6 +355,7 @@ function App() {
             <Route path="daf/performance" element={<ProtectedRoute roles={['daf']}><PerformanceAnalytics /></ProtectedRoute>} />
             <Route path="daf/expenses-report" element={<ProtectedRoute roles={['daf']}><ExpensesReport /></ProtectedRoute>} />
             <Route path="daf/compte-resultat" element={<ProtectedRoute roles={['daf']}><DAFCompteResultat /></ProtectedRoute>} />
+            <Route path="daf/garage-reports" element={<ProtectedRoute roles={['daf']}><DAFGarageReports /></ProtectedRoute>} />
             <Route path="daf/ramassage-historique" element={<ProtectedRoute roles={['daf','admin']}><RamassageHistorique /></ProtectedRoute>} />
             <Route path="comptable/dashboard" element={<ProtectedRoute roles={['comptable']}><ComptableNewDashboard /></ProtectedRoute>} />
             <Route path="comptable/expenses" element={<ProtectedRoute roles={['comptable']}><ComptableExpensesList /></ProtectedRoute>} />
