@@ -230,6 +230,3 @@ export default function RapportReparations() {
     </div>
   )
 }
-
-
-export default daysBetween
