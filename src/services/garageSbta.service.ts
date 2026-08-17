@@ -267,7 +267,7 @@ export async function createSorties(rows: Array<{
 export async function fetchReparations(): Promise<GarageReparation[]> {
   const { data, error } = await supabase
     .from('garage_reparations')
-    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*), technicien:users(id, first_name, last_name, full_name)')
+    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*)')
     .order('date', { ascending: false })
   if (error) throw error
   return data ?? []
@@ -276,7 +276,7 @@ export async function fetchReparations(): Promise<GarageReparation[]> {
 export async function fetchReparationsEnCours(): Promise<GarageReparation[]> {
   const { data, error } = await supabase
     .from('garage_reparations')
-    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*), technicien:users(id, first_name, last_name, full_name)')
+    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*)')
     .eq('statut', 'EN RÉPARATION')
     .order('date', { ascending: false })
   if (error) throw error

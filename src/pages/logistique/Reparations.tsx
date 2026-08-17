@@ -123,7 +123,7 @@ export default function LogistiqueReparations() {
               <div className="space-y-1.5 text-sm mb-4">
                 <div className="flex justify-between">
                   <span className="text-[#6B7280]">Technicien</span>
-                  <span className="text-[#1A2E22] font-medium">{r.technicien?.full_name ?? '—'}</span>
+                  <span className="text-[#1A2E22] font-medium">{techniciens.find(t => t.id === r.technicien_id)?.full_name ?? '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#6B7280]">Type</span>

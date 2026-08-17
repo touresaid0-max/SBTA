@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { FileText, FileSpreadsheet, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { fetchReparations } from '@/services/garageSbta.service'
+import { fetchReparations, fetchTechniciens } from '@/services/garageSbta.service'
 import { ReparationStatusBadge } from '@/pages/gerant_principal/Reparations'
 import type { GarageReparation, ReparationStatut } from '@/types/garage.types'
 import { formatDate } from '@/components/garage/reportHelpers'
@@ -41,13 +41,14 @@ function daysBetween(from: string, to: Date): number {
 
 export default function RapportReparations() {
   const [reparations, setReparations] = useState<GarageReparation[]>([])
+  const [techniciens, setTechniciens] = useState<{ id: string; full_name: string; type_technicien_id: string | null }[]>([])
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState<Period>('month')
 
   const load = useCallback(() => {
     setLoading(true)
-    fetchReparations()
-      .then(setReparations)
+    Promise.all([fetchReparations(), fetchTechniciens()])
+      .then(([r, t]) => { setReparations(r); setTechniciens(t) })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
   }, [])
@@ -74,7 +75,7 @@ export default function RapportReparations() {
       r.bus?.registration_number ?? r.car?.immatriculation ?? 'N/A',
       formatDate(r.date),
       r.statut,
-      r.technicien?.full_name ?? '—',
+      r.technicien_id ? (techniciens.find(t => t.id === r.technicien_id)?.full_name ?? '—') : '—',
       r.type_technicien?.nom ?? '—',
       String(daysBetween(r.date, r.statut === 'LIBÉRÉ' ? new Date(r.updated_at) : now)),
       r.description || '—',
@@ -96,7 +97,7 @@ export default function RapportReparations() {
       r.bus?.registration_number ?? r.car?.immatriculation ?? 'N/A',
       formatDate(r.date),
       r.statut,
-      r.technicien?.full_name ?? '—',
+      r.technicien_id ? (techniciens.find(t => t.id === r.technicien_id)?.full_name ?? '—') : '—',
       r.type_technicien?.nom ?? '—',
       daysBetween(r.date, r.statut === 'LIBÉRÉ' ? new Date(r.updated_at) : now),
       r.description || '—',
@@ -213,7 +214,7 @@ export default function RapportReparations() {
                     </td>
                     <td className="px-4 py-3 text-[#1A2E22]">{formatDate(r.date)}</td>
                     <td className="px-4 py-3"><ReparationStatusBadge statut={r.statut} /></td>
-                    <td className="px-4 py-3 text-[#1A2E22]">{r.technicien?.full_name ?? '—'}</td>
+                    <td className="px-4 py-3 text-[#1A2E22]">{r.technicien_id ? (techniciens.find(t => t.id === r.technicien_id)?.full_name ?? '—') : '—'}</td>
                     <td className="px-4 py-3 text-[#1A2E22]">{r.type_technicien?.nom ?? '—'}</td>
                     <td className="px-4 py-3 text-[#1A2E22] font-medium">
                       {daysBetween(r.date, r.statut === 'LIBÉRÉ' ? new Date(r.updated_at) : now)}
@@ -229,3 +230,6 @@ export default function RapportReparations() {
     </div>
   )
 }
+
+
+export default daysBetween

@@ -87,7 +87,6 @@ export default function GarageReparations() {
     try {
       const payload = {
         bus_id: form.bus_id,
-        car_id: form.bus_id,
         date: form.date,
         statut: form.statut,
         technicien_id: form.technicien_id || null,
@@ -115,7 +114,7 @@ export default function GarageReparations() {
         subtitle={`${reparations.length} réparation(s) enregistrée(s)`}
         data={reparations}
         loading={loading}
-        searchFields={['description', 'bus.registration_number', 'car.immatriculation', 'type_technicien.nom', 'technicien.full_name']}
+        searchFields={['description', 'bus.registration_number', 'car.immatriculation', 'type_technicien.nom']}
         onCreate={openCreate}
         createLabel="Créer une réparation"
         columns={[
@@ -127,8 +126,8 @@ export default function GarageReparations() {
           )},
           { key: 'statut', label: 'Statut', render: (r: GarageReparation) => <ReparationStatusBadge statut={r.statut} /> },
           { key: 'technicien', label: 'Technicien', render: (r: GarageReparation) => {
-            const name = r.technicien?.full_name ?? `${r.technicien?.first_name ?? ''} ${r.technicien?.last_name ?? ''}`.trim()
-            return <span>{name || '—'}</span>
+            const tech = techniciens.find(t => t.id === r.technicien_id)
+            return <span>{tech?.full_name || '—'}</span>
           }},
           { key: 'type_technicien', label: 'Type technicien', render: (r: GarageReparation) => r.type_technicien?.nom ?? '—' },
           { key: 'description', label: 'Description', render: (r: GarageReparation) => (
@@ -213,7 +212,7 @@ export default function GarageReparations() {
               <div className="flex justify-between"><span className="text-[#6B7280]">Date</span><span className="text-[#1A2E22]">{formatDate(detail.date)}</span></div>
               <div className="flex justify-between"><span className="text-[#6B7280]">Car</span><span className="font-mono font-medium text-[#0B7439]">{detail.bus?.registration_number ?? detail.car?.immatriculation ?? '—'}</span></div>
               <div className="flex justify-between items-center"><span className="text-[#6B7280]">Statut</span><ReparationStatusBadge statut={detail.statut} /></div>
-              <div className="flex justify-between"><span className="text-[#6B7280]">Technicien</span><span className="text-[#1A2E22]">{detail.technicien?.full_name ?? '—'}</span></div>
+              <div className="flex justify-between"><span className="text-[#6B7280]">Technicien</span><span className="text-[#1A2E22]">{techniciens.find(t => t.id === detail.technicien_id)?.full_name ?? '—'}</span></div>
               <div className="flex justify-between"><span className="text-[#6B7280]">Type technicien</span><span className="text-[#1A2E22]">{detail.type_technicien?.nom ?? '—'}</span></div>
               <div><span className="text-[#6B7280] block mb-1">Description</span><span className="text-[#1A2E22]">{detail.description || '—'}</span></div>
             </div>
