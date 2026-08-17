@@ -83,6 +83,29 @@ export default function EmployeesPage() {
 
   useEffect(() => { loadEmployees() }, [loadEmployees])
 
+  // Realtime : notifier le RH quand un nouvel employé est créé (ex: par l'Admin)
+  useEffect(() => {
+    const channel = supabase
+      .channel('rh-employees-new')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'employees' },
+        (payload) => {
+          const emp = payload.new as { first_name?: string; last_name?: string; role?: string; created_by?: string }
+          // Skip if the RH created it themselves (created_by = current user)
+          if (emp.created_by === user?.id) return
+          const name = `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim()
+          toast(`Nouvel employé synchronisé : ${name} (${emp.role ?? '—'})`, {
+            duration: 6000,
+            icon: '👤',
+          })
+          loadEmployees()
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [loadEmployees, user?.id])
+
   const handleDeactivate = async () => {
     if (!deactivateModal || !user) return
     setDeactivating(true)

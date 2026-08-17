@@ -239,6 +239,27 @@ Deno.serve(async (req: Request) => {
       new_values: { email, role, company_id: profileData.company_id, station_id: profileData.station_id },
     });
 
+    // Notify all RH users about the new employee (created via trigger)
+    try {
+      const { data: rhUsers } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("role", "rh")
+        .eq("status", "active");
+      if (rhUsers && rhUsers.length > 0) {
+        const notifContent = `Nouvel employé créé par l'Admin : ${first_name ?? ""} ${last_name ?? ""} (${role})${send_invitation ? " — invitation envoyée" : ""}`;
+        const messages = rhUsers.map((rh) => ({
+          sender_id: caller.id,
+          receiver_id: rh.id,
+          content: notifContent,
+          is_read: false,
+        }));
+        await supabaseAdmin.from("admin_chat_messages").insert(messages);
+      }
+    } catch (_notifErr) {
+      // Notification is best-effort; don't fail the user creation
+    }
+
     return new Response(
       JSON.stringify({ success: true, user_id: authUserId }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
