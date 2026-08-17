@@ -107,16 +107,52 @@ export interface GarageSortiePiece {
   groupe?: { id: string; name: string } | null
 }
 
+export type ReparationStatut = 'BROUILLON' | 'EN RÉPARATION' | 'LIBÉRÉ'
+
 export interface GarageReparation {
   id: string
   car_id: string
+  bus_id: string | null
   date: string
-  statut: 'en cours' | 'terminée'
+  statut: ReparationStatut
+  technicien_id: string | null
   type_technicien_id: string | null
   description: string
+  source_sortie_id: string | null
   created_at: string
+  updated_at: string
   car?: GarageCar | null
+  bus?: { id: string; registration_number: string; company_id: string | null } | null
   type_technicien?: GarageTypeTechnicien | null
+  technicien?: { id: string; first_name: string | null; last_name: string | null; full_name: string | null } | null
+}
+
+export interface GarageHistoriqueStatut {
+  id: string
+  reparation_id: string
+  ancien_statut: string | null
+  nouveau_statut: ReparationStatut
+  change_par: string | null
+  date_changement: string
+}
+
+export interface GarageReparationNotification {
+  id: string
+  reparation_id: string
+  destinataire_id: string
+  message: string
+  lu: boolean
+  created_at: string
+  reparation?: GarageReparation | null
+}
+
+export interface GarageCarDisponible {
+  id: string
+  registration_number: string
+  company_id: string | null
+  brand: string | null
+  model: string | null
+  total_seats: number | null
 }
 
 export interface GarageCommandePiece {

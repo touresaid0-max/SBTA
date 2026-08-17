@@ -4,6 +4,8 @@ import type {
   GarageFournisseur, GarageTypeTechnicien, GaragePiece, GarageStock,
   GarageEntreeStock, GarageSortiePiece, GarageReparation,
   GarageCommandePiece, GaragePneu, GarageSetting,
+  ReparationStatut, GarageHistoriqueStatut, GarageReparationNotification,
+  GarageCarDisponible,
 } from '@/types/garage.types'
 
 // ── Groupes ──────────────────────────────────────────────────
@@ -265,30 +267,102 @@ export async function createSorties(rows: Array<{
 export async function fetchReparations(): Promise<GarageReparation[]> {
   const { data, error } = await supabase
     .from('garage_reparations')
-    .select('*, car:garage_cars(*), type_technicien:garage_types_techniciens(*)')
+    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*), technicien:users(id, first_name, last_name, full_name)')
     .order('date', { ascending: false })
   if (error) throw error
   return data ?? []
 }
+
+export async function fetchReparationsEnCours(): Promise<GarageReparation[]> {
+  const { data, error } = await supabase
+    .from('garage_reparations')
+    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*), technicien:users(id, first_name, last_name, full_name)')
+    .eq('statut', 'EN RÉPARATION')
+    .order('date', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
 export async function createReparation(r: {
-  car_id: string; date: string; statut: 'en cours' | 'terminée';
-  type_technicien_id: string | null; description: string;
+  car_id: string; bus_id?: string | null; date: string; statut: ReparationStatut;
+  technicien_id?: string | null; type_technicien_id?: string | null; description: string;
 }): Promise<GarageReparation> {
   const { data, error } = await supabase.from('garage_reparations').insert(r).select().single()
   if (error) throw error
   return data
 }
+
 export async function updateReparation(id: string, r: Partial<{
-  car_id: string; date: string; statut: 'en cours' | 'terminée';
-  type_technicien_id: string | null; description: string;
+  car_id: string; bus_id: string | null; date: string; statut: ReparationStatut;
+  technicien_id: string | null; type_technicien_id: string | null; description: string;
 }>): Promise<GarageReparation> {
-  const { data, error } = await supabase.from('garage_reparations').update(r).eq('id', id).select().single()
+  const { data, error } = await supabase.from('garage_reparations').update({ ...r, updated_at: new Date().toISOString() }).eq('id', id).select().single()
   if (error) throw error
   return data
 }
+
 export async function deleteReparation(id: string): Promise<void> {
   const { error } = await supabase.from('garage_reparations').delete().eq('id', id)
   if (error) throw error
+}
+
+// ── Historique statuts ───────────────────────────────────────
+export async function fetchHistoriqueStatuts(reparationId: string): Promise<GarageHistoriqueStatut[]> {
+  const { data, error } = await supabase
+    .from('garage_historique_statuts')
+    .select('*')
+    .eq('reparation_id', reparationId)
+    .order('date_changement', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+// ── Notifications réparations ────────────────────────────────
+export async function fetchReparationNotifications(destinataireId: string): Promise<GarageReparationNotification[]> {
+  const { data, error } = await supabase
+    .from('garage_reparation_notifications')
+    .select('*, reparation:garage_reparations(*)')
+    .eq('destinataire_id', destinataireId)
+    .order('created_at', { ascending: false })
+    .limit(30)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  const { error } = await supabase.from('garage_reparation_notifications').update({ lu: true }).eq('id', id)
+  if (error) throw error
+}
+
+export async function markAllNotificationsRead(destinataireId: string): Promise<void> {
+  const { error } = await supabase.from('garage_reparation_notifications').update({ lu: true }).eq('destinataire_id', destinataireId).eq('lu', false)
+  if (error) throw error
+}
+
+// ── Cars disponibles (buses not in EN RÉPARATION) ────────────
+export async function fetchCarsDisponibles(): Promise<GarageCarDisponible[]> {
+  const { data, error } = await supabase
+    .from('cars_disponibles')
+    .select('*')
+    .order('registration_number')
+  if (error) throw error
+  return data ?? []
+}
+
+// ── Techniciens (employees with role mecanicien) ─────────────
+export async function fetchTechniciens(): Promise<{ id: string; full_name: string; type_technicien_id: string | null }[]> {
+  const { data, error } = await supabase
+    .from('employees')
+    .select('id, first_name, last_name, technician_type_id')
+    .eq('role', 'mecanicien')
+    .neq('account_status', 'inactive')
+    .order('first_name')
+  if (error) throw error
+  return (data ?? []).map((e: { id: string; first_name: string | null; last_name: string | null; technician_type_id: string | null }) => ({
+    id: e.id,
+    full_name: `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim(),
+    type_technicien_id: e.technician_type_id,
+  }))
 }
 
 // ── Commandes pieces ─────────────────────────────────────────

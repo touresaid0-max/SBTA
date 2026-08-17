@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Pencil, AlertTriangle, ArrowDownToLine, ArrowUpCircle, Wrench, Plus, Trash2, X, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
-import { fetchStock, correctStock, fetchEntrees, fetchSorties, createEntree, createSortie, createSorties, fetchPieces, fetchFournisseurs, fetchBusesForGarage, fetchCompaniesForGarage } from '@/services/garageSbta.service'
+import { fetchStock, correctStock, fetchEntrees, fetchSorties, createEntree, createSortie, createSorties, fetchPieces, fetchFournisseurs, fetchBusesForGarage, fetchCompaniesForGarage, fetchCarsDisponibles } from '@/services/garageSbta.service'
 import type { GarageStock, GaragePiece, GarageFournisseur, GarageBus, GarageCompany, GarageEntreeStock, GarageSortiePiece } from '@/types/garage.types'
 import { formatDate, formatFCFA } from '@/components/garage/reportHelpers'
 import { useAuthStore } from '@/store/authStore'
@@ -46,8 +46,14 @@ export default function GarageStockPage() {
       .finally(() => setLoading(false))
 
     setCarsLoading(true)
-    fetchBusesForGarage()
-      .then(setCars)
+    fetchCarsDisponibles()
+      .then(disponibles => {
+        // Conserver fetchBusesForGarage pour les infos société, mais filtrer sur les cars disponibles
+        fetchBusesForGarage().then(allBuses => {
+          const dispoIds = new Set(disponibles.map(d => d.id))
+          setCars(allBuses.filter(b => dispoIds.has(b.id)))
+        }).catch(() => setCars([]))
+      })
       .catch(() => toast.error('Impossible de charger la liste des cars'))
       .finally(() => setCarsLoading(false))
   }

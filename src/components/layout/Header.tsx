@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, LogOut, User, Clock, Monitor, Menu, ChevronDown, UserCog, AlertTriangle, Bus, MapPin, Calendar } from 'lucide-react';
+import { Bell, LogOut, User, Clock, Monitor, Menu, ChevronDown, UserCog, AlertTriangle, Bus, MapPin, Calendar, Wrench } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { countPendingAccounts } from '../../services/employeeAccount.service';
@@ -49,12 +49,18 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   }>>([]);
   const [dafAlertsOpen, setDafAlertsOpen] = useState(false);
   const dafAlertsRef = useRef<HTMLDivElement>(null);
+  const [repairNotifs, setRepairNotifs] = useState<Array<{ id: string; message: string; lu: boolean; created_at: string; reparation_id: string }>>([]);
+  const [repairNotifsOpen, setRepairNotifsOpen] = useState(false);
+  const repairNotifsRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setProfileOpen(false);
+      }
+      if (repairNotifsRef.current && !repairNotifsRef.current.contains(e.target as Node)) {
+        setRepairNotifsOpen(false);
       }
     }
     document.addEventListener('mousedown', handler);
@@ -64,6 +70,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   useEffect(() => {
     setProfileOpen(false);
     setDafAlertsOpen(false);
+    setRepairNotifsOpen(false);
   }, [location.pathname]);
 
   // Close DAF alerts dropdown on outside click
@@ -76,6 +83,36 @@ export default function Header({ onMenuToggle }: HeaderProps) {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Repair notifications — realtime for responsable_logistique
+  const unreadRepairNotifs = repairNotifs.filter(n => !n.lu);
+  useEffect(() => {
+    if (user?.role !== 'responsable_logistique' || !user?.id) return;
+    const load = async () => {
+      const { data } = await supabase
+        .from('garage_reparation_notifications')
+        .select('id, message, lu, created_at, reparation_id')
+        .eq('destinataire_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (data) setRepairNotifs(data as any[]);
+    };
+    load();
+    const channel = supabase
+      .channel('header-repair-notifs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'garage_reparation_notifications' }, () => load())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'garage_reparation_notifications' }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.role, user?.id]);
+
+  const markRepairNotifRead = async (id: string) => {
+    await supabase.from('garage_reparation_notifications').update({ lu: true }).eq('id', id);
+  };
+  const markAllRepairNotifsRead = async () => {
+    if (!user?.id) return;
+    await supabase.from('garage_reparation_notifications').update({ lu: true }).eq('destinataire_id', user.id).eq('lu', false);
+  };
 
   // DAF breakdown alerts — realtime
   const activeDafAlerts = dafAlerts.filter(a => a.is_active);
@@ -296,6 +333,66 @@ export default function Header({ onMenuToggle }: HeaderProps) {
                 >
                   Traiter les pannes
                 </Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Repair notifications badge — responsable_logistique */}
+        {user?.role === 'responsable_logistique' && repairNotifs.length > 0 && (
+          <div className="relative" ref={repairNotifsRef}>
+            <button
+              onClick={() => setRepairNotifsOpen(v => !v)}
+              className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+              style={{ backgroundColor: unreadRepairNotifs.length > 0 ? '#FEE2E2' : 'var(--bg-subtle)', border: '1px solid #DC2626', color: '#991B1B' }}
+            >
+              <Wrench className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden sm:inline">Réparations</span>
+              {unreadRepairNotifs.length > 0 && (
+                <span
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-white text-xs font-bold flex items-center justify-center"
+                  style={{ backgroundColor: '#DC2626', fontSize: 10 }}
+                >{unreadRepairNotifs.length > 9 ? '9+' : unreadRepairNotifs.length}</span>
+              )}
+            </button>
+            {repairNotifsOpen && (
+              <div
+                className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl shadow-xl overflow-hidden z-50 max-h-[70vh] flex flex-col"
+                style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)', backgroundColor: '#FEE2E2' }}>
+                  <div className="flex items-center gap-2">
+                    <Wrench className="w-4 h-4 flex-shrink-0" style={{ color: '#DC2626' }} />
+                    <span className="text-sm font-semibold" style={{ color: '#991B1B' }}>
+                      {unreadRepairNotifs.length} non lue{unreadRepairNotifs.length > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {unreadRepairNotifs.length > 0 && (
+                    <button onClick={markAllRepairNotifsRead} className="text-xs font-medium" style={{ color: 'var(--primary)' }}>
+                      Tout marquer lu
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-y-auto">
+                  {repairNotifs.map(n => (
+                    <button
+                      key={n.id}
+                      onClick={() => markRepairNotifRead(n.id)}
+                      className="block w-full text-left px-4 py-3 border-b last:border-0 transition-colors hover:bg-gray-50"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!n.lu && <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ backgroundColor: '#DC2626' }} />}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm" style={{ color: 'var(--text-primary)', fontWeight: n.lu ? 400 : 600 }}>{n.message}</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {new Date(n.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
