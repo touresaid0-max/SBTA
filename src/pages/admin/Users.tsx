@@ -11,6 +11,8 @@ import CreateAccountModal from '../../components/admin/CreateAccountModal';
 import { fetchPendingEmployees, createAccountByAdmin, type PendingEmployee } from '../../services/employeeAccount.service';
 import { deleteEmployeePermanently, reactivateEmployee } from '../../services/hr.service';
 import { generateSecurePassword } from '../../utils/generatePassword';
+import { fetchTypesTechniciens } from '../../services/garageSbta.service';
+import type { GarageTypeTechnicien } from '../../types/garage.types';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -34,6 +36,8 @@ interface UserRow {
   license_number?: string;
   license_expiry?: string;
   license_category?: string;
+  technician_type_id?: string;
+  technician_type_nom?: string;
   driver_avg_rating?: number;
   driver_total_hours?: number;
   created_at?: string;
@@ -96,6 +100,7 @@ const emptyForm = () => ({
   license_number: '',
   license_expiry: '',
   license_category: 'D',
+  technician_type_id: '',
   password: '',
   send_invitation: false,
   status: 'active',
@@ -110,6 +115,7 @@ export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
+  const [techTypes, setTechTypes] = useState<GarageTypeTechnicien[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
@@ -133,7 +139,7 @@ export default function Users() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const [usersRes, empRes, companiesRes, stationsRes] = await Promise.all([
+      const [usersRes, empRes, companiesRes, stationsRes, techTypesRes] = await Promise.all([
         supabase
           .from('users')
           .select('*, companies(name), organizations!users_organization_id_fkey(name)')
@@ -141,16 +147,18 @@ export default function Users() {
           .order('created_at', { ascending: false }),
         supabase
           .from('employees')
-          .select('*, companies(name)')
+          .select('*, companies(name), technician_type:garage_types_techniciens(id, nom)')
           .neq('account_status', 'pending')
           .order('created_at', { ascending: false }),
         supabase.from('companies').select('id, name').order('name'),
         supabase.from('stations').select('id, name').eq('is_active', true).order('name'),
+        fetchTypesTechniciens(),
       ]);
 
       if (usersRes.error) throw usersRes.error;
       setCompanies(companiesRes.data ?? []);
       setStations(stationsRes.data ?? []);
+      if (techTypesRes) setTechTypes(techTypesRes);
 
       const usersData: UserRow[] = (usersRes.data ?? []).map(u => ({ ...u }));
 
@@ -180,6 +188,8 @@ export default function Users() {
           license_number:   e.license_number ?? undefined,
           license_expiry:   e.license_expiry ?? undefined,
           license_category: e.license_category ?? undefined,
+          technician_type_id:  e.technician_type_id ?? undefined,
+          technician_type_nom: (e as any).technician_type?.nom ?? undefined,
           created_at:   e.created_at ?? undefined,
           companies:    e.companies ? { name: (e.companies as any).name } : undefined,
         }));
@@ -258,6 +268,9 @@ export default function Users() {
           payload.license_expiry = formData.license_expiry || null;
           payload.license_category = formData.license_category || null;
         }
+        if (formData.role === 'mecanicien' && formData.technician_type_id) {
+          payload.technician_type_id = formData.technician_type_id;
+        }
 
         const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
           method: 'POST',
@@ -307,6 +320,7 @@ export default function Users() {
           updateData.license_expiry = formData.license_expiry || null;
           updateData.license_category = formData.license_category || null;
         }
+        updateData.technician_type_id = formData.role === 'mecanicien' && formData.technician_type_id ? formData.technician_type_id : null;
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
         toast.success('Utilisateur mis à jour');
@@ -333,6 +347,7 @@ export default function Users() {
       license_number: user.license_number || '',
       license_expiry: user.license_expiry || '',
       license_category: user.license_category || 'D',
+      technician_type_id: user.technician_type_id || '',
       password: '',
       send_invitation: false,
       status: user.status || 'active',
@@ -1034,6 +1049,15 @@ export default function Users() {
                   </select>
                 </div>
               )}
+              {formData.role === 'mecanicien' && (
+                <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--surface-raised)' }}>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Type technicien</label>
+                  <select value={formData.technician_type_id} onChange={(e) => setFormData({ ...formData, technician_type_id: e.target.value })} className="w-full px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border)' }}>
+                    <option value="">— Sélectionner —</option>
+                    {techTypes.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}
+                  </select>
+                </div>
+              )}
               {formData.role === 'chauffeur' && (
                 <div className="p-4 rounded-lg space-y-3" style={{ backgroundColor: 'var(--surface-raised)' }}>
                   <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Informations permis de conduire</p>
@@ -1104,6 +1128,7 @@ export default function Users() {
                 { label: 'Téléphone', value: selectedUser.phone || '—' },
                 { label: 'Matricule', value: selectedUser.employee_id || '—' },
                 { label: 'Organisation', value: (selectedUser as any).organizations?.name || (selectedUser as any).companies?.name || 'SBTA Holding' },
+                ...(selectedUser.role === 'mecanicien' && selectedUser.technician_type_nom ? [{ label: 'Type technicien', value: selectedUser.technician_type_nom }] : []),
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
                   <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</span>

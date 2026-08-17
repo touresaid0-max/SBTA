@@ -77,6 +77,7 @@ Deno.serve(async (req: Request) => {
       license_number,
       license_expiry,
       license_category,
+      technician_type_id,
       send_invitation,
     } = body;
 
@@ -216,6 +217,10 @@ Deno.serve(async (req: Request) => {
       profileData.license_number = license_number || null;
       profileData.license_expiry = license_expiry || null;
       profileData.license_category = license_category || null;
+    }
+
+    if (role === "mecanicien" && technician_type_id) {
+      profileData.technician_type_id = technician_type_id;
     }
 
     const { error: profileError } = await supabaseAdmin.from("users").insert(profileData);
