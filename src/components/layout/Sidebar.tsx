@@ -77,6 +77,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Perf. bus',          path: '/gestionnaire/bus-performance',  icon: <TrendingUp className="w-5 h-5" /> },
     { label: 'Activités bus',      path: '/gestionnaire/bus-activity',     icon: <Bus className="w-5 h-5" /> },
     { label: 'Rapports',           path: '/gestionnaire/reports',          icon: <FileText className="w-5 h-5" /> },
+    { label: 'Rapports pièces',    path: '/gestionnaire/garage-reports',   icon: <Package className="w-5 h-5" /> },
     { label: 'Chauffeurs',         path: '/gestionnaire/drivers',         icon: <Users className="w-5 h-5" /> },
     { label: 'Rapport chauffeurs', path: '/gestionnaire/drivers-report',  icon: <FileText className="w-5 h-5" /> },
     { label: 'Pannes',             path: '/gestionnaire/breakdowns',       icon: <Wrench className="w-5 h-5" /> },

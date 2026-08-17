@@ -35,8 +35,8 @@ function drawPdfRight(doc: jsPDF, text: string, right: number, y: number): void 
   doc.text(text, right - doc.getTextWidth(text), y)
 }
 
-export default function GarageReports({ groupes: propGroupes, settings: propSettings, onReload }: {
-  groupes: GarageGroupe[]; settings: GarageSetting[]; onReload: () => void;
+export default function GarageReports({ groupes: propGroupes, settings: propSettings, onReload, forcedGroupeId }: {
+  groupes: GarageGroupe[]; settings: GarageSetting[]; onReload: () => void; forcedGroupeId?: string | null;
 }) {
   const { user } = useAuthStore()
   const [reportType, setReportType] = useState<ReportType>('pieces_groupe')
@@ -47,7 +47,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
   const [filters, setFilters] = useState<ReportFilters>({
     dateFrom: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
     dateTo: new Date().toISOString().slice(0, 10),
-    groupeId: null,
+    groupeId: forcedGroupeId ?? null,
   })
   const [loading, setLoading] = useState(true)
   const [prixMichelin, setPrixMichelin] = useState(325000)
@@ -61,7 +61,17 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       .finally(() => setLoading(false))
   }, [])
 
-  const societes = useMemo(() => companies.filter(c => !c.parent_id).sort((a, b) => a.name.localeCompare(b.name)), [companies])
+  const societes = useMemo(() => {
+    if (forcedGroupeId) {
+      // Restrict to the forced company and its children
+      const forced = companies.find(c => c.id === forcedGroupeId)
+      if (forced && !forced.parent_id) {
+        return [forced, ...companies.filter(c => c.parent_id === forcedGroupeId).sort((a, b) => a.name.localeCompare(b.name))]
+      }
+      return forced ? [forced] : []
+    }
+    return companies.filter(c => !c.parent_id).sort((a, b) => a.name.localeCompare(b.name))
+  }, [companies, forcedGroupeId])
   const sousGroupesBySociete = useMemo(() => {
     return new Map(societes.map(societe => [
       societe.id,
@@ -381,21 +391,23 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
             <input type="date" value={filters.dateTo} onChange={e => setFilters({ ...filters, dateTo: e.target.value })}
               className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-[#4A6B55] mb-1">Société (optionnel)</label>
-            <select value={filters.groupeId ?? ''} onChange={e => handleSelectSociete(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20">
-              <option value="">Toutes les sociétés</option>
-              {societes.map(s => (
-                <optgroup key={s.id} label={s.name}>
-                  <option value={s.id}>{s.name}</option>
-                  {sousGroupesBySociete.get(s.id)?.map(sg => (
-                    <option key={sg.id} value={sg.id}>  └ {sg.name}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
+          {!forcedGroupeId && (
+            <div>
+              <label className="block text-sm font-medium text-[#4A6B55] mb-1">Société (optionnel)</label>
+              <select value={filters.groupeId ?? ''} onChange={e => handleSelectSociete(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20">
+                <option value="">Toutes les sociétés</option>
+                {societes.map(s => (
+                  <optgroup key={s.id} label={s.name}>
+                    <option value={s.id}>{s.name}</option>
+                    {sousGroupesBySociete.get(s.id)?.map(sg => (
+                      <option key={sg.id} value={sg.id}>  └ {sg.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 mt-4">
           <button onClick={generatePDF} disabled={loading}

@@ -85,6 +85,7 @@ import DAFGarageReports from './pages/daf/GarageReports';
 import ComptableDashboard from './pages/comptable/Dashboard';
 import GestionnaireDashboard from './pages/gestionnaire/Dashboard';
 import GestionnaireReports from './pages/gestionnaire/Reports';
+import GestionnaireGarageReports from './pages/gestionnaire/GarageReports';
 import GestionnaireBusPerformance from './pages/gestionnaire/BusPerformance';
 import GestionnaireBusActivity from './pages/gestionnaire/BusActivity';
 import GestionnaireDriversReport from './pages/gestionnaire/DriversReport';
@@ -378,6 +379,7 @@ function App() {
             <Route path="carburant/depotage-report" element={<ProtectedRoute roles={['carburant']}><CarburantDepotageReport /></ProtectedRoute>} />
             <Route path="gestionnaire/dashboard" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDashboard /></ProtectedRoute>} />
             <Route path="gestionnaire/reports" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireReports /></ProtectedRoute>} />
+            <Route path="gestionnaire/garage-reports" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireGarageReports /></ProtectedRoute>} />
             <Route path="gestionnaire/financial-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireFinancialReport /></ProtectedRoute>} />
             <Route path="gestionnaire/bus-performance" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBusPerformance /></ProtectedRoute>} />
             <Route path="gestionnaire/bus-activity" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBusActivity /></ProtectedRoute>} />
