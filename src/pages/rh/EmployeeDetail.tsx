@@ -13,7 +13,7 @@ import type { Employee } from '@/types/hr.types'
 import { computeAge, monthsUntilRetirement, isNearRetirement, isRetirementReached, RETIREMENT_AGE } from '@/utils/retirement'
 
 const ROLE_LABELS: Record<string, string> = {
-  chauffeur: 'Chauffeur', guichetier: 'Guichetier', agent_reservation: 'Agent Réservation', mecanicien: 'Mécanicien',
+  chauffeur: 'Chauffeur', guichetier: 'Guichetier', agent_reservation: 'Agent Réservation', mecanicien: 'Technicien',
   pompiste: 'Pompiste', chef_garage: 'Chef Garage', chef_gare: 'Chef Gare', bagagiste: 'Bagagiste',
   gestionnaire: 'Gestionnaire', planificateur: 'Planificateur',
   comptable: 'Comptable', daf: 'DAF', rh: 'RH', admin: 'Admin',
@@ -377,6 +377,9 @@ export default function EmployeeDetail() {
             value={employee.company_name ? `${employee.company_name} (${employee.company_code})` : 'HOLDING'} />
           <InfoRow label="Gare"      value={employee.station_name} />
           <InfoRow label="Poste"     value={ROLE_LABELS[employee.role] ?? employee.role} />
+          {employee.role === 'mecanicien' && employee.technician_type_nom && (
+            <InfoRow label="Type technicien" value={employee.technician_type_nom} />
+          )}
           <InfoRow label="Contrat"
             value={employee.contract_type === 'titulaire' ? 'Titulaire (embauché)' : employee.contract_type === 'contractuel' ? 'Contractuel' : employee.contract_type === 'stagiaire' ? 'Stagiaire' : null} />
           <InfoRow label="Nature"

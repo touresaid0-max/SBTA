@@ -121,9 +121,11 @@ export async function fetchEmployeeById(id: string): Promise<Employee | null> {
       daily_rate, days_worked_this_month, current_month_earnings,
       seniority_eligibility_date, seniority_status, assigned_route_id,
       deactivated_at, deactivation_reason, created_at, company_id,
+      technician_type_id,
       companies ( id, name, code ),
       stations  ( id, name ),
-      buses     ( id, registration_number, brand, model, class )
+      buses     ( id, registration_number, brand, model, class ),
+      technician_type:garage_types_techniciens ( id, nom )
     `)
     .eq('id', id)
     .maybeSingle()
@@ -144,9 +146,11 @@ export async function fetchEmployeeById(id: string): Promise<Employee | null> {
       driver_total_reviews, deactivated_at, deactivation_reason, created_at,
       daily_rate, days_worked_this_month, current_month_earnings,
       seniority_eligibility_date, seniority_status, assigned_route_id,
+      technician_type_id,
       companies ( id, name, code ),
       stations  ( id, name ),
-      buses     ( id, registration_number, brand, model, class )
+      buses     ( id, registration_number, brand, model, class ),
+      technician_type:garage_types_techniciens ( id, nom )
     `)
     .eq('id', id)
     .maybeSingle()
@@ -162,6 +166,7 @@ function mapEmployeeRow(data: any, source: 'employees' | 'users'): Employee {
   const bus     = data.buses as any
   const company = data.companies as any
   const station = data.stations as any
+  const techType = data.technician_type as any
 
   const email = source === 'employees'
     ? (data.professional_email ?? data.personal_email ?? '')
@@ -200,6 +205,8 @@ function mapEmployeeRow(data: any, source: 'employees' | 'users'): Employee {
     seniority_eligibility_date: data.seniority_eligibility_date ?? null,
     seniority_status:           data.seniority_status ?? 'non_eligible',
     assigned_route_id:          data.assigned_route_id ?? null,
+    technician_type_id:         data.technician_type_id ?? null,
+    technician_type_nom:        techType?.nom ?? null,
   } as Employee
 }
 

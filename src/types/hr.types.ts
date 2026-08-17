@@ -63,6 +63,10 @@ export interface Employee {
   seniority_status:           SeniorityStatus
   assigned_route_id:          string | null
 
+  // Technicien
+  technician_type_id:         string | null
+  technician_type_nom:        string | null
+
   // Audit
   created_at:               string
   deactivated_at:           string | null

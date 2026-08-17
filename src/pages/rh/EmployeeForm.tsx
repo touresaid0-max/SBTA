@@ -5,6 +5,8 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { uploadAvatar } from '@/services/hr.service'
 import type { ContractType, ContractNature, Gender, MaritalStatus } from '@/types/hr.types'
+import type { GarageTypeTechnicien } from '@/types/garage.types'
+import { fetchTypesTechniciens } from '@/services/garageSbta.service'
 import type { SBTARole } from '@/store/authStore'
 import { computeAge, monthsUntilRetirement, RETIREMENT_AGE, RETIREMENT_ALERT_MONTHS } from '@/utils/retirement'
 
@@ -54,7 +56,7 @@ const ROLE_OPTIONS: { value: SBTARole; label: string; group: string }[] = [
   { value: 'guichetier',        label: 'Guichetier',          group: 'Opérationnel' },
   { value: 'agent_reservation', label: 'Agent Réservation',   group: 'Opérationnel' },
   { value: 'chef_garage',       label: 'Chef Garage',         group: 'Opérationnel' },
-  { value: 'mecanicien',        label: 'Mécanicien',          group: 'Opérationnel' },
+  { value: 'mecanicien',        label: 'Technicien',          group: 'Opérationnel' },
   { value: 'pompiste',          label: 'Pompiste',            group: 'Opérationnel' },
   { value: 'chef_gare',         label: 'Chef Gare',           group: 'Opérationnel' },
   { value: 'bagagiste',         label: 'Bagagiste',           group: 'Opérationnel' },
@@ -97,6 +99,7 @@ interface FormData {
   avatar_url:           string
   daily_rate:           string
   assigned_route_id:    string
+  technician_type_id:   string
 }
 
 const EMPTY_FORM: FormData = {
@@ -106,6 +109,7 @@ const EMPTY_FORM: FormData = {
   cnps_number: '', children_count: '0', marital_status: '', bus_id: '',
   license_number: '', license_expiry: '', license_category: '',
   avatar_url: '', daily_rate: '', assigned_route_id: '',
+  technician_type_id: '',
 }
 
 function FieldGroup({ label, required, hint, children }: {
@@ -144,6 +148,7 @@ export default function EmployeeForm() {
   const [stations,  setStations]      = useState<Station[]>([])
   const [buses,     setBuses]         = useState<Bus[]>([])
   const [routes,    setRoutes]        = useState<Route[]>([])
+  const [techTypes, setTechTypes]     = useState<GarageTypeTechnicien[]>([])
   const [saving, setSaving]           = useState(false)
   const [loading, setLoading]         = useState(isEdit)
   const [avatarFile, setAvatarFile]   = useState<File | null>(null)
@@ -154,16 +159,18 @@ export default function EmployeeForm() {
 
   useEffect(() => {
     const loadRef = async () => {
-      const [companiesRes, stationsRes, busesRes, routesRes] = await Promise.all([
+      const [companiesRes, stationsRes, busesRes, routesRes, techTypesRes] = await Promise.all([
         supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
         supabase.from('stations').select('id, name').order('name'),
         supabase.from('buses').select('id, registration_number, brand, model, class, company_id').order('registration_number'),
         supabase.from('routes').select('id, name, base_price').eq('is_active', true).order('name'),
+        fetchTypesTechniciens(),
       ])
       if (companiesRes.data) setCompanies(companiesRes.data)
       if (stationsRes.data)  setStations(stationsRes.data)
       if (busesRes.data)     setBuses(busesRes.data)
       if (routesRes.data)    setRoutes(routesRes.data)
+      if (techTypesRes)      setTechTypes(techTypesRes)
     }
     loadRef()
   }, [])
@@ -206,6 +213,7 @@ export default function EmployeeForm() {
           avatar_url:         data.avatar_url ?? '',
           daily_rate:         data.daily_rate?.toString() ?? '',
           assigned_route_id:  data.assigned_route_id ?? '',
+          technician_type_id: data.technician_type_id ?? '',
         })
       }
       setLoading(false)
@@ -291,6 +299,7 @@ export default function EmployeeForm() {
     avatar_url:        form.avatar_url.trim() || null,
     daily_rate:        isDriver && isContractuel && form.daily_rate ? parseFloat(form.daily_rate) : null,
     assigned_route_id: isDriver && form.assigned_route_id ? form.assigned_route_id : null,
+    technician_type_id: form.role === 'mecanicien' && form.technician_type_id ? form.technician_type_id : null,
   })
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -527,6 +536,18 @@ export default function EmployeeForm() {
               </select>
             </SelectWrap>
           </FieldGroup>
+          {form.role === 'mecanicien' && (
+            <FieldGroup label="Type technicien" hint="Récupéré depuis Gérant Principal → Paramètres → Type de technicien">
+              <SelectWrap>
+                <select value={form.technician_type_id} onChange={set('technician_type_id')} className={selectCls}>
+                  <option value="">— Sélectionner —</option>
+                  {techTypes.map(t => (
+                    <option key={t.id} value={t.id}>{t.nom}</option>
+                  ))}
+                </select>
+              </SelectWrap>
+            </FieldGroup>
+          )}
           <FieldGroup label={`Société${needsCompany ? ' *' : ''}`}>
             {isHoldingRole ? (
               <div

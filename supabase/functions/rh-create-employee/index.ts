@@ -91,6 +91,7 @@ Deno.serve(async (req: Request) => {
       cnps_number, children_count, marital_status,
       bus_id, license_number, license_expiry, license_category,
       employee_id, assigned_route_id, avatar_url,
+      technician_type_id,
     } = body;
 
     if (!first_name?.trim()) throw new Error("Le prénom est obligatoire");
@@ -153,6 +154,7 @@ Deno.serve(async (req: Request) => {
         license_category:   license_category || null,
         avatar_url:         avatar_url?.trim() || null,
         assigned_route_id:  assigned_route_id || null,
+        technician_type_id: role === "mecanicien" && technician_type_id ? technician_type_id : null,
         employee_id:        finalEmployeeId,
         account_status:     "pending",
         auth_user_id:       null,
