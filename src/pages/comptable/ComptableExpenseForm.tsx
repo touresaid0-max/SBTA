@@ -109,6 +109,11 @@ export default function ComptableExpenseForm() {
   // Other-expense form
   const [other, setOther] = useState<OtherForm>(EMPTY_OTHER)
 
+  // Category autocomplete (other form)
+  const [catSearch,   setCatSearch]   = useState('')
+  const [showCatSugg, setShowCatSugg] = useState(false)
+  const catRef = useRef<HTMLDivElement>(null)
+
   // Stock section
   const [stockLines,    setStockLines]    = useState<StockLine[]>([])
   const [stockDate,     setStockDate]     = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -187,6 +192,7 @@ export default function ComptableExpenseForm() {
         if (plateInput && !selectedVehicle) checkPlate(plateInput)
       }
       if (garageRef.current && !garageRef.current.contains(e.target as Node)) setShowGarageSugg(false)
+      if (catRef.current && !catRef.current.contains(e.target as Node)) setShowCatSugg(false)
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false)
     }
     document.addEventListener('mousedown', handler)
@@ -853,15 +859,63 @@ export default function ComptableExpenseForm() {
             {/* Catégorie */}
             <div>
               <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Catégorie</label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {categories.map(c => (
-                  <button key={c.id} type="button" onClick={() => setOther(f => ({ ...f, category_id: f.category_id === c.id ? '' : c.id }))}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left"
-                    style={{ backgroundColor: other.category_id === c.id ? c.color + '20' : 'var(--bg-subtle)', border: `1px solid ${other.category_id === c.id ? c.color : 'var(--border)'}`, color: other.category_id === c.id ? c.color : 'var(--text-secondary)' }}>
-                    <span>{c.icon}</span>
-                    <span className="truncate">{c.name}</span>
-                  </button>
-                ))}
+              <div ref={catRef} className="relative">
+                {other.category_id ? (() => {
+                  const sel = categories.find(c => c.id === other.category_id)
+                  if (!sel) return null
+                  return (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg" style={{ backgroundColor: sel.color + '20', border: `1px solid ${sel.color}` }}>
+                      <span>{sel.icon}</span>
+                      <span className="text-sm font-semibold flex-1 truncate" style={{ color: sel.color }}>{sel.name}</span>
+                      <button type="button" onClick={() => { setOther(f => ({ ...f, category_id: '' })); setCatSearch(''); setShowCatSugg(true) }}
+                        className="p-0.5 rounded hover:bg-black/5 flex-shrink-0">
+                        <X className="w-3.5 h-3.5" style={{ color: sel.color }} />
+                      </button>
+                    </div>
+                  )
+                })() : (
+                  <>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)' }}>
+                      <Search className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                      <input value={catSearch}
+                        onChange={e => { setCatSearch(e.target.value); setShowCatSugg(true) }}
+                        onFocus={() => setShowCatSugg(true)}
+                        onBlur={() => setTimeout(() => setShowCatSugg(false), 150)}
+                        placeholder="Rechercher une catégorie…"
+                        className="flex-1 bg-transparent text-sm outline-none" style={{ color: 'var(--text-primary)' }} autoComplete="off" />
+                      {catSearch && (
+                        <button type="button" onMouseDown={() => { setCatSearch(''); setShowCatSugg(false) }}>
+                          <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                      )}
+                    </div>
+                    {showCatSugg && (() => {
+                      const q = catSearch.toLowerCase().trim()
+                      const matches = q ? categories.filter(c => c.name.toLowerCase().includes(q)) : categories
+                      if (matches.length === 0) {
+                        return (
+                          <div className="absolute z-30 left-0 right-0 top-full mt-1 rounded-xl shadow-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                            <div className="px-4 py-3 text-xs text-center" style={{ color: 'var(--text-muted)' }}>Aucune catégorie trouvée</div>
+                          </div>
+                        )
+                      }
+                      return (
+                        <div className="absolute z-30 left-0 right-0 top-full mt-1 rounded-xl shadow-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', maxHeight: 240 }}>
+                          <div className="overflow-y-auto" style={{ maxHeight: 240 }}>
+                            {matches.map(c => (
+                              <button key={c.id} type="button" onMouseDown={() => { setOther(f => ({ ...f, category_id: c.id })); setCatSearch(''); setShowCatSugg(false) }}
+                                className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors border-b last:border-0"
+                                style={{ borderColor: 'var(--border)' }}>
+                                <span className="flex-shrink-0">{c.icon}</span>
+                                <span className="text-sm font-medium truncate flex-1" style={{ color: 'var(--text-primary)' }}>{c.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </>
+                )}
               </div>
             </div>
 
