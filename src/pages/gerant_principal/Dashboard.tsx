@@ -1,22 +1,20 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Wrench, AlertCircle, Package, ArrowDownToLine, ArrowUpCircle, Calendar } from 'lucide-react'
 import {
-  fetchReparations, fetchSorties, fetchEntrees, fetchPneus, fetchCommandes, fetchCars, fetchGroupes,
+  fetchReparations, fetchSorties, fetchEntrees,
 } from '@/services/garageSbta.service'
-import type { GarageReparation, GarageSortiePiece, GarageEntreeStock, GarageGroupe, GarageCar } from '@/types/garage.types'
-import { currentMonthName, formatDate } from '@/components/garage/reportHelpers'
+import type { GarageReparation, GarageSortiePiece, GarageEntreeStock } from '@/types/garage.types'
+import { currentMonthName, formatDate, formatFCFA } from '@/components/garage/reportHelpers'
 
 export default function GarageDashboard() {
   const [reparations, setReparations] = useState<GarageReparation[]>([])
   const [sorties, setSorties] = useState<GarageSortiePiece[]>([])
   const [entrees, setEntrees] = useState<GarageEntreeStock[]>([])
-  const [groupes, setGroupes] = useState<GarageGroupe[]>([])
-  const [cars, setCars] = useState<GarageCar[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([fetchReparations(), fetchSorties(), fetchEntrees(), fetchGroupes(), fetchCars()])
-      .then(([r, s, e, g, c]) => { setReparations(r); setSorties(s); setEntrees(e); setGroupes(g); setCars(c) })
+    Promise.all([fetchReparations(), fetchSorties(), fetchEntrees()])
+      .then(([r, s, e]) => { setReparations(r); setSorties(s); setEntrees(e) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -37,16 +35,26 @@ export default function GarageDashboard() {
     [sorties])
 
   const pointsParGroupe = useMemo(() => {
-    return groupes.map(g => {
-      const carsVenus = new Set(
-        reparationsThisMonth.filter(r => r.car?.groupe_id === g.id).map(r => r.car_id)
-      ).size
-      const sortiesGroupe = sortiesThisMonth.filter(s => s.groupe_id === g.id)
-      const piecesUniques = new Set(sortiesGroupe.map(s => s.piece_id)).size
-      const piecesTotal = sortiesGroupe.reduce((sum, s) => sum + s.quantite, 0)
-      return { groupe: g.nom, carsVenus, piecesUniques, piecesTotal }
-    }).filter(r => r.carsVenus > 0 || r.piecesTotal > 0)
-  }, [groupes, reparationsThisMonth, sortiesThisMonth])
+    const byGroup = new Map<string, {
+      groupe: string
+      cars: Map<string, Map<string, number>>
+      total: number
+    }>()
+
+    for (const sortie of sortiesThisMonth) {
+      const groupe = sortie.groupe?.name ?? 'Sans société'
+      const immatriculation = sortie.car?.registration_number ?? 'Immatriculation non renseignée'
+      const piece = sortie.piece?.nom ?? 'Pièce non renseignée'
+      const group = byGroup.get(groupe) ?? { groupe, cars: new Map(), total: 0 }
+      const carPieces = group.cars.get(immatriculation) ?? new Map<string, number>()
+      carPieces.set(piece, (carPieces.get(piece) ?? 0) + Number(sortie.quantite ?? 0))
+      group.cars.set(immatriculation, carPieces)
+      group.total += Number(sortie.montant ?? 0)
+      byGroup.set(groupe, group)
+    }
+
+    return Array.from(byGroup.values()).sort((a, b) => a.groupe.localeCompare(b.groupe))
+  }, [sortiesThisMonth])
 
   const cards = [
     { label: 'Réparations total', value: reparationsThisMonth.length, icon: Wrench, color: '#0B7439', bg: '#E8F5EC' },
@@ -132,9 +140,9 @@ export default function GarageDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#E2EAE5]">
-                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Groupe</th>
-                  <th className="text-right px-4 py-2.5 font-semibold text-[#4A6B55]">Cars venus au garage</th>
-                  <th className="text-right px-4 py-2.5 font-semibold text-[#4A6B55]">Pièces sorties unique</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Groupe / Société</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Cars venus au garage</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-[#4A6B55]">Pièces sorties</th>
                   <th className="text-right px-4 py-2.5 font-semibold text-[#4A6B55]">Pièces sorties total</th>
                 </tr>
               </thead>
@@ -142,11 +150,23 @@ export default function GarageDashboard() {
                 {pointsParGroupe.length === 0 ? (
                   <tr><td colSpan={4} className="text-center py-8 text-[#8AA898]">Aucune donnée ce mois</td></tr>
                 ) : pointsParGroupe.map(r => (
-                  <tr key={r.groupe} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8]">
+                  <tr key={r.groupe} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8] align-top">
                     <td className="px-4 py-2.5 font-medium text-[#1A2E22]">{r.groupe}</td>
-                    <td className="px-4 py-2.5 text-right text-[#4A6B55]">{r.carsVenus}</td>
-                    <td className="px-4 py-2.5 text-right text-[#4A6B55]">{r.piecesUniques}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-[#1A2E22]">{r.piecesTotal}</td>
+                    <td className="px-4 py-2.5 text-[#4A6B55]">
+                      <div className="space-y-1">
+                        {Array.from(r.cars.keys()).map(car => <div key={car}>{car}</div>)}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-[#4A6B55]">
+                      <div className="space-y-1">
+                        {Array.from(r.cars.entries()).flatMap(([car, pieces]) =>
+                          Array.from(pieces.entries()).map(([piece, quantity]) => (
+                            <div key={`${car}-${piece}`}><span className="font-medium text-[#1A2E22]">{car}</span> : {piece} × {quantity}</div>
+                          ))
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-[#1A2E22] whitespace-nowrap">{formatFCFA(r.total)}</td>
                   </tr>
                 ))}
               </tbody>
