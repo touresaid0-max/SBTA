@@ -18,6 +18,7 @@ export default function ComptableExpensesList() {
   const { user }  = useAuthStore()
   const { allowedCompanyIds } = useComptableCompanies()
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const companyId = companyIds[0] ?? null
 
   const [expenses,    setExpenses]    = useState<VehicleExpense[]>([])
   const [total,       setTotal]       = useState(0)
