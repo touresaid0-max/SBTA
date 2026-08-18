@@ -267,7 +267,7 @@ export async function createSorties(rows: Array<{
 export async function fetchReparations(): Promise<GarageReparation[]> {
   const { data, error } = await supabase
     .from('garage_reparations')
-    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*)')
+    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), piece:garage_pieces(*), type_technicien:garage_types_techniciens(*)')
     .order('date', { ascending: false })
   if (error) throw error
   return data ?? []
@@ -276,7 +276,7 @@ export async function fetchReparations(): Promise<GarageReparation[]> {
 export async function fetchReparationsEnCours(): Promise<GarageReparation[]> {
   const { data, error } = await supabase
     .from('garage_reparations')
-    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), type_technicien:garage_types_techniciens(*)')
+    .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), piece:garage_pieces(*), type_technicien:garage_types_techniciens(*)')
     .eq('statut', 'EN RÉPARATION')
     .order('date', { ascending: false })
   if (error) throw error
@@ -284,7 +284,7 @@ export async function fetchReparationsEnCours(): Promise<GarageReparation[]> {
 }
 
 export async function createReparation(r: {
-  car_id: string; bus_id?: string | null; date: string; statut: ReparationStatut;
+  car_id: string; bus_id?: string | null; piece_id?: string | null; date: string; statut: ReparationStatut;
   technicien_id?: string | null; type_technicien_id?: string | null; description: string;
 }): Promise<GarageReparation> {
   const { data, error } = await supabase.from('garage_reparations').insert(r).select().single()
@@ -293,7 +293,7 @@ export async function createReparation(r: {
 }
 
 export async function updateReparation(id: string, r: Partial<{
-  car_id: string; bus_id: string | null; date: string; statut: ReparationStatut;
+  car_id: string; bus_id: string | null; piece_id: string | null; date: string; statut: ReparationStatut;
   technicien_id: string | null; type_technicien_id: string | null; description: string;
 }>): Promise<GarageReparation> {
   const { data, error } = await supabase.from('garage_reparations').update({ ...r, updated_at: new Date().toISOString() }).eq('id', id).select().single()

@@ -113,6 +113,7 @@ export interface GarageReparation {
   id: string
   car_id: string
   bus_id: string | null
+  piece_id: string | null
   date: string
   statut: ReparationStatut
   technicien_id: string | null
@@ -123,6 +124,7 @@ export interface GarageReparation {
   updated_at: string
   car?: GarageCar | null
   bus?: { id: string; registration_number: string; company_id: string | null } | null
+  piece?: GaragePiece | null
   type_technicien?: GarageTypeTechnicien | null
   technicien?: { id: string; first_name: string | null; last_name: string | null; full_name: string | null } | null
 }
