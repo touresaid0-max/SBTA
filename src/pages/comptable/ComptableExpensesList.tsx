@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Filter, CreditCard as Edit2, Trash2, ChevronLeft, ChevronRight, Download, ChevronDown, CheckCircle, Clock } from 'lucide-react'
+import { Plus, Search, Filter, CreditCard as Edit2, Trash2, ChevronLeft, ChevronRight, Download, ChevronDown, CheckCircle, Clock, AlertTriangle, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -39,6 +39,7 @@ export default function ComptableExpensesList() {
   const [categories,  setCategories]  = useState<ExpenseCategory[]>([])
   const [showFilters, setShowFilters] = useState(false)
   const [validating,  setValidating]  = useState<string | null>(null)
+  const [confirmExpense, setConfirmExpense] = useState<VehicleExpense | null>(null)
 
   const isRegional = REGIONAL_COMPANIES.includes(companyCode)
 
@@ -99,24 +100,12 @@ export default function ComptableExpensesList() {
       .eq('id', id)
     if (error) { toast.error('Erreur lors de la validation'); setValidating(null); return }
     toast.success('Depense validee')
+    setConfirmExpense(null)
     load()
     setValidating(null)
   }
 
-  const handleBulkValidate = async () => {
-    const pendingIds = expenses.filter(e => e.validation_status === 'en_attente').map(e => e.id)
-    if (pendingIds.length === 0) { toast.error('Aucune depense en attente sur cette page'); return }
-    if (!confirm(`Valider ${pendingIds.length} depense(s) en attente ?`)) return
-    setValidating('bulk')
-    const { error } = await supabase
-      .from('vehicle_expenses')
-      .update({ validation_status: 'validee', validated_at: new Date().toISOString(), validated_by: user?.id })
-      .in('id', pendingIds)
-    if (error) { toast.error('Erreur lors de la validation'); setValidating(null); return }
-    toast.success(`${pendingIds.length} depense(s) validee(s)`)
-    load()
-    setValidating(null)
-  }
+  const openConfirmValidate = (e: VehicleExpense) => setConfirmExpense(e)
 
   const handleDelete = async (id: string) => {
     if (!confirm('Supprimer cette dépense ?')) return
@@ -172,8 +161,8 @@ export default function ComptableExpensesList() {
         </div>
         <div className="flex items-center gap-2">
           {isRegional && expenses.some(e => e.validation_status === 'en_attente') && (
-            <button onClick={handleBulkValidate} disabled={validating === 'bulk'} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold disabled:opacity-50" style={{ backgroundColor: '#0B7439', color: '#fff' }}>
-              <CheckCircle className="w-3.5 h-3.5" /> Tout valider
+            <button disabled className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold opacity-50 cursor-not-allowed" style={{ backgroundColor: '#9CA3AF', color: '#fff' }} title="La validation se fait dépense par dépense">
+              <CheckCircle className="w-3.5 h-3.5" /> Tout valider (désactivé)
             </button>
           )}
           <button onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold" style={{ backgroundColor: '#1D6FA4', color: '#fff' }}>
@@ -318,7 +307,7 @@ export default function ComptableExpensesList() {
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1">
                       {isRegional && e.validation_status === 'en_attente' && (
-                        <button onClick={() => handleValidate(e.id)} disabled={validating === e.id} className="p-1.5 rounded hover:bg-green-50 disabled:opacity-50" title="Valider">
+                        <button onClick={() => openConfirmValidate(e)} disabled={validating === e.id} className="p-1.5 rounded hover:bg-green-50 disabled:opacity-50" title="Valider">
                           <CheckCircle className="w-3.5 h-3.5" style={{ color: '#0B7439' }} />
                         </button>
                       )}
@@ -363,6 +352,72 @@ export default function ComptableExpensesList() {
         )}
       </div>
 
+      {confirmExpense && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#FEF3C7' }}>
+                  <AlertTriangle className="w-5 h-5" style={{ color: '#D97706' }} />
+                </div>
+                <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Valider cette dépense ?</h3>
+              </div>
+              <button onClick={() => setConfirmExpense(null)} className="p-1 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+
+            <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{confirmExpense.registration_number}</span>
+                <span className="font-black text-lg" style={{ color: '#0B7439' }}>{fmt(Number(confirmExpense.amount))}</span>
+              </div>
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                {confirmExpense.category?.name ?? '--'} — {confirmExpense.description ?? '--'}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                {format(new Date(confirmExpense.expense_date), 'dd/MM/yyyy', { locale: fr })}
+              </p>
+            </div>
+
+            <div className="mb-6 p-4 rounded-lg border-2" style={{ borderColor: '#FCD34D', backgroundColor: '#FFFBEB' }}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#D97706' }} />
+                <div>
+                  <p className="text-sm font-semibold mb-1" style={{ color: '#92400E' }}>
+                    Impact sur le DAF
+                  </p>
+                  <p className="text-xs" style={{ color: '#92400E' }}>
+                    Une fois validée, cette dépense sera prise en compte dans les calculs financiers du DAF. Voulez-vous continuer ?
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmExpense(null)}
+                disabled={validating === confirmExpense.id}
+                className="px-5 py-2.5 rounded-lg text-sm font-medium border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              >
+                Non, annuler
+              </button>
+              <button
+                onClick={() => handleValidate(confirmExpense.id)}
+                disabled={validating === confirmExpense.id}
+                className="px-5 py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-50 flex items-center gap-2"
+                style={{ backgroundColor: '#0B7439' }}
+              >
+                {validating === confirmExpense.id ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : <CheckCircle className="w-4 h-4" />}
+                Oui, valider
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
