@@ -4,6 +4,7 @@ import { format, startOfWeek, endOfWeek, subWeeks } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useComptableCompanies } from '@/hooks/useComptableCompanies'
 import type { VehicleExpense } from '@/types/chargeAchat.types'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
@@ -12,7 +13,9 @@ interface VehicleGroup { reg: string; expenses: VehicleExpense[]; total: number 
 
 export default function ComptableWeeklyReport() {
   const { user }  = useAuthStore()
-  const companyId = user?.company_id ?? null
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const companyId = companyIds[0] ?? null
 
   const [weekOffset, setWeekOffset] = useState(0)
   const [loading,    setLoading]    = useState(true)
@@ -29,14 +32,14 @@ export default function ComptableWeeklyReport() {
   const weekLabel = `Semaine du ${format(weekStart, 'dd/MM', { locale: fr })} au ${format(weekEnd, 'dd/MM/yyyy', { locale: fr })}`
 
   const load = useCallback(async () => {
-    if (!companyId) return
+    if (companyIds.length === 0) return
     setLoading(true)
     try {
       const [companyRes, expensesRes] = await Promise.all([
-        supabase.from('companies').select('name, code').eq('id', companyId).maybeSingle(),
+        supabase.from('companies').select('name, code').in('id', companyIds),
         supabase.from('vehicle_expenses')
           .select('*, category:expense_categories(name,icon,color)')
-          .eq('company_id', companyId)
+          .in('company_id', companyIds)
           .eq('source', 'comptable')
           .gte('expense_date', startStr)
           .lte('expense_date', endStr)
@@ -44,9 +47,9 @@ export default function ComptableWeeklyReport() {
           .order('expense_date'),
       ])
 
-      if (companyRes.data) {
-        setCompanyName((companyRes.data as { name: string; code: string }).name)
-        setCompanyCode((companyRes.data as { name: string; code: string }).code)
+      if (companyRes.data && companyRes.data.length > 0) {
+        setCompanyName((companyRes.data as { name: string; code: string }[]).map(c => c.name).join(', '))
+        setCompanyCode((companyRes.data as { name: string; code: string }[]).map(c => c.code).join(', '))
       }
 
       const exps = (expensesRes.data ?? []) as VehicleExpense[]
@@ -63,7 +66,7 @@ export default function ComptableWeeklyReport() {
     } finally {
       setLoading(false)
     }
-  }, [companyId, startStr, endStr])
+  }, [companyIds, startStr, endStr])
 
   useEffect(() => { load() }, [load])
 

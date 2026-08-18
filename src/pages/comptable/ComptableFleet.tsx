@@ -5,6 +5,7 @@ import { format, startOfWeek, endOfWeek } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useComptableCompanies } from '@/hooks/useComptableCompanies'
 import type { VehicleExpense } from '@/types/chargeAchat.types'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
@@ -28,7 +29,9 @@ function statusColor(totalWeek: number) {
 export default function ComptableFleet() {
   const navigate  = useNavigate()
   const { user }  = useAuthStore()
-  const companyId = user?.company_id ?? null
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const companyId = companyIds[0] ?? null
 
   const now       = new Date()
   const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd')
@@ -40,14 +43,14 @@ export default function ComptableFleet() {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!companyId) return
+    if (companyIds.length === 0) return
     setLoading(true)
     try {
       const [{ data: fleetData }, { data: allExpenses }] = await Promise.all([
-        supabase.from('fleet_vehicles').select('registration_number, company_id').eq('company_id', companyId).eq('is_active', true),
+        supabase.from('fleet_vehicles').select('registration_number, company_id').in('company_id', companyIds).eq('is_active', true),
         supabase.from('vehicle_expenses')
           .select('*, category:expense_categories(name,icon,color)')
-          .eq('company_id', companyId)
+          .in('company_id', companyIds)
           .eq('source', 'comptable')
           .order('expense_date', { ascending: false }),
       ])
@@ -90,7 +93,7 @@ export default function ComptableFleet() {
     } finally {
       setLoading(false)
     }
-  }, [companyId, weekStart, weekEnd])
+  }, [companyIds, weekStart, weekEnd])
 
   useEffect(() => { load() }, [load])
 

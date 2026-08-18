@@ -5,6 +5,7 @@ import { CheckCircle, XCircle, Eye, FileText, Clock, RefreshCw, Filter, External
 import { format } from 'date-fns';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useAuthStore } from '../../store/authStore';
+import { useComptableCompanies } from '../../hooks/useComptableCompanies';
 
 interface Expense {
   id: string;
@@ -49,7 +50,8 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
 
 export default function ExpenseValidation() {
   const { user } = useAuthStore();
-  const companyId = user?.company_id ?? null;
+  const { allowedCompanyIds } = useComptableCompanies();
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
   const [loading, setLoading] = useState(true);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [filter, setFilter] = useState<FilterType>('pending');
@@ -69,7 +71,7 @@ export default function ExpenseValidation() {
 
       let busIds: string[] | null = null;
       if (companyId) {
-        const { data: busData } = await supabase.from('buses').select('id').eq('company_id', companyId);
+        const { data: busData } = await supabase.from('buses').select('id').in('company_id', companyIds);
         busIds = (busData ?? []).map(b => b.id);
         if (busIds.length === 0) { setExpenses([]); setLoading(false); return; }
       }

@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useComptableCompanies } from '@/hooks/useComptableCompanies'
 import type { VehicleExpense, ExpenseCategory } from '@/types/chargeAchat.types'
 
 const PAGE_SIZE = 20
@@ -15,7 +16,8 @@ const REGIONAL_COMPANIES = ['TST', 'ETL', 'SNT']
 export default function ComptableExpensesList() {
   const navigate  = useNavigate()
   const { user }  = useAuthStore()
-  const companyId = user?.company_id ?? null
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
 
   const [expenses,    setExpenses]    = useState<VehicleExpense[]>([])
   const [total,       setTotal]       = useState(0)
@@ -48,7 +50,7 @@ export default function ComptableExpensesList() {
       if (data) setCategories(data)
     })
     if (companyId) {
-      supabase.from('buses').select('id').eq('company_id', companyId).then(({ data }) => {
+      supabase.from('buses').select('id').in('company_id', companyIds).then(({ data }) => {
         setBusIds(data ? data.map((b: { id: string }) => b.id) : [])
       })
       supabase.from('companies').select('code').eq('id', companyId).maybeSingle().then(({ data }) => {
@@ -66,7 +68,7 @@ export default function ComptableExpensesList() {
       let q = supabase
         .from('vehicle_expenses')
         .select('*, company:companies(name,code), category:expense_categories(name,icon,color)', { count: 'exact' })
-        .eq('company_id', companyId)
+        .in('company_id', companyIds)
         .eq('source', 'comptable')
 
       if (statusFilter !== 'all') q = q.eq('validation_status', statusFilter)
@@ -118,9 +120,9 @@ export default function ComptableExpensesList() {
   }
 
   const exportExcel = async () => {
-    if (!companyId) return
+    if (companyIds.length === 0) return
     const { utils, writeFile } = await import('xlsx')
-    let q = supabase.from('vehicle_expenses').select('*, category:expense_categories(name,icon,color)').eq('company_id', companyId).eq('source', 'comptable')
+    let q = supabase.from('vehicle_expenses').select('*, category:expense_categories(name,icon,color)').in('company_id', companyIds).eq('source', 'comptable')
     if (vehicle)    q = q.ilike('registration_number', `%${vehicle}%`)
     if (categoryId) q = q.eq('category_id', categoryId)
     if (dateFrom)   q = q.gte('expense_date', dateFrom)

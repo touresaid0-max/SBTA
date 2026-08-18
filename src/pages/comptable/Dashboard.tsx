@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useComptableCompanies } from '../../hooks/useComptableCompanies';
 import toast from 'react-hot-toast';
 import {
   FileText, CheckCircle, Clock, DollarSign, ArrowRight,
@@ -26,7 +27,8 @@ interface CompanyInfo { id: string; name: string; code: string }
 export default function ComptableDashboard() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const companyId = user?.company_id ?? null;
+  const { allowedCompanyIds } = useComptableCompanies();
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
   const [company, setCompany] = useState<CompanyInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -40,9 +42,9 @@ export default function ComptableDashboard() {
   });
 
   useEffect(() => {
-    if (companyId) {
-      supabase.from('companies').select('id, name, code').eq('id', companyId).maybeSingle()
-        .then(({ data }) => { if (data) setCompany(data as CompanyInfo) });
+    if (companyIds.length > 0) {
+      supabase.from('companies').select('id, name, code').in('id', companyIds)
+        .then(({ data }) => { if (data && data.length > 0) setCompany(data[0] as CompanyInfo) });
     }
     loadStats();
   }, []);
@@ -55,11 +57,11 @@ export default function ComptableDashboard() {
 
       // Récupérer les IDs de buses de la société du comptable
       let busIds: string[] | null = null;
-      if (companyId) {
+      if (companyIds.length > 0) {
         const { data: busData } = await supabase
           .from('buses')
           .select('id')
-          .eq('company_id', companyId);
+          .in('company_id', companyIds);
         busIds = (busData ?? []).map(b => b.id);
       }
 

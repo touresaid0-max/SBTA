@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { useComptableCompanies } from '../../hooks/useComptableCompanies';
 import toast from 'react-hot-toast';
 import {
   Fuel, CheckCircle, XCircle, Eye, AlertTriangle,
@@ -46,7 +47,8 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
 
 export default function FuelVouchersValidation() {
   const { user } = useAuthStore();
-  const companyId = user?.company_id ?? null;
+  const { allowedCompanyIds } = useComptableCompanies();
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
   const [vouchers, setVouchers] = useState<FuelVoucher[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('genere');
@@ -64,8 +66,8 @@ export default function FuelVouchersValidation() {
       setLoading(true);
 
       let busIds: string[] | null = null;
-      if (companyId) {
-        const { data: busData } = await supabase.from('buses').select('id').eq('company_id', companyId);
+      if (companyIds.length > 0) {
+        const { data: busData } = await supabase.from('buses').select('id').in('company_id', companyIds);
         busIds = (busData ?? []).map(b => b.id);
         if (busIds.length === 0) { setVouchers([]); setLoading(false); return; }
       }

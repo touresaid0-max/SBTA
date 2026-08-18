@@ -3,6 +3,7 @@ import { Plus, AlertTriangle, Package, CreditCard as Edit2, X, Save, Search } fr
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useComptableCompanies } from '@/hooks/useComptableCompanies'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n)
 
@@ -30,7 +31,9 @@ const EMPTY_FORM: ItemForm = { designation: '', code_article: '', stock_min: '',
 
 export default function ComptableStock() {
   const { user }  = useAuthStore()
-  const companyId = user?.company_id ?? null
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const companyId = companyIds[0] ?? null
 
   const [items,     setItems]     = useState<StockItem[]>([])
   const [loading,   setLoading]   = useState(true)
@@ -43,12 +46,12 @@ export default function ComptableStock() {
   const searchRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
-    if (!companyId) return
+    if (companyIds.length === 0) return
     setLoading(true)
     try {
       const [{ data: rawItems }, { data: movements }] = await Promise.all([
-        supabase.from('comptable_stock_items').select('id, designation, code_article, stock_min, stock_initial, prix_unitaire').eq('company_id', companyId).order('designation'),
-        supabase.from('comptable_stock_movements').select('stock_item_id, movement_type, quantity').eq('company_id', companyId),
+        supabase.from('comptable_stock_items').select('id, designation, code_article, stock_min, stock_initial, prix_unitaire').in('company_id', companyIds).order('designation'),
+        supabase.from('comptable_stock_movements').select('stock_item_id, movement_type, quantity').in('company_id', companyIds),
       ])
 
       const mvByItem: Record<string, { entrees: number; sorties: number }> = {}
@@ -72,7 +75,7 @@ export default function ComptableStock() {
     } finally {
       setLoading(false)
     }
-  }, [companyId])
+  }, [companyIds])
 
   useEffect(() => { load() }, [load])
 
@@ -111,7 +114,7 @@ export default function ComptableStock() {
 
   const save = async () => {
     if (!form.designation.trim()) { toast.error('La désignation est obligatoire'); return }
-    if (!companyId) return
+    if (companyIds.length === 0) return
     setSaving(true)
     try {
       const payload = {

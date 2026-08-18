@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bus, User, Fuel, MapPin, Droplets, DollarSign, Calendar, FileText, Search, AlertCircle, CheckCircle } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { useComptableCompanies } from '../../hooks/useComptableCompanies';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -36,7 +37,9 @@ const FUEL_COLORS: Record<string, string> = { essence: '#F59E0B', gasoil: '#3B82
 export default function ComptableCarburantForm() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const companyId = user?.company_id;
+  const { allowedCompanyIds } = useComptableCompanies();
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const companyId = companyIds[0] ?? null;
 
   // data sources
   const [buses, setBuses] = useState<BusOption[]>([]);
@@ -64,12 +67,12 @@ export default function ComptableCarburantForm() {
 
   // load sources
   useEffect(() => {
-    if (!companyId) return;
+    if (companyIds.length === 0) return;
     const loadBuses = async () => {
       const { data } = await supabase
         .from('buses')
         .select('id, registration_number, company_id')
-        .eq('company_id', companyId)
+        .in('company_id', companyIds)
         .eq('is_active', true)
         .order('registration_number');
       setBuses((data as BusOption[]) || []);
@@ -78,7 +81,7 @@ export default function ComptableCarburantForm() {
       const { data } = await supabase
         .from('users')
         .select('id, full_name')
-        .eq('company_id', companyId)
+        .in('company_id', companyIds)
         .eq('role', 'chauffeur')
         .eq('is_active', true)
         .order('full_name');
@@ -93,7 +96,7 @@ export default function ComptableCarburantForm() {
       setStations((data as StationOption[]) || []);
     };
     Promise.all([loadBuses(), loadDrivers(), loadStations()]);
-  }, [companyId]);
+  }, [companyIds]);
 
   /* ─── derived: unit price & total ─── */
 
@@ -149,7 +152,7 @@ export default function ComptableCarburantForm() {
 
   const handleSave = async () => {
     if (!validate()) return;
-    if (!companyId) return;
+    if (companyIds.length === 0) return;
 
     setSaving(true);
     try {

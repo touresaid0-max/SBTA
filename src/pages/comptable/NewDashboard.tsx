@@ -13,6 +13,7 @@ import { format, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, sub
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useComptableCompanies } from '@/hooks/useComptableCompanies'
 import type { VehicleExpense } from '@/types/chargeAchat.types'
 
 type Period = 'week' | 'month' | 'quarter' | 'year'
@@ -112,7 +113,9 @@ interface CompanyInfo { id: string; name: string; code: string }
 export default function ComptableNewDashboard() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const companyId = user?.company_id ?? null
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const companyId = companyIds[0] ?? null
 
   const [period, setPeriod] = useState<Period>('week')
   const [loading, setLoading] = useState(true)
@@ -128,14 +131,14 @@ export default function ComptableNewDashboard() {
   const periodLabel = getPeriodLabel(period, start, end)
 
   const load = useCallback(async () => {
-    if (!companyId) { setLoading(false); return }
+    if (companyIds.length === 0) { setLoading(false); return }
     setLoading(true)
     try {
       const { data: coData } = await supabase
-        .from('companies').select('id, name, code').eq('id', companyId).maybeSingle()
-      if (coData) setCompany(coData as CompanyInfo)
+        .from('companies').select('id, name, code').in('id', companyIds)
+      if (coData && coData.length > 0) setCompany(coData[0] as CompanyInfo)
 
-      const { data: busData } = await supabase.from('buses').select('id').eq('company_id', companyId)
+      const { data: busData } = await supabase.from('buses').select('id').in('company_id', companyIds)
       const busIds = (busData ?? []).map(b => b.id)
 
       // Period expenses
@@ -146,7 +149,6 @@ export default function ComptableNewDashboard() {
           .select('*, category:expense_categories(name,icon,color)')
           .gte('expense_date', startStr)
           .lte('expense_date', endStr)
-          .eq('company_id', companyId)
           .eq('source', 'comptable')
         exps = (data ?? []) as VehicleExpense[]
       }
@@ -184,8 +186,8 @@ export default function ComptableNewDashboard() {
       const { data: trendExps } = await supabase
         .from('vehicle_expenses')
         .select('expense_date, amount')
-        .eq('company_id', companyId)
         .eq('source', 'comptable')
+        .in('company_id', companyIds)
         .gte('expense_date', trendStart)
         .lte('expense_date', trendEnd)
 
@@ -201,7 +203,7 @@ export default function ComptableNewDashboard() {
       const { data: caisseData } = await supabase
         .from('comptable_caisse_entries')
         .select('entry_type, amount')
-        .eq('company_id', companyId)
+        .in('company_id', companyIds)
         .gte('entry_date', startStr)
         .lte('entry_date', endStr)
 
@@ -213,7 +215,7 @@ export default function ComptableNewDashboard() {
       const { data: stockItems } = await supabase
         .from('comptable_stock_items')
         .select('id, stock_initial, stock_min')
-        .eq('company_id', companyId)
+        .in('company_id', companyIds)
 
       if (stockItems && stockItems.length > 0) {
         const itemIds = stockItems.map(s => s.id)
@@ -235,7 +237,7 @@ export default function ComptableNewDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [companyId, startStr, endStr, period])
+  }, [companyIds, startStr, endStr, period])
 
   useEffect(() => { load() }, [load])
 

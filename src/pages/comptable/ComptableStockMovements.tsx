@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useComptableCompanies } from '@/hooks/useComptableCompanies'
 
 interface StockMovement {
   id: string
@@ -34,7 +35,9 @@ const EMPTY: MovementForm = {
 
 export default function ComptableStockMovements() {
   const { user }  = useAuthStore()
-  const companyId = user?.company_id ?? null
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const companyId = companyIds[0] ?? null
 
   const [movements,  setMovements]  = useState<StockMovement[]>([])
   const [items,      setItems]      = useState<StockItem[]>([])
@@ -67,24 +70,24 @@ export default function ComptableStockMovements() {
   }, [])
 
   useEffect(() => {
-    if (!companyId) return
+    if (companyIds.length === 0) return
     Promise.all([
-      supabase.from('comptable_stock_items').select('id, designation, code_article').eq('company_id', companyId).order('designation'),
-      supabase.from('fleet_vehicles').select('registration_number').eq('company_id', companyId).eq('is_active', true),
+      supabase.from('comptable_stock_items').select('id, designation, code_article').in('company_id', companyIds).order('designation'),
+      supabase.from('fleet_vehicles').select('registration_number').in('company_id', companyIds).eq('is_active', true),
     ]).then(([itemsRes, busesRes]) => {
       if (itemsRes.data) setItems(itemsRes.data as StockItem[])
       if (busesRes.data) setBuses((busesRes.data as { registration_number: string }[]).map(v => v.registration_number).sort())
     })
-  }, [companyId])
+  }, [companyIds])
 
   const load = useCallback(async () => {
-    if (!companyId) return
+    if (companyIds.length === 0) return
     setLoading(true)
     try {
       let q = supabase
         .from('comptable_stock_movements')
         .select('id, movement_date, registration_number, stock_item_id, movement_type, quantity, notes, item:comptable_stock_items(designation, code_article)')
-        .eq('company_id', companyId)
+        .in('company_id', companyIds)
         .order('movement_date', { ascending: false })
 
       if (filterType !== 'all') q = q.eq('movement_type', filterType)
@@ -95,7 +98,7 @@ export default function ComptableStockMovements() {
     } finally {
       setLoading(false)
     }
-  }, [companyId, filterType, filterItem])
+  }, [companyIds, filterType, filterItem])
 
   useEffect(() => { load() }, [load])
 
@@ -105,7 +108,7 @@ export default function ComptableStockMovements() {
   const save = async () => {
     if (!form.stock_item_id) { toast.error('Sélectionnez un article'); return }
     if (!form.quantity || isNaN(Number(form.quantity)) || Number(form.quantity) <= 0) { toast.error('Quantité invalide'); return }
-    if (!companyId) return
+    if (companyIds.length === 0) return
     setSaving(true)
     try {
       const { error } = await supabase.from('comptable_stock_movements').insert({

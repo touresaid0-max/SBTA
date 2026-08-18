@@ -9,6 +9,7 @@ import { fr } from 'date-fns/locale'
 import { supabase } from '../../services/supabase'
 import { fetchQuotesByCompany, validateQuote, rejectQuote } from '../../services/garage.service'
 import { useAuthStore } from '../../store/authStore'
+import { useComptableCompanies } from '../../hooks/useComptableCompanies'
 import { formatCurrency } from '../../utils/formatCurrency'
 import type { MaintenanceQuote } from '../../types/garage.types'
 
@@ -253,36 +254,38 @@ function DetailModal({ quote, onClose, onValidate, onReject }: DetailModalProps)
 
 export default function QuoteValidation() {
   const { user } = useAuthStore()
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
   const [quotes, setQuotes]       = useState<MaintenanceQuote[]>([])
   const [loading, setLoading]     = useState(true)
   const [selected, setSelected]   = useState<MaintenanceQuote | null>(null)
   const [statusFilter, setStatusFilter] = useState('soumis_comptable')
 
   const load = useCallback(async () => {
-    if (!user?.company_id) return
+    if (companyIds.length === 0) return
     try {
-      const data = await fetchQuotesByCompany(user.company_id)
-      setQuotes(data)
+      const results = await Promise.all(companyIds.map(cid => fetchQuotesByCompany(cid)))
+      setQuotes(results.flat())
     } catch (e: any) {
       toast.error(e.message || 'Erreur de chargement')
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [companyIds])
 
   useEffect(() => { load() }, [load])
 
   // Realtime subscription
   useEffect(() => {
-    if (!user?.company_id) return
+    if (companyIds.length === 0) return
     const channel = supabase
-      .channel(`quotes-comptable-${user.company_id}`)
+      .channel(`quotes-comptable-multi`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'maintenance_quotes',
       }, (payload) => {
-        if ((payload.new as any).bus_company_id === user.company_id) {
+        if (companyIds.includes((payload.new as any).bus_company_id)) {
           toast('Nouveau devis reçu pour validation', { duration: 8000 })
           load()
         }
@@ -292,7 +295,7 @@ export default function QuoteValidation() {
         schema: 'public',
         table: 'maintenance_quotes',
       }, (payload) => {
-        if ((payload.new as any).bus_company_id === user.company_id &&
+        if (companyIds.includes((payload.new as any).bus_company_id) &&
             (payload.new as any).status === 'soumis_comptable') {
           toast(`Devis ${(payload.new as any).quote_number} soumis pour validation`, { duration: 8000 })
           load()
@@ -300,7 +303,7 @@ export default function QuoteValidation() {
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [user, load])
+  }, [companyIds, load])
 
   const handleValidate = async (id: string) => {
     if (!user) return

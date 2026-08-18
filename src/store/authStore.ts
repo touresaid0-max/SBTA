@@ -30,6 +30,7 @@ export interface UserProfile {
   role: SBTARole;
   organization_id?: string;
   company_id?: string;
+  assigned_company_ids?: string[];
   station_id?: string | null;
   station_name?: string | null;
   station_phone?: string | null;
@@ -381,10 +382,21 @@ export const useAuthStore = create<AuthState>()(
         // Extraire les infos de gare depuis la relation jointe (si disponible)
         const stationData = (profile as any).stations as { id: string; name: string; phone: string } | null | undefined;
 
+        // 5. Si le profil est un comptable, charger les sociétés affectées
+        let assignedCompanyIds: string[] | undefined;
+        if ((profile as any).role === 'comptable') {
+          const { data: ccData } = await supabase
+            .from('comptable_companies')
+            .select('company_id')
+            .eq('user_id', uid);
+          assignedCompanyIds = (ccData ?? []).map((c: any) => c.company_id);
+        }
+
         set({
           user: {
             ...profile,
             permissions,
+            assigned_company_ids: assignedCompanyIds,
             station_name:  stationData?.name  ?? (profile as any).station_name  ?? null,
             station_phone: stationData?.phone ?? (profile as any).station_phone ?? null,
           } as UserProfile,

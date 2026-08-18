@@ -8,6 +8,7 @@ import {
 import { format } from 'date-fns';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useAuthStore } from '../../store/authStore';
+import { useComptableCompanies } from '../../hooks/useComptableCompanies';
 
 interface Bus {
   id: string;
@@ -65,7 +66,8 @@ const EMPTY_FORM = {
 
 export default function ComptableExpenses() {
   const { user } = useAuthStore();
-  const companyId = user?.company_id ?? null;
+  const { allowedCompanyIds } = useComptableCompanies();
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
   const [loading, setLoading] = useState(true);
   const [buses, setBuses] = useState<Bus[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -95,7 +97,7 @@ export default function ComptableExpenses() {
         .select('id, registration_number, model, manufacturer')
         .order('registration_number');
 
-      if (companyId) busQuery = busQuery.eq('company_id', companyId);
+      if (companyIds.length > 0) busQuery = busQuery.in('company_id', companyIds);
 
       const busRes = await busQuery;
       if (busRes.error) throw busRes.error;
@@ -114,8 +116,8 @@ export default function ComptableExpenses() {
         `)
         .order('expense_date', { ascending: false });
 
-      if (companyId && busIds.length > 0) expQuery = expQuery.in('bus_id', busIds);
-      else if (companyId && busIds.length === 0) {
+      if (companyIds.length > 0 && busIds.length > 0) expQuery = expQuery.in('bus_id', busIds);
+      else if (companyIds.length > 0 && busIds.length === 0) {
         setExpenses([]);
         setLoading(false);
         return;

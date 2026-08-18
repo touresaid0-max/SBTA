@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useComptableCompanies } from '@/hooks/useComptableCompanies'
 import type { ExpenseCategory } from '@/types/chargeAchat.types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -78,7 +79,9 @@ export default function ComptableExpenseForm() {
   const { id }    = useParams<{ id?: string }>()
   const { user }  = useAuthStore()
   const isEdit    = !!id
-  const companyId = user?.company_id ?? null
+  const { allowedCompanyIds } = useComptableCompanies()
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const companyId = companyIds[0] ?? null
 
   // Type selector (only relevant for new entries)
   const [expenseType, setExpenseType] = useState<ExpenseType | null>(isEdit ? 'other' : null)
@@ -129,22 +132,22 @@ export default function ComptableExpenseForm() {
   // ── Load data ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!companyId) return
+    if (companyIds.length === 0) return
     const load = async () => {
       const [catRes, vehRes, garRes, coRes, siRes, mvRes] = await Promise.all([
         supabase.from('expense_categories').select('*').order('sort_order'),
-        supabase.from('fleet_vehicles').select('id,registration_number,company_id,is_active').eq('company_id', companyId).eq('is_active', true),
+        supabase.from('fleet_vehicles').select('id,registration_number,company_id,is_active').in('company_id', companyIds).eq('is_active', true),
         supabase.from('garages').select('id,name,code,city,region').neq('status', 'archive').order('name'),
-        supabase.from('companies').select('name,code').eq('id', companyId).maybeSingle(),
-        supabase.from('comptable_stock_items').select('id,designation,code_article,stock_min,stock_initial,prix_unitaire').eq('company_id', companyId).order('designation'),
-        supabase.from('comptable_stock_movements').select('stock_item_id,movement_type,quantity').eq('company_id', companyId),
+        supabase.from('companies').select('name,code').in('id', companyIds),
+        supabase.from('comptable_stock_items').select('id,designation,code_article,stock_min,stock_initial,prix_unitaire').in('company_id', companyIds).order('designation'),
+        supabase.from('comptable_stock_movements').select('stock_item_id,movement_type,quantity').in('company_id', companyIds),
       ])
 
       if (catRes.data) setCategories(catRes.data)
       if (vehRes.data) setVehicles(vehRes.data as FleetVehicle[])
 
-      if (coRes.data) {
-        const co = coRes.data as { name: string; code: string }
+      if (coRes.data && coRes.data.length > 0) {
+        const co = coRes.data[0] as { name: string; code: string }
         setCompanyName(co.name)
         setCompanyCode(co.code)
         const all = (garRes.data ?? []) as GarageOption[]
@@ -163,7 +166,7 @@ export default function ComptableExpenseForm() {
       })))
     }
     load()
-  }, [companyId])
+  }, [companyIds])
 
   // Load edit data
   useEffect(() => {
@@ -274,7 +277,7 @@ export default function ComptableExpenseForm() {
 
   const validateStock = () => {
     if (!vehicleIsValid) { toast.error("L'immatriculation est obligatoire"); return false }
-    if (!companyId) { toast.error('Société introuvable'); return false }
+    if (companyIds.length === 0) { toast.error('Société introuvable'); return false }
     if (!stockDate) { toast.error('La date est obligatoire'); return false }
     if (stockLines.length === 0) { toast.error('Ajoutez au moins un article depuis le stock'); return false }
     for (let i = 0; i < stockLines.length; i++) {
@@ -290,7 +293,7 @@ export default function ComptableExpenseForm() {
   const validateOther = () => {
     if (!other.registration_number.trim()) { toast.error("L'immatriculation est obligatoire"); return false }
     if (!isEdit && !selectedVehicle) { toast.error('Aucun véhicule trouvé pour cette plaque.'); return false }
-    if (!companyId) { toast.error('Société introuvable'); return false }
+    if (companyIds.length === 0) { toast.error('Société introuvable'); return false }
     if (!other.expense_date) { toast.error('La date est obligatoire'); return false }
     if (!other.description.trim()) { toast.error('La description est obligatoire'); return false }
     if (!other.amount || isNaN(Number(other.amount)) || Number(other.amount) < 0) { toast.error('Le montant est invalide'); return false }

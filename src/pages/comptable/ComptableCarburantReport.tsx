@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, Search, X, Filter, Download, Fuel, Calendar } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { useComptableCompanies } from '../../hooks/useComptableCompanies';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import toast from 'react-hot-toast';
@@ -37,7 +38,9 @@ function fmtL(n: number) {
 
 export default function ComptableCarburantReport() {
   const { user } = useAuthStore();
-  const companyId = user?.company_id;
+  const { allowedCompanyIds } = useComptableCompanies();
+  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const companyId = companyIds[0] ?? null;
 
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,19 +58,19 @@ export default function ComptableCarburantReport() {
   const [filterCity, setFilterCity] = useState('');
 
   const load = useCallback(async () => {
-    if (!companyId) return;
+    if (companyIds.length === 0) return;
     setLoading(true);
     const { data, error } = await supabase
       .from('comptable_fuel_withdrawals')
       .select('id,registration_number,driver_name,station_name,station_code,city,fuel_type,liters,unit_price,total_amount,withdrawal_date,observations')
-      .eq('company_id', companyId)
+      .in('company_id', companyIds)
       .gte('withdrawal_date', dateFrom)
       .lte('withdrawal_date', dateTo)
       .order('withdrawal_date', { ascending: false });
     if (error) toast.error('Erreur de chargement');
     else setWithdrawals((data as Withdrawal[]) || []);
     setLoading(false);
-  }, [companyId, dateFrom, dateTo]);
+  }, [companyIds, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
 

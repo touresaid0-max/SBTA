@@ -28,6 +28,7 @@ interface UserRow {
   role: UserRole;
   avatar_url?: string;
   company_id?: string;
+  assigned_company_ids?: string[];
   station_id?: string;
   organization_id?: string;
   status: string;
@@ -95,6 +96,7 @@ const emptyForm = () => ({
   role: 'guichetier' as UserRole,
   organization_id: '',
   company_id: '',
+  assigned_company_ids: [] as string[],
   station_id: '',
   employee_id: '',
   license_number: '',
@@ -123,6 +125,7 @@ export default function Users() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState(emptyForm());
+  const [comptableAssignedCompanies, setComptableAssignedCompanies] = useState<string[]>([]);
 
   // Employés en attente
   const [pendingEmployees, setPendingEmployees] = useState<PendingEmployee[]>([]);
@@ -246,6 +249,7 @@ export default function Users() {
         if (!formData.send_invitation && !formData.password) { toast.error('Le mot de passe est requis'); return; }
         if (!formData.send_invitation && formData.password.length < 8) { toast.error('Minimum 8 caractères'); return; }
         if (OPERATIONAL_ROLES.includes(formData.role) && !formData.company_id) { toast.error('La société est obligatoire'); return; }
+        if (formData.role === 'comptable' && comptableAssignedCompanies.length === 0) { toast.error('Affectez au moins une société au comptable'); return; }
         if (REQUIRES_STATION.includes(formData.role) && !formData.station_id) { toast.error("La gare d'affectation est obligatoire pour ce poste"); return; }
 
         const { data: { session } } = await supabase.auth.getSession();
@@ -279,6 +283,15 @@ export default function Users() {
         });
         const result = await response.json().catch(() => ({ error: `Erreur (${response.status})` }));
         if (!response.ok) throw new Error(result.error || `Erreur ${response.status}`);
+
+        // If comptable, save multi-company assignments
+        if (formData.role === 'comptable' && result.user_id) {
+          const rows = comptableAssignedCompanies.map(cid => ({ user_id: result.user_id, company_id: cid }));
+          if (rows.length > 0) {
+            await supabase.from('comptable_companies').upsert(rows, { onConflict: 'user_id,company_id' });
+          }
+        }
+
         toast.success(formData.send_invitation ? 'Invitation envoyée' : 'Utilisateur créé');
         await new Promise(r => setTimeout(r, 500));
       } else {
@@ -323,6 +336,23 @@ export default function Users() {
         updateData.technician_type_id = formData.role === 'mecanicien' && formData.technician_type_id ? formData.technician_type_id : null;
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
+
+        // If comptable, sync multi-company assignments
+        if (formData.role === 'comptable') {
+          const existing = editingUser.assigned_company_ids ?? [];
+          const toAdd = comptableAssignedCompanies.filter(id => !existing.includes(id));
+          const toRemove = existing.filter(id => !comptableAssignedCompanies.includes(id));
+          if (toRemove.length > 0) {
+            await supabase.from('comptable_companies').delete().eq('user_id', editingUser.id).in('company_id', toRemove);
+          }
+          if (toAdd.length > 0) {
+            await supabase.from('comptable_companies').upsert(
+              toAdd.map(cid => ({ user_id: editingUser.id, company_id: cid })),
+              { onConflict: 'user_id,company_id' }
+            );
+          }
+        }
+
         toast.success('Utilisateur mis à jour');
       }
       setShowModal(false); setEditingUser(null); setFormData(emptyForm());
@@ -332,7 +362,7 @@ export default function Users() {
     }
   };
 
-  const handleEdit = (user: UserRow) => {
+  const handleEdit = async (user: UserRow) => {
     setEditingUser(user);
     setFormData({
       email: user.email,
@@ -342,6 +372,7 @@ export default function Users() {
       role: user.role,
       organization_id: user.organization_id || '',
       company_id: user.company_id || '',
+      assigned_company_ids: [],
       station_id: user.station_id || '',
       employee_id: user.employee_id || '',
       license_number: user.license_number || '',
@@ -352,6 +383,18 @@ export default function Users() {
       send_invitation: false,
       status: user.status || 'active',
     });
+    // Load comptable company assignments if role is comptable
+    if (user.role === 'comptable') {
+      const { data: ccData } = await supabase
+        .from('comptable_companies')
+        .select('company_id')
+        .eq('user_id', user.id);
+      const assigned = (ccData ?? []).map((c: any) => c.company_id);
+      setComptableAssignedCompanies(assigned);
+      setEditingUser({ ...user, assigned_company_ids: assigned });
+    } else {
+      setComptableAssignedCompanies([]);
+    }
     setShowModal(true);
   };
 
@@ -586,7 +629,7 @@ export default function Users() {
           </p>
         </div>
         <button
-          onClick={() => { setEditingUser(null); setFormData(emptyForm()); setShowModal(true); }}
+          onClick={() => { setEditingUser(null); setFormData(emptyForm()); setComptableAssignedCompanies([]); setShowModal(true); }}
           className="px-4 py-2 rounded-lg flex items-center gap-2 font-medium"
           style={{ backgroundColor: 'var(--primary)', color: 'var(--text-on-primary)' }}
         >
@@ -968,7 +1011,7 @@ export default function Users() {
               <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 {editingUser ? 'Modifier l\'utilisateur' : 'Nouvel utilisateur'}
               </h2>
-              <button onClick={() => { setShowModal(false); setEditingUser(null); setFormData(emptyForm()); }} style={{ color: 'var(--text-muted)' }}>
+              <button onClick={() => { setShowModal(false); setEditingUser(null); setFormData(emptyForm()); setComptableAssignedCompanies([]); }} style={{ color: 'var(--text-muted)' }}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1035,6 +1078,44 @@ export default function Users() {
                   </select>
                 </div>
               )}
+              {formData.role === 'comptable' && (
+                <div className="p-4 rounded-lg" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
+                  <div className="flex gap-2 mb-2">
+                    <AlertCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#D97706' }} />
+                    <label className="text-sm font-medium" style={{ color: '#92400E' }}>
+                      Société(s) d'affectation <span style={{ color: 'var(--danger)' }}>*</span>
+                    </label>
+                  </div>
+                  <p className="text-xs mb-3" style={{ color: '#92400E' }}>
+                    Sélectionnez une ou plusieurs sociétés. Le comptable ne pourra accéder qu'aux données de ces sociétés.
+                  </p>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {companies.map(c => (
+                      <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer hover:bg-white transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={comptableAssignedCompanies.includes(c.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setComptableAssignedCompanies([...comptableAssignedCompanies, c.id]);
+                            } else {
+                              setComptableAssignedCompanies(comptableAssignedCompanies.filter(id => id !== c.id));
+                            }
+                          }}
+                          className="w-4 h-4 rounded"
+                          style={{ accentColor: '#D97706' }}
+                        />
+                        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{c.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {comptableAssignedCompanies.length > 0 && (
+                    <p className="text-xs mt-2" style={{ color: '#92400E' }}>
+                      {comptableAssignedCompanies.length} société(s) sélectionnée(s)
+                    </p>
+                  )}
+                </div>
+              )}
               {CAN_HAVE_STATION.includes(formData.role) && (
                 <div className="p-4 rounded-lg" style={{ backgroundColor: '#f0faf4', border: '1px solid #0B7439' }}>
                   <div className="flex gap-2 mb-2">
@@ -1096,7 +1177,7 @@ export default function Users() {
                 </div>
               )}
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setShowModal(false); setEditingUser(null); setFormData(emptyForm()); }} className="flex-1 px-4 py-2 rounded-lg border" style={{ borderColor: 'var(--border)' }}>Annuler</button>
+                <button type="button" onClick={() => { setShowModal(false); setEditingUser(null); setFormData(emptyForm()); setComptableAssignedCompanies([]); }} className="flex-1 px-4 py-2 rounded-lg border" style={{ borderColor: 'var(--border)' }}>Annuler</button>
                 <button type="submit" className="flex-1 px-4 py-2 rounded-lg font-medium" style={{ backgroundColor: 'var(--primary)', color: 'var(--text-on-primary)' }}>
                   {editingUser ? 'Mettre à jour' : (formData.send_invitation ? "Envoyer l'invitation" : 'Créer')}
                 </button>
