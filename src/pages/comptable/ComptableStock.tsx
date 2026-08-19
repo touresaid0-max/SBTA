@@ -3,7 +3,7 @@ import { Plus, AlertTriangle, Package, CreditCard as Edit2, X, Save, Search } fr
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { useComptableCompanies, type CompanyInfo } from '@/hooks/useComptableCompanies'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n)
 
@@ -31,9 +31,9 @@ const EMPTY_FORM: ItemForm = { designation: '', code_article: '', stock_min: '',
 
 export default function ComptableStock() {
   const { user }  = useAuthStore()
-  const { allowedCompanyIds } = useComptableCompanies()
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies()
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
-  const companyId = companyIds[0] ?? null
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
   const [items,     setItems]     = useState<StockItem[]>([])
   const [loading,   setLoading]   = useState(true)
@@ -118,7 +118,7 @@ export default function ComptableStock() {
     setSaving(true)
     try {
       const payload = {
-        company_id:    companyId,
+        company_id:    selectedCompanyId,
         designation:   form.designation.trim(),
         code_article:  form.code_article.trim() || null,
         stock_min:     Number(form.stock_min) || 0,
@@ -221,6 +221,14 @@ export default function ComptableStock() {
               <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
             </button>
           </div>
+          {companyIds.length > 1 && !editId && (
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Société <span style={{ color: '#DC2626' }}>*</span></label>
+              <select value={selectedCompanyId ?? ''} onChange={e => setSelectedCompanyId(e.target.value)} className={inputCls} style={inputStyle}>
+                {companyInfos.map((c: CompanyInfo) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Désignation <span style={{ color: '#DC2626' }}>*</span></label>

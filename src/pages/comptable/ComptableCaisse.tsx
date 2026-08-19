@@ -5,7 +5,7 @@ import { fr } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { useComptableCompanies, type CompanyInfo } from '@/hooks/useComptableCompanies'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
 
@@ -39,9 +39,9 @@ const EMPTY_FORM: EntryForm = {
 
 export default function ComptableCaisse() {
   const { user }  = useAuthStore()
-  const { allowedCompanyIds } = useComptableCompanies()
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies()
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
-  const companyId = companyIds[0] ?? null
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
   const [weekOffset, setWeekOffset] = useState(0)
   const [loading,    setLoading]    = useState(true)
@@ -98,7 +98,7 @@ export default function ComptableCaisse() {
     try {
       const weekStartStr = format(startOfWeek(new Date(form.entry_date), { weekStartsOn: 1 }), 'yyyy-MM-dd')
       const { error } = await supabase.from('comptable_caisse_entries').insert({
-        company_id: companyId,
+        company_id: selectedCompanyId,
         entry_type: form.entry_type,
         amount: Math.round(Number(form.amount)),
         label: form.label.trim(),
@@ -196,6 +196,14 @@ export default function ComptableCaisse() {
       {showForm && (
         <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Nouvelle entrée de caisse</h2>
+          {companyIds.length > 1 && (
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Société <span style={{ color: '#DC2626' }}>*</span></label>
+              <select value={selectedCompanyId ?? ''} onChange={e => setSelectedCompanyId(e.target.value)} className={inputCls} style={inputStyle}>
+                {companyInfos.map((c: CompanyInfo) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             {/* Type */}
             <div className="col-span-2">

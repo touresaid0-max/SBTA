@@ -5,7 +5,7 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { useComptableCompanies, type CompanyInfo } from '@/hooks/useComptableCompanies'
 
 interface StockMovement {
   id: string
@@ -35,9 +35,9 @@ const EMPTY: MovementForm = {
 
 export default function ComptableStockMovements() {
   const { user }  = useAuthStore()
-  const { allowedCompanyIds } = useComptableCompanies()
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies()
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
-  const companyId = companyIds[0] ?? null
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
   const [movements,  setMovements]  = useState<StockMovement[]>([])
   const [items,      setItems]      = useState<StockItem[]>([])
@@ -112,7 +112,7 @@ export default function ComptableStockMovements() {
     setSaving(true)
     try {
       const { error } = await supabase.from('comptable_stock_movements').insert({
-        company_id:          companyId,
+        company_id:          selectedCompanyId,
         stock_item_id:       form.stock_item_id,
         movement_type:       form.movement_type,
         quantity:            Math.round(Number(form.quantity)),
@@ -188,6 +188,14 @@ export default function ComptableStockMovements() {
             </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {companyIds.length > 1 && (
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Société <span style={{ color: '#DC2626' }}>*</span></label>
+                <select value={selectedCompanyId ?? ''} onChange={e => setSelectedCompanyId(e.target.value)} className={inputCls} style={inputStyle}>
+                  {companyInfos.map((c: CompanyInfo) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+                </select>
+              </div>
+            )}
             {/* Article — autocomplete */}
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Article <span style={{ color: '#DC2626' }}>*</span></label>

@@ -1,26 +1,44 @@
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
+import { supabase } from '@/services/supabase';
+
+export interface CompanyInfo {
+  id: string;
+  name: string;
+  code: string;
+}
 
 /**
- * Returns the company IDs a comptable is allowed to access.
+ * Returns the company IDs a comptable is allowed to access, plus the
+ * resolved company records (name, code) for display in selectors.
  *
  * - For comptables: returns the array of assigned company IDs from
  *   `comptable_companies`. If empty, the comptable has no company access.
  * - For non-comptable roles: returns null, meaning "no multi-company
  *   restriction — use the existing single company_id filter".
- *
- * Usage in comptable pages:
- *   const { allowedCompanyIds } = useComptableCompanies();
- *   // If allowedCompanyIds is null, fall back to user.company_id.
- *   // If it's an empty array, show "no access".
- *   // If it has items, filter with .in('company_id', allowedCompanyIds).
  */
 export function useComptableCompanies() {
   const { user } = useAuthStore();
+  const [companyInfos, setCompanyInfos] = useState<CompanyInfo[]>([]);
 
-  if (user?.role !== 'comptable') {
-    return { allowedCompanyIds: null as string[] | null };
+  const isComptable = user?.role === 'comptable';
+  const assigned = isComptable ? (user.assigned_company_ids ?? []) : [];
+  const assignedKey = assigned.join(',');
+
+  useEffect(() => {
+    if (assigned.length === 0) { setCompanyInfos([]); return; }
+    supabase
+      .from('companies')
+      .select('id, name, code')
+      .in('id', assigned)
+      .then(({ data }) => {
+        setCompanyInfos((data ?? []) as CompanyInfo[]);
+      });
+  }, [assignedKey]);
+
+  if (!isComptable) {
+    return { allowedCompanyIds: null as string[] | null, companyInfos };
   }
 
-  const assigned = user.assigned_company_ids ?? [];
-  return { allowedCompanyIds: assigned };
+  return { allowedCompanyIds: assigned, companyInfos };
 }

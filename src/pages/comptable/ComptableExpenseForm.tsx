@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { useComptableCompanies, type CompanyInfo } from '@/hooks/useComptableCompanies'
 import type { ExpenseCategory } from '@/types/chargeAchat.types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -79,9 +79,9 @@ export default function ComptableExpenseForm() {
   const { id }    = useParams<{ id?: string }>()
   const { user }  = useAuthStore()
   const isEdit    = !!id
-  const { allowedCompanyIds } = useComptableCompanies()
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies()
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
-  const companyId = companyIds[0] ?? null
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
   // Type selector (only relevant for new entries)
   const [expenseType, setExpenseType] = useState<ExpenseType | null>(isEdit ? 'other' : null)
@@ -147,7 +147,7 @@ export default function ComptableExpenseForm() {
       if (vehRes.data) setVehicles(vehRes.data as FleetVehicle[])
 
       if (coRes.data && coRes.data.length > 0) {
-        const co = coRes.data[0] as { name: string; code: string }
+        const co = coRes.data.find(c => c.id === selectedCompanyId) ?? coRes.data[0] as { name: string; code: string }
         setCompanyName(co.name)
         setCompanyCode(co.code)
         const all = (garRes.data ?? []) as GarageOption[]
@@ -166,7 +166,7 @@ export default function ComptableExpenseForm() {
       })))
     }
     load()
-  }, [companyIds])
+  }, [companyIds, selectedCompanyId])
 
   // Load edit data
   useEffect(() => {
@@ -309,7 +309,7 @@ export default function ComptableExpenseForm() {
       // Create a synthetic vehicle_expense representing the total stock movement
       const needsValidation = REGIONAL_COMPANIES.includes(companyCode)
       const payload = {
-        company_id:          companyId,
+        company_id:          selectedCompanyId,
         vehicle_id:          selectedVehicle?.id ?? null,
         registration_number: other.registration_number.trim().toUpperCase(),
         expense_date:        stockDate,
@@ -328,7 +328,7 @@ export default function ComptableExpenseForm() {
       if (error) throw error
 
       const movements = stockLines.map(l => ({
-        company_id:          companyId,
+        company_id:          selectedCompanyId,
         stock_item_id:       l.stockItemId,
         movement_type:       'sortie' as const,
         quantity:            Number(l.quantite),
@@ -370,7 +370,7 @@ export default function ComptableExpenseForm() {
     setLoading(true)
     const needsValidation = REGIONAL_COMPANIES.includes(companyCode)
     const payload = {
-      company_id:          companyId,
+      company_id:          selectedCompanyId,
       vehicle_id:          selectedVehicle?.id ?? null,
       registration_number: other.registration_number.trim().toUpperCase(),
       expense_date:        other.expense_date,
@@ -561,6 +561,14 @@ export default function ComptableExpenseForm() {
 
           {/* Plaque + société + date */}
           <div className="rounded-xl p-5 space-y-5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            {companyIds.length > 1 && (
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Société <span style={{ color: '#DC2626' }}>*</span></label>
+                <select value={selectedCompanyId ?? ''} onChange={e => setSelectedCompanyId(e.target.value)} className={inputCls} style={inputStyle}>
+                  {companyInfos.map((c: CompanyInfo) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+                </select>
+              </div>
+            )}
             {PlateField}
             {CompanyBadge}
             <div>
@@ -789,6 +797,14 @@ export default function ComptableExpenseForm() {
 
           <div className="rounded-xl p-5 space-y-5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
 
+            {companyIds.length > 1 && !isEdit && (
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Société <span style={{ color: '#DC2626' }}>*</span></label>
+                <select value={selectedCompanyId ?? ''} onChange={e => setSelectedCompanyId(e.target.value)} className={inputCls} style={inputStyle}>
+                  {companyInfos.map((c: CompanyInfo) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+                </select>
+              </div>
+            )}
             {PlateField}
             {CompanyBadge}
 

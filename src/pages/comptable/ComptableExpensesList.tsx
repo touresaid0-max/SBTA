@@ -16,9 +16,10 @@ const REGIONAL_COMPANIES = ['TST', 'ETL', 'SNT']
 export default function ComptableExpensesList() {
   const navigate  = useNavigate()
   const { user }  = useAuthStore()
-  const { allowedCompanyIds } = useComptableCompanies()
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies()
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
   const companyId = companyIds[0] ?? null
+  const assignedCompanyCodes = companyInfos.map(c => c.code)
 
   const [expenses,    setExpenses]    = useState<VehicleExpense[]>([])
   const [total,       setTotal]       = useState(0)
@@ -44,7 +45,7 @@ export default function ComptableExpensesList() {
   const [validating,  setValidating]  = useState<string | null>(null)
   const [confirmExpense, setConfirmExpense] = useState<VehicleExpense | null>(null)
 
-  const isRegional = REGIONAL_COMPANIES.includes(companyCode)
+  const isRegional = assignedCompanyCodes.some(code => REGIONAL_COMPANIES.includes(code))
 
   useEffect(() => {
     supabase.from('expense_categories').select('*').order('sort_order').then(({ data }) => {
