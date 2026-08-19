@@ -72,6 +72,7 @@ Deno.serve(async (req: Request) => {
       phone,
       role,
       company_id,
+      assigned_company_ids,
       station_id,
       employee_id,
       license_number,
@@ -238,6 +239,17 @@ Deno.serve(async (req: Request) => {
       description: `${send_invitation ? "Invitation envoyée" : "Utilisateur créé"} : ${first_name} ${last_name} (${role})`,
       new_values: { email, role, company_id: profileData.company_id, station_id: profileData.station_id },
     });
+
+    // If comptable, save multi-company assignments using service role (bypasses RLS)
+    if (role === "comptable" && Array.isArray(assigned_company_ids) && assigned_company_ids.length > 0) {
+      const rows = assigned_company_ids.map((cid: string) => ({ user_id: authUserId, company_id: cid }));
+      const { error: ccError } = await supabaseAdmin
+        .from("comptable_companies")
+        .upsert(rows, { onConflict: "user_id,company_id" });
+      if (ccError) {
+        console.error("Failed to save comptable company assignments:", ccError.message);
+      }
+    }
 
     // Notify all RH users about the new employee (created via trigger)
     try {

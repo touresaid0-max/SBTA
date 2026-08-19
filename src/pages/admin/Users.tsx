@@ -266,6 +266,7 @@ export default function Users() {
         };
         if (!formData.send_invitation) payload.password = formData.password;
         if (OPERATIONAL_ROLES.includes(formData.role)) payload.company_id = formData.company_id || null;
+        if (formData.role === 'comptable') payload.assigned_company_ids = comptableAssignedCompanies;
         if (CAN_HAVE_STATION.includes(formData.role)) payload.station_id = formData.station_id || null;
         if (formData.role === 'chauffeur') {
           payload.license_number = formData.license_number || null;
@@ -284,14 +285,7 @@ export default function Users() {
         const result = await response.json().catch(() => ({ error: `Erreur (${response.status})` }));
         if (!response.ok) throw new Error(result.error || `Erreur ${response.status}`);
 
-        // If comptable, save multi-company assignments
-        if (formData.role === 'comptable' && result.user_id) {
-          const rows = comptableAssignedCompanies.map(cid => ({ user_id: result.user_id, company_id: cid }));
-          if (rows.length > 0) {
-            await supabase.from('comptable_companies').upsert(rows, { onConflict: 'user_id,company_id' });
-          }
-        }
-
+        // Comptable company assignments are saved by the edge function (service role)
         toast.success(formData.send_invitation ? 'Invitation envoyée' : 'Utilisateur créé');
         await new Promise(r => setTimeout(r, 500));
       } else {
@@ -337,19 +331,14 @@ export default function Users() {
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
 
-        // If comptable, sync multi-company assignments
+        // If comptable, sync multi-company assignments via SECURITY DEFINER function
         if (formData.role === 'comptable') {
-          const existing = editingUser.assigned_company_ids ?? [];
-          const toAdd = comptableAssignedCompanies.filter(id => !existing.includes(id));
-          const toRemove = existing.filter(id => !comptableAssignedCompanies.includes(id));
-          if (toRemove.length > 0) {
-            await supabase.from('comptable_companies').delete().eq('user_id', editingUser.id).in('company_id', toRemove);
-          }
-          if (toAdd.length > 0) {
-            await supabase.from('comptable_companies').upsert(
-              toAdd.map(cid => ({ user_id: editingUser.id, company_id: cid })),
-              { onConflict: 'user_id,company_id' }
-            );
+          const { error: syncError } = await supabase.rpc('sync_comptable_companies', {
+            p_user_id: editingUser.id,
+            p_company_ids: comptableAssignedCompanies,
+          });
+          if (syncError) {
+            toast.error(`Erreur lors de l'affectation des sociétés: ${syncError.message}`);
           }
         }
 
