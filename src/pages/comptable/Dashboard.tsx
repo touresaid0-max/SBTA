@@ -29,7 +29,7 @@ export default function ComptableDashboard() {
   const { user } = useAuthStore();
   const { allowedCompanyIds } = useComptableCompanies();
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
-  const [company, setCompany] = useState<CompanyInfo | null>(null);
+  const [companies, setCompanies] = useState<CompanyInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     pendingFuelVouchers: 0,
@@ -44,7 +44,7 @@ export default function ComptableDashboard() {
   useEffect(() => {
     if (companyIds.length > 0) {
       supabase.from('companies').select('id, name, code').in('id', companyIds)
-        .then(({ data }) => { if (data && data.length > 0) setCompany(data[0] as CompanyInfo) });
+        .then(({ data }) => { setCompanies((data ?? []) as CompanyInfo[]) });
     }
     loadStats();
   }, []);
@@ -164,12 +164,16 @@ export default function ComptableDashboard() {
           <p style={{ color: 'var(--text-secondary)' }}>
             {format(new Date(), 'EEEE d MMMM yyyy', { locale: fr })} — Validation des dépenses
           </p>
-          {company && (
-            <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg inline-flex"
-              style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+          {companies.length > 0 && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap" aria-label="Sociétés affectées">
               <Building2 className="w-4 h-4" style={{ color: '#1D4ED8' }} />
-              <span className="text-sm font-semibold" style={{ color: '#1E3A5F' }}>{company.name}</span>
-              <span className="text-xs font-mono px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{company.code}</span>
+              {companies.map(currentCompany => (
+                <div key={currentCompany.id} className="flex items-center gap-1 px-3 py-1.5 rounded-lg"
+                  style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                  <span className="text-sm font-semibold" style={{ color: '#1E3A5F' }}>{currentCompany.name}</span>
+                  <span className="text-xs font-mono px-1.5 py-0.5 rounded font-bold" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{currentCompany.code}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>

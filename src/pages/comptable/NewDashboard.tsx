@@ -119,7 +119,7 @@ export default function ComptableNewDashboard() {
 
   const [period, setPeriod] = useState<Period>('week')
   const [loading, setLoading] = useState(true)
-  const [company, setCompany] = useState<CompanyInfo | null>(null)
+  const [companies, setCompanies] = useState<CompanyInfo[]>([])
   const [periodTotal, setPeriodTotal] = useState(0)
   const [topVehicles, setTopVehicles] = useState<{ reg: string; total: number }[]>([])
   const [trendData, setTrendData] = useState<Record<string, unknown>[]>([])
@@ -136,7 +136,7 @@ export default function ComptableNewDashboard() {
     try {
       const { data: coData } = await supabase
         .from('companies').select('id, name, code').in('id', companyIds)
-      if (coData && coData.length > 0) setCompany(coData[0] as CompanyInfo)
+      setCompanies((coData ?? []) as CompanyInfo[])
 
       const { data: busData } = await supabase.from('buses').select('id').in('company_id', companyIds)
       const busIds = (busData ?? []).map(b => b.id)
@@ -147,6 +147,7 @@ export default function ComptableNewDashboard() {
         const { data } = await supabase
           .from('vehicle_expenses')
           .select('*, category:expense_categories(name,icon,color)')
+          .in('company_id', companyIds)
           .gte('expense_date', startStr)
           .lte('expense_date', endStr)
           .eq('source', 'comptable')
@@ -260,11 +261,15 @@ export default function ComptableNewDashboard() {
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <Calendar className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{periodLabel}</p>
-            {company && (
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+            {companies.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap" aria-label="Sociétés affectées">
                 <Building2 className="w-3.5 h-3.5" style={{ color: '#1D4ED8' }} />
-                <span className="text-xs font-bold" style={{ color: '#1E3A5F' }}>{company.name}</span>
-                <span className="text-xs font-mono font-bold px-1 py-0.5 rounded" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{company.code}</span>
+                {companies.map(currentCompany => (
+                  <div key={currentCompany.id} className="flex items-center gap-1 px-2 py-0.5 rounded-lg" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                    <span className="text-xs font-bold" style={{ color: '#1E3A5F' }}>{currentCompany.name}</span>
+                    <span className="text-xs font-mono font-bold px-1 py-0.5 rounded" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{currentCompany.code}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
