@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useComptableCompanies } from '../../hooks/useComptableCompanies';
+import { CompanyFilterBar } from '../../components/shared/CompanyFilterBar';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -40,8 +41,10 @@ function fmtL(n: number) {
 export default function ComptableCarburantDashboard() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const { allowedCompanyIds } = useComptableCompanies();
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies();
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds;
   const companyId = companyIds[0] ?? null;
 
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
@@ -142,6 +145,8 @@ export default function ComptableCarburantDashboard() {
           <Plus className="w-4 h-4" /> Nouveau prélèvement
         </button>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {loading ? (
         <div className="flex justify-center py-16">

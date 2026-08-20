@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useComptableCompanies, type CompanyInfo } from '@/hooks/useComptableCompanies'
+import { CompanyFilterBar } from '@/components/shared/CompanyFilterBar'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
 
@@ -40,7 +41,9 @@ const EMPTY_FORM: EntryForm = {
 export default function ComptableCaisse() {
   const { user }  = useAuthStore()
   const { allowedCompanyIds, companyInfos } = useComptableCompanies()
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
   const [weekOffset, setWeekOffset] = useState(0)
@@ -146,6 +149,8 @@ export default function ComptableCaisse() {
           <Plus className="w-4 h-4" /> Nouvelle entrée
         </button>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* Week navigation */}
       <div className="flex items-center justify-center gap-4">

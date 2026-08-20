@@ -3,6 +3,7 @@ import { FileText, Search, X, Filter, Download, Fuel, Calendar } from 'lucide-re
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useComptableCompanies } from '../../hooks/useComptableCompanies';
+import { CompanyFilterBar } from '../../components/shared/CompanyFilterBar';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import toast from 'react-hot-toast';
@@ -38,8 +39,10 @@ function fmtL(n: number) {
 
 export default function ComptableCarburantReport() {
   const { user } = useAuthStore();
-  const { allowedCompanyIds } = useComptableCompanies();
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies();
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds;
   const companyId = companyIds[0] ?? null;
 
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
@@ -232,6 +235,8 @@ export default function ComptableCarburantReport() {
           </button>
         </div>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* date range + filters */}
       <div className="rounded-xl border p-5 mb-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>

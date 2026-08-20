@@ -7,6 +7,7 @@ import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { CompanyFilterBar } from '@/components/shared/CompanyFilterBar'
 import type { VehicleExpense, ExpenseCategory } from '@/types/chargeAchat.types'
 
 const PAGE_SIZE = 20
@@ -17,7 +18,9 @@ export default function ComptableExpensesList() {
   const navigate  = useNavigate()
   const { user }  = useAuthStore()
   const { allowedCompanyIds, companyInfos } = useComptableCompanies()
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds
   const companyId = companyIds[0] ?? null
   const assignedCompanyCodes = companyInfos.map(c => c.code)
 
@@ -177,6 +180,8 @@ export default function ComptableExpensesList() {
           </button>
         </div>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {isRegional && (
         <div className="flex gap-1 p-1 rounded-lg" style={{ backgroundColor: 'var(--bg-subtle)' }}>

@@ -5,6 +5,7 @@ import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { CompanyFilterBar } from '@/components/shared/CompanyFilterBar'
 import type { VehicleExpense } from '@/types/chargeAchat.types'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
@@ -13,8 +14,10 @@ interface VehicleGroup { reg: string; expenses: VehicleExpense[]; total: number 
 
 export default function ComptableWeeklyReport() {
   const { user }  = useAuthStore()
-  const { allowedCompanyIds } = useComptableCompanies()
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies()
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds
   const companyId = companyIds[0] ?? null
 
   const [weekOffset, setWeekOffset] = useState(0)
@@ -128,6 +131,8 @@ export default function ComptableWeeklyReport() {
           </button>
         </div>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* Week navigation */}
       <div className="flex items-center justify-center gap-4 no-print">

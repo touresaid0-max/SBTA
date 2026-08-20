@@ -3,6 +3,7 @@ import { supabase } from '../../services/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useComptableCompanies } from '../../hooks/useComptableCompanies';
+import { CompanyFilterBar } from '../../components/shared/CompanyFilterBar';
 import toast from 'react-hot-toast';
 import {
   FileText, CheckCircle, Clock, DollarSign, ArrowRight,
@@ -27,8 +28,10 @@ interface CompanyInfo { id: string; name: string; code: string }
 export default function ComptableDashboard() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { allowedCompanyIds } = useComptableCompanies();
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies();
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds;
   const [companies, setCompanies] = useState<CompanyInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -47,7 +50,7 @@ export default function ComptableDashboard() {
         .then(({ data }) => { setCompanies((data ?? []) as CompanyInfo[]) });
     }
     loadStats();
-  }, []);
+  }, [companyIds.join(',')]);
 
   const loadStats = async () => {
     try {
@@ -186,6 +189,8 @@ export default function ComptableDashboard() {
           Actualiser
         </button>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {loading ? (
         <div className="text-center py-16">

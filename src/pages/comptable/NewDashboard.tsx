@@ -14,6 +14,7 @@ import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { CompanyFilterBar, useCompanyFilter } from '@/components/shared/CompanyFilterBar'
 import type { VehicleExpense } from '@/types/chargeAchat.types'
 
 type Period = 'week' | 'month' | 'quarter' | 'year'
@@ -113,9 +114,9 @@ interface CompanyInfo { id: string; name: string; code: string }
 export default function ComptableNewDashboard() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const { allowedCompanyIds } = useComptableCompanies()
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
-  const companyId = companyIds[0] ?? null
+  const filter = useCompanyFilter()
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : filter.allCompanyIds
 
   const [period, setPeriod] = useState<Period>('week')
   const [loading, setLoading] = useState(true)
@@ -288,6 +289,9 @@ export default function ComptableNewDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Company filter */}
+      <CompanyFilterBar filter={filter} onChange={setSelectedCompanies} />
 
       {/* Period selector */}
       <div className="flex items-center gap-1 bg-[#F0F4F1] rounded-xl p-1 w-fit">

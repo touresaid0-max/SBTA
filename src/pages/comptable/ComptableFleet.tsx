@@ -6,6 +6,7 @@ import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useComptableCompanies } from '@/hooks/useComptableCompanies'
+import { CompanyFilterBar } from '@/components/shared/CompanyFilterBar'
 import type { VehicleExpense } from '@/types/chargeAchat.types'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' XOF'
@@ -29,8 +30,10 @@ function statusColor(totalWeek: number) {
 export default function ComptableFleet() {
   const navigate  = useNavigate()
   const { user }  = useAuthStore()
-  const { allowedCompanyIds } = useComptableCompanies()
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies()
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds
   const companyId = companyIds[0] ?? null
 
   const now       = new Date()
@@ -126,6 +129,8 @@ export default function ComptableFleet() {
           ))}
         </div>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* Summary card */}
       <div className="rounded-xl p-4 flex items-center justify-between" style={{ backgroundColor: '#0B7439', color: '#fff' }}>

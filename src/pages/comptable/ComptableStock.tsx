@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useComptableCompanies, type CompanyInfo } from '@/hooks/useComptableCompanies'
+import { CompanyFilterBar } from '@/components/shared/CompanyFilterBar'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n)
 
@@ -32,7 +33,9 @@ const EMPTY_FORM: ItemForm = { designation: '', code_article: '', stock_min: '',
 export default function ComptableStock() {
   const { user }  = useAuthStore()
   const { allowedCompanyIds, companyInfos } = useComptableCompanies()
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
   const [items,     setItems]     = useState<StockItem[]>([])
@@ -177,6 +180,8 @@ export default function ComptableStock() {
           </button>
         </div>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* Search */}
       <div ref={searchRef} className="relative">

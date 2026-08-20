@@ -6,6 +6,7 @@ import { fr } from 'date-fns/locale'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useComptableCompanies, type CompanyInfo } from '@/hooks/useComptableCompanies'
+import { CompanyFilterBar } from '@/components/shared/CompanyFilterBar'
 
 interface StockMovement {
   id: string
@@ -36,7 +37,9 @@ const EMPTY: MovementForm = {
 export default function ComptableStockMovements() {
   const { user }  = useAuthStore()
   const { allowedCompanyIds, companyInfos } = useComptableCompanies()
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
   const [movements,  setMovements]  = useState<StockMovement[]>([])
@@ -159,6 +162,8 @@ export default function ComptableStockMovements() {
           <Plus className="w-4 h-4" /> Nouveau mouvement
         </button>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3">

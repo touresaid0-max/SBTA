@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useAuthStore } from '../../store/authStore';
 import { useComptableCompanies } from '../../hooks/useComptableCompanies';
+import { CompanyFilterBar } from '../../components/shared/CompanyFilterBar';
 
 interface Expense {
   id: string;
@@ -50,8 +51,10 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
 
 export default function ExpenseValidation() {
   const { user } = useAuthStore();
-  const { allowedCompanyIds } = useComptableCompanies();
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies();
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds;
   const [loading, setLoading] = useState(true);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [filter, setFilter] = useState<FilterType>('pending');
@@ -63,14 +66,14 @@ export default function ExpenseValidation() {
 
   useEffect(() => {
     loadExpenses();
-  }, [filter]);
+  }, [filter, companyIds]);
 
   const loadExpenses = async () => {
     try {
       setLoading(true);
 
       let busIds: string[] | null = null;
-      if (companyId) {
+      if (companyIds.length > 0) {
         const { data: busData } = await supabase.from('buses').select('id').in('company_id', companyIds);
         busIds = (busData ?? []).map(b => b.id);
         if (busIds.length === 0) { setExpenses([]); setLoading(false); return; }
@@ -197,6 +200,8 @@ export default function ExpenseValidation() {
           Actualiser
         </button>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* Summary KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

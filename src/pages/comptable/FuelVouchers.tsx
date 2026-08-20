@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useComptableCompanies } from '../../hooks/useComptableCompanies';
+import { CompanyFilterBar } from '../../components/shared/CompanyFilterBar';
 import toast from 'react-hot-toast';
 import {
   Fuel, CheckCircle, XCircle, Eye, AlertTriangle,
@@ -47,8 +48,10 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
 
 export default function FuelVouchersValidation() {
   const { user } = useAuthStore();
-  const { allowedCompanyIds } = useComptableCompanies();
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies();
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds;
   const [vouchers, setVouchers] = useState<FuelVoucher[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('genere');
@@ -59,7 +62,7 @@ export default function FuelVouchersValidation() {
 
   useEffect(() => {
     loadVouchers();
-  }, [filter]);
+  }, [filter, companyIds]);
 
   const loadVouchers = async () => {
     try {
@@ -196,6 +199,8 @@ export default function FuelVouchersValidation() {
           Actualiser
         </button>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

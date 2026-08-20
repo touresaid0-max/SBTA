@@ -157,7 +157,7 @@ export default function ComptableCarburantForm() {
     setSaving(true);
     try {
       const payload = {
-        company_id: companyId,
+        company_id: selectedBus!.company_id,
         bus_id: selectedBus!.id,
         registration_number: selectedBus!.registration_number,
         driver_id: selectedDriver?.id ?? null,

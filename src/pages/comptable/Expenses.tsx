@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useAuthStore } from '../../store/authStore';
 import { useComptableCompanies } from '../../hooks/useComptableCompanies';
+import { CompanyFilterBar } from '../../components/shared/CompanyFilterBar';
 
 interface Bus {
   id: string;
@@ -66,8 +67,10 @@ const EMPTY_FORM = {
 
 export default function ComptableExpenses() {
   const { user } = useAuthStore();
-  const { allowedCompanyIds } = useComptableCompanies();
-  const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const { allowedCompanyIds, companyInfos } = useComptableCompanies();
+  const allCompanyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : []);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const companyIds = selectedCompanies.length > 0 ? selectedCompanies : allCompanyIds;
   const [loading, setLoading] = useState(true);
   const [buses, setBuses] = useState<Bus[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -86,7 +89,7 @@ export default function ComptableExpenses() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [companyIds]);
 
   const loadData = async () => {
     try {
@@ -295,6 +298,8 @@ export default function ComptableExpenses() {
           </button>
         </div>
       </div>
+
+      <CompanyFilterBar filter={{ allCompanyIds, selectedCompanyIds: companyIds, companyInfos, hasMultiple: allCompanyIds.length > 1 }} onChange={setSelectedCompanies} />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
