@@ -365,6 +365,8 @@ export default function Sidebar({ open, collapsed, onClose, onToggleCollapse }: 
 
   if (!user) return null;
 
+  const menuItems = SIDEBAR_MENUS[user.role] || [];
+  const sidebarW = collapsed ? 72 : 256;
   const currentFull = location.pathname + location.search;
 
   // Agent colis: hide "Nouveau courrier" for entrant-only agents
