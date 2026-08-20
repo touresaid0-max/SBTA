@@ -82,9 +82,6 @@ export default function AgentColisDashboard() {
 
   // Tabs / filters
   const [tab,            setTab]            = useState<'sortants' | 'entrants'>('sortants')
-  useEffect(() => {
-    if (!visibleTabs.includes(tab)) setTab(visibleTabs[0])
-  }, [visibleTabs, tab])
   const [period,         setPeriod]         = useState<ParcelPeriod>('today')
   const [outStatusFilter, setOutStatusFilter] = useState<StatusFilter>('all')
   const [incStatusFilter, setIncStatusFilter] = useState<StatusFilter>('all')
@@ -137,6 +134,10 @@ export default function AgentColisDashboard() {
     if (canEntrant) tabs.push('entrants')
     return tabs.length > 0 ? tabs : ['sortants', 'entrants']
   }, [canSortant, canEntrant])
+
+  useEffect(() => {
+    if (!visibleTabs.includes(tab)) setTab(visibleTabs[0])
+  }, [visibleTabs, tab])
 
   // ── Load parcels with selected period ──────────────────────────────────────
   const loadParcels = useCallback(async () => {
