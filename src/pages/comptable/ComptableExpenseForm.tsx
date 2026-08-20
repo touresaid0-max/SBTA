@@ -83,6 +83,19 @@ export default function ComptableExpenseForm() {
   const companyIds = allowedCompanyIds ?? (user?.company_id ? [user.company_id] : [])
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(companyIds[0] ?? null)
 
+  const handleCompanyChange = (companyId: string) => {
+    setSelectedCompanyId(companyId || null)
+    setSelectedVehicle(null)
+    setPlateInput('')
+    setPlateNotFound(false)
+    setOther(f => ({ ...f, registration_number: '' }))
+    setStockLines([])
+    setStockSearch('')
+    setShowPicker(false)
+    setGarageInput('')
+    setSelectedGarage(null)
+  }
+
   // Type selector (only relevant for new entries)
   const [expenseType, setExpenseType] = useState<ExpenseType | null>(isEdit ? 'other' : null)
 
@@ -132,15 +145,19 @@ export default function ComptableExpenseForm() {
   // ── Load data ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (companyIds.length === 0) return
+    if (!selectedCompanyId || !companyIds.includes(selectedCompanyId)) {
+      setVehicles([])
+      setStockItems([])
+      return
+    }
     const load = async () => {
       const [catRes, vehRes, garRes, coRes, siRes, mvRes] = await Promise.all([
         supabase.from('expense_categories').select('*').order('sort_order'),
-        supabase.from('fleet_vehicles').select('id,registration_number,company_id,is_active').in('company_id', companyIds).eq('is_active', true),
+        supabase.from('fleet_vehicles').select('id,registration_number,company_id,is_active').eq('company_id', selectedCompanyId).eq('is_active', true),
         supabase.from('garages').select('id,name,code,city,region').neq('status', 'archive').order('name'),
-        supabase.from('companies').select('name,code').in('id', companyIds),
-        supabase.from('comptable_stock_items').select('id,designation,code_article,stock_min,stock_initial,prix_unitaire').in('company_id', companyIds).order('designation'),
-        supabase.from('comptable_stock_movements').select('stock_item_id,movement_type,quantity').in('company_id', companyIds),
+        supabase.from('companies').select('name,code').eq('id', selectedCompanyId),
+        supabase.from('comptable_stock_items').select('id,designation,code_article,stock_min,stock_initial,prix_unitaire').eq('company_id', selectedCompanyId).order('designation'),
+        supabase.from('comptable_stock_movements').select('stock_item_id,movement_type,quantity').eq('company_id', selectedCompanyId),
       ])
 
       if (catRes.data) setCategories(catRes.data)
@@ -166,13 +183,16 @@ export default function ComptableExpenseForm() {
       })))
     }
     load()
-  }, [companyIds, selectedCompanyId])
+  }, [companyIds.join(','), selectedCompanyId])
 
   // Load edit data
   useEffect(() => {
     if (!isEdit || !id) return
     supabase.from('vehicle_expenses').select('*').eq('id', id).maybeSingle().then(({ data }) => {
       if (!data) return
+      if (data.company_id && companyIds.includes(data.company_id)) {
+        setSelectedCompanyId(data.company_id)
+      }
       setOther({
         registration_number: data.registration_number ?? '',
         expense_date:        data.expense_date ?? '',
@@ -185,7 +205,7 @@ export default function ComptableExpenseForm() {
       setPlateInput(data.registration_number ?? '')
       if (data.supplier) setGarageInput(data.supplier)
     })
-  }, [isEdit, id])
+  }, [isEdit, id, companyIds.join(',')])
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -564,7 +584,7 @@ export default function ComptableExpenseForm() {
             {companyIds.length > 1 && (
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Société <span style={{ color: '#DC2626' }}>*</span></label>
-                <select value={selectedCompanyId ?? ''} onChange={e => setSelectedCompanyId(e.target.value)} className={inputCls} style={inputStyle}>
+                <select value={selectedCompanyId ?? ''} onChange={e => handleCompanyChange(e.target.value)} className={inputCls} style={inputStyle}>
                   {companyInfos.map((c: CompanyInfo) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
                 </select>
               </div>
@@ -800,7 +820,7 @@ export default function ComptableExpenseForm() {
             {companyIds.length > 1 && !isEdit && (
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Société <span style={{ color: '#DC2626' }}>*</span></label>
-                <select value={selectedCompanyId ?? ''} onChange={e => setSelectedCompanyId(e.target.value)} className={inputCls} style={inputStyle}>
+                <select value={selectedCompanyId ?? ''} onChange={e => handleCompanyChange(e.target.value)} className={inputCls} style={inputStyle}>
                   {companyInfos.map((c: CompanyInfo) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
                 </select>
               </div>
