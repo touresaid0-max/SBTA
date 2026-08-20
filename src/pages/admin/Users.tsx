@@ -39,6 +39,7 @@ interface UserRow {
   license_category?: string;
   technician_type_id?: string;
   technician_type_nom?: string;
+  colis_direction?: string[] | null;
   driver_avg_rating?: number;
   driver_total_hours?: number;
   created_at?: string;
@@ -106,6 +107,7 @@ const emptyForm = () => ({
   password: '',
   send_invitation: false,
   status: 'active',
+  colis_direction: [] as string[],
 });
 
 type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
@@ -276,6 +278,9 @@ export default function Users() {
         if (formData.role === 'mecanicien' && formData.technician_type_id) {
           payload.technician_type_id = formData.technician_type_id;
         }
+        if (formData.role === 'agent_colis') {
+          payload.colis_direction = formData.colis_direction.length > 0 ? formData.colis_direction : null;
+        }
 
         const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
           method: 'POST',
@@ -328,6 +333,11 @@ export default function Users() {
           updateData.license_category = formData.license_category || null;
         }
         updateData.technician_type_id = formData.role === 'mecanicien' && formData.technician_type_id ? formData.technician_type_id : null;
+        if (formData.role === 'agent_colis') {
+          updateData.colis_direction = formData.colis_direction.length > 0 ? formData.colis_direction : null;
+        } else {
+          updateData.colis_direction = null;
+        }
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
 
@@ -368,6 +378,7 @@ export default function Users() {
       license_expiry: user.license_expiry || '',
       license_category: user.license_category || 'D',
       technician_type_id: user.technician_type_id || '',
+      colis_direction: user.colis_direction ?? [],
       password: '',
       send_invitation: false,
       status: user.status || 'active',
@@ -1117,6 +1128,41 @@ export default function Users() {
                     <option value="">{REQUIRES_STATION.includes(formData.role) ? '— Sélectionner une gare —' : '— Aucune (non affecté) —'}</option>
                     {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
+                </div>
+              )}
+              {formData.role === 'agent_colis' && (
+                <div className="p-4 rounded-lg" style={{ backgroundColor: '#f0faf4', border: '1px solid #0B7439' }}>
+                  <div className="flex gap-2 mb-2">
+                    <AlertCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#0B7439' }} />
+                    <label className="text-sm font-medium" style={{ color: '#0B7439' }}>
+                      Direction du courrier
+                    </label>
+                  </div>
+                  <p className="text-xs mb-3" style={{ color: '#0B7439' }}>
+                    Sélectionnez le(s) type(s) de courrier que cet agent pourra gérer. Aucune sélection = accès aux deux.
+                  </p>
+                  <div className="flex gap-6">
+                    {(['sortant', 'entrant'] as const).map(dir => (
+                      <label key={dir} className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.colis_direction.includes(dir)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({ ...formData, colis_direction: [...formData.colis_direction, dir] });
+                            } else {
+                              setFormData({ ...formData, colis_direction: formData.colis_direction.filter(d => d !== dir) });
+                            }
+                          }}
+                          className="w-4 h-4 rounded"
+                          style={{ accentColor: '#0B7439' }}
+                        />
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {dir === 'sortant' ? 'SORTANT' : 'ENTRANT'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
               {formData.role === 'mecanicien' && (

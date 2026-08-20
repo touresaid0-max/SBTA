@@ -35,6 +35,7 @@ export interface UserProfile {
   station_name?: string | null;
   station_phone?: string | null;
   employee_id?: string;
+  colis_direction?: string[] | null;
   status: string;
   permissions: string[];
   loyalty_points?: number;

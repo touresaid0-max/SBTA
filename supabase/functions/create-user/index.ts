@@ -79,6 +79,7 @@ Deno.serve(async (req: Request) => {
       license_expiry,
       license_category,
       technician_type_id,
+      colis_direction,
       send_invitation,
     } = body;
 
@@ -222,6 +223,10 @@ Deno.serve(async (req: Request) => {
 
     if (role === "mecanicien" && technician_type_id) {
       profileData.technician_type_id = technician_type_id;
+    }
+
+    if (role === "agent_colis" && Array.isArray(colis_direction)) {
+      profileData.colis_direction = colis_direction;
     }
 
     const { error: profileError } = await supabaseAdmin.from("users").insert(profileData);

@@ -186,6 +186,27 @@ export default function NewParcelForm() {
     )
   }
 
+  const colisDir = user?.colis_direction ?? null
+  const canSortant = !colisDir || colisDir.length === 0 || colisDir.includes('sortant')
+  if (!canSortant) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] p-4">
+        <div className="w-full max-w-sm rounded-xl p-6 text-center" style={{ backgroundColor: 'var(--surface)', border: '2px solid #D97706' }}>
+          <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#FEF3C7' }}>
+            <AlertTriangle className="w-7 h-7" style={{ color: '#D97706' }} />
+          </div>
+          <h2 className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Accès non autorisé</h2>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            Votre compte est configuré pour la gestion des courriers entrants uniquement. Vous ne pouvez pas enregistrer de nouveaux courriers sortants.
+          </p>
+          <button onClick={() => navigate('/agent-colis/dashboard')} className="mt-4 px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#0B7439', color: '#fff' }}>
+            Retour au tableau de bord
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="agent-colis-theme p-3 sm:p-4 lg:p-6 max-w-3xl mx-auto overflow-x-hidden">
       {/* Header */}

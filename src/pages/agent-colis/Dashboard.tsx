@@ -82,6 +82,9 @@ export default function AgentColisDashboard() {
 
   // Tabs / filters
   const [tab,            setTab]            = useState<'sortants' | 'entrants'>('sortants')
+  useEffect(() => {
+    if (!visibleTabs.includes(tab)) setTab(visibleTabs[0])
+  }, [visibleTabs, tab])
   const [period,         setPeriod]         = useState<ParcelPeriod>('today')
   const [outStatusFilter, setOutStatusFilter] = useState<StatusFilter>('all')
   const [incStatusFilter, setIncStatusFilter] = useState<StatusFilter>('all')
@@ -122,6 +125,18 @@ export default function AgentColisDashboard() {
   const stationId    = user?.station_id    ?? null
   const stationName  = user?.station_name  ?? ''
   const stationPhone = user?.station_phone ?? ''
+
+  // Agent Courrier direction filter (SORTANT / ENTRANT)
+  // null/undefined/empty = both directions; otherwise restrict to assigned
+  const colisDirection = user?.colis_direction ?? null
+  const canSortant = !colisDirection || colisDirection.length === 0 || colisDirection.includes('sortant')
+  const canEntrant = !colisDirection || colisDirection.length === 0 || colisDirection.includes('entrant')
+  const visibleTabs = useMemo(() => {
+    const tabs: ('sortants' | 'entrants')[] = []
+    if (canSortant) tabs.push('sortants')
+    if (canEntrant) tabs.push('entrants')
+    return tabs.length > 0 ? tabs : ['sortants', 'entrants']
+  }, [canSortant, canEntrant])
 
   // ── Load parcels with selected period ──────────────────────────────────────
   const loadParcels = useCallback(async () => {
@@ -580,7 +595,7 @@ export default function AgentColisDashboard() {
       )}
 
       {/* Bannière colis entrants en attente */}
-      {kpiEntrants.length > 0 && newAlerts.length === 0 && (
+      {canEntrant && kpiEntrants.length > 0 && newAlerts.length === 0 && (
         <div
           className="flex items-center gap-2 sm:gap-3 rounded-xl px-3 sm:px-4 py-2.5 cursor-pointer"
           style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}
@@ -600,7 +615,7 @@ export default function AgentColisDashboard() {
       {/* KPI Cards — basés sur AUJOURD'HUI uniquement, indépendants du filtre période */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
         {[
-          {
+          canSortant && {
             label: 'Courriers sortants',
             subtitle: "Aujourd'hui",
             value: kpiSortants.length,
@@ -608,7 +623,7 @@ export default function AgentColisDashboard() {
             color: '#0B7439', bg: '#d4edda',
             onClick: () => { setTab('sortants'); setPeriod('today'); setOutStatusFilter('all') },
           },
-          {
+          canEntrant && {
             label: 'Courriers entrants',
             subtitle: "Aujourd'hui (non retirés)",
             value: kpiEntrants.length,
@@ -616,7 +631,7 @@ export default function AgentColisDashboard() {
             color: '#1D6FA4', bg: '#DBEAFE',
             onClick: () => { setTab('entrants'); setPeriod('today'); setIncStatusFilter('all') },
           },
-          {
+          canSortant && {
             label: 'Recettes du jour',
             subtitle: '',
             value: kpiRevenue.toLocaleString('fr-CI') + ' F',
@@ -624,7 +639,7 @@ export default function AgentColisDashboard() {
             color: '#D97706', bg: '#FEF3C7',
             onClick: undefined,
           },
-          {
+          canEntrant && {
             label: 'Retirés',
             subtitle: "Aujourd'hui",
             value: kpiLivres.length,
@@ -632,7 +647,7 @@ export default function AgentColisDashboard() {
             color: '#059669', bg: '#D1FAE5',
             onClick: () => { setTab('entrants'); setPeriod('today'); setIncStatusFilter('livre') },
           },
-        ].map(card => (
+        ].filter(Boolean).map(card => (
           <div
             key={card.label}
             onClick={card.onClick}
@@ -656,7 +671,7 @@ export default function AgentColisDashboard() {
 
         {/* Tabs */}
         <div className="flex border-b" style={{ borderColor: 'var(--border)' }}>
-          {(['sortants', 'entrants'] as const).map(t => (
+          {visibleTabs.map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}

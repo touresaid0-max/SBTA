@@ -365,9 +365,14 @@ export default function Sidebar({ open, collapsed, onClose, onToggleCollapse }: 
 
   if (!user) return null;
 
-  const menuItems = SIDEBAR_MENUS[user.role] || [];
-  const sidebarW = collapsed ? 72 : 256;
   const currentFull = location.pathname + location.search;
+
+  // Agent colis: hide "Nouveau courrier" for entrant-only agents
+  const colisDir = user.colis_direction ?? null;
+  const canSortant = !colisDir || colisDir.length === 0 || colisDir.includes('sortant');
+  const filteredMenuItems = user.role === 'agent_colis' && !canSortant
+    ? menuItems.filter((item: any) => !item.children && item.path !== '/agent-colis/new')
+    : menuItems;
 
   const matchPath = (path: string) => {
     if (path.includes('?')) return currentFull === path;
@@ -505,7 +510,7 @@ export default function Sidebar({ open, collapsed, onClose, onToggleCollapse }: 
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {renderEntries(menuItems, collapsed)}
+          {renderEntries(filteredMenuItems, collapsed)}
         </nav>
 
         {/* User zone desktop */}
@@ -585,7 +590,7 @@ export default function Sidebar({ open, collapsed, onClose, onToggleCollapse }: 
 
         {/* Nav mobile */}
         <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
-          {renderEntries(menuItems, false, onClose)}
+          {renderEntries(filteredMenuItems, false, onClose)}
         </nav>
       </aside>
     </>
