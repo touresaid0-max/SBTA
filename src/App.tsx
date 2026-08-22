@@ -348,16 +348,16 @@ function App() {
             <Route path="admin/ramassage-historique" element={<ProtectedRoute roles={['admin','daf','gestionnaire']}><RamassageHistorique /></ProtectedRoute>} />
             <Route path="admin/connexion" element={<ProtectedRoute roles={['admin']}><Connexion /></ProtectedRoute>} />
             <Route path="reports/driver-performance" element={<ProtectedRoute roles={['admin', 'gestionnaire']}><DriverPerformanceReport /></ProtectedRoute>} />
-            <Route path="daf/dashboard" element={<ProtectedRoute roles={['daf']}><DAFDashboard /></ProtectedRoute>} />
-            <Route path="daf/financial-report" element={<ProtectedRoute roles={['daf']}><DAFFinancialReport /></ProtectedRoute>} />
-            <Route path="daf/consolidated-report" element={<ProtectedRoute roles={['daf']}><DAFConsolidatedReport /></ProtectedRoute>} />
-            <Route path="daf/bus-performance" element={<ProtectedRoute roles={['daf']}><DAFBusPerformance /></ProtectedRoute>} />
+            <Route path="daf/dashboard" element={<ProtectedRoute roles={['daf','dg']}><DAFDashboard /></ProtectedRoute>} />
+            <Route path="daf/financial-report" element={<ProtectedRoute roles={['daf','dg']}><DAFFinancialReport /></ProtectedRoute>} />
+            <Route path="daf/consolidated-report" element={<ProtectedRoute roles={['daf','dg']}><DAFConsolidatedReport /></ProtectedRoute>} />
+            <Route path="daf/bus-performance" element={<ProtectedRoute roles={['daf','dg']}><DAFBusPerformance /></ProtectedRoute>} />
             <Route path="daf/parcel-report" element={<ProtectedRoute roles={['daf']}><DAFParcelReport /></ProtectedRoute>} />
             <Route path="daf/breakdowns" element={<ProtectedRoute roles={['daf']}><DAFBreakdownReport /></ProtectedRoute>} />
             <Route path="daf/pannes" element={<ProtectedRoute roles={['daf']}><DAFBreakdowns /></ProtectedRoute>} />
             <Route path="daf/performance" element={<ProtectedRoute roles={['daf']}><PerformanceAnalytics /></ProtectedRoute>} />
             <Route path="daf/expenses-report" element={<ProtectedRoute roles={['daf']}><ExpensesReport /></ProtectedRoute>} />
-            <Route path="daf/compte-resultat" element={<ProtectedRoute roles={['daf']}><DAFCompteResultat /></ProtectedRoute>} />
+            <Route path="daf/compte-resultat" element={<ProtectedRoute roles={['daf','dg']}><DAFCompteResultat /></ProtectedRoute>} />
             <Route path="daf/garage-reports" element={<ProtectedRoute roles={['daf']}><DAFGarageReports /></ProtectedRoute>} />
             <Route path="daf/ramassage-historique" element={<ProtectedRoute roles={['daf','admin']}><RamassageHistorique /></ProtectedRoute>} />
             <Route path="comptable/dashboard" element={<ProtectedRoute roles={['comptable']}><ComptableNewDashboard /></ProtectedRoute>} />

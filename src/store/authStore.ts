@@ -452,7 +452,7 @@ export const useAuthStore = create<AuthState>()(
 
 export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   admin: '/admin/dashboard',
-  dg: '/admin/dashboard',
+  dg: '/daf/dashboard',
   daf: '/daf/dashboard',
   comptable: '/comptable/dashboard',
   rh: '/rh/dashboard',

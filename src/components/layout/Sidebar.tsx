@@ -63,6 +63,13 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Historique ramassage', path: '/daf/ramassage-historique', icon: <Bus className="w-5 h-5" /> },
     { label: 'Rapports',           path: '/reports',                icon: <FileText className="w-5 h-5" /> },
   ],
+  dg: [
+    { label: 'Tableau de bord',    path: '/daf/dashboard',          icon: <LayoutDashboard className="w-5 h-5" /> },
+    { label: 'Rapport financier',  path: '/daf/financial-report',   icon: <BarChart2 className="w-5 h-5" /> },
+    { label: "Rapport d'exploitation", path: '/daf/consolidated-report', icon: <PieChart className="w-5 h-5" /> },
+    { label: 'Compte de résultat', path: '/daf/compte-resultat',    icon: <ScrollText className="w-5 h-5" /> },
+    { label: 'Performance bus',    path: '/daf/bus-performance',    icon: <TrendingUp className="w-5 h-5" /> },
+  ],
   comptable: [
     { label: 'Dashboard',        path: '/comptable/dashboard',        icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Dépenses',         path: '/comptable/expenses',         icon: <ShoppingCart className="w-5 h-5" /> },
