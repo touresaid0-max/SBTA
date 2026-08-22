@@ -140,6 +140,7 @@ import BusActivityReport from './pages/reports/BusActivityReport';
 import LoyaltyReport from './pages/reports/LoyaltyReport';
 import ActivityLogs from './pages/admin/ActivityLogs';
 import AuditLogs from './pages/admin/AuditLogs';
+import ChangeRequestsPage from './pages/change-requests/ChangeRequestsPage';
 import Archives from './pages/admin/Archives';
 import RamassageHistorique from './pages/admin/RamassageHistorique';
 import Connexion from './pages/admin/Connexion';
@@ -450,6 +451,11 @@ function App() {
             <Route path="chef-gare/daily-report" element={<ProtectedRoute roles={['chef_gare']}><ChefGareDailyReport /></ProtectedRoute>} />
             <Route path="chef-gare/breakdowns" element={<ProtectedRoute roles={['chef_gare']}><ChefGareBreakdowns /></ProtectedRoute>} />
             <Route path="chef-gare/display" element={<ProtectedRoute roles={['chef_gare']}><ChefGareStationDisplay /></ProtectedRoute>} />
+            <Route path="chef-gare/my-requests" element={<ProtectedRoute roles={['chef_gare','guichetier','agent_colis']}><ChangeRequestsPage mode="my_requests" /></ProtectedRoute>} />
+            <Route path="dg/change-requests" element={<ProtectedRoute roles={['dg','admin']}><ChangeRequestsPage mode="approval" /></ProtectedRoute>} />
+            <Route path="dg/audit" element={<ProtectedRoute roles={['dg','admin']}><ChangeRequestsPage mode="audit" /></ProtectedRoute>} />
+            <Route path="admin/change-requests/execution" element={<ProtectedRoute roles={['admin','dg']}><ChangeRequestsPage mode="execution" /></ProtectedRoute>} />
+            <Route path="admin/change-requests/audit" element={<ProtectedRoute roles={['admin','dg']}><ChangeRequestsPage mode="audit" /></ProtectedRoute>} />
 
             <Route path="bagagiste/baggage" element={<ProtectedRoute roles={['bagagiste']}><BagagisteBaggageSale /></ProtectedRoute>} />
             <Route path="bagagiste/report" element={<ProtectedRoute roles={['bagagiste']}><BagagisteBaggageReport /></ProtectedRoute>} />
