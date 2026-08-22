@@ -9,7 +9,7 @@ interface DbPermission { id: string; name: string; display_name: string; resourc
 interface RolePermRow { role_id: string; permission_id: string; granted: boolean }
 
 const ROLES_ORDER: UserRole[] = [
-  'admin', 'daf', 'comptable', 'rh', 'gestionnaire', 'planificateur', 'charge_achat',
+  'admin', 'dg', 'daf', 'comptable', 'rh', 'gestionnaire', 'planificateur', 'charge_achat',
   'gerant_principal', 'responsable_assurance', 'responsable_logistique', 'agent_qhse',
   'gestion_agboville',
   'chauffeur', 'guichetier', 'agent_reservation', 'chef_garage', 'mecanicien', 'pompiste',

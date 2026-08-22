@@ -35,7 +35,7 @@ const ROLE_LABELS: Record<string, string> = {
   comptable: 'Comptable', daf: 'DAF', rh: 'RH', admin: 'Admin', charge_achat: "Chargé d'Achat",
   agent_colis: 'Agent Courrier', superviseur_colis: 'Superviseur Courrier',
   gerant_principal: 'Gérant Principal', responsable_assurance: 'Resp. Assurance',
-  responsable_logistique: 'Resp. Logistique', carburant: 'Carburant', agent_qhse: 'Agent QHSE',
+  responsable_logistique: 'Resp. Logistique', carburant: 'Carburant', agent_qhse: 'Agent QHSE', dg: 'Directeur Général',
 }
 
 export default function LeavePermissionsPage() {

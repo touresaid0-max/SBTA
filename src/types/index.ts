@@ -1,5 +1,6 @@
 export type UserRole =
   | 'admin'
+  | 'dg'
   | 'daf'
   | 'comptable'
   | 'rh'

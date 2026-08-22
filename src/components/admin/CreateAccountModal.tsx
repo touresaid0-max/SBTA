@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrateur',
+  dg: 'Directeur Général',
   daf: 'Directeur Financier',
   comptable: 'Comptable',
   rh: 'Responsable RH',

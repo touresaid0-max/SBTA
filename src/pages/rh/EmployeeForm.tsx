@@ -38,7 +38,7 @@ const REQUIRES_STATION: SBTARole[] = ['agent_colis', 'chef_gare']
 const COMPANY_OPTIONAL_ROLES: SBTARole[] = ['agent_colis', 'chef_gare', 'guichetier']
 
 // Rôles rattachés automatiquement à la holding SBTA (pas de sélection société)
-const HOLDING_ROLES: SBTARole[] = ['charge_achat', 'rh', 'planificateur', 'daf', 'gerant_principal', 'agent_qhse']
+const HOLDING_ROLES: SBTARole[] = ['dg', 'charge_achat', 'rh', 'planificateur', 'daf', 'gerant_principal', 'agent_qhse']
 const SBTA_HOLDING_ID = '11111111-1111-1111-1111-111111111111'
 
 const ROLE_OPTIONS: { value: SBTARole; label: string; group: string }[] = [
@@ -47,6 +47,7 @@ const ROLE_OPTIONS: { value: SBTARole; label: string; group: string }[] = [
   { value: 'comptable',         label: 'Comptable',           group: 'Direction' },
   { value: 'rh',                label: 'Responsable RH',      group: 'Direction' },
   { value: 'charge_achat',      label: "Chargé d'Achat",      group: 'Direction' },
+  { value: 'dg',                label: 'Directeur Général',   group: 'Direction' },
   { value: 'gerant_principal',  label: 'Gérant Principal',     group: 'Direction' },
   { value: 'responsable_assurance', label: 'Responsable Service Assurance', group: 'Direction' },
   { value: 'responsable_logistique', label: 'Responsable Logistique', group: 'Direction' },

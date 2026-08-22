@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { supabase } from '@/services/supabase';
 
 export type SBTARole =
-  | 'admin' | 'daf' | 'comptable' | 'rh'
+  | 'admin' | 'dg' | 'daf' | 'comptable' | 'rh'
   | 'gestionnaire' | 'planificateur' | 'charge_achat'
   | 'chauffeur' | 'guichetier' | 'chef_garage'
   | 'mecanicien' | 'pompiste' | 'chef_gare'
@@ -452,6 +452,7 @@ export const useAuthStore = create<AuthState>()(
 
 export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   admin: '/admin/dashboard',
+  dg: '/admin/dashboard',
   daf: '/daf/dashboard',
   comptable: '/comptable/dashboard',
   rh: '/rh/dashboard',

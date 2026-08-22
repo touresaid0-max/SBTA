@@ -49,6 +49,7 @@ interface UserRow {
 
 const ROLES: { value: UserRole; label: string; color: string; group: string }[] = [
   { value: 'admin',                   label: 'Admin',                        color: '#AF3029', group: 'Direction' },
+  { value: 'dg',                      label: 'Directeur Général',            color: '#AF3029', group: 'Direction' },
   { value: 'daf',                     label: 'DAF',                          color: '#1D6FA4', group: 'Direction' },
   { value: 'comptable',               label: 'Comptable',                    color: '#D97706', group: 'Direction' },
   { value: 'rh',                      label: 'Responsable RH',               color: '#0B7439', group: 'Direction' },
