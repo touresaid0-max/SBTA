@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle2, XCircle, Clock, AlertTriangle, Zap, FileText, ChevronDown, ChevronUp, RefreshCw, Filter, Shield, Wrench, Trash2, CreditCard as Edit3 } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { CheckCircle2, XCircle, Clock, AlertTriangle, Zap, FileText, ChevronDown, ChevronUp, RefreshCw, Filter, Shield, Wrench, Trash2, CreditCard as Edit3, User, Calendar, Database } from 'lucide-react';
 import {
   fetchChangeRequests, fetchChangeRequestEvents,
   reviewChangeRequest, executeChangeRequest, cancelChangeRequest,
@@ -30,6 +30,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
   const [cancelModal, setCancelModal] = useState<ChangeRequest | null>(null);
   const [reviewComment, setReviewComment] = useState('');
   const [executionNotes, setExecutionNotes] = useState('');
+  const [editedValues, setEditedValues] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async (silent = false) => {
@@ -89,17 +90,25 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
     }
   };
 
+  const openExecuteModal = (req: ChangeRequest) => {
+    setExecuteModal(req);
+    setExecutionNotes('');
+    const snapshot = (req.operation_snapshot ?? {}) as Record<string, unknown>;
+    setEditedValues(snapshot);
+  };
+
   const handleExecuteConfirm = async () => {
     if (!executeModal) return;
     setSubmitting(true);
     try {
       const oldValues = executeModal.operation_snapshot;
       const isSuppression = executeModal.status === 'autorisee_suppression';
+      const newValues = isSuppression ? null : (Object.keys(editedValues).length > 0 ? editedValues : null);
       const result = await executeChangeRequest(
         executeModal.id,
         executionNotes.trim() || 'Exécuté par l\'équipe technique',
         oldValues,
-        null,
+        newValues,
         isSuppression ? oldValues : null,
       );
       if ('error' in result) {
@@ -108,6 +117,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
         toast.success('Action exécutée et enregistrée dans le journal d\'audit');
         setExecuteModal(null);
         setExecutionNotes('');
+        setEditedValues({});
         await load(true);
       }
     } catch {
@@ -115,6 +125,21 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const snapshotEntries = useMemo(() => {
+    if (!executeModal?.operation_snapshot) return [];
+    return Object.entries(executeModal.operation_snapshot).filter(
+      ([key]) => !['id', 'created_at', 'updated_at'].includes(key)
+    );
+  }, [executeModal]);
+
+  const formatFieldValue = (val: unknown): string => {
+    if (val === null || val === undefined) return '—';
+    if (typeof val === 'object') return JSON.stringify(val, null, 2);
+    if (typeof val === 'boolean') return val ? 'Oui' : 'Non';
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val)) return new Date(val).toLocaleString('fr-FR');
+    return String(val);
   };
 
   const handleCancel = async () => {
@@ -309,11 +334,11 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                   )}
                   {canExecute(req) && (
                     <button
-                      onClick={() => { setExecuteModal(req); setExecutionNotes(''); }}
+                      onClick={() => openExecuteModal(req)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-opacity hover:opacity-90"
                       style={{ background: req.status === 'autorisee_suppression' ? '#EF4444' : '#10B981' }}
                     >
-                      <Wrench className="w-3.5 h-3.5" /> Exécuter
+                      <Wrench className="w-3.5 h-3.5" /> {req.status === 'autorisee_suppression' ? 'Exécuter la suppression' : 'Exécuter la modification'}
                     </button>
                   )}
                   {canCancel(req) && (
@@ -518,8 +543,9 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
       {/* Execute modal */}
       {executeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
-          <div className="w-full max-w-md rounded-2xl shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
-            <div className="px-6 py-4 border-b" style={{ borderColor: '#E5E7EB' }}>
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
+            {/* Header */}
+            <div className="sticky top-0 px-6 py-4 border-b z-10" style={{ borderColor: '#E5E7EB', background: '#FFFFFF' }}>
               <div className="flex items-center gap-2">
                 <Wrench className="w-5 h-5" style={{ color: executeModal.status === 'autorisee_suppression' ? '#EF4444' : '#10B981' }} />
                 <h3 className="text-lg font-bold" style={{ color: '#111827' }}>
@@ -527,16 +553,125 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                 </h3>
               </div>
               <p className="text-xs mt-1" style={{ color: '#6B7280' }}>
-                {executeModal.request_number} — {executeModal.operation_reference}
+                {executeModal.request_number} — {OPERATION_LABELS[executeModal.operation_type] || executeModal.operation_type} — {executeModal.operation_reference}
               </p>
             </div>
-            <div className="px-6 py-4 space-y-4">
+
+            <div className="px-6 py-5 space-y-5">
+              {/* Warning */}
               <div className="rounded-lg px-3 py-2 text-xs" style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B' }}>
                 {executeModal.status === 'autorisee_suppression'
                   ? 'Vous allez supprimer cette opération. L\'action sera journalisée avec sauvegarde des valeurs supprimées.'
                   : 'Vous allez modifier cette opération. Les anciennes et nouvelles valeurs seront journalisées.'}
                 <br />Vous ne pouvez exécuter que l'action autorisée par le DG.
               </div>
+
+              {/* Authorization context */}
+              <div className="rounded-lg p-4 space-y-3" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#166534' }}>Autorisation du DG</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4" style={{ color: '#16A34A' }} />
+                    <div>
+                      <p className="text-xs" style={{ color: '#6B7280' }}>Autorisé par</p>
+                      <p className="text-sm font-semibold" style={{ color: '#111827' }}>{executeModal.reviewer_name || '—'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" style={{ color: '#16A34A' }} />
+                    <div>
+                      <p className="text-xs" style={{ color: '#6B7280' }}>Date d'autorisation</p>
+                      <p className="text-sm font-semibold" style={{ color: '#111827' }}>
+                        {executeModal.reviewed_at ? new Date(executeModal.reviewed_at).toLocaleString('fr-FR') : '—'}
+                      </p>
+                    </div>
+                  </div>
+                  {executeModal.review_comment && (
+                    <div className="md:col-span-2">
+                      <p className="text-xs" style={{ color: '#6B7280' }}>Commentaire du DG</p>
+                      <p className="text-sm" style={{ color: '#111827' }}>{executeModal.review_comment}</p>
+                    </div>
+                  )}
+                  <div className="md:col-span-2">
+                    <p className="text-xs" style={{ color: '#6B7280' }}>Demandeur</p>
+                    <p className="text-sm" style={{ color: '#111827' }}>
+                      {executeModal.requester_name} ({executeModal.requester_role})
+                      {executeModal.station_name ? ` • ${executeModal.station_name}` : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modification details from request */}
+              {executeModal.modification_details && (
+                <div className="rounded-lg p-4" style={{ background: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                  <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: '#1E40AF' }}>Informations à modifier (demandées)</p>
+                  <p className="text-sm" style={{ color: '#111827' }}>{executeModal.modification_details}</p>
+                </div>
+              )}
+
+              {/* Operation data */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Database className="w-4 h-4" style={{ color: '#6B7280' }} />
+                  <p className="text-sm font-bold" style={{ color: '#111827' }}>
+                    {executeModal.status === 'autorisee_suppression' ? 'Données à supprimer' : 'Données de l\'opération'}
+                  </p>
+                </div>
+                {snapshotEntries.length > 0 ? (
+                  <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#E5E7EB' }}>
+                    <div className="grid grid-cols-3 divide-x" style={{ borderColor: '#E5E7EB' }}>
+                      {/* Header row */}
+                      <div className="px-3 py-2 text-xs font-bold uppercase" style={{ background: '#F9FAFB', color: '#6B7280', borderColor: '#E5E7EB' }}>Champ</div>
+                      <div className="px-3 py-2 text-xs font-bold uppercase" style={{ background: '#F9FAFB', color: '#6B7280', borderColor: '#E5E7EB' }}>Ancienne valeur</div>
+                      <div className="px-3 py-2 text-xs font-bold uppercase" style={{ background: '#F9FAFB', color: '#6B7280', borderColor: '#E5E7EB' }}>
+                        {executeModal.status === 'autorisee_suppression' ? 'Confirmé' : 'Nouvelle valeur'}
+                      </div>
+                    </div>
+                    {snapshotEntries.map(([key, value]) => (
+                      <div key={key} className="grid grid-cols-3 divide-x border-t" style={{ borderColor: '#E5E7EB' }}>
+                        <div className="px-3 py-2 text-xs font-medium" style={{ color: '#374151', background: '#F9FAFB', borderColor: '#E5E7EB' }}>
+                          {key}
+                        </div>
+                        <div className="px-3 py-2 text-xs" style={{ color: '#6B7280', borderColor: '#E5E7EB', wordBreak: 'break-word' }}>
+                          {formatFieldValue(value)}
+                        </div>
+                        <div className="px-3 py-2" style={{ borderColor: '#E5E7EB' }}>
+                          {executeModal.status === 'autorisee_suppression' ? (
+                            <span className="text-xs" style={{ color: '#991B1B' }}>À supprimer</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={editedValues[key] !== undefined ? formatFieldValue(editedValues[key]) : ''}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                setEditedValues(prev => {
+                                  const originalVal = (executeModal.operation_snapshot ?? {}) as Record<string, unknown>;
+                                  const orig = originalVal[key];
+                                  if (typeof orig === 'number') {
+                                     const n = parseFloat(raw);
+                                     return { ...prev, [key]: isNaN(n) ? raw : n };
+                                  }
+                                  if (typeof orig === 'boolean') {
+                                     return { ...prev, [key]: raw === 'true' || raw === 'Oui' };
+                                  }
+                                  return { ...prev, [key]: raw };
+                                });
+                              }}
+                              className="w-full px-2 py-1 text-xs rounded border outline-none"
+                              style={{ borderColor: '#D1D5DB', background: '#F9FAFB', color: '#111827' }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm" style={{ color: '#6B7280' }}>Aucune donnée d'opération disponible.</p>
+                )}
+              </div>
+
+              {/* Execution notes */}
               <div>
                 <label className={labelClass} style={{ color: '#111827' }}>Notes d'exécution</label>
                 <textarea
@@ -548,10 +683,24 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                   style={inputStyle}
                 />
               </div>
+
+              {/* Audit preview */}
+              <div className="rounded-lg p-4 space-y-2" style={{ background: '#F3F4F6', border: '1px solid #D1D5DB' }}>
+                <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#374151' }}>Journal d'audit — sera enregistré</p>
+                <div className="text-xs space-y-1" style={{ color: '#6B7280' }}>
+                  <p><span style={{ fontWeight: 600 }}>Opération :</span> {OPERATION_LABELS[executeModal.operation_type] || executeModal.operation_type} — {executeModal.operation_reference}</p>
+                  <p><span style={{ fontWeight: 600 }}>Type d'action :</span> {executeModal.status === 'autorisee_suppression' ? 'Suppression' : 'Modification'}</p>
+                  <p><span style={{ fontWeight: 600 }}>Demandeur :</span> {executeModal.requester_name} ({executeModal.requester_role})</p>
+                  <p><span style={{ fontWeight: 600 }}>DG ayant autorisé :</span> {executeModal.reviewer_name || '—'}</p>
+                  <p><span style={{ fontWeight: 600 }}>Admin exécutant :</span> {user?.full_name || user?.email || '—'}</p>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t" style={{ borderColor: '#E5E7EB' }}>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 flex items-center justify-end gap-3 px-6 py-4 border-t" style={{ borderColor: '#E5E7EB', background: '#FFFFFF' }}>
               <button
-                onClick={() => { setExecuteModal(null); setExecutionNotes(''); }}
+                onClick={() => { setExecuteModal(null); setExecutionNotes(''); setEditedValues({}); }}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-black/5"
                 style={{ color: '#4B5563' }}
               >
@@ -563,7 +712,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                 className="px-5 py-2 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
                 style={{ background: executeModal.status === 'autorisee_suppression' ? '#EF4444' : '#10B981' }}
               >
-                {submitting ? 'Exécution...' : 'Confirmer l\'exécution'}
+                {submitting ? 'Exécution...' : executeModal.status === 'autorisee_suppression' ? 'Confirmer la suppression' : 'Confirmer la modification'}
               </button>
             </div>
           </div>
