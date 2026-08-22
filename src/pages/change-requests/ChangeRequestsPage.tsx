@@ -132,7 +132,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
   };
 
   const canReview = (req: ChangeRequest) =>
-    req.status === 'en_attente' && (user?.role === 'dg' || user?.role === 'admin' || (req.is_emergency && user?.role === 'chef_gare'));
+    req.status === 'en_attente' && (user?.role === 'dg' || (req.is_emergency && user?.role === 'chef_gare'));
 
   const canExecute = (req: ChangeRequest) =>
     (req.status === 'autorisee_modification' || req.status === 'autorisee_suppression') &&
