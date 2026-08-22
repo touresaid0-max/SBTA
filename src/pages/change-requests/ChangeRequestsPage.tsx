@@ -160,7 +160,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
 
   const labelClass = 'block text-sm font-medium mb-1.5';
   const inputClass = 'w-full px-3 py-2 rounded-lg border text-sm outline-none';
-  const inputStyle = { borderColor: 'var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' };
+  const inputStyle = { borderColor: '#D1D5DB', background: '#F9FAFB', color: '#111827' };
 
   if (loading) {
     return (
@@ -457,15 +457,15 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
 
       {/* Review modal */}
       {reviewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md rounded-2xl shadow-xl" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
-            <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-              <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: '#E5E7EB' }}>
+              <h3 className="text-lg font-bold" style={{ color: '#111827' }}>
                 {reviewModal.decision === 'autoriser_modification' ? 'Autoriser la modification'
                   : reviewModal.decision === 'autoriser_suppression' ? 'Autoriser la suppression'
                   : 'Refuser la demande'}
               </h3>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs mt-1" style={{ color: '#6B7280' }}>
                 {reviewModal.request.request_number} — {reviewModal.request.operation_reference}
               </p>
             </div>
@@ -478,7 +478,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                 </div>
               )}
               <div>
-                <label className={labelClass} style={{ color: 'var(--text-primary)' }}>Commentaire de décision</label>
+                <label className={labelClass} style={{ color: '#111827' }}>Commentaire de décision</label>
                 <textarea
                   value={reviewComment}
                   onChange={(e) => setReviewComment(e.target.value)}
@@ -489,11 +489,11 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                 />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t" style={{ borderColor: '#E5E7EB' }}>
               <button
                 onClick={() => { setReviewModal(null); setReviewComment(''); }}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-black/5"
-                style={{ color: 'var(--text-secondary)' }}
+                style={{ color: '#4B5563' }}
               >
                 Fermer
               </button>
@@ -512,16 +512,16 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
 
       {/* Execute modal */}
       {executeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md rounded-2xl shadow-xl" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
-            <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-md rounded-2xl shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: '#E5E7EB' }}>
               <div className="flex items-center gap-2">
                 <Wrench className="w-5 h-5" style={{ color: executeModal.status === 'autorisee_suppression' ? '#EF4444' : '#10B981' }} />
-                <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                <h3 className="text-lg font-bold" style={{ color: '#111827' }}>
                   {executeModal.status === 'autorisee_suppression' ? 'Exécuter la suppression' : 'Exécuter la modification'}
                 </h3>
               </div>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs mt-1" style={{ color: '#6B7280' }}>
                 {executeModal.request_number} — {executeModal.operation_reference}
               </p>
             </div>
@@ -533,7 +533,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                 <br />Vous ne pouvez exécuter que l'action autorisée par le DG.
               </div>
               <div>
-                <label className={labelClass} style={{ color: 'var(--text-primary)' }}>Notes d'exécution</label>
+                <label className={labelClass} style={{ color: '#111827' }}>Notes d'exécution</label>
                 <textarea
                   value={executionNotes}
                   onChange={(e) => setExecutionNotes(e.target.value)}
@@ -544,11 +544,11 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                 />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t" style={{ borderColor: '#E5E7EB' }}>
               <button
                 onClick={() => { setExecuteModal(null); setExecutionNotes(''); }}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-black/5"
-                style={{ color: 'var(--text-secondary)' }}
+                style={{ color: '#4B5563' }}
               >
                 Fermer
               </button>
@@ -567,18 +567,18 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
 
       {/* Cancel modal */}
       {cancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-sm rounded-2xl shadow-xl" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-sm rounded-2xl shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
             <div className="px-6 py-4">
-              <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Annuler la demande ?</h3>
-              <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+              <h3 className="text-lg font-bold mb-2" style={{ color: '#111827' }}>Annuler la demande ?</h3>
+              <p className="text-sm mb-4" style={{ color: '#4B5563' }}>
                 {cancelModal.request_number} — Cette action est irréversible.
               </p>
               <div className="flex items-center justify-end gap-3">
                 <button
                   onClick={() => setCancelModal(null)}
                   className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-black/5"
-                  style={{ color: 'var(--text-secondary)' }}
+                  style={{ color: '#4B5563' }}
                 >
                   Non
                 </button>
