@@ -106,32 +106,32 @@ export default function ChangeRequestModal({
 
   const labelClass = 'block text-sm font-medium mb-1.5';
   const inputClass = 'w-full px-3 py-2 rounded-lg border text-sm outline-none transition-colors';
-  const inputStyle = { borderColor: 'var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' };
+  const inputStyle = { borderColor: '#D1D5DB', background: '#F9FAFB', color: '#111827' };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-xl"
-        style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl"
+        style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}
       >
         {/* Header */}
         <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b z-10"
-             style={{ borderColor: 'var(--border)', background: 'var(--bg-primary)' }}>
+             style={{ borderColor: '#E5E7EB', background: '#FFFFFF' }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-tertiary)' }}>
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: '#FEF3C7' }}>
               <AlertTriangle className="w-5 h-5" style={{ color: '#F59E0B' }} />
             </div>
             <div>
-              <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+              <h2 className="text-lg font-bold" style={{ color: '#111827' }}>
                 Demande de modification / suppression
               </h2>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs" style={{ color: '#6B7280' }}>
                 Opération : {operationReference}
               </p>
             </div>
           </div>
           <button onClick={handleClose} className="p-1.5 rounded-lg transition-colors hover:bg-black/5">
-            <X className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
+            <X className="w-5 h-5" style={{ color: '#6B7280' }} />
           </button>
         </div>
 
@@ -147,7 +147,7 @@ export default function ChangeRequestModal({
 
           {/* Request type */}
           <div>
-            <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+            <label className={labelClass} style={{ color: '#111827' }}>
               Type de demande <span style={{ color: '#EF4444' }}>*</span>
             </label>
             <div className="flex gap-3">
@@ -156,9 +156,9 @@ export default function ChangeRequestModal({
                 onClick={() => setRequestType('modification')}
                 className="flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all"
                 style={{
-                  borderColor: requestType === 'modification' ? '#3B82F6' : 'var(--border)',
-                  background: requestType === 'modification' ? '#EFF6FF' : 'var(--bg-secondary)',
-                  color: requestType === 'modification' ? '#3B82F6' : 'var(--text-secondary)',
+                  borderColor: requestType === 'modification' ? '#3B82F6' : '#D1D5DB',
+                  background: requestType === 'modification' ? '#EFF6FF' : '#F9FAFB',
+                  color: requestType === 'modification' ? '#3B82F6' : '#4B5563',
                 }}
               >
                 Demander une modification
@@ -168,9 +168,9 @@ export default function ChangeRequestModal({
                 onClick={() => setRequestType('suppression')}
                 className="flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all"
                 style={{
-                  borderColor: requestType === 'suppression' ? '#EF4444' : 'var(--border)',
-                  background: requestType === 'suppression' ? '#FEF2F2' : 'var(--bg-secondary)',
-                  color: requestType === 'suppression' ? '#EF4444' : 'var(--text-secondary)',
+                  borderColor: requestType === 'suppression' ? '#EF4444' : '#D1D5DB',
+                  background: requestType === 'suppression' ? '#FEF2F2' : '#F9FAFB',
+                  color: requestType === 'suppression' ? '#EF4444' : '#4B5563',
                 }}
               >
                 Demander une suppression
@@ -180,7 +180,7 @@ export default function ChangeRequestModal({
 
           {/* Operation number (read-only) */}
           <div>
-            <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+            <label className={labelClass} style={{ color: '#111827' }}>
               Numéro de l'opération
             </label>
             <input
@@ -194,7 +194,7 @@ export default function ChangeRequestModal({
 
           {/* Reason */}
           <div>
-            <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+            <label className={labelClass} style={{ color: '#111827' }}>
               Motif <span style={{ color: '#EF4444' }}>*</span>
             </label>
             <input
@@ -209,7 +209,7 @@ export default function ChangeRequestModal({
 
           {/* Error description */}
           <div>
-            <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+            <label className={labelClass} style={{ color: '#111827' }}>
               Description de l'erreur <span style={{ color: '#EF4444' }}>*</span>
             </label>
             <textarea
@@ -225,7 +225,7 @@ export default function ChangeRequestModal({
           {/* Modification details (only for modification) */}
           {requestType === 'modification' && (
             <div>
-              <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+              <label className={labelClass} style={{ color: '#111827' }}>
                 Informations à modifier <span style={{ color: '#EF4444' }}>*</span>
               </label>
               <textarea
@@ -241,7 +241,7 @@ export default function ChangeRequestModal({
 
           {/* Justification document */}
           <div>
-            <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+            <label className={labelClass} style={{ color: '#111827' }}>
               Pièce justificative / document (URL si disponible)
             </label>
             <div className="flex gap-2">
@@ -256,7 +256,7 @@ export default function ChangeRequestModal({
               <button
                 type="button"
                 className="px-3 py-2 rounded-lg border flex items-center gap-1.5 text-sm transition-colors hover:bg-black/5"
-                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                style={{ borderColor: '#D1D5DB', color: '#4B5563', background: '#F9FAFB' }}
               >
                 <Upload className="w-4 h-4" />
                 Parcourir
@@ -266,7 +266,7 @@ export default function ChangeRequestModal({
 
           {/* Additional comment */}
           <div>
-            <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+            <label className={labelClass} style={{ color: '#111827' }}>
               Commentaire complémentaire
             </label>
             <textarea
@@ -281,14 +281,14 @@ export default function ChangeRequestModal({
 
           {/* Emergency procedure */}
           {canUseEmergency && (
-            <div className="rounded-lg border-2 p-4" style={{ borderColor: isEmergency ? '#F59E0B' : 'var(--border)' }}>
+            <div className="rounded-lg border-2 p-4" style={{ borderColor: isEmergency ? '#F59E0B' : '#D1D5DB', background: '#F9FAFB' }}>
               <button
                 type="button"
                 onClick={() => setIsEmergency(!isEmergency)}
                 className="flex items-center gap-2 w-full"
               >
                 <Zap className="w-5 h-5" style={{ color: '#F59E0B' }} />
-                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <span className="text-sm font-semibold" style={{ color: '#111827' }}>
                   Procédure d'urgence
                 </span>
                 <input
@@ -306,7 +306,7 @@ export default function ChangeRequestModal({
                     DG pour contrôle dès qu'il sera joignable.
                   </p>
                   <div>
-                    <label className={labelClass} style={{ color: 'var(--text-primary)' }}>
+                    <label className={labelClass} style={{ color: '#111827' }}>
                       Justification de l'urgence <span style={{ color: '#EF4444' }}>*</span>
                     </label>
                     <textarea
@@ -326,11 +326,11 @@ export default function ChangeRequestModal({
 
         {/* Footer */}
         <div className="sticky bottom-0 flex items-center justify-end gap-3 px-6 py-4 border-t"
-             style={{ borderColor: 'var(--border)', background: 'var(--bg-primary)' }}>
+             style={{ borderColor: '#E5E7EB', background: '#FFFFFF' }}>
           <button
             onClick={handleClose}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-black/5"
-            style={{ color: 'var(--text-secondary)' }}
+            style={{ color: '#4B5563' }}
           >
             Annuler
           </button>
