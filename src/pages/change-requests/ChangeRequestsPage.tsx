@@ -775,6 +775,3 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
     </div>
   );
 }
-
-
-export default ChangeRequestsPage
