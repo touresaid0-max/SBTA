@@ -24,6 +24,7 @@ import {
 } from '@/services/pos/posReportService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import EditDepartModal from '@/components/pos/EditDepartModal';
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import {
   Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
   ChevronUp, ChevronDown, Eye, Loader2, X,
@@ -533,6 +534,16 @@ export default function POSDeparts() {
               <button onClick={() => handleAction('vente', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--info)' }}>
                 <Ticket className="w-4 h-4" /> Vente tickets
               </button>
+              <ChangeRequestButton
+                operationType="reservation"
+                operationId={selectedRow.id}
+                operationTable="schedules"
+                operationReference={`Départ #${selectedRow.route_number} — ${selectedRow.route_name ?? ''}`}
+                operationSnapshot={selectedRow as unknown as Record<string, unknown>}
+                stationId={session?.station_id}
+                stationName={session?.station_name}
+                label="Demander modif./supp."
+              />
               {!selectedRow.confirmed && !selectedRow.cancelled && (
                 <button onClick={() => handleAction('confirmer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--success)' }}>
                   <CheckCircle className="w-4 h-4" /> Confirmer

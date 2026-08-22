@@ -9,6 +9,7 @@ import {
   AlertCircle, CheckCircle, Loader2, Plus,
   Receipt,
 } from 'lucide-react';
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
 const EXPENSE_TYPES = [
   'Carburant compl.',
@@ -242,6 +243,7 @@ export default function POSDepenses() {
                       <th className="px-2 py-1.5 text-xs font-bold text-left">Libellé</th>
                       <th className="px-2 py-1.5 text-xs font-bold text-left">Type</th>
                       <th className="px-2 py-1.5 text-xs font-bold text-right">Montant</th>
+                      <th className="px-2 py-1.5 text-xs font-bold text-center">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -250,6 +252,18 @@ export default function POSDepenses() {
                         <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-primary)' }}>{d.label}</td>
                         <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{d.type}</td>
                         <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(d.amount)}</td>
+                        <td className="px-2 py-2 text-center">
+                          <ChangeRequestButton
+                            compact
+                            operationType={d.type.toLowerCase().includes('carburant') ? 'carburant' : d.type.toLowerCase().includes('péage') || d.type.toLowerCase().includes('peage') ? 'peage' : d.type.toLowerCase().includes('ration') ? 'ration' : 'autres_depense'}
+                            operationId={d.id}
+                            operationTable="counter_charges"
+                            operationReference={`Dépense ${d.label} — ${d.type}`}
+                            operationSnapshot={d as unknown as Record<string, unknown>}
+                            stationId={session?.station_id}
+                            stationName={session?.station_name}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -259,6 +273,7 @@ export default function POSDepenses() {
                       <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--danger)' }}>
                         {formatCurrency(depenses.reduce((s, d) => s + d.amount, 0))}
                       </td>
+                      <td className="px-2 py-2"></td>
                     </tr>
                   </tfoot>
                 </table>

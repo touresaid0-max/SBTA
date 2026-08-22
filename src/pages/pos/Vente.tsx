@@ -22,6 +22,7 @@ import {
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
   Package, Banknote,
 } from 'lucide-react';
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
 export default function POSVente() {
   const { id: departId } = useParams<{ id: string }>();
@@ -575,6 +576,7 @@ export default function POSVente() {
                         <th className="px-2 py-1.5 text-xs font-bold text-center">N°Siège</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-center">Report</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-right">Date</th>
+                        <th className="px-2 py-1.5 text-xs font-bold text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -585,6 +587,18 @@ export default function POSVente() {
                           <td className="px-2 py-2 text-xs text-center" style={{ fontWeight: 700, color: 'var(--info)' }}>{t.seat_number}</td>
                           <td className="px-2 py-2 text-xs text-center">{t.is_reported ? 'R' : ''}</td>
                           <td className="px-2 py-2 text-xs text-right" style={{ color: 'var(--text-muted)' }}>{t.created_at.slice(5, 10)}</td>
+                          <td className="px-2 py-2 text-center">
+                            <ChangeRequestButton
+                              compact
+                              operationType="ticket_sale"
+                              operationId={t.id}
+                              operationTable="tickets"
+                              operationReference={`Ticket ${t.ticket_number ?? ''} — Siège ${t.seat_number}`}
+                              operationSnapshot={t as unknown as Record<string, unknown>}
+                              stationId={session?.station_id}
+                              stationName={session?.station_name}
+                            />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -592,7 +606,7 @@ export default function POSVente() {
                       <tr style={{ borderTop: '2px solid var(--border)' }}>
                         <td className="px-2 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Somme tickets</td>
                         <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(ticketTotal)}</td>
-                        <td colSpan={3} className="px-2 py-2"></td>
+                        <td colSpan={4} className="px-2 py-2"></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -616,6 +630,18 @@ export default function POSVente() {
                               {b.ticket_number && <span className="ml-1 text-xs" style={{ color: 'var(--text-muted)' }}>#{b.ticket_number}</span>}
                             </td>
                             <td className="px-2 py-1.5 text-xs text-right font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(b.price)}</td>
+                            <td className="px-2 py-1.5 text-center">
+                              <ChangeRequestButton
+                                compact
+                                operationType="baggage"
+                                operationId={b.id}
+                                operationTable="bagage_tickets"
+                                operationReference={`Bagage ${b.bagage_number ?? ''}`}
+                                operationSnapshot={b as unknown as Record<string, unknown>}
+                                stationId={session?.station_id}
+                                stationName={session?.station_name}
+                              />
+                            </td>
                           </tr>
                         ))}
                       </tbody>

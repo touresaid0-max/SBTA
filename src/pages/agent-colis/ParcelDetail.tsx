@@ -11,6 +11,7 @@ import { fetchSmsLogs, resendSms } from '@/services/emisSms.service'
 import type { SmsLog } from '@/services/emisSms.service'
 import ParcelStatusStepper from '@/components/parcel/ParcelStatusStepper'
 import { getParcelActionPermission } from '@/utils/parcelPermissions'
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton'
 import type { Parcel, ParcelTrackingEvent, ParcelStatus } from '@/types/parcel.types'
 
 const STATUS_CONFIG: Record<ParcelStatus, { label: string; color: string; bg: string }> = {
@@ -270,6 +271,16 @@ export default function ParcelDetail() {
             </div>
           </div>
         </div>
+
+        <ChangeRequestButton
+          operationType="courrier_sortant"
+          operationId={parcel.id}
+          operationTable="parcels"
+          operationReference={`Courrier ${parcel.parcel_code}`}
+          operationSnapshot={parcel as unknown as Record<string, unknown>}
+          stationId={stationId}
+          stationName={user?.station_name}
+        />
 
       </div>
 

@@ -5,6 +5,7 @@ import { supabase } from '@/services/supabase';
 import { Bus, Search, MapPin, Hash, Loader2, CheckCircle, Clock, Lock, Printer, AlertCircle, FileText } from 'lucide-react';
 import { printRamassageBordereau } from '@/services/pos/printService';
 import RamassageReportView from '@/components/shared/RamassageReportView';
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
 type RamassageNotif = {
   id: string;
@@ -379,6 +380,18 @@ export default function POSRamassage() {
                 >
                   <Printer className="w-5 h-5" /> Réimprimer le bordereau
                 </button>
+                <div className="flex justify-end">
+                  <ChangeRequestButton
+                    compact
+                    operationType="paiement_recette"
+                    operationId={selected.id}
+                    operationTable="ramassage_notifications"
+                    operationReference={`Ramassage ${selected.bus_registration ?? ''} — Départ N°${selected.departure_number ?? ''}`}
+                    operationSnapshot={selected as unknown as Record<string, unknown>}
+                    stationId={session?.station_id}
+                    stationName={session?.station_name}
+                  />
+                </div>
               </div>
             )}
           </div>

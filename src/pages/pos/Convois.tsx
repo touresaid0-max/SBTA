@@ -11,6 +11,7 @@ import {
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { formatCurrency, formatNumber } from '@/utils/formatCurrency';
 import { printConvoyBordereau, type PrintConvoyData } from '@/services/pos/printService';
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption {
@@ -808,6 +809,16 @@ export default function POSConvois() {
                               className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Modifier">
                               <Edit3 className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                             </button>
+                            <ChangeRequestButton
+                              compact
+                              operationType="convoy"
+                              operationId={c.id}
+                              operationTable="convoys"
+                              operationReference={`Convoi ${c.origin_city} → ${c.destination_city} ${format(parseISO(c.departure_datetime || c.created_at), 'dd/MM HH:mm')}`}
+                              operationSnapshot={c as unknown as Record<string, unknown>}
+                              stationId={stationId}
+                              stationName={stationName}
+                            />
                           </div>
                         </td>
                       </tr>

@@ -15,6 +15,7 @@ import {
   Package, Link2, Search,
   Ticket as TicketIcon,
 } from 'lucide-react';
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -250,6 +251,7 @@ export default function POSBagages() {
                         <th className="px-2 py-1.5 text-xs font-bold text-left">Destination</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-right">Prix</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-center">Ticket</th>
+                        <th className="px-2 py-1.5 text-xs font-bold text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -261,6 +263,18 @@ export default function POSBagages() {
                           <td className="px-2 py-2 text-xs text-center">
                             {b.with_ticket ? <Link2 className="w-3 h-3 mx-auto" style={{ color: 'var(--info)' }} /> : ''}
                           </td>
+                          <td className="px-2 py-2 text-center">
+                            <ChangeRequestButton
+                              compact
+                              operationType="baggage"
+                              operationId={b.id}
+                              operationTable="bagage_tickets"
+                              operationReference={`Bagage ${b.bagage_number}`}
+                              operationSnapshot={b as unknown as Record<string, unknown>}
+                              stationId={session?.station_id}
+                              stationName={session?.station_name}
+                            />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -268,6 +282,7 @@ export default function POSBagages() {
                       <tr style={{ borderTop: '2px solid var(--border)' }}>
                         <td className="px-2 py-2 text-xs font-bold" colSpan={2} style={{ color: 'var(--text-primary)' }}>Somme</td>
                         <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(bagageTotal)}</td>
+                        <td className="px-2 py-2"></td>
                         <td className="px-2 py-2"></td>
                       </tr>
                     </tfoot>
