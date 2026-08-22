@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { CheckCircle2, XCircle, Clock, AlertTriangle, Zap, FileText, ChevronDown, ChevronUp, RefreshCw, Filter, Shield, Wrench, Trash2, CreditCard as Edit3 } from 'lucide-react';
 import {
   fetchChangeRequests, fetchChangeRequestEvents,
-  reviewChangeRequest, cancelChangeRequest,
+  reviewChangeRequest, executeChangeRequest, cancelChangeRequest,
   type ChangeRequest, type ChangeRequestEvent, type ChangeRequestStatus,
   STATUS_LABELS, STATUS_COLORS, OPERATION_LABELS,
 } from '../../services/changeRequest.service';
@@ -92,23 +92,28 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
   const handleExecuteConfirm = async () => {
     if (!executeModal) return;
     setSubmitting(true);
-    const oldValues = executeModal.operation_snapshot;
-    const isSuppression = executeModal.status === 'autorisee_suppression';
-    const result = await executeChangeRequest(
-      executeModal.id,
-      executionNotes.trim() || 'Exécuté par l\'équipe technique',
-      isSuppression ? oldValues : oldValues,
-      isSuppression ? null : null,
-      isSuppression ? oldValues : null,
-    );
-    setSubmitting(false);
-    if ('error' in result) {
-      toast.error(result.error);
-    } else {
-      toast.success('Action exécutée et enregistrée dans le journal d\'audit');
-      setExecuteModal(null);
-      setExecutionNotes('');
-      load(true);
+    try {
+      const oldValues = executeModal.operation_snapshot;
+      const isSuppression = executeModal.status === 'autorisee_suppression';
+      const result = await executeChangeRequest(
+        executeModal.id,
+        executionNotes.trim() || 'Exécuté par l\'équipe technique',
+        oldValues,
+        null,
+        isSuppression ? oldValues : null,
+      );
+      if ('error' in result) {
+        toast.error(result.error);
+      } else {
+        toast.success('Action exécutée et enregistrée dans le journal d\'audit');
+        setExecuteModal(null);
+        setExecutionNotes('');
+        await load(true);
+      }
+    } catch {
+      toast.error('Impossible d\'exécuter cette demande pour le moment');
+    } finally {
+      setSubmitting(false);
     }
   };
 
