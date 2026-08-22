@@ -8,6 +8,26 @@ import {
 } from '../../services/changeRequest.service';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { db } from '../../services/pos/db';
+
+const POS_STORE_MAP: Record<string, 'tickets' | 'bagages' | 'depenses' | 'departs'> = {
+  tickets: 'tickets',
+  bagage_tickets: 'bagages',
+  bagages: 'bagages',
+  counter_charges: 'depenses',
+  depenses: 'depenses',
+  schedules: 'departs',
+};
+
+async function cleanupLocalPosData(operationTable: string, operationId: string): Promise<void> {
+  const store = POS_STORE_MAP[operationTable];
+  if (!store) return;
+  try {
+    await (db as unknown as Record<string, { delete: (id: string) => Promise<void> }>)[store].delete(operationId);
+  } catch {
+    // Local DB may not exist on admin's browser — that's fine, the Supabase row is already deleted
+  }
+}
 
 interface ChangeRequestsPageProps {
   mode: 'approval' | 'execution' | 'my_requests' | 'audit';
@@ -114,6 +134,9 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
       if ('error' in result) {
         toast.error(result.error);
       } else {
+        if (isSuppression) {
+          await cleanupLocalPosData(executeModal.operation_table, executeModal.operation_id);
+        }
         toast.success('Action exécutée et enregistrée dans le journal d\'audit');
         setExecuteModal(null);
         setExecutionNotes('');
@@ -752,3 +775,6 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
     </div>
   );
 }
+
+
+export default ChangeRequestsPage
