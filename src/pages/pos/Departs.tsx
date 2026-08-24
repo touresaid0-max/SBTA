@@ -11,7 +11,7 @@ import {
   getVehicules, getChauffeurs, getGares,
   findNextDepartForRoute, transferTicketsToDepart,
 } from '@/services/pos/departService';
-import { getAll as getAllTickets } from '@/services/pos/offlineStore';
+import { getAll as getAllTickets, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
 import { getDepenseTotalForDepart, getDepensesForDepart } from '@/services/pos/depenseService';
 import { getBagagesForDepart } from '@/services/pos/bagageService';
 import type { TicketRecord, BagageRecord, DepenseRecord } from '@/services/pos/db';
@@ -205,6 +205,7 @@ export default function POSDeparts() {
   const [pendingTransfers, setPendingTransfers] = useState(0);
 
   const loadDeparts = useCallback(async () => {
+    await syncDepartsAndTicketsFromServer(session?.station_id);
     const [all, tickets] = await Promise.all([
       getAllDeparts(session?.station_id, session?.counter_id),
       getAllTickets<TicketRecord>('tickets'),

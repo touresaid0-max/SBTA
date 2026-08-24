@@ -360,5 +360,159 @@ export async function pendingCount(): Promise<number> {
   return 0;
 }
 
+// ── Sync from server: pull schedule & ticket changes made externally (e.g. admin change requests) ──
+
+function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, unknown> {
+  const depIso = s.departure_datetime as string;
+  const depDate = depIso ? depIso.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const depTime = depIso ? depIso.slice(11, 16) : '00:00';
+  return {
+    id: s.id,
+    route_id: s.route_id ?? null,
+    route_name: s.route_name ?? null,
+    bus_id: s.bus_id ?? null,
+    driver_id: s.driver_id ?? null,
+    departure_datetime: depIso,
+    departure_date: depDate,
+    departure_time: depTime,
+    status: s.status ?? 'planifie',
+    seats_total: s.seats_total ?? s.seats_available ?? 0,
+    seats_from: 1,
+    seats_sold: s.seats_reserved ?? 0,
+    station_id: s.departure_station_id ?? s.station_id ?? null,
+    station_name: s.station_name ?? null,
+    counter_id: s.counter_id ?? null,
+    company_id: s.company_id ?? null,
+    is_ac: false,
+    is_ramassage: s.is_ramassage ?? false,
+    ramassage_notified: false,
+    confirmed: s.status === 'en_cours',
+    cancelled: s.status === 'annule',
+    cloture: s.status === 'termine',
+    departure_number: s.departure_number ?? null,
+    route_number: s.route_number ?? null,
+    mt_ticket: 0,
+    mt_bagage: 0,
+    tot_depense: 0,
+    solde: 0,
+    caisse: 0,
+  };
+}
+
+function mapRemoteReservationToLocalTicket(r: Record<string, unknown>): Record<string, unknown> {
+  const seatNumbers = Array.isArray(r.seat_numbers) ? r.seat_numbers as string[] : [];
+  const firstSeat = seatNumbers.length > 0 ? parseInt(seatNumbers[0], 10) : 0;
+  const status = r.status as string;
+  return {
+    id: r.id,
+    depart_id: r.schedule_id,
+    ticket_number: r.booking_reference ?? r.id,
+    seat_number: firstSeat,
+    seat_numbers: seatNumbers,
+    destination: r.destination_city_name ?? '',
+    destination_id: r.destination_city_id ?? null,
+    passenger_name: r.passenger_name ?? '',
+    passenger_phone: r.passenger_phone ?? '',
+    price: Number(r.total_price ?? 0),
+    original_price: Number(r.total_price ?? 0),
+    is_reduced: false,
+    is_reported: false,
+    is_ac: false,
+    print_ticket: true,
+    payment_method: 'cash',
+    status: status === 'annulee' ? 'cancelled' : 'sold',
+    loyalty_card_number: r.loyalty_card_number ?? null,
+    loyalty_name: null,
+  };
+}
+
+export async function syncDepartsAndTicketsFromServer(stationId?: string): Promise<void> {
+  try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let scheduleQuery = supabase
+      .from('schedules')
+      .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, station_id, station_name, counter_id, company_id, is_ramassage, departure_number, route_number, fill_rate')
+      .gte('departure_datetime', `${todayStr}T00:00:00`)
+      .order('departure_datetime', { ascending: true });
+
+    const { data: remoteSchedules, error: schedError } = await scheduleQuery;
+    if (schedError) throw schedError;
+
+    if (remoteSchedules && remoteSchedules.length > 0) {
+      const scheduleIds = remoteSchedules.map(s => s.id);
+
+      for (const s of remoteSchedules) {
+        const localRecord = mapRemoteScheduleToLocal(s as unknown as Record<string, unknown>);
+        const existing = await (db.departs as any).get(s.id);
+        if (existing) {
+          await (db.departs as any).put({
+            ...existing,
+            ...localRecord,
+            mt_ticket: existing.mt_ticket,
+            mt_bagage: existing.mt_bagage,
+            tot_depense: existing.tot_depense,
+            solde: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
+            caisse: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
+            seat_allocations: existing.seat_allocations,
+            seats_from: existing.seats_from,
+            bus_plate: existing.bus_plate,
+            bus_name: existing.bus_name,
+            driver_name: existing.driver_name,
+            convoyeur_id: existing.convoyeur_id,
+            convoyeur_name: existing.convoyeur_name,
+            apprenti_id: existing.apprenti_id,
+            apprenti_name: existing.apprenti_name,
+            other_station_id: existing.other_station_id,
+            other_station_name: existing.other_station_name,
+            ramassage_notified: existing.ramassage_notified,
+            arrival_station_id: existing.arrival_station_id,
+            source: existing.source,
+          });
+        } else {
+          await (db.departs as any).put({ ...localRecord, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
+        }
+      }
+
+      const { data: remoteReservations, error: resError } = await supabase
+        .from('reservations')
+        .select('id, schedule_id, seat_numbers, total_price, total_seats, passenger_name, passenger_phone, status, booking_reference, destination_city_name, destination_city_id, loyalty_card_number')
+        .in('schedule_id', scheduleIds)
+        .order('created_at', { ascending: true });
+
+      if (!resError && remoteReservations) {
+        for (const r of remoteReservations) {
+          const ticketRecord = mapRemoteReservationToLocalTicket(r as unknown as Record<string, unknown>);
+          const existingTicket = await (db.tickets as any).get(r.id);
+          if (existingTicket) {
+            await (db.tickets as any).put({ ...existingTicket, ...ticketRecord, updated_at: new Date().toISOString() });
+          } else {
+            await (db.tickets as any).put({ ...ticketRecord, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
+          }
+        }
+
+        for (const sid of scheduleIds) {
+          const activeTickets = (remoteReservations as unknown as Record<string, unknown>[])
+            .filter(r => r.schedule_id === sid && r.status !== 'annulee');
+          const newSeatsSold = activeTickets.length;
+          const newMtTicket = activeTickets.reduce((sum, t) => sum + Number(t.total_price ?? 0), 0);
+          const existing = await (db.departs as any).get(sid);
+          if (existing) {
+            await (db.departs as any).put({
+              ...existing,
+              seats_sold: newSeatsSold,
+              mt_ticket: newMtTicket,
+              solde: newMtTicket + existing.mt_bagage - existing.tot_depense,
+              caisse: newMtTicket + existing.mt_bagage - existing.tot_depense,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[sync] Failed to sync from server:', err);
+  }
+}
+
 // Ensure auth store is initialized (side-effect import to avoid tree-shaking)
 void useAuthStore;

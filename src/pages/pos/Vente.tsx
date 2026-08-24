@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getDepartById } from '@/services/pos/departService';
+import { syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
 import {
   sellTicket, sellTickets, getTicketsForDepart, getSoldSeats,
   calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
@@ -80,6 +81,7 @@ export default function POSVente() {
   const loadData = useCallback(async () => {
     if (!departId) return;
     try {
+      await syncDepartsAndTicketsFromServer(session?.station_id);
       const d = await getDepartById(departId);
       if (!d) {
         setError('Départ introuvable');
