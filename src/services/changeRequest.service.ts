@@ -212,6 +212,32 @@ export async function fetchChangeRequestEvents(
   return (data ?? []) as ChangeRequestEvent[];
 }
 
+export type ExistingRequestStatus = 'none' | 'pending' | 'executed';
+
+export async function checkExistingChangeRequest(
+  operationTable: string,
+  operationId: string
+): Promise<{ status: ExistingRequestStatus; existingStatus?: ChangeRequestStatus }> {
+  const { data, error } = await supabase
+    .from('operation_change_requests')
+    .select('id, status')
+    .eq('operation_table', operationTable)
+    .eq('operation_id', operationId)
+    .in('status', ['en_attente', 'autorisee_modification', 'autorisee_suppression', 'executee'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return { status: 'none' };
+  if (!data) return { status: 'none' };
+
+  const reqStatus = data.status as ChangeRequestStatus;
+  if (reqStatus === 'executee') {
+    return { status: 'executed', existingStatus: reqStatus };
+  }
+  return { status: 'pending', existingStatus: reqStatus };
+}
+
 export const STATUS_LABELS: Record<ChangeRequestStatus, string> = {
   en_attente: 'En attente d\'autorisation',
   autorisee_modification: 'Modification autorisée',
