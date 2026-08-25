@@ -10,57 +10,12 @@ import {
 } from '@/services/pos/bagageService';
 import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
-import { supabase } from '@/services/supabase';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Lock,
-  Package, Link2, Search, Calendar, TrendingUp,
+  Package, Link2, Search,
   Ticket as TicketIcon,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
-
-type PeriodFilter = 'jour' | 'semaine' | 'mois' | 'annee';
-
-function getPeriodRange(period: PeriodFilter): { start: string; end: string } {
-  const now = new Date();
-  const start = new Date(now);
-  const end = new Date(now);
-
-  switch (period) {
-    case 'jour':
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      break;
-    case 'semaine': {
-      const day = now.getDay() || 7;
-      start.setDate(now.getDate() - day + 1);
-      start.setHours(0, 0, 0, 0);
-      end.setDate(now.getDate() + (7 - day));
-      end.setHours(23, 59, 59, 999);
-      break;
-    }
-    case 'mois':
-      start.setDate(1);
-      start.setHours(0, 0, 0, 0);
-      end.setMonth(now.getMonth() + 1, 0);
-      end.setHours(23, 59, 59, 999);
-      break;
-    case 'annee':
-      start.setMonth(0, 1);
-      start.setHours(0, 0, 0, 0);
-      end.setMonth(11, 31);
-      end.setHours(23, 59, 59, 999);
-      break;
-  }
-
-  return { start: start.toISOString(), end: end.toISOString() };
-}
-
-const PERIOD_LABELS: Record<PeriodFilter, string> = {
-  jour: 'Jour',
-  semaine: 'Semaine',
-  mois: 'Mois',
-  annee: 'Année',
-};
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -86,39 +41,6 @@ export default function POSBagages() {
   const [ownerPhone, setOwnerPhone] = useState('');
   const [printBagage, setPrintBagage] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  // Bagage revenue card state — fetched from Supabase baggage_tickets
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('jour');
-  const [bagageRevenue, setBagageRevenue] = useState(0);
-  const [bagageRevenueCount, setBagageRevenueCount] = useState(0);
-  const [revenueLoading, setRevenueLoading] = useState(false);
-
-  const fetchBagageRevenue = useCallback(async (period: PeriodFilter) => {
-    if (!session?.user_id) return;
-    setRevenueLoading(true);
-    try {
-      const { start, end } = getPeriodRange(period);
-      const { data, error: fetchError } = await supabase
-        .from('baggage_tickets')
-        .select('price')
-        .eq('sold_by', session.user_id)
-        .gte('created_at', start)
-        .lte('created_at', end);
-      if (fetchError) throw fetchError;
-      const records = data ?? [];
-      setBagageRevenueCount(records.length);
-      setBagageRevenue(records.reduce((sum, r) => sum + Number(r.price ?? 0), 0));
-    } catch {
-      setBagageRevenue(0);
-      setBagageRevenueCount(0);
-    } finally {
-      setRevenueLoading(false);
-    }
-  }, [session?.user_id]);
-
-  useEffect(() => {
-    fetchBagageRevenue(periodFilter);
-  }, [fetchBagageRevenue, periodFilter]);
 
   const loadData = useCallback(async () => {
     if (!departId) return;
@@ -221,9 +143,6 @@ export default function POSBagages() {
       setBagages(b);
       if (updatedDepart) setDepart(updatedDepart);
 
-      // Refresh revenue card after a new baggage sale
-      fetchBagageRevenue(periodFilter);
-
       setSuccess(`Bagage enregistré — ${bagage.bagage_number}`);
 
       // Reset form
@@ -293,58 +212,9 @@ export default function POSBagages() {
             <span style={{ color: 'var(--text-secondary)' }}>·</span>
             <span style={{ color: 'var(--text-secondary)' }}>{depart.bus_plate}</span>
           </div>
-        </div>
-
-        {/* Recettes bagages card — real baggage revenue from Supabase, filtered by guichet + period */}
-        <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--warning)' }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Package className="w-5 h-5" style={{ color: 'var(--warning)' }} />
-              <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Recettes bagages</h3>
-            </div>
-            <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
-              {session?.full_name ?? 'Guichet'}
-            </span>
-          </div>
-
-          {/* Period filter buttons */}
-          <div className="flex gap-2 mb-3">
-            {(Object.keys(PERIOD_LABELS) as PeriodFilter[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setPeriodFilter(p)}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                style={{
-                  backgroundColor: periodFilter === p ? 'var(--warning)' : 'var(--surface-raised)',
-                  color: periodFilter === p ? 'white' : 'var(--text-secondary)',
-                  border: periodFilter === p ? '1px solid var(--warning)' : '1px solid var(--border)',
-                }}
-              >
-                {PERIOD_LABELS[p]}
-              </button>
-            ))}
-          </div>
-
-          {/* Revenue display */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" style={{ color: 'var(--warning)' }} />
-              <div>
-                <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Total recettes — {PERIOD_LABELS[periodFilter]}</p>
-                {revenueLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin mt-0.5" style={{ color: 'var(--warning)' }} />
-                ) : (
-                  <p className="text-2xl font-bold" style={{ color: 'var(--warning)' }}>{formatCurrency(bagageRevenue)}</p>
-                )}
-              </div>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Calendar className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-              <div className="text-right">
-                <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Nombre d'opérations</p>
-                <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{bagageRevenueCount}</p>
-              </div>
-            </div>
+          <div className="text-sm">
+            <span className="font-bold" style={{ color: 'var(--text-muted)' }}>MT Bagage: </span>
+            <span className="font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(depart.mt_bagage)}</span>
           </div>
         </div>
 
