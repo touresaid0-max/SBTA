@@ -540,7 +540,7 @@ export default function POSDeparts() {
           </div>
           {selectedRow && (
             <>
-              <button onClick={() => handleAction('modifier', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+              <button onClick={() => handleAction('modifier', selectedRow)} disabled={selectedRow.cloture} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2 disabled:opacity-50 disabled:cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
                 <Pencil className="w-4 h-4" /> Modifier
               </button>
               <button onClick={() => handleAction('imprimer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
