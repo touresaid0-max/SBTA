@@ -577,7 +577,7 @@ export default function POSDeparts() {
               })()}
               {!selectedRow.cloture && !selectedRow.cancelled && (
                 <button onClick={() => handleAction('fermer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--text-secondary)' }}>
-                  <Lock className="w-4 h-4" /> Fermer
+                  <Lock className="w-4 h-4" /> Clôturer
                 </button>
               )}
             </>
