@@ -12,6 +12,7 @@ import {
   findNextDepartForRoute, transferTicketsToDepart,
 } from '@/services/pos/departService';
 import { getAll as getAllTickets, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
+import { supabase } from '@/services/supabase';
 import { getDepenseTotalForDepart, getDepensesForDepart } from '@/services/pos/depenseService';
 import { getBagagesForDepart } from '@/services/pos/bagageService';
 import type { TicketRecord, BagageRecord, DepenseRecord } from '@/services/pos/db';
@@ -27,7 +28,7 @@ import EditDepartModal from '@/components/pos/EditDepartModal';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import {
   Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
-  ChevronUp, ChevronDown, Eye, Loader2, X,
+  ChevronUp, ChevronDown, Eye, Loader2, X, AlertCircle,
   FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks,
 } from 'lucide-react';
 
@@ -197,6 +198,7 @@ export default function POSDeparts() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showCancelConfirm, setShowCancelConfirm] = useState<DepartRow | null>(null);
   const [allTickets, setAllTickets] = useState<TicketRecord[]>([]);
+  const [cancelError, setCancelError] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editVehicules, setEditVehicules] = useState<VehiculeRef[]>([]);
   const [editChauffeurs, setEditChauffeurs] = useState<ChauffeurRef[]>([]);
@@ -242,6 +244,7 @@ export default function POSDeparts() {
 
   const visibleDeparts = useMemo(() => {
     let list = showAll ? departs : departs.filter(d => d.departure_date === todayStr);
+    list = list.filter(d => !d.cancelled);
     list = [...list].sort((a, b) => {
       let cmp = 0;
       const av = getSortValue(a, sortKey); const bv = getSortValue(b, sortKey);
@@ -381,6 +384,7 @@ export default function POSDeparts() {
         await updateDepart(depart.id, { confirmed: true, status: 'confirmed' });
       }
       if (action === 'annuler') {
+        setCancelError('');
         setShowCancelConfirm(depart);
         setActionLoading(false);
         return;
@@ -424,6 +428,17 @@ export default function POSDeparts() {
     if (!showCancelConfirm) return;
     setActionLoading(true);
     try {
+      const { count } = await supabase
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('schedule_id', showCancelConfirm.id)
+        .neq('status', 'annulee');
+      if (count && count > 0) {
+        setCancelError(`Impossible d'annuler : ${count} ticket(s) déjà vendu(s) sur ce départ. Utilisez « Demander modif./supp. ».`);
+        setShowCancelConfirm(null);
+        setActionLoading(false);
+        return;
+      }
       await updateDepart(showCancelConfirm.id, { cancelled: true, status: 'cancelled' });
       await loadDeparts();
     } catch {
@@ -550,11 +565,14 @@ export default function POSDeparts() {
                   <CheckCircle className="w-4 h-4" /> Confirmer
                 </button>
               )}
-              {!selectedRow.cancelled && !selectedRow.cloture && (
-                <button onClick={() => handleAction('annuler', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--danger)' }}>
-                  <XCircle className="w-4 h-4" /> Annuler
-                </button>
-              )}
+              {!selectedRow.cancelled && !selectedRow.cloture && (() => {
+                const soldCount = allTickets.filter(t => t.depart_id === selectedRow.id && t.status !== 'cancelled').length;
+                return soldCount === 0 ? (
+                  <button onClick={() => handleAction('annuler', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--danger)' }}>
+                    <XCircle className="w-4 h-4" /> Annuler
+                  </button>
+                ) : null;
+              })()}
               {!selectedRow.cloture && !selectedRow.cancelled && (
                 <button onClick={() => handleAction('fermer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--text-secondary)' }}>
                   <Lock className="w-4 h-4" /> Fermer
@@ -571,6 +589,13 @@ export default function POSDeparts() {
           <Eye className="w-4 h-4" /> {showAll ? "Aujourd'hui" : 'Voir tout'}
         </button>
       </div>
+
+      {/* Cancel error banner */}
+      {cancelError && (
+        <div className="mb-4 rounded-xl px-3 py-2.5 flex items-start gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /><span>{cancelError}</span>
+        </div>
+      )}
 
       {/* Pending transfer notification */}
       {pendingTransfers > 0 && (
