@@ -8,7 +8,7 @@ import {
   registerBagage, getBagagesForDepart, findTicketByNumber,
   type BagageRecord,
 } from '@/services/pos/bagageService';
-import { getAll } from '@/services/pos/offlineStore';
+import { supabase } from '@/services/supabase';
 import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
@@ -72,7 +72,27 @@ export default function POSBagages() {
 
   // Bagage revenue filter
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('jour');
-  const [allBagages, setAllBagages] = useState<BagageRecord[]>([]);
+  const [bagageRevenue, setBagageRevenue] = useState<number>(0);
+
+  const loadBagageRevenue = useCallback(async (period: PeriodFilter) => {
+    const { start, end } = getPeriodBounds(period);
+    try {
+      const { data, error } = await supabase
+        .from('baggage_tickets')
+        .select('price, created_at')
+        .gte('created_at', start.toISOString())
+        .lte('created_at', end.toISOString());
+      if (error) throw error;
+      const total = (data ?? []).reduce((sum, b) => sum + Number(b.price ?? 0), 0);
+      setBagageRevenue(total);
+    } catch {
+      setBagageRevenue(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBagageRevenue(periodFilter);
+  }, [loadBagageRevenue, periodFilter]);
 
   const loadData = useCallback(async () => {
     if (!departId) return;
@@ -89,14 +109,12 @@ export default function POSBagages() {
         return;
       }
       setDepart(d);
-      const [b, s, allB] = await Promise.all([
+      const [b, s] = await Promise.all([
         getBagagesForDepart(departId),
         getStations(),
-        getAll<BagageRecord>('bagages'),
       ]);
       setBagages(b);
       setStations(s);
-      setAllBagages(allB);
     } catch {
       // non-critical
     } finally {
@@ -111,16 +129,6 @@ export default function POSBagages() {
   const bagageTotal = useMemo(() => {
     return bagages.reduce((sum, b) => sum + b.price, 0);
   }, [bagages]);
-
-  const filteredBagageRevenue = useMemo(() => {
-    const { start, end } = getPeriodBounds(periodFilter);
-    return allBagages
-      .filter(b => {
-        const created = new Date(b.created_at);
-        return created >= start && created <= end;
-      })
-      .reduce((sum, b) => sum + b.price, 0);
-  }, [allBagages, periodFilter]);
 
   const handleFindTicket = async () => {
     if (!departId || !ticketNumber) return;
@@ -180,14 +188,13 @@ export default function POSBagages() {
       }
 
       // Refresh
-      const [b, updatedDepart, allB] = await Promise.all([
+      const [b, updatedDepart] = await Promise.all([
         getBagagesForDepart(departId),
         getDepartById(departId),
-        getAll<BagageRecord>('bagages'),
       ]);
       setBagages(b);
-      setAllBagages(allB);
       if (updatedDepart) setDepart(updatedDepart);
+      loadBagageRevenue(periodFilter);
 
       setSuccess(`Bagage enregistré — ${bagage.bagage_number}`);
 
@@ -273,7 +280,7 @@ export default function POSBagages() {
               </div>
               <div>
                 <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Recettes bagages</p>
-                <p className="text-xl font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(filteredBagageRevenue)}</p>
+                <p className="text-xl font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(bagageRevenue)}</p>
               </div>
             </div>
             <div className="flex gap-1.5 flex-wrap">
