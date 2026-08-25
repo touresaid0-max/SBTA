@@ -21,7 +21,7 @@ import type { DepartRecord } from '@/services/pos/departService';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock, RotateCw,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
-  Package, Banknote,
+  Package, Banknote, XCircle,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
@@ -261,7 +261,9 @@ export default function POSVente() {
 
   const handleSell = async () => {
     if (!depart || !departId) return;
+    if (depart.cancelled) { setError('Ce départ est annulé — vente impossible'); return; }
     if (depart.cloture) { setError('Ce départ est clôturé — vente impossible'); return; }
+    if (depart.status === 'panne') { setError('Ce départ est en panne — vente impossible'); return; }
     setError(''); setSuccess('');
     if (selectedSeats.length === 0) { setError('Veuillez sélectionner au moins un siège'); return; }
     for (const seat of selectedSeats) {
@@ -363,7 +365,9 @@ export default function POSVente() {
 
   const handleSellBagage = async () => {
     if (!depart || !departId || !bagMode) return;
+    if (depart.cancelled) { setBagError('Ce départ est annulé — opération impossible'); return; }
     if (depart.cloture) { setBagError('Ce départ est clôturé — opération impossible'); return; }
+    if (depart.status === 'panne') { setBagError('Ce départ est en panne — opération impossible'); return; }
     setBagError(''); setBagSuccess('');
 
     if (bagPrice <= 0) { setBagError('Veuillez saisir un prix de bagage valide'); return; }
@@ -457,10 +461,20 @@ export default function POSVente() {
   return (
     <POSLayout showBack stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${depart.route_name ?? ''})`}>
       <div className="max-w-5xl mx-auto">
-        {/* Cloture warning banner */}
-        {depart.cloture && (
+        {/* Status warning banners */}
+        {depart.cancelled && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+            <XCircle className="w-4 h-4" /> Ce départ est annulé — vente verrouillée
+          </div>
+        )}
+        {!depart.cancelled && depart.cloture && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
             <Lock className="w-4 h-4" /> Ce départ est clôturé — vente verrouillée
+          </div>
+        )}
+        {!depart.cancelled && !depart.cloture && depart.status === 'panne' && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}>
+            <AlertCircle className="w-4 h-4" /> Ce départ est en panne — vente verrouillée
           </div>
         )}
 
@@ -505,7 +519,7 @@ export default function POSVente() {
 
         {/* Departure header */}
         <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Matricule Car</p>
               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{depart.bus_plate}</p>
@@ -525,6 +539,12 @@ export default function POSVente() {
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Ligne</p>
               <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{depart.route_name}</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Statut</p>
+              <p className="text-sm font-bold" style={{ color: depart.cancelled ? 'var(--danger)' : depart.cloture ? 'var(--danger)' : depart.status === 'panne' ? 'var(--warning)' : depart.status === 'convoi' ? 'var(--info)' : depart.status === 'retard' ? 'var(--warning)' : depart.confirmed ? 'var(--success)' : 'var(--text-muted)' }}>
+                {depart.cancelled ? 'Annulé' : depart.cloture ? 'Clôturé' : depart.status === 'panne' ? 'Panne' : depart.status === 'convoi' ? 'Convoi' : depart.status === 'retard' ? 'Retard' : depart.confirmed ? 'Confirmé' : 'En attente'}
+              </p>
             </div>
           </div>
         </div>
@@ -835,7 +855,7 @@ export default function POSVente() {
               )}
               <button
                 onClick={handleSell}
-                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture}
+                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne'}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
               >
@@ -1097,7 +1117,7 @@ export default function POSVente() {
               {bagMode && (
                 <button
                   onClick={handleSellBagage}
-                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && !seatNumber)}
+                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && !seatNumber)}
                   className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                   style={{ backgroundColor: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)' }}
                 >

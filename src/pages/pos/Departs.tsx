@@ -643,7 +643,7 @@ export default function POSDeparts() {
                       className="cursor-pointer transition-colors"
                       style={{
                         borderTop: '1px solid var(--border)',
-                        backgroundColor: selectedIds.has(d.id) ? 'var(--primary-light)' : isSelected ? 'var(--primary-light)' : d.cancelled ? 'var(--danger-light)' : 'transparent',
+                        backgroundColor: selectedIds.has(d.id) ? 'var(--primary-light)' : isSelected ? 'var(--primary-light)' : d.cancelled ? 'var(--danger-light)' : d.status === 'panne' ? 'var(--warning-light)' : 'transparent',
                         opacity: d.cancelled ? 0.6 : 1,
                       }}
                     >
@@ -683,7 +683,13 @@ export default function POSDeparts() {
                       <td className={td + ' text-right'} style={{ color: 'var(--info)', fontWeight: 600 }}>{d.seats_sold_station}</td>
                       <td className={td + ' text-right'} style={{ color: 'var(--success)', fontWeight: 700 }}>{d.seats_libres}</td>
                       <td className={td}>
-                        {d.cloture ? <span style={{ color: 'var(--danger)' }}>Clôturé</span> : d.confirmed ? <span style={{ color: 'var(--success)' }}>Confirmé</span> : <span style={{ color: 'var(--text-muted)' }}>En attente</span>}
+                        {d.cancelled ? <span style={{ color: 'var(--danger)' }}>Annulé</span>
+                          : d.cloture ? <span style={{ color: 'var(--danger)' }}>Clôturé</span>
+                          : d.status === 'panne' ? <span style={{ color: 'var(--warning)' }}>Panne</span>
+                          : d.status === 'convoi' ? <span style={{ color: 'var(--info)' }}>Convoi</span>
+                          : d.status === 'retard' ? <span style={{ color: 'var(--warning)' }}>Retard</span>
+                          : d.confirmed ? <span style={{ color: 'var(--success)' }}>Confirmé</span>
+                          : <span style={{ color: 'var(--text-muted)' }}>En attente</span>}
                       </td>
                       <td className={td + ' text-right'}>{formatCurrency(d.mt_ticket)}</td>
                       <td className={td + ' text-right'}>{formatCurrency(d.mt_bagage)}</td>
