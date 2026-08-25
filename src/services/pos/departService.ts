@@ -85,6 +85,35 @@ export async function updateDepart(
   return localUpdate<DepartRecord>('departs', id, patch);
 }
 
+export async function renumberDepartsAfterCancellation(
+  cancelledDepart: DepartRecord,
+): Promise<void> {
+  const all = await getAll<DepartRecord>('departs');
+  const siblings = all
+    .filter(d =>
+      d.id !== cancelledDepart.id &&
+      d.route_id === cancelledDepart.route_id &&
+      d.station_id === cancelledDepart.station_id &&
+      d.departure_date === cancelledDepart.departure_date &&
+      !d.cancelled,
+    )
+    .sort((a, b) => (a.route_number ?? 0) - (b.route_number ?? 0));
+
+  let nextNumber = 1;
+  for (const d of siblings) {
+    if ((d.route_number ?? 0) !== nextNumber) {
+      await localUpdate<DepartRecord>('departs', d.id, { route_number: nextNumber });
+      try {
+        await supabase
+          .from('departure_sequence')
+          .update({ departure_order: nextNumber, departure_number: nextNumber })
+          .eq('schedule_id', d.id);
+      } catch { /* offline: local-only renumber */ }
+    }
+    nextNumber++;
+  }
+}
+
 export async function getAllDeparts(stationId?: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
   let result = all;

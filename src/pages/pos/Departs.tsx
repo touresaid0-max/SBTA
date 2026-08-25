@@ -10,6 +10,7 @@ import {
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
   getVehicules, getChauffeurs, getGares,
   findNextDepartForRoute, transferTicketsToDepart,
+  renumberDepartsAfterCancellation,
 } from '@/services/pos/departService';
 import { getAll as getAllTickets, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
@@ -440,6 +441,7 @@ export default function POSDeparts() {
         return;
       }
       await updateDepart(showCancelConfirm.id, { cancelled: true, status: 'cancelled' });
+      await renumberDepartsAfterCancellation(showCancelConfirm);
       await loadDeparts();
     } catch {
       // non-critical
