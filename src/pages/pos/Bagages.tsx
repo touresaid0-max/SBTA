@@ -8,14 +8,42 @@ import {
   registerBagage, getBagagesForDepart, findTicketByNumber,
   type BagageRecord,
 } from '@/services/pos/bagageService';
+import { getAll } from '@/services/pos/offlineStore';
 import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Lock,
-  Package, Link2, Search,
+  Package, Link2, Search, Wallet,
   Ticket as TicketIcon,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+
+type PeriodFilter = 'jour' | 'semaine' | 'mois' | 'annee';
+
+function getPeriodBounds(period: PeriodFilter): { start: Date; end: Date } {
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+
+  if (period === 'jour') {
+    start.setHours(0, 0, 0, 0);
+  } else if (period === 'semaine') {
+    const day = start.getDay() || 7;
+    start.setDate(start.getDate() - day + 1);
+    start.setHours(0, 0, 0, 0);
+  } else if (period === 'mois') {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+  } else if (period === 'annee') {
+    start.setMonth(0, 1);
+    start.setHours(0, 0, 0, 0);
+    end.setMonth(11, 31);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  return { start, end };
+}
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -42,6 +70,10 @@ export default function POSBagages() {
   const [printBagage, setPrintBagage] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Bagage revenue filter
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('jour');
+  const [allBagages, setAllBagages] = useState<BagageRecord[]>([]);
+
   const loadData = useCallback(async () => {
     if (!departId) return;
     try {
@@ -57,12 +89,14 @@ export default function POSBagages() {
         return;
       }
       setDepart(d);
-      const [b, s] = await Promise.all([
+      const [b, s, allB] = await Promise.all([
         getBagagesForDepart(departId),
         getStations(),
+        getAll<BagageRecord>('bagages'),
       ]);
       setBagages(b);
       setStations(s);
+      setAllBagages(allB);
     } catch {
       // non-critical
     } finally {
@@ -77,6 +111,16 @@ export default function POSBagages() {
   const bagageTotal = useMemo(() => {
     return bagages.reduce((sum, b) => sum + b.price, 0);
   }, [bagages]);
+
+  const filteredBagageRevenue = useMemo(() => {
+    const { start, end } = getPeriodBounds(periodFilter);
+    return allBagages
+      .filter(b => {
+        const created = new Date(b.created_at);
+        return created >= start && created <= end;
+      })
+      .reduce((sum, b) => sum + b.price, 0);
+  }, [allBagages, periodFilter]);
 
   const handleFindTicket = async () => {
     if (!departId || !ticketNumber) return;
@@ -136,11 +180,13 @@ export default function POSBagages() {
       }
 
       // Refresh
-      const [b, updatedDepart] = await Promise.all([
+      const [b, updatedDepart, allB] = await Promise.all([
         getBagagesForDepart(departId),
         getDepartById(departId),
+        getAll<BagageRecord>('bagages'),
       ]);
       setBagages(b);
+      setAllBagages(allB);
       if (updatedDepart) setDepart(updatedDepart);
 
       setSuccess(`Bagage enregistré — ${bagage.bagage_number}`);
@@ -215,6 +261,37 @@ export default function POSBagages() {
           <div className="text-sm">
             <span className="font-bold" style={{ color: 'var(--text-muted)' }}>MT Bagage: </span>
             <span className="font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(depart.mt_bagage)}</span>
+          </div>
+        </div>
+
+        {/* Bagage revenue panel with period filters */}
+        <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--success-light)' }}>
+                <Wallet className="w-5 h-5" style={{ color: 'var(--success)' }} />
+              </div>
+              <div>
+                <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Recettes bagages</p>
+                <p className="text-xl font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(filteredBagageRevenue)}</p>
+              </div>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {(['jour', 'semaine', 'mois', 'annee'] as PeriodFilter[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPeriodFilter(p)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all"
+                  style={
+                    periodFilter === p
+                      ? { backgroundColor: 'var(--primary)', color: '#fff' }
+                      : { backgroundColor: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }
+                  }
+                >
+                  {p === 'annee' ? 'Année' : p === 'mois' ? 'Mois' : p === 'semaine' ? 'Semaine' : 'Jour'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
