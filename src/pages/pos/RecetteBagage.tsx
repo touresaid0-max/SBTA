@@ -69,19 +69,13 @@ export default function POSRecetteBagage() {
 
     (async () => {
       try {
-        let query = supabase
+        const { data, error: err } = await supabase
           .from('baggage_tickets')
           .select('id, baggage_number, destination, price, created_at, bus_registration, departure_number, owner_name, has_ticket')
           .eq('sold_by', session.user_id)
           .gte('created_at', range.from.toISOString())
           .lte('created_at', range.to.toISOString())
           .order('created_at', { ascending: false });
-
-        if (session.counter_id) {
-          query = query.eq('counter_id', session.counter_id);
-        }
-
-        const { data, error: err } = await query;
         if (cancelled) return;
         if (err) {
           setError(err.message);
@@ -99,7 +93,7 @@ export default function POSRecetteBagage() {
     return () => {
       cancelled = true;
     };
-  }, [session?.user_id, session?.counter_id, range.from, range.to]);
+  }, [session?.user_id, range.from, range.to]);
 
   const totalRevenue = useMemo(() => rows.reduce((sum, r) => sum + (Number(r.price) || 0), 0), [rows]);
   const totalCount = rows.length;
@@ -289,3 +283,6 @@ export default function POSRecetteBagage() {
     </POSLayout>
   );
 }
+
+
+export default POSRecetteBagage
