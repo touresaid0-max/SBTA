@@ -526,6 +526,12 @@ export async function getPendingCount(): Promise<number> {
   return db.sync_queue.where('status').anyOf(['pending', 'error']).count();
 }
 
+export async function getLastSyncError(): Promise<string | null> {
+  const errors = await db.sync_queue.where('status').equals('error').toArray();
+  errors.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  return errors[0]?.last_error ?? null;
+}
+
 export async function getConflicts(): Promise<SyncConflict[]> {
   // Conflicts are stored as error-status queue items with a conflict reason
   const errors = await db.sync_queue.where('status').equals('error').toArray();

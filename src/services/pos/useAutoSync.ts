@@ -1,75 +1,81 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useConnection } from './ConnectionContext';
-import { flushSyncQueue, getPendingCount, onOnlineChange } from './syncEngine';
+import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError } from './syncEngine';
 import { syncDepartsAndTicketsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
 
-/**
- * Hook that drives automatic synchronization:
- * - Listens for online/offline transitions
- * - On reconnection: flushes the sync queue, pulls server changes, refreshes referentiels
- * - Updates the ConnectionContext with pending count and sync status
- * - Polls pending count periodically to keep the banner accurate
- */
 export function useAutoSync(stationId?: string) {
-  const { status, setSyncing, setPendingCount, setLastSyncedAt } = useConnection();
-  const lastStatusRef = useRef(status);
+  const {
+    status,
+    setSyncing,
+    setPendingCount,
+    setLastSyncedAt,
+    setLastSyncError,
+  } = useConnection();
+  const runningRef = useRef(false);
+  const stationRef = useRef(stationId);
+  stationRef.current = stationId;
 
-  // Update pending count whenever status changes or periodically
-  useEffect(() => {
-    let mounted = true;
+  const updateQueueState = useCallback(async () => {
+    const count = await getPendingCount();
+    setPendingCount(count);
+    setLastSyncError(await getLastSyncError());
+    return count;
+  }, [setLastSyncError, setPendingCount]);
 
-    const updatePending = async () => {
-      const count = await getPendingCount();
-      if (mounted) setPendingCount(count);
-    };
-
-    updatePending();
-    const interval = setInterval(updatePending, 5000);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, [status, setPendingCount]);
-
-  // Listen for online/offline transitions from the sync engine
-  useEffect(() => {
-    const unsub = onOnlineChange(async (online) => {
-      if (online) {
-        setSyncing(true);
-        try {
-          await flushSyncQueue();
-          await syncDepartsAndTicketsFromServer(stationId);
-          try { await refreshAllReferentiels(); } catch { /* non-critical */ }
-          setLastSyncedAt(new Date().toISOString());
-        } finally {
-          setSyncing(false);
-          const count = await getPendingCount();
-          setPendingCount(count);
-        }
-      }
-    });
-    return unsub;
-  }, [stationId, setSyncing, setLastSyncedAt, setPendingCount]);
-
-  // Also trigger sync when ConnectionContext detects online transition
-  useEffect(() => {
-    if (lastStatusRef.current === 'offline' && status === 'online') {
-      setSyncing(true);
-      (async () => {
-        try {
-          await flushSyncQueue();
-          await syncDepartsAndTicketsFromServer(stationId);
-          try { await refreshAllReferentiels(); } catch { /* non-critical */ }
-          setLastSyncedAt(new Date().toISOString());
-        } finally {
-          setSyncing(false);
-          const count = await getPendingCount();
-          setPendingCount(count);
-        }
-      })();
+  const runSync = useCallback(async () => {
+    if (runningRef.current || !isOnline()) {
+      await updateQueueState();
+      return;
     }
-    lastStatusRef.current = status;
-  }, [status, stationId, setSyncing, setLastSyncedAt, setPendingCount]);
+
+    runningRef.current = true;
+    setSyncing(true);
+    setLastSyncError(null);
+
+    try {
+      const result = await flushSyncQueue();
+      if (!isOnline()) return;
+
+      await syncDepartsAndTicketsFromServer(stationRef.current);
+      try {
+        await refreshAllReferentiels();
+      } catch {
+        // Reference data refresh is non-critical for the queued operations.
+      }
+
+      const remaining = await updateQueueState();
+      if (result.failed === 0 && result.conflicts.length === 0 && remaining === 0) {
+        setLastSyncedAt(new Date().toISOString());
+      }
+    } catch (error) {
+      setLastSyncError(error instanceof Error ? error.message : 'Erreur inconnue pendant la synchronisation');
+      await updateQueueState();
+    } finally {
+      runningRef.current = false;
+      setSyncing(false);
+    }
+  }, [setLastSyncError, setLastSyncedAt, setSyncing, updateQueueState]);
+
+  useEffect(() => {
+    const unsubscribe = onOnlineChange((online) => {
+      if (online) void runSync();
+    });
+    return unsubscribe;
+  }, [runSync]);
+
+  useEffect(() => {
+    if (status === 'online') void runSync();
+  }, [runSync, status]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (status === 'online') void runSync();
+      else void updateQueueState();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [runSync, status, updateQueueState]);
 }
+
+
+export { useAutoSync }

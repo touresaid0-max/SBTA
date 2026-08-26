@@ -9,10 +9,12 @@ export interface ConnectionState {
   syncing: boolean;
   pendingCount: number;
   lastSyncedAt: string | null;
+  lastSyncError: string | null;
   bannerLabel: string;
   setSyncing: (v: boolean) => void;
   setPendingCount: (n: number) => void;
   setLastSyncedAt: (iso: string) => void;
+  setLastSyncError: (message: string | null) => void;
   recheck: () => void;
 }
 
@@ -21,10 +23,12 @@ const ConnectionContext = createContext<ConnectionState>({
   syncing: false,
   pendingCount: 0,
   lastSyncedAt: null,
+  lastSyncError: null,
   bannerLabel: '',
   setSyncing: () => {},
   setPendingCount: () => {},
   setLastSyncedAt: () => {},
+  setLastSyncError: () => {},
   recheck: () => {},
 });
 
@@ -48,23 +52,13 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   const [syncing, setSyncing] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastOnlineRef = useRef<boolean>(true);
 
   const doCheck = useCallback(async () => {
     const reachable = await pingSupabase();
     setSyncEngineOnline(reachable);
-    const next: ConnectionStatus = reachable ? 'online' : 'offline';
-    setStatus(prev => {
-      if (prev === next) return prev;
-      if (prev === 'offline' && next === 'online') {
-        lastOnlineRef.current = true;
-      }
-      if (prev === 'online' && next === 'offline') {
-        lastOnlineRef.current = false;
-      }
-      return next;
-    });
+    setStatus(reachable ? 'online' : 'offline');
     return reachable;
   }, []);
 
@@ -72,14 +66,14 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
 
   useEffect(() => {
     void doCheck();
-
     const onOnline = () => { void doCheck(); };
-    const onOffline = () => { setSyncEngineOnline(false); setStatus('offline'); };
+    const onOffline = () => {
+      setSyncEngineOnline(false);
+      setStatus('offline');
+    };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
-
     pingTimerRef.current = setInterval(() => { void doCheck(); }, PING_INTERVAL_MS);
-
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
@@ -89,11 +83,12 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
 
   const bannerLabel = (() => {
     if (status === 'checking') return 'Vérification de la connexion…';
+    if (syncing) return 'Synchronisation en cours…';
     if (status === 'offline') {
       if (pendingCount > 0) return `Hors ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente de synchronisation`;
       return 'Hors ligne — fonctionnement local';
     }
-    if (syncing) return 'Synchronisation en cours…';
+    if (lastSyncError) return `En ligne — synchronisation à reprendre : ${lastSyncError}`;
     if (pendingCount > 0) return `En ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente`;
     if (lastSyncedAt) return 'En ligne — Synchronisé';
     return 'En ligne';
@@ -101,8 +96,17 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
 
   return (
     <ConnectionContext.Provider value={{
-      status, syncing, pendingCount, lastSyncedAt, bannerLabel,
-      setSyncing, setPendingCount, setLastSyncedAt, recheck,
+      status,
+      syncing,
+      pendingCount,
+      lastSyncedAt,
+      lastSyncError,
+      bannerLabel,
+      setSyncing,
+      setPendingCount,
+      setLastSyncedAt,
+      setLastSyncError,
+      recheck,
     }}>
       {children}
     </ConnectionContext.Provider>
