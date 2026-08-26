@@ -3,6 +3,7 @@ import { useConnection } from './ConnectionContext';
 import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError } from './syncEngine';
 import { syncDepartsAndTicketsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
+import { ensureAuthSession } from './offlineAuth';
 
 export function useAutoSync(stationId?: string) {
   const {
@@ -34,6 +35,15 @@ export function useAutoSync(stationId?: string) {
     setLastSyncError(null);
 
     try {
+      // Before flushing, ensure the Supabase auth session is still valid.
+      // After a long offline period the access token may have expired.
+      const authValid = await ensureAuthSession();
+      if (!authValid) {
+        setLastSyncError('Session expirée. Veuillez vous reconnecter pour synchroniser les opérations en attente.');
+        await updateQueueState();
+        return;
+      }
+
       const result = await flushSyncQueue();
       if (!isOnline()) return;
 
@@ -76,6 +86,3 @@ export function useAutoSync(stationId?: string) {
     return () => clearInterval(interval);
   }, [runSync, status, updateQueueState]);
 }
-
-
-export { useAutoSync }

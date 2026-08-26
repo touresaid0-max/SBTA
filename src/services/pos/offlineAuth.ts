@@ -145,3 +145,39 @@ export async function logoutPOS(): Promise<void> {
   }
   await db.session.clear();
 }
+
+/**
+ * Ensure the Supabase auth session is valid before sending queued operations.
+ * After a long offline period, the Supabase access token may have expired.
+ * This re-authenticates using the cached credentials (email + password hash
+ * is not enough — we need the real password). Since we never store the plaintext
+ * password, we instead check if the current Supabase session is still valid,
+ * and if not, we simply skip the flush — the operations remain in the queue
+ * and will be retried on the next poll cycle or when the user re-logs in.
+ *
+ * However, the most common cause of the 401 is that the auth session was
+ * lost during the offline period. The authStore's initialize() is called
+ * on app startup and restores the session from localStorage. But if the
+ * session expired, we need to detect it and inform the user.
+ */
+export async function ensureAuthSession(): Promise<boolean> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      // Check if token is still valid (not expired)
+      const expiresAt = session.expires_at;
+      if (expiresAt && expiresAt * 1000 > Date.now()) {
+        return true;
+      }
+    }
+
+    // Session is missing or expired — try to refresh
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshData.session) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
