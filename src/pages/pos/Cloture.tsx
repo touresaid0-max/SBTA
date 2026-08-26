@@ -9,10 +9,11 @@ import { getTicketsForDepart, type TicketRecord } from '@/services/pos/ticketSer
 import { getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, getDepenseTotalForDepart, type DepenseRecord } from '@/services/pos/depenseService';
 import { formatCurrency } from '@/utils/formatCurrency';
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import {
   AlertCircle, CheckCircle, Loader2, Lock,
   Ticket as TicketIcon, Package, Wallet,
-  TrendingDown,
+  TrendingDown, Calendar as CalendarIcon, CheckSquare, Square,
 } from 'lucide-react';
 
 export default function POSCloture() {
@@ -29,6 +30,13 @@ export default function POSCloture() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Date filter — defaults to today
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [filterDate, setFilterDate] = useState(todayStr);
+
+  // Multi-select for batch clôture
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   const loadData = useCallback(async () => {
     try {
       const all = await getAllDeparts(session?.station_id, session?.counter_id);
@@ -43,6 +51,16 @@ export default function POSCloture() {
   }, [session?.station_id, session?.counter_id]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Filter departs by selected date
+  const filteredDeparts = useMemo(() => {
+    return departs.filter(d => d.departure_date === filterDate);
+  }, [departs, filterDate]);
+
+  // Reset multi-select when date changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filterDate]);
 
   const [liveTotDepense, setLiveTotDepense] = useState(0);
 
@@ -68,6 +86,65 @@ export default function POSCloture() {
 
   const solde = useMemo(() => selected ? (selected.mt_ticket + selected.mt_bagage - liveTotDepense) : 0, [selected, liveTotDepense]);
 
+  // Toggle individual depart selection for batch
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    const closable = filteredDeparts.filter(d => !d.cloture);
+    if (selectedIds.size === closable.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(closable.map(d => d.id)));
+    }
+  };
+
+  const selectedClosableCount = useMemo(() => {
+    return filteredDeparts.filter(d => !d.cloture && selectedIds.has(d.id)).length;
+  }, [filteredDeparts, selectedIds]);
+
+  // Batch clôture
+  const handleBatchCloture = async () => {
+    const toClose = filteredDeparts.filter(d => !d.cloture && selectedIds.has(d.id));
+    if (toClose.length === 0) {
+      setError('Aucun départ sélectionné à clôturer');
+      return;
+    }
+    setActionLoading(true);
+    setError('');
+    let successCount = 0;
+    let failCount = 0;
+    for (const d of toClose) {
+      try {
+        await cloturerDepart(d.id, session?.full_name);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    // Refresh state
+    setDeparts(prev => prev.map(x => selectedIds.has(x.id) ? { ...x, cloture: true } : x));
+    if (selectedId && selectedIds.has(selectedId)) {
+      const d = await getDepartById(selectedId);
+      setSelected(d ?? null);
+    }
+    setSelectedIds(new Set());
+    setActionLoading(false);
+    if (failCount === 0) {
+      setSuccess(`${successCount} départ${successCount > 1 ? 's' : ''} clôturé${successCount > 1 ? 's' : ''} — verrouillé${successCount > 1 ? 's' : ''} en lecture seule`);
+    } else {
+      setError(`${successCount} clôturé(s), ${failCount} échec(s)`);
+    }
+    setTimeout(() => { setSuccess(''); setError(''); }, 4000);
+  };
+
+  // Single clôture (detail view)
   const handleCloture = async () => {
     if (!selectedId) return;
     setActionLoading(true);
@@ -117,14 +194,105 @@ export default function POSCloture() {
           </div>
         )}
 
-        {/* Depart selection */}
+        {/* Date filter */}
         <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <label className="block text-xs font-bold mb-1" style={{ color: 'var(--text-secondary)' }}>Sélectionner un départ</label>
+          <label className="block text-xs font-bold mb-1 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+            <CalendarIcon className="w-3.5 h-3.5" /> Sélectionner la période
+          </label>
+          <input
+            type="date"
+            value={filterDate}
+            onChange={e => setFilterDate(e.target.value)}
+            className={fieldInput}
+            style={fieldStyle}
+          />
+          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+            {filteredDeparts.length} départ{filteredDeparts.length > 1 ? 's' : ''} trouvé{filteredDeparts.length > 1 ? 's' : ''} pour le {new Date(filterDate).toLocaleDateString('fr-FR')}
+          </p>
+        </div>
+
+        {/* Multi-select depart list */}
+        <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>
+              Sélectionner les départs à clôturer
+            </label>
+            <button
+              onClick={selectAll}
+              className="text-xs font-bold flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors"
+              style={{ color: 'var(--primary)', border: '1px solid var(--primary)' }}
+            >
+              {selectedIds.size === filteredDeparts.filter(d => !d.cloture).length && selectedIds.size > 0 ? (
+                <><Square className="w-3.5 h-3.5" /> Tout désélectionner</>
+              ) : (
+                <><CheckSquare className="w-3.5 h-3.5" /> Tout sélectionner</>
+              )}
+            </button>
+          </div>
+
+          {filteredDeparts.length === 0 ? (
+            <p className="text-sm text-center py-6" style={{ color: 'var(--text-muted)' }}>
+              Aucun départ pour cette date
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {filteredDeparts.map(d => (
+                <label
+                  key={d.id}
+                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                  style={{
+                    backgroundColor: selectedIds.has(d.id) ? 'var(--primary-light, #EFF6FF)' : 'var(--surface-raised)',
+                    border: `1px solid ${selectedIds.has(d.id) ? 'var(--primary)' : 'var(--border)'}`,
+                    opacity: d.cloture ? 0.6 : 1,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(d.id)}
+                    disabled={d.cloture}
+                    onChange={() => toggleSelect(d.id)}
+                    className="w-4 h-4 flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>
+                      #{d.route_number} — {d.route_name} — {d.departure_time}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {d.seats_sold}/{d.seats_total} sièges · {formatCurrency(d.mt_ticket + d.mt_bagage)}
+                    </p>
+                  </div>
+                  {d.cloture && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold flex items-center gap-1 flex-shrink-0" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+                      <Lock className="w-3 h-3" /> Clôturé
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+
+          {/* Batch clôture button */}
+          {selectedClosableCount > 0 && (
+            <button
+              onClick={handleBatchCloture}
+              disabled={actionLoading}
+              className="w-full mt-3 py-3.5 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+              style={{ backgroundColor: 'var(--primary)' }}
+            >
+              {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
+              Clôturer {selectedClosableCount} départ{selectedClosableCount > 1 ? 's' : ''} sélectionné{selectedClosableCount > 1 ? 's' : ''}
+            </button>
+          )}
+        </div>
+
+        {/* Detail view for a single depart */}
+        <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <label className="block text-xs font-bold mb-1" style={{ color: 'var(--text-secondary)' }}>Consulter un départ (détail)</label>
           <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className={fieldInput} style={fieldStyle}>
             <option value="">Sélectionner...</option>
-            {departs.map(d => (
+            {filteredDeparts.map(d => (
               <option key={d.id} value={d.id}>
-                #{d.route_number} — {d.route_name} — {d.departure_date} {d.departure_time}
+                #{d.route_number} — {d.route_name} — {d.departure_time}
                 {d.cloture ? ' [CLÔTURÉ]' : ''}
               </option>
             ))}
@@ -195,12 +363,40 @@ export default function POSCloture() {
                 </button>
               </div>
             ) : (
-              <div className="rounded-xl p-4 mb-4 text-center" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--border)' }}>
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--border)' }}>
                 <Lock className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Ce départ est clôturé</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                <p className="text-sm font-bold text-center" style={{ color: 'var(--text-primary)' }}>Ce départ est clôturé</p>
+                <p className="text-xs mt-1 text-center" style={{ color: 'var(--text-secondary)' }}>
                   Vente et bagages verrouillés. {selected.cloture_at && `Clôturé le ${new Date(selected.cloture_at).toLocaleString('fr-FR')}`}
                 </p>
+                <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-muted)' }}>
+                  Pour déclôturer, passez par la procédure « Demande modif./supp. »
+                </p>
+                <div className="flex justify-center mt-3">
+                  <ChangeRequestButton
+                    operationType="cloture"
+                    operationId={selected.id}
+                    operationTable="schedules"
+                    operationReference={`Départ #${selected.route_number} — ${selected.route_name} — ${selected.departure_date}`}
+                    operationSnapshot={{
+                      id: selected.id,
+                      route_number: selected.route_number,
+                      route_name: selected.route_name,
+                      departure_date: selected.departure_date,
+                      departure_time: selected.departure_time,
+                      cloture: selected.cloture,
+                      cloture_at: selected.cloture_at,
+                      cloture_by: selected.cloture_by,
+                      mt_ticket: selected.mt_ticket,
+                      mt_bagage: selected.mt_bagage,
+                      tot_depense: selected.tot_depense,
+                      solde: selected.solde,
+                    }}
+                    stationId={session?.station_id}
+                    stationName={session?.station_name}
+                    label="Demande modif./supp. pour déclôturer"
+                  />
+                </div>
               </div>
             )}
           </>
