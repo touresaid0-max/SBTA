@@ -256,6 +256,7 @@ import POSDepartNouveau from './pages/pos/DepartNouveau';
 import POSDeparts from './pages/pos/Departs';
 import POSVente from './pages/pos/Vente';
 import POSBagages from './pages/pos/Bagages';
+import POSRecetteBagage from './pages/pos/RecetteBagage';
 import POSDepenses from './pages/pos/Depenses';
 import POSAutresGares from './pages/pos/AutresGares';
 import POSCloture from './pages/pos/Cloture';
@@ -589,6 +590,7 @@ function App() {
             <Route path="departs" element={<POSDeparts />} />
             <Route path="depart/:id/vente" element={<POSVente />} />
             <Route path="depart/:id/bagages" element={<POSBagages />} />
+            <Route path="recette-bagage" element={<POSRecetteBagage />} />
             <Route path="depenses" element={<POSDepenses />} />
             <Route path="autres-gares" element={<POSAutresGares />} />
             <Route path="cloture" element={<POSCloture />} />
