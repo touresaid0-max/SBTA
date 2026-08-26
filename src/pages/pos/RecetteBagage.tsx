@@ -283,6 +283,3 @@ export default function POSRecetteBagage() {
     </POSLayout>
   );
 }
-
-
-export default POSRecetteBagage
