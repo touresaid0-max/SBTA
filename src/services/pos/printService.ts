@@ -43,13 +43,20 @@ async function sendWebSerial(data: Uint8Array): Promise<boolean> {
 
   const writePort = async (port: any): Promise<boolean> => {
     if (!port.writable || port.writable.locked) return false;
-    await port.open({ baudRate: 9600 });
+    const wasOpen = Boolean(port.opened);
+    if (!wasOpen) await port.open({ baudRate: 9600 });
     const writer = port.writable?.getWriter();
-    if (!writer) { await port.close(); return false; }
-    await writer.write(data);
-    writer.releaseLock();
-    await port.close();
-    return true;
+    if (!writer) {
+      if (!wasOpen) await port.close();
+      return false;
+    }
+    try {
+      await writer.write(data);
+      return true;
+    } finally {
+      writer.releaseLock();
+      if (!wasOpen) await port.close();
+    }
   };
 
   try {
@@ -64,9 +71,8 @@ async function sendWebSerial(data: Uint8Array): Promise<boolean> {
       }
     }
 
-    // 2. No authorized port — show picker dialog
-    const port = await nav.serial.requestPort({ filters: [] });
-    return writePort(port);
+    // Do not open a connection picker during an automatic sale print.
+    return false;
   } catch {
     return false;
   }
@@ -97,9 +103,8 @@ async function sendWebUSB(data: Uint8Array): Promise<boolean> {
       }
     }
 
-    // 2. No authorized device — show picker dialog
-    const device = await nav.usb.requestDevice({ filters: [{ classCode: 7 }] });
-    return writeDevice(device);
+    // Do not open a connection picker during an automatic sale print.
+    return false;
   } catch {
     return false;
   }

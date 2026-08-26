@@ -339,16 +339,15 @@ export default function POSVente() {
     for (const ticket of ticketsToPrint) {
       try {
         const ok = await PrintService.printTicket({ ticket, depart: dep, stationName: stName });
-        if (!ok) { failed.push(ticket); break; }
+        if (!ok) { failed.push(ticket); }
       } catch {
         failed.push(ticket);
-        break;
       }
     }
     setPrinting(false);
     if (failed.length > 0) {
       setPendingReprint(failed);
-      setPrintError(`L'impression a échoué au ticket siège ${failed[0].seat_number}. Cliquez sur "Reprendre l'impression" pour reprendre à partir de ce ticket.`);
+      setPrintError(`${failed.length} ticket(s) non imprimé(s) — cliquez sur « Reprendre l'impression » pour réessayer.`);
     }
   };
 
