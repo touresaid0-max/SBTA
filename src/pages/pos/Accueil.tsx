@@ -7,6 +7,8 @@ import {
 import { supabase } from '@/services/supabase';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
+import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
+import { useAutoSync } from '@/services/pos/useAutoSync';
 
 interface TileConfig {
   label: string;
@@ -32,6 +34,7 @@ export default function POSAccueil() {
   const navigate = useNavigate();
   const { session, logout } = usePOSSession();
   const [pendingRamassage, setPendingRamassage] = useState(0);
+  useAutoSync(session?.station_id);
 
   useEffect(() => {
     if (!session?.station_id) return;
@@ -90,6 +93,8 @@ export default function POSAccueil() {
           </div>
         </div>
       </header>
+
+      <ConnectionBanner />
 
       <main className="flex-1 px-4 py-6 sm:px-6">
         <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>

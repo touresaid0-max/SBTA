@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Lock, User, LogIn, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { login, type POSLoginResult } from '@/services/pos/offlineAuth';
 import { refreshAllReferentiels } from '@/services/pos/referentiels';
+import { isOnline } from '@/services/pos/syncEngine';
 
 export default function POSConnexion() {
   const navigate = useNavigate();
@@ -33,7 +34,9 @@ export default function POSConnexion() {
 
     if (result.success) {
       setLoginMode(true);
-      try { await refreshAllReferentiels(); } catch { /* non-critical */ }
+      if (!result.offline) {
+        try { await refreshAllReferentiels(); } catch { /* non-critical */ }
+      }
       setTimeout(() => navigate('/guichet/accueil'), 400);
     } else {
       setError(result.error ?? 'Erreur de connexion');
@@ -63,7 +66,7 @@ export default function POSConnexion() {
           }}
         >
           <CheckCircle className="w-4 h-4" />
-          En ligne — connexion au serveur
+          {isOnline() ? 'En ligne — connexion au serveur' : 'Hors ligne — vérification locale'}
         </div>
 
         {error && (

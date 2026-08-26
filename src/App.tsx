@@ -264,6 +264,7 @@ import POSRamassage from './pages/pos/Ramassage';
 import POSConvois from './pages/pos/Convois';
 import POSParametres from './pages/pos/Parametres';
 import { POSSessionProvider } from './services/pos/POSSessionContext';
+import { ConnectionProvider } from './services/pos/ConnectionContext';
 
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
@@ -583,8 +584,8 @@ function App() {
           </Route>
 
           {/* POS /guichet module — LOT 0+1: additive, standalone layout, offline-first */}
-          <Route path="/guichet/connexion" element={<POSConnexion />} />
-          <Route path="/guichet" element={<POSSessionProvider />}>
+          <Route path="/guichet/connexion" element={<ConnectionProvider><POSConnexion /></ConnectionProvider>} />
+          <Route path="/guichet" element={<ConnectionProvider><POSSessionProvider /></ConnectionProvider>}>
             <Route path="accueil" element={<POSAccueil />} />
             <Route path="depart/nouveau" element={<POSDepartNouveau />} />
             <Route path="departs" element={<POSDeparts />} />

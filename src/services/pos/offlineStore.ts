@@ -1,6 +1,7 @@
 import { db } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
+import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount } from './syncEngine';
 
 function uuid(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -11,214 +12,6 @@ function nowIso(): string {
 }
 
 type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses';
-
-const TABLE_MAP: Record<StoreName, string> = {
-  departs: 'schedules',
-  tickets: 'reservations',
-  bagages: 'baggage_tickets',
-  depenses: 'counter_charges',
-};
-
-async function getCurrentUserId(): Promise<string | null> {
-  const { data } = await supabase.auth.getUser();
-  return data?.user?.id ?? null;
-}
-
-// ── Field mapping: local POS record → remote Supabase row ──
-
-function computeArrivalDatetime(departureIso: string): string {
-  const dep = new Date(departureIso);
-  if (isNaN(dep.getTime())) return new Date(Date.now() + 8 * 3600_000).toISOString();
-  dep.setHours(dep.getHours() + 8);
-  return dep.toISOString();
-}
-
-function mapDepartInsert(payload: Record<string, unknown>): Record<string, unknown> {
-  const p = payload;
-  const status = p.cancelled ? 'annule' : p.cloture ? 'termine' : (p.status as string === 'confirmed' ? 'en_cours' : 'planifie');
-  const depIso = p.departure_datetime as string;
-
-  return {
-    id: p.id,
-    route_id: p.route_id ?? null,
-    bus_id: p.bus_id ?? null,
-    driver_id: p.driver_id ?? null,
-    departure_station_id: p.station_id ?? null,
-    arrival_station_id: p.arrival_station_id ?? null,
-    departure_datetime: depIso,
-    arrival_datetime: computeArrivalDatetime(depIso),
-    status,
-    seats_available: p.seats_total ?? 0,
-    seats_reserved: p.seats_sold ?? 0,
-    route_name: p.route_name ?? null,
-    source: 'guichet',
-    counter_id: p.counter_id ?? null,
-    departure_number: p.departure_number ?? null,
-    route_number: p.route_number ?? null,
-    created_at: p.created_at ?? nowIso(),
-    updated_at: p.updated_at ?? nowIso(),
-    is_ramassage: false,
-    is_anticipated: false,
-  };
-}
-
-function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unknown> | null {
-  const p = payload;
-  const result: Record<string, unknown> = {};
-
-  if (p.seats_sold !== undefined) result.seats_reserved = p.seats_sold;
-  if (p.seats_total !== undefined) result.seats_available = p.seats_total;
-  if (p.cancelled === true) result.status = 'annule';
-  if (p.cloture === true) result.status = 'termine';
-  if (p.confirmed === true) result.status = 'en_cours';
-  if (p.status !== undefined && !result.status) result.status = p.status;
-  if (p.route_name !== undefined) result.route_name = p.route_name;
-  if (p.route_number !== undefined) result.route_number = p.route_number;
-  if (p.bus_id !== undefined) result.bus_id = p.bus_id;
-  if (p.driver_id !== undefined) result.driver_id = p.driver_id;
-  if (p.station_id !== undefined) result.departure_station_id = p.station_id;
-  if (p.departure_datetime !== undefined) {
-    result.departure_datetime = p.departure_datetime;
-    result.arrival_datetime = computeArrivalDatetime(p.departure_datetime as string);
-  }
-
-  result.updated_at = nowIso();
-
-  if (Object.keys(result).length <= 1) return null;
-  return result;
-}
-
-function mapTicketInsert(payload: Record<string, unknown>): Record<string, unknown> {
-  const p = payload;
-  const seats = Array.isArray(p.seat_numbers) && (p.seat_numbers as unknown[]).length > 0
-    ? p.seat_numbers
-    : p.seat_number != null ? [String(p.seat_number)] : [];
-
-  const result: Record<string, unknown> = {
-    id: p.id,
-    schedule_id: p.depart_id,
-    passenger_name: (p.passenger_name as string) || 'Passager',
-    passenger_phone: p.passenger_phone ?? null,
-    seat_numbers: seats,
-    total_seats: (seats as unknown[]).length || 1,
-    total_price: p.price ?? 0,
-    status: p.status === 'cancelled' ? 'annulee' : 'confirmee',
-    payment_status: p.status === 'cancelled' ? 'remboursee' : 'payee',
-    booking_reference: p.ticket_number ?? null,
-    created_at: p.created_at ?? nowIso(),
-    updated_at: p.updated_at ?? nowIso(),
-  };
-
-  if (p.destination) result.destination_city_name = p.destination;
-
-  return result;
-}
-
-function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unknown> | null {
-  const p = payload;
-  const result: Record<string, unknown> = {};
-
-  if (p.status !== undefined) {
-    result.status = p.status === 'cancelled' ? 'annulee' : 'confirmee';
-    result.payment_status = p.status === 'cancelled' ? 'remboursee' : 'payee';
-  }
-  if (p.passenger_name !== undefined) result.passenger_name = p.passenger_name;
-  if (p.passenger_phone !== undefined) result.passenger_phone = p.passenger_phone;
-  if (p.price !== undefined) result.total_price = p.price;
-  if (p.depart_id !== undefined) result.schedule_id = p.depart_id;
-  if (p.seat_number !== undefined) {
-    result.seat_numbers = [String(p.seat_number)];
-    result.total_seats = 1;
-  }
-
-  result.updated_at = nowIso();
-
-  if (Object.keys(result).length <= 1) return null;
-  return result;
-}
-
-function mapBagageInsert(payload: Record<string, unknown>): Record<string, unknown> {
-  const p = payload;
-  return {
-    id: p.id,
-    baggage_number: p.bagage_number ?? `BAG-${Date.now()}`,
-    schedule_id: p.depart_id ?? null,
-    reservation_id: p.ticket_id ?? null,
-    destination: p.destination ?? '',
-    price: p.price ?? 0,
-    seat_number: null,
-    bus_registration: p.car_plate ?? null,
-    description: p.description ?? null,
-    owner_name: p.owner_name ?? '',
-    owner_phone: p.owner_phone ?? '',
-    has_ticket: p.with_ticket ?? false,
-    station_id: p.station_id ?? null,
-    counter_id: p.counter_id ?? null,
-    created_at: p.created_at ?? nowIso(),
-  };
-}
-
-const EXPENSE_TYPE_MAP: Record<string, string> = {
-  'carburant compl.': 'carburant_complement',
-  'carburant': 'carburant_complement',
-  'péage': 'peage',
-  'peage': 'peage',
-  'frais de route': 'ration',
-  'frais route': 'ration',
-  'ration': 'ration',
-  'autre': 'autres',
-  'autres': 'autres',
-};
-
-function normalizeExpenseType(raw: string | undefined): string {
-  if (!raw) return 'autres';
-  const key = raw.trim().toLowerCase();
-  return EXPENSE_TYPE_MAP[key] ?? 'autres';
-}
-
-const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage']);
-
-async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const p = payload;
-  const chargeType = normalizeExpenseType((p.type as string) ?? (p.label as string));
-  const scheduleId = (p.depart_id as string) ?? null;
-
-  const row = {
-    id: p.id,
-    schedule_id: scheduleId,
-    counter_id: p.counter_id ?? null,
-    station_id: p.station_id ?? null,
-    bus_id: p.bus_id ?? null,
-    charge_type: chargeType,
-    description: (p.description as string) || (p.label as string) || '',
-    amount: p.amount ?? 0,
-    charge_date: (p.expense_date as string) ?? new Date().toISOString().slice(0, 10),
-    status: 'en_attente',
-    created_at: p.created_at ?? nowIso(),
-  };
-
-  if (UNIQUE_CHARGE_TYPES.has(chargeType) && scheduleId) {
-    const { data: existing } = await supabase
-      .from('counter_charges')
-      .select('id')
-      .eq('schedule_id', scheduleId)
-      .eq('charge_type', chargeType)
-      .maybeSingle();
-    if (existing) {
-      await supabase
-        .from('counter_charges')
-        .update({
-          amount: row.amount,
-          description: row.description,
-          charge_date: row.charge_date,
-          updated_at: nowIso(),
-        })
-        .eq('id', existing.id);
-      return null;
-    }
-  }
-  return row;
-}
 
 // Fields that are LOCAL ONLY — updates containing ONLY these should not be sent to remote
 const LOCAL_ONLY_UPDATE_FIELDS = new Set([
@@ -246,7 +39,7 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
   return false;
 }
 
-// ── Public API: same signatures as before, but now writes to Supabase in real-time ──
+// ── Public API: offline-first — always write locally, then sync/queue ──
 
 export async function localInsert<
   T extends { id: string; created_at: string; updated_at: string; synced?: boolean },
@@ -256,49 +49,30 @@ export async function localInsert<
 ): Promise<T> {
   const id = record.id ?? uuid();
   const ts = nowIso();
+  const online = isOnline();
   const full = {
     ...record,
     id,
     created_at: record.created_at ?? ts,
     updated_at: ts,
-    synced: true,
+    synced: online,
   } as unknown as T;
 
-  // Write to Supabase immediately
-  const table = TABLE_MAP[store];
-  let remotePayload: Record<string, unknown>;
+  // Always write to local IndexedDB first (offline-first)
+  await (db[store] as any).put(full);
 
-  if (store === 'departs') {
-    remotePayload = mapDepartInsert(full as unknown as Record<string, unknown>);
-    const userId = await getCurrentUserId();
-    if (userId) remotePayload.created_by = userId;
-  } else if (store === 'tickets') {
-    remotePayload = mapTicketInsert(full as unknown as Record<string, unknown>);
-    const userId = await getCurrentUserId();
-    if (userId) remotePayload.booked_by = userId;
-  } else if (store === 'bagages') {
-    remotePayload = mapBagageInsert(full as unknown as Record<string, unknown>);
-    const userId = await getCurrentUserId();
-    if (userId) remotePayload.sold_by = userId;
-  } else if (store === 'depenses') {
-    const depensePayload = await mapDepenseInsert(full as unknown as Record<string, unknown>);
-    if (depensePayload) {
-      remotePayload = depensePayload;
-      const userId = await getCurrentUserId();
-      if (userId) remotePayload.created_by = userId;
-    } else {
-      await (db[store] as any).put(full);
-      return full;
+  // Then attempt remote sync (or queue if offline)
+  try {
+    const result = await enqueueInsert(store, full as unknown as Record<string, unknown>);
+    if (!result.queued) {
+      // Successfully synced — mark as synced
+      await (db[store] as any).put({ ...full, synced: true });
     }
-  } else {
-    return full;
+  } catch (err) {
+    // Network error — record stays locally with synced=false
+    // It will be synced when connection returns
   }
 
-  const { error } = await supabase.from(table).upsert(remotePayload);
-  if (error) throw error;
-
-  // Also keep in local IndexedDB for POS display
-  await (db[store] as any).put(full);
   return full;
 }
 
@@ -312,39 +86,46 @@ export async function localUpdate<
   const existing = await (db[store] as any).get(id);
   if (!existing) return null;
 
+  const online = isOnline();
   const updated = {
     ...existing,
     ...patch,
     id,
     updated_at: nowIso(),
-    synced: true,
+    synced: online,
   } as unknown as T;
 
-  // Write to Supabase if there are remotely-mappable fields
-  const patchRecord = patch as unknown as Record<string, unknown>;
-  let remotePayload: Record<string, unknown> | null = null;
-
-  if (store === 'departs') {
-    remotePayload = mapDepartUpdate({ id, ...patchRecord });
-  } else if (store === 'tickets') {
-    remotePayload = mapTicketUpdate({ id, ...patchRecord });
-  }
-
-  if (remotePayload && hasRemoteMappableFields(store, patchRecord)) {
-    const table = TABLE_MAP[store];
-    const { error } = await supabase.from(table).update(remotePayload).eq('id', id);
-    if (error && !error.message.includes('0 rows')) throw error;
-  }
-
+  // Always write locally first
   await (db[store] as any).put(updated);
+
+  // Then sync/queue remotely
+  const patchRecord = patch as unknown as Record<string, unknown>;
+  if (hasRemoteMappableFields(store, patchRecord)) {
+    try {
+      const result = await enqueueUpdate(store, id, patchRecord);
+      if (!result.queued) {
+        await (db[store] as any).put({ ...updated, synced: true });
+      }
+    } catch {
+      // Network error — local update is preserved, will sync later
+    }
+  } else {
+    // No remote-mappable fields — mark as synced since there's nothing to send
+    await (db[store] as any).put({ ...updated, synced: true });
+  }
+
   return updated;
 }
 
 export async function localDelete(store: StoreName, id: string): Promise<void> {
-  const table = TABLE_MAP[store];
-  const { error } = await supabase.from(table).delete().eq('id', id);
-  if (error && !error.message.includes('0 rows')) throw error;
+  // Delete locally first
   await (db[store] as any).delete(id);
+  // Then sync/queue
+  try {
+    await enqueueDelete(store, id);
+  } catch {
+    // Network error — deletion will be synced later
+  }
 }
 
 export async function getAll<T>(store: StoreName): Promise<T[]> {
@@ -359,10 +140,17 @@ export async function getById<T extends { id: string }>(
 }
 
 export async function pendingCount(): Promise<number> {
-  return 0;
+  return getPendingCount();
 }
 
 // ── Sync from server: pull schedule & ticket changes made externally (e.g. admin change requests) ──
+
+function computeArrivalDatetime(departureIso: string): string {
+  const dep = new Date(departureIso);
+  if (isNaN(dep.getTime())) return new Date(Date.now() + 8 * 3600_000).toISOString();
+  dep.setHours(dep.getHours() + 8);
+  return dep.toISOString();
+}
 
 function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, unknown> {
   const depIso = s.departure_datetime as string;
@@ -432,6 +220,7 @@ function mapRemoteReservationToLocalTicket(r: Record<string, unknown>): Record<s
 }
 
 export async function syncDepartsAndTicketsFromServer(stationId?: string): Promise<void> {
+  if (!isOnline()) return;
   try {
     const todayStr = new Date().toISOString().slice(0, 10);
     let scheduleQuery = supabase
