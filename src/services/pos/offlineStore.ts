@@ -54,6 +54,7 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     source: 'guichet',
     counter_id: p.counter_id ?? null,
     departure_number: p.departure_number ?? null,
+    route_number: p.route_number ?? null,
     created_at: p.created_at ?? nowIso(),
     updated_at: p.updated_at ?? nowIso(),
     is_ramassage: false,
@@ -72,6 +73,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.confirmed === true) result.status = 'en_cours';
   if (p.status !== undefined && !result.status) result.status = p.status;
   if (p.route_name !== undefined) result.route_name = p.route_name;
+  if (p.route_number !== undefined) result.route_number = p.route_number;
   if (p.bus_id !== undefined) result.bus_id = p.bus_id;
   if (p.driver_id !== undefined) result.driver_id = p.driver_id;
   if (p.station_id !== undefined) result.departure_station_id = p.station_id;
@@ -221,7 +223,7 @@ async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Recor
 // Fields that are LOCAL ONLY — updates containing ONLY these should not be sent to remote
 const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'mt_ticket', 'mt_bagage', 'tot_depense', 'solde', 'caisse',
-  'cloture_at', 'cloture_by', 'departure_number', 'route_number',
+  'cloture_at', 'cloture_by', 'departure_number',
   'bus_plate', 'bus_name', 'driver_name', 'convoyeur_id', 'convoyeur_name',
   'apprenti_id', 'apprenti_name', 'departure_date', 'departure_time',
   'is_ac', 'seats_from', 'seat_allocations', 'station_name',
@@ -234,7 +236,7 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
   if (keys.length === 0) return false;
 
   if (entity === 'departs') {
-    const remoteMappable = ['route_id', 'bus_id', 'driver_id', 'station_id', 'departure_datetime', 'status', 'seats_total', 'seats_sold', 'route_name', 'confirmed', 'cancelled', 'cloture'];
+    const remoteMappable = ['route_id', 'bus_id', 'driver_id', 'station_id', 'departure_datetime', 'status', 'seats_total', 'seats_sold', 'route_name', 'route_number', 'confirmed', 'cancelled', 'cloture'];
     return keys.some(k => remoteMappable.includes(k));
   }
   if (entity === 'tickets') {
@@ -393,7 +395,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     is_convoi: s.status === 'convoi',
     is_retard: s.status === 'retard',
     departure_number: s.departure_number ?? null,
-    route_number: s.route_number ?? null,
+    route_number: (s as any).route_number ?? s.route_number ?? null,
     mt_ticket: 0,
     mt_bagage: 0,
     tot_depense: 0,

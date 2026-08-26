@@ -122,7 +122,7 @@ export default function BagagisteBaggageSale() {
       const { data, error } = await supabase
         .from('schedules')
         .select(`
-          id, route_name, departure_datetime, status, source, departure_number, bus_id,
+          id, route_name, departure_datetime, status, source, departure_number, route_number, bus_id,
           bus:bus_id(registration_number),
           arrival_station:arrival_station_id(name)
         `)
@@ -169,7 +169,7 @@ export default function BagagisteBaggageSale() {
           departure_datetime: s.departure_datetime,
           status: s.status || 'planifie',
           bus_registration: busReg,
-          departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.departure_number ?? null) : null),
+          departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.route_number ?? s.departure_number ?? null) : null),
           source: s.source || 'chef_gare',
         };
       }));
