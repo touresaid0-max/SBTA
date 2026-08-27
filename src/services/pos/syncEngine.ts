@@ -372,7 +372,55 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
 
   // upsert ensures idempotency — if the UUID already exists (retry), it's a no-op
   const { error } = await supabase.from(table).upsert(payload);
-  if (error) throw error;
+  if (error) {
+    // Baggage number collision: another guichet generated the same number.
+    // Regenerate a unique number and retry.
+    if (store === 'bagages' && error.message.includes('baggage_number')) {
+      const newNumber = await generateUniqueBagageNumber();
+      payload.baggage_number = newNumber;
+      const { error: retryError } = await supabase.from(table).upsert(payload);
+      if (retryError) throw retryError;
+      // Update local record with the new number
+      const localId = record.id as string;
+      const existing = await (db.bagages as any).get(localId);
+      if (existing) {
+        await (db.bagages as any).put({ ...existing, bagage_number: newNumber, synced: true });
+      }
+      return;
+    }
+    throw error;
+  }
+}
+
+async function generateUniqueBagageNumber(): Promise<string> {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  const datePart = `${dd}${mm}${yyyy}`;
+  // Query server for the max existing number with today's prefix to avoid collision
+  try {
+    const { data, error: qErr } = await supabase
+      .from('baggage_tickets')
+      .select('baggage_number')
+      .like('baggage_number', `${datePart}%`)
+      .order('baggage_number', { ascending: false })
+      .limit(1);
+    if (!qErr && data && data.length > 0) {
+      const lastNum = data[0].baggage_number as string;
+      const match = lastNum.match(/(\d+)-1\/(\d+)$/);
+      if (match) {
+        const nextSeq = parseInt(match[1], 10) + 1;
+        const seqStr = String(nextSeq).padStart(5, '0');
+        return `${datePart}${seqStr}-1/${nextSeq}`;
+      }
+    }
+  } catch {
+    // fall through to timestamp-based unique
+  }
+  // Fallback: use timestamp to guarantee uniqueness
+  const ts = Date.now().toString().slice(-6);
+  return `${datePart}${ts}-1/1`;
 }
 
 async function executeUpdate(store: StoreName, id: string, patch: Record<string, unknown>): Promise<void> {
