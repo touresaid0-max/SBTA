@@ -401,59 +401,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
             </div>
             )}
 
-            {/* Ramassage */}
-            <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Ramassage</label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => !forceRamassage && setIsRamassage(false)}
-                  disabled={forceRamassage}
-                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors disabled:opacity-50"
-                  style={{
-                    borderColor: !isRamassage ? 'var(--primary)' : 'var(--border)',
-                    color: !isRamassage ? 'var(--primary)' : 'var(--text-secondary)',
-                    backgroundColor: !isRamassage ? 'var(--primary-light)' : 'var(--surface)',
-                    cursor: forceRamassage ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  Non
-                </button>
-                <button
-                  type="button"
-                  onClick={() => !forceRamassage && setIsRamassage(true)}
-                  disabled={forceRamassage}
-                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors disabled:opacity-50"
-                  style={{
-                    borderColor: isRamassage ? 'var(--primary)' : 'var(--border)',
-                    color: isRamassage ? 'var(--primary)' : 'var(--text-secondary)',
-                    backgroundColor: isRamassage ? 'var(--primary-light)' : 'var(--surface)',
-                    cursor: forceRamassage ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  Oui
-                </button>
-              </div>
-              {isRamassage && (
-                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {forceRamassage
-                    ? 'Ce départ sera enregistré comme Ramassage. Une notification sera envoyée à la gare d\'arrivée à la clôture.'
-                    : 'Le départ est enregistré comme Ramassage. Une notification sera envoyée à la gare d\'arrivée à la clôture.'}
-                </p>
-              )}
-            </div>
-
-            {/* Convoyeur */}
-            <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                Convoyeur {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
-              </label>
-              <select value={convoyeurId} disabled={isLinked} onChange={e => setConvoyeurId(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'pointer', opacity: isLinked ? 0.7 : 1 }}>
-                <option value="">Aucun</option>
-                {chauffeurs.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-              </select>
-            </div>
-
             {/* Nbre siège */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
