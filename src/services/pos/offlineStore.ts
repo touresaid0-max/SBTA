@@ -29,7 +29,7 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
   if (keys.length === 0) return false;
 
   if (entity === 'departs') {
-    const remoteMappable = ['route_id', 'bus_id', 'driver_id', 'station_id', 'departure_datetime', 'status', 'seats_total', 'seats_sold', 'route_name', 'route_number', 'confirmed', 'cancelled', 'cloture'];
+    const remoteMappable = ['route_id', 'bus_id', 'driver_id', 'station_id', 'arrival_station_id', 'is_ramassage', 'departure_datetime', 'status', 'seats_total', 'seats_sold', 'route_name', 'route_number', 'confirmed', 'cancelled', 'cloture'];
     return keys.some(k => remoteMappable.includes(k));
   }
   if (entity === 'tickets') {
@@ -260,6 +260,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
             other_station_name: existing.other_station_name,
             ramassage_notified: existing.ramassage_notified,
             arrival_station_id: existing.arrival_station_id,
+            is_ramassage: existing.is_ramassage ?? localRecord.is_ramassage,
             source: existing.source,
           });
         } else {

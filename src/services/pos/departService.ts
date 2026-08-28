@@ -174,6 +174,15 @@ export async function cloturerDepart(
   });
 
   if (existing?.is_ramassage && !existing.ramassage_notified) {
+    // Ensure the schedule in Supabase has is_ramassage = true so the destination station
+    // can identify this departure as a ramassage in their list
+    try {
+      await supabase
+        .from('schedules')
+        .update({ is_ramassage: true, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+    } catch { /* best-effort sync */ }
+
     let arrivalStationId = existing.arrival_station_id;
     let destName: string | undefined;
     let originName: string | undefined;

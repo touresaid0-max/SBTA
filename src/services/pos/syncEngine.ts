@@ -81,7 +81,7 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     route_number: p.route_number ?? null,
     created_at: p.created_at ?? nowIso(),
     updated_at: p.updated_at ?? nowIso(),
-    is_ramassage: false,
+    is_ramassage: p.is_ramassage ?? false,
     is_anticipated: false,
   };
 }
@@ -100,6 +100,8 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.bus_id !== undefined) result.bus_id = p.bus_id;
   if (p.driver_id !== undefined) result.driver_id = p.driver_id;
   if (p.station_id !== undefined) result.departure_station_id = p.station_id;
+  if (p.arrival_station_id !== undefined) result.arrival_station_id = p.arrival_station_id;
+  if (p.is_ramassage !== undefined) result.is_ramassage = p.is_ramassage;
   if (p.departure_datetime !== undefined) {
     result.departure_datetime = p.departure_datetime;
     result.arrival_datetime = computeArrivalDatetime(p.departure_datetime as string);
