@@ -1127,22 +1127,22 @@ export default function POSVente() {
             </div>
 
             {/* ── Loyalty block ── */}
-            <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)', opacity: 0.55, filter: 'grayscale(1)' }}>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                  <Users className="w-4 h-4" /> Fidélité
+                <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                  <Users className="w-4 h-4" /> Fidélité <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />
                 </h3>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={loyaltyEnabled} onChange={e => { setLoyaltyEnabled(e.target.checked); if (!e.target.checked) setLoyaltyNewCard(false); }} className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
-                  <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Activer</span>
+                <label className="flex items-center gap-2 cursor-not-allowed">
+                  <input type="checkbox" checked={loyaltyEnabled} disabled onChange={e => { setLoyaltyEnabled(e.target.checked); if (!e.target.checked) setLoyaltyNewCard(false); }} className="w-4 h-4" style={{ accentColor: 'var(--text-muted)' }} />
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Activer</span>
                 </label>
               </div>
 
               {loyaltyEnabled && (
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={loyaltyNewCard} onChange={e => setLoyaltyNewCard(e.target.checked)} className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
-                    <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Nouvelle carte</span>
+                <div className="space-y-3" style={{ pointerEvents: 'none' }}>
+                  <label className="flex items-center gap-2 cursor-not-allowed">
+                    <input type="checkbox" checked={loyaltyNewCard} disabled onChange={e => setLoyaltyNewCard(e.target.checked)} className="w-4 h-4" style={{ accentColor: 'var(--text-muted)' }} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Nouvelle carte</span>
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
