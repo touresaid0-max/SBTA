@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { supabase } from '@/services/supabase';
-import { Bus, Search, MapPin, Hash, Loader2, CheckCircle, Clock, Lock, Printer, AlertCircle, FileText } from 'lucide-react';
+import { Bus, Search, MapPin, Hash, Loader2, CheckCircle, Clock, Lock, Printer, AlertCircle, FileText, PlusCircle } from 'lucide-react';
 import { printRamassageBordereau } from '@/services/pos/printService';
 import RamassageReportView from '@/components/shared/RamassageReportView';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
@@ -33,6 +34,7 @@ type RamassageNotif = {
 export default function POSRamassage() {
   const { session } = usePOSSession();
   const stationId = session?.station_id;
+  const navigate = useNavigate();
 
   const [notifs, setNotifs] = useState<RamassageNotif[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,6 +203,13 @@ export default function POSRamassage() {
               : { color: 'var(--text-secondary)' }}
           >
             <FileText className="w-4 h-4" /> Rapport ramassage
+          </button>
+          <button
+            onClick={() => navigate('/guichet/ramassage/nouveau')}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-colors"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <PlusCircle className="w-4 h-4" /> Nouveau
           </button>
         </div>
       </div>

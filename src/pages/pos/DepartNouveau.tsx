@@ -19,7 +19,7 @@ import { checkAndApplyPendingTransfers } from '@/services/pos/transferService';
 import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair, Lock, Info } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 
-export default function POSDepartNouveau() {
+export default function POSDepartNouveau({ forceRamassage = false }: { forceRamassage?: boolean }) {
   const navigate = useNavigate();
   const { session } = usePOSSession();
 
@@ -91,6 +91,10 @@ export default function POSDepartNouveau() {
   useEffect(() => {
     loadRefs();
   }, [loadRefs]);
+
+  useEffect(() => {
+    if (forceRamassage) setIsRamassage(true);
+  }, [forceRamassage]);
 
   useEffect(() => {
     if (session?.station_id && ligneId) {
@@ -256,7 +260,7 @@ export default function POSDepartNouveau() {
   const fieldStyle = { borderColor: 'var(--border)', backgroundColor: 'var(--surface)' as const };
 
   return (
-    <POSLayout showBack stationName={session?.station_name} activeRoute="Nouveau départ">
+    <POSLayout showBack stationName={session?.station_name} activeRoute={forceRamassage ? 'Nouveau ramassage' : 'Nouveau départ'}>
       {loadingRefs ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary)' }} />
@@ -403,24 +407,28 @@ export default function POSDepartNouveau() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsRamassage(false)}
-                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors"
+                  onClick={() => !forceRamassage && setIsRamassage(false)}
+                  disabled={forceRamassage}
+                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors disabled:opacity-50"
                   style={{
                     borderColor: !isRamassage ? 'var(--primary)' : 'var(--border)',
                     color: !isRamassage ? 'var(--primary)' : 'var(--text-secondary)',
                     backgroundColor: !isRamassage ? 'var(--primary-light)' : 'var(--surface)',
+                    cursor: forceRamassage ? 'not-allowed' : 'pointer',
                   }}
                 >
                   Non
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsRamassage(true)}
-                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors"
+                  onClick={() => !forceRamassage && setIsRamassage(true)}
+                  disabled={forceRamassage}
+                  className="flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-colors disabled:opacity-50"
                   style={{
                     borderColor: isRamassage ? 'var(--primary)' : 'var(--border)',
                     color: isRamassage ? 'var(--primary)' : 'var(--text-secondary)',
                     backgroundColor: isRamassage ? 'var(--primary-light)' : 'var(--surface)',
+                    cursor: forceRamassage ? 'not-allowed' : 'pointer',
                   }}
                 >
                   Oui
@@ -428,7 +436,9 @@ export default function POSDepartNouveau() {
               </div>
               {isRamassage && (
                 <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Le départ est enregistré comme Ramassage. Une notification sera envoyée à la gare d'arrivée à la clôture.
+                  {forceRamassage
+                    ? 'Ce départ sera enregistré comme Ramassage. Une notification sera envoyée à la gare d\'arrivée à la clôture.'
+                    : 'Le départ est enregistré comme Ramassage. Une notification sera envoyée à la gare d\'arrivée à la clôture.'}
                 </p>
               )}
             </div>
@@ -686,7 +696,7 @@ export default function POSDepartNouveau() {
                 cursor: canSubmit ? 'pointer' : 'not-allowed',
               }}
             >
-              {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Créer le départ'}
+              {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : forceRamassage ? 'Créer le ramassage' : 'Créer le départ'}
             </button>
             {!canSubmit && missingFields.length > 0 && (
               <p className="text-xs mt-1.5 flex items-center gap-1" style={{ color: 'var(--danger)' }}>

@@ -670,7 +670,7 @@ export default function POSDeparts() {
                       className="cursor-pointer transition-colors"
                       style={{
                         borderTop: '1px solid var(--border)',
-                        backgroundColor: selectedIds.has(d.id) ? 'var(--primary-light)' : isSelected ? 'var(--primary-light)' : d.cancelled ? 'var(--danger-light)' : d.status === 'panne' ? 'var(--warning-light)' : 'transparent',
+                        backgroundColor: selectedIds.has(d.id) ? 'var(--primary-light)' : isSelected ? 'var(--primary-light)' : d.cancelled ? 'var(--danger-light)' : d.is_ramassage ? '#E0F2FE' : d.status === 'panne' ? 'var(--warning-light)' : 'transparent',
                         opacity: d.cancelled ? 0.6 : 1,
                       }}
                     >
@@ -712,6 +712,7 @@ export default function POSDeparts() {
                       <td className={td}>
                         {d.cancelled ? <span style={{ color: 'var(--danger)' }}>Annulé</span>
                           : d.cloture ? <span style={{ color: 'var(--danger)' }}>Clôturé</span>
+                          : d.is_ramassage ? <span style={{ color: '#0EA5E9' }}>Ramassage</span>
                           : d.status === 'panne' ? <span style={{ color: 'var(--warning)' }}>Panne</span>
                           : d.status === 'convoi' ? <span style={{ color: 'var(--info)' }}>Convoi</span>
                           : d.status === 'retard' ? <span style={{ color: 'var(--warning)' }}>Retard</span>
