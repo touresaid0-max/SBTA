@@ -48,6 +48,7 @@ interface ExistingBusConfig {
   driverPosition: 'gauche' | 'droite'
   sleepingType: 'aucun' | 'couchettes' | 'mixte'
   maxCapacity: number
+  seatsSoldFrom?: number
   aisleAfterColumns: number[]
   hasBackRow: boolean
   backRowSeats: number
@@ -346,6 +347,7 @@ export default function BusWizard({
     sleepingType: existingConfig?.sleepingType ?? 'aucun',
     totalSeats: 50,
     maxCapacity: existingConfig?.maxCapacity ?? 50,
+    seatsSoldFrom: existingConfig?.seatsSoldFrom ?? 1,
   }))
 
   const [deckParams, setDeckParams] = useState<DeckParameters>(() => ({
@@ -545,6 +547,7 @@ export default function BusWizard({
         bus_deck_type: params.deckType,
         sleeping_type: params.sleepingType,
         max_allowed_capacity: params.maxCapacity,
+        seats_sold_from: params.seatsSoldFrom,
       }
 
       const activeDeck = isSimple ? simpleDeck : lowerDeck

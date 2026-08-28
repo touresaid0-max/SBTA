@@ -107,6 +107,7 @@ export default function POSDepartNouveau() {
     const bus = vehicules.find(v => v.id === id);
     if (bus) {
       setSeatsTotal(bus.capacity);
+      setSeatsFrom(bus.seats_sold_from ?? 1);
     }
     setLinkedParent(null);
     setSeatRangeInfo(null);
@@ -454,9 +455,10 @@ export default function POSDepartNouveau() {
             {/* Siège à partir de */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                Siège à partir de {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+                Siège vendu à partir de <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />
               </label>
-              <input type="number" min={0} disabled={isLinked} value={seatsFrom} onChange={e => setSeatsFrom(parseInt(e.target.value) || 0)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <input type="number" min={1} readOnly value={seatsFrom} className={fieldInput} style={{ ...fieldStyle, cursor: 'not-allowed', opacity: 0.7 }} />
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Valeur définie par l'Admin, non modifiable</p>
             </div>
           </div>
 

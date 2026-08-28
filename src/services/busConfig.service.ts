@@ -53,6 +53,7 @@ interface BusData {
   amenities?: string[]
   seat_config_id?: string
   max_allowed_capacity?: number
+  seats_sold_from?: number
   sleeping_type?: string
   [key: string]: unknown
 }

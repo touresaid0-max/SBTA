@@ -10,6 +10,7 @@ export interface BusParameters {
   sleepingType: SleepingType
   totalSeats: number
   maxCapacity: number
+  seatsSoldFrom: number
 }
 
 export interface DeckParameters {
@@ -260,6 +261,19 @@ export default function BusParametersStep({ params, onChange, deckParams, onDeck
               <span className="text-xs text-[#4A6B55]">sièges</span>
             </>
           )}
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-sm font-semibold text-[#1A2E22] mb-1.5">Siège vendu à partir de</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={params.seatsSoldFrom}
+            onChange={e => updateParams({ seatsSoldFrom: Math.max(1, +e.target.value) })}
+            className="w-32 px-4 py-2.5 border-2 border-[#E2EAE5] rounded-xl focus:outline-none focus:border-[#0B7439] transition-colors"
+          />
+          <p className="mt-1 text-xs text-[#4A6B55]">Numéro de siège à partir duquel la vente est autorisée au Guichet POS. Cette valeur est transmise automatiquement au Guichet et ne peut pas être modifiée par le Guichetier.</p>
         </div>
       </div>
 

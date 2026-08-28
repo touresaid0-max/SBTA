@@ -51,6 +51,7 @@ interface BusData {
   driver_position?: string;
   sleeping_type?: string;
   max_allowed_capacity?: number;
+  seats_sold_from?: number;
   lower_deck_config_id?: string;
   upper_deck_config_id?: string;
   companies?: { name: string };
@@ -191,6 +192,7 @@ export default function Buses() {
         driverPosition: driverPos,
         sleepingType,
         maxCapacity: bus.max_allowed_capacity ?? bus.capacity,
+        seatsSoldFrom: bus.seats_sold_from ?? 1,
         aisleAfterColumns,
         hasBackRow,
         backRowSeats: cfg.back_row_seats ?? 0,
@@ -215,6 +217,7 @@ export default function Buses() {
           driverPosition: driverPos,
           sleepingType,
           maxCapacity: bus.max_allowed_capacity ?? bus.capacity,
+          seatsSoldFrom: bus.seats_sold_from ?? 1,
           aisleAfterColumns,
           hasBackRow,
           backRowSeats: lower?.back_row_seats ?? 0,

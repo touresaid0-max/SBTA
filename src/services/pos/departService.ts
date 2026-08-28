@@ -6,7 +6,7 @@ import { supabase } from '@/services/supabase';
 export type { DepartRecord, SeatAllocation };
 
 export interface LigneRef { id: string; name: string; origin_station_id: string; destination_station_id: string; destination_city_id?: string; base_price: number; is_active: boolean }
-export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string; brand?: string; model?: string }
+export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string; brand?: string; model?: string; seats_sold_from?: number }
 export interface ChauffeurRef { id: string; full_name: string; email: string; role: string; employee_id?: string; phone?: string }
 export interface GareRef { id: string; name: string; city: string; city_id: string; agency_code: string; is_active: boolean }
 
