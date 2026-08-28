@@ -72,6 +72,7 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     departure_datetime: depIso,
     arrival_datetime: computeArrivalDatetime(depIso),
     status,
+    seats_total: p.seats_total ?? 0,
     seats_available: p.seats_total ?? 0,
     seats_reserved: p.seats_sold ?? 0,
     route_name: p.route_name ?? null,
@@ -90,7 +91,10 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   const p = payload;
   const result: Record<string, unknown> = {};
   if (p.seats_sold !== undefined) result.seats_reserved = p.seats_sold;
-  if (p.seats_total !== undefined) result.seats_available = p.seats_total;
+  if (p.seats_total !== undefined) {
+    result.seats_total = p.seats_total;
+    result.seats_available = p.seats_total;
+  }
   if (p.cancelled === true) result.status = 'annule';
   if (p.cloture === true) result.status = 'termine';
   if (p.confirmed === true) result.status = 'en_cours';
