@@ -11,7 +11,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, transferSeatsToStation } from '@/services/pos/departService';
+import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, getSeatNumbersForStation, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, transferSeatsToStation } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
@@ -163,12 +163,12 @@ export default function POSVente() {
   useEffect(() => {
     if (!structureMode) { setStructSelectedSeats([]); return; }
     if (!depart) return;
-    const range = session?.station_id ? getSeatRangeForStation(depart, session.station_id) : null;
+    const stationId = session?.station_id;
     const valid = structSelectedSeats.filter(s => {
       const n = parseInt(s.label, 10);
       if (Number.isNaN(n)) return false;
       if (n < depart.seats_from || n > depart.seats_total) return false;
-      if (range && (n < range.from || n > range.to)) return false;
+      if (stationId && !isSeatAllowedForStation(depart, stationId, n)) return false;
       if (soldSeats.includes(n)) return false;
       return true;
     });
@@ -293,12 +293,15 @@ export default function POSVente() {
   const isSecondaryStation = depart && session?.station_id && depart.station_id !== session.station_id;
 
   const hasAllocations = !!(depart?.seat_allocations && depart.seat_allocations.length > 0);
-  const stationRange = hasAllocations && session?.station_id ? getSeatRangeForStation(depart!, session.station_id) : null;
+  const stationSeatSet = useMemo(() => {
+    if (!hasAllocations || !depart || !session?.station_id) return null;
+    return new Set(getSeatNumbersForStation(depart, session.station_id));
+  }, [hasAllocations, depart, session?.station_id]);
 
   const scopedTickets = useMemo(() => {
-    if (!hasAllocations || !stationRange) return tickets;
-    return tickets.filter(t => t.seat_number >= stationRange.from && t.seat_number <= stationRange.to);
-  }, [tickets, hasAllocations, stationRange]);
+    if (!hasAllocations || !stationSeatSet) return tickets;
+    return tickets.filter(t => stationSeatSet.has(t.seat_number));
+  }, [tickets, hasAllocations, stationSeatSet]);
 
   const scopedBagages = useMemo(() => {
     if (!hasAllocations) return bagages.filter(b => b.description !== '__deleted__');
@@ -327,8 +330,10 @@ export default function POSVente() {
     if (!depart?.seat_allocations) return [];
     return depart.seat_allocations.filter(a => {
       if (a.station_id === session?.station_id) return false;
-      const sold = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled' && t.seat_number >= a.seat_from && t.seat_number <= a.seat_to).length;
-      const allocated = a.seat_to - a.seat_from + 1;
+      const aSeats = getSeatNumbersForStation(depart, a.station_id);
+      const aSeatSet = new Set(aSeats);
+      const sold = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled' && aSeatSet.has(t.seat_number)).length;
+      const allocated = aSeats.length;
       return allocated - sold > 0;
     });
   }, [depart?.seat_allocations, depart?.id, tickets, session?.station_id]);
@@ -402,7 +407,7 @@ export default function POSVente() {
       if (seat < depart.seats_from || seat > depart.seats_total) {
         setError(`Le siège n°${seat} est hors de la plage autorisée (${depart.seats_from}–${depart.seats_total})`); return;
       }
-      if (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to)) {
+      if (allowedSeatRange && !isSeatAllowedForStation(depart, session?.station_id ?? '', seat)) {
         const ownerStation = getStationNameForSeat(depart, seat);
         setError(ownerStation && ownerStation !== session?.station_name
           ? `Le siège n°${seat} est réservé à la gare de ${ownerStation}.`
@@ -638,15 +643,17 @@ export default function POSVente() {
                 </thead>
                 <tbody>
                   {depart.seat_allocations.map((a, i) => {
-                    const aSold = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled' && t.seat_number >= a.seat_from && t.seat_number <= a.seat_to).length;
-                    const aAllocated = a.seat_to - a.seat_from + 1;
+                    const aSeats = getSeatNumbersForStation(depart, a.station_id);
+                    const aSeatSet = new Set(aSeats);
+                    const aSold = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled' && aSeatSet.has(t.seat_number)).length;
+                    const aAllocated = aSeats.length;
                     const aFree = aAllocated - aSold;
                     return (
                     <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
                       <td className="px-2 py-2 text-base font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
                         {a.station_name}{a.station_id === session?.station_id ? ' (vous)' : ''}
                       </td>
-                      <td className="px-2 py-2 text-base text-center font-bold" style={{ color: 'var(--text-secondary)' }}>{a.seat_from} à {a.seat_to}</td>
+                      <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--text-secondary)' }}>{aSeats.join(', ')}</td>
                       <td className="px-2 py-2 text-sm text-center" style={{ color: 'var(--text-muted)' }}>{aAllocated}</td>
                       <td className="px-2 py-2 text-sm text-center" style={{ color: 'var(--success)' }}>{aSold}</td>
                       <td className="px-2 py-2 text-sm text-center" style={{ color: aFree > 0 ? 'var(--info)' : 'var(--text-muted)' }}>{aFree}</td>
@@ -940,7 +947,7 @@ export default function POSVente() {
                               const n = parseInt(seat.label, 10);
                               const isSelected = structSelectedSeats.some(s => s.id === seat.id);
                               const isSold = !Number.isNaN(n) && soldSeats.includes(n);
-                              const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to);
+                              const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && session?.station_id ? !isSeatAllowedForStation(depart, session.station_id, n) : false;
                               const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
                               const seatColor = isSelected
                                 ? 'bg-[#0B7439] border-[#085c2d] text-white'
@@ -995,7 +1002,7 @@ export default function POSVente() {
                                       const n = parseInt(seat.label, 10);
                                       const isSelected = structSelectedSeats.some(s => s.id === seat.id);
                                       const isSold = !Number.isNaN(n) && soldSeats.includes(n);
-                                      const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to);
+                                      const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && session?.station_id ? !isSeatAllowedForStation(depart, session.station_id, n) : false;
                                       const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
                                       const seatColor = isSelected ? 'bg-[#0B7439] border-[#085c2d] text-white' : isSold ? 'bg-red-500 border-red-600 text-white cursor-not-allowed' : isOutAllowed ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-[#0B7439] hover:text-[#0B7439] cursor-pointer';
                                       return (
@@ -1091,9 +1098,12 @@ export default function POSVente() {
                         )}
                       </div>
                       {/* Seat list */}
-                      {Array.from(
-                        { length: (allowedSeatRange?.to ?? depart.seats_total) - (allowedSeatRange?.from ?? depart.seats_from) + 1 },
-                        (_, i) => i + (allowedSeatRange?.from ?? depart.seats_from)
+                      {(session?.station_id && hasAllocations
+                        ? getSeatNumbersForStation(depart, session.station_id)
+                        : Array.from(
+                            { length: depart.seats_total - depart.seats_from + 1 },
+                            (_, i) => i + depart.seats_from
+                          )
                       ).map(n => {
                         const sold = soldSeats.includes(n);
                         const checked = selectedSeats.includes(n);

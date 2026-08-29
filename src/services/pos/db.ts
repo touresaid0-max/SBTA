@@ -8,6 +8,7 @@ export interface SeatAllocation {
   station_name: string;
   seat_from: number;
   seat_to: number;
+  seats?: number[];
 }
 
 export interface DepartRecord {
