@@ -157,17 +157,18 @@ export default function POSVente() {
   useEffect(() => {
     if (!structureMode) { setStructSelectedSeats([]); return; }
     if (!depart) return;
+    const range = session?.station_id ? getSeatRangeForStation(depart, session.station_id) : null;
     const valid = structSelectedSeats.filter(s => {
       const n = parseInt(s.label, 10);
       if (Number.isNaN(n)) return false;
       if (n < depart.seats_from || n > depart.seats_total) return false;
-      if (allowedSeatRange && (n < allowedSeatRange.from || n > allowedSeatRange.to)) return false;
+      if (range && (n < range.from || n > range.to)) return false;
       if (soldSeats.includes(n)) return false;
       return true;
     });
     const nums = valid.map(s => parseInt(s.label, 10)).sort((a, b) => a - b);
     setSelectedSeats(nums);
-  }, [structSelectedSeats, structureMode, depart, allowedSeatRange, soldSeats]);
+  }, [structSelectedSeats, structureMode, depart, session?.station_id, soldSeats]);
 
   // Clear structure selection when structure mode is turned off
   useEffect(() => {
