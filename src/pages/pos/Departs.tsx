@@ -5,16 +5,17 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
   getAllDeparts, updateDepart, type DepartRecord,
   type VehiculeRef, type ChauffeurRef,
-  seatsLibres, computeSolde,
+  seatsLibres,
   getSeatRangeForStation,
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
   getVehicules, getChauffeurs, getGares,
   findNextDepartForRoute, transferTicketsToDepart,
   renumberDepartsAfterCancellation,
+  computeStationScopedTotals,
 } from '@/services/pos/departService';
-import { getAll as getAllTickets, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
+import { getAll as getAllTickets, getAll as getAllRecords, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
-import { getDepenseTotalForDepart, getDepensesForDepart } from '@/services/pos/depenseService';
+import { getDepensesForDepart } from '@/services/pos/depenseService';
 import { getBagagesForDepart } from '@/services/pos/bagageService';
 import type { TicketRecord, BagageRecord, DepenseRecord } from '@/services/pos/db';
 import { printBorderauDepart, printBorderauRecettes } from '@/utils/printBordereau';
@@ -52,7 +53,7 @@ function toRow(d: DepartRecord, tickets: TicketRecord[], stationId?: string): De
       seats_allocated: allocated,
       seats_sold_station: sold,
       seats_libres: seatsLibresForStation(tickets, d, stationId),
-      solde_calc: computeSolde(d),
+      solde_calc: d.mt_ticket + d.mt_bagage - d.tot_depense,
     };
   }
   return {
@@ -60,7 +61,7 @@ function toRow(d: DepartRecord, tickets: TicketRecord[], stationId?: string): De
     seats_allocated: d.seats_total,
     seats_sold_station: d.seats_sold,
     seats_libres: seatsLibres(d),
-    solde_calc: computeSolde(d),
+    solde_calc: d.mt_ticket + d.mt_bagage - d.tot_depense,
   };
 }
 
@@ -85,16 +86,38 @@ function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
   }
 }
 
-async function printBordereauForDepart(depart: DepartRow): Promise<void> {
+async function printBordereauForDepart(depart: DepartRow, stationId?: string): Promise<void> {
   const [tickets, bagages, depenses] = await Promise.all([
     getAllTickets<TicketRecord>('tickets'),
     getBagagesForDepart(depart.id),
     getDepensesForDepart(depart.id),
   ]);
 
-  const activeTickets = tickets.filter(
+  const hasAllocations = !!(depart.seat_allocations && depart.seat_allocations.length > 0);
+  const seatRange = hasAllocations && stationId ? getSeatRangeForStation(depart, stationId) : null;
+
+  let activeTickets = tickets.filter(
     t => t.depart_id === depart.id && t.status !== 'cancelled'
   );
+  if (seatRange) {
+    activeTickets = activeTickets.filter(
+      t => t.seat_number >= seatRange.from && t.seat_number <= seatRange.to,
+    );
+  }
+
+  const stationTicketIds = new Set(activeTickets.map(t => t.id));
+  const scopedBagages = hasAllocations && stationId
+    ? bagages.filter(b => {
+        if (b.description === '__deleted__') return false;
+        if (b.ticket_id && stationTicketIds.has(b.ticket_id)) return true;
+        if (b.ticket_id) return false;
+        return stationId === depart.station_id;
+      })
+    : bagages.filter(b => b.description !== '__deleted__');
+
+  const scopedDepenses = hasAllocations && stationId
+    ? depenses.filter(d => d.description !== '__deleted__' && d.station_id === stationId)
+    : depenses.filter(d => d.description !== '__deleted__');
 
   // Group tickets by destination
   const groupsMap = new Map<string, TicketRecord[]>();
@@ -115,10 +138,10 @@ async function printBordereauForDepart(depart: DepartRow): Promise<void> {
   );
 
   const totalTicketAmount = activeTickets.reduce((sum, t) => sum + t.price, 0);
-  const totalBaggage = bagages.reduce((sum, b) => sum + b.price, 0);
+  const totalBaggage = scopedBagages.reduce((sum, b) => sum + b.price, 0);
 
   // Categorize expenses
-  const validDepenses = depenses.filter(d => d.description !== '__deleted__');
+  const validDepenses = scopedDepenses;
   const totalRations = validDepenses
     .filter(d => d.type.toLowerCase().includes('ration') || d.type.toLowerCase().includes('frais de route') || d.type.toLowerCase().includes('frais route'))
     .reduce((s, d) => s + d.amount, 0);
@@ -153,6 +176,7 @@ async function printBordereauForDepart(depart: DepartRow): Promise<void> {
     }
   } catch { /* keep defaults */ }
 
+  const totalSeats = seatRange ? seatRange.to - seatRange.from + 1 : depart.seats_total;
   const data: BordereauDepartData = {
     station_name: depart.station_name ?? '',
     departure_number: depart.route_number ?? depart.departure_number,
@@ -161,9 +185,9 @@ async function printBordereauForDepart(depart: DepartRow): Promise<void> {
     departure_time: depTime,
     registration_number: depart.bus_plate ?? '',
     driver_name: depart.driver_name ?? '',
-    total_seats: depart.seats_total,
+    total_seats: totalSeats,
     seats_sold: activeTickets.length,
-    seats_remaining: depart.seats_total - activeTickets.length,
+    seats_remaining: totalSeats - activeTickets.length,
     destination: destinationGroups[0]?.destination ?? '',
     unit_price: destinationGroups[0]?.unit_price ?? 0,
     total_ticket_amount: totalTicketAmount,
@@ -209,21 +233,21 @@ export default function POSDeparts() {
 
   const loadDeparts = useCallback(async () => {
     await syncDepartsAndTicketsFromServer(session?.station_id);
-    const [all, tickets] = await Promise.all([
+    const [all, tickets, allBagages, allDepenses] = await Promise.all([
       getAllDeparts(session?.station_id, session?.counter_id),
-      getAllTickets<TicketRecord>('tickets'),
+      getAllRecords<TicketRecord>('tickets'),
+      getAllRecords<BagageRecord>('bagages'),
+      getAllRecords<DepenseRecord>('depenses'),
     ]);
-    const expenseTotals = await Promise.all(
-      all.map(async d => [d.id, await getDepenseTotalForDepart(d.id)] as const),
-    );
-    const totalsByDepart = new Map(expenseTotals);
     const hydrated = all.map(d => {
-      const totDepense = totalsByDepart.get(d.id) ?? 0;
+      const totals = computeStationScopedTotals(d, tickets, allBagages, allDepenses, session?.station_id);
       return {
         ...d,
-        tot_depense: totDepense,
-        solde: d.mt_ticket + d.mt_bagage - totDepense,
-        caisse: d.mt_ticket + d.mt_bagage - totDepense,
+        mt_ticket: totals.mt_ticket,
+        mt_bagage: totals.mt_bagage,
+        tot_depense: totals.tot_depense,
+        solde: totals.solde,
+        caisse: totals.caisse,
       };
     });
     setAllTickets(tickets);
@@ -306,10 +330,26 @@ export default function POSDeparts() {
           getBagagesForDepart(d.id),
           getDepensesForDepart(d.id),
         ]);
-        const active = dTickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled');
+        const hasAllocations = !!(d.seat_allocations && d.seat_allocations.length > 0);
+        const seatRange = hasAllocations && session?.station_id ? getSeatRangeForStation(d, session.station_id) : null;
+        let active = dTickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled');
+        if (seatRange) {
+          active = active.filter(t => t.seat_number >= seatRange.from && t.seat_number <= seatRange.to);
+        }
+        const stationTicketIds = new Set(active.map(t => t.id));
+        const scopedBagages = hasAllocations && session?.station_id
+          ? dBagages.filter(b => {
+              if (b.description === '__deleted__') return false;
+              if (b.ticket_id && stationTicketIds.has(b.ticket_id)) return true;
+              if (b.ticket_id) return false;
+              return session.station_id === d.station_id;
+            })
+          : dBagages.filter(b => b.description !== '__deleted__');
         const totalTicket = active.reduce((s, t) => s + t.price, 0);
-        const totalBaggage = dBagages.reduce((s, b) => s + b.price, 0);
-        const valid = dDepenses.filter(x => x.description !== '__deleted__');
+        const totalBaggage = scopedBagages.reduce((s, b) => s + b.price, 0);
+        const valid = hasAllocations && session?.station_id
+          ? dDepenses.filter(x => x.description !== '__deleted__' && x.station_id === session.station_id)
+          : dDepenses.filter(x => x.description !== '__deleted__');
         const totalCarburant = valid.filter(x => x.type.toLowerCase().includes('carburant')).reduce((s, x) => s + x.amount, 0);
         const totalRations = valid.filter(x => x.type.toLowerCase().includes('ration') || x.type.toLowerCase().includes('frais de route') || x.type.toLowerCase().includes('frais route')).reduce((s, x) => s + x.amount, 0);
         const totalPeages = valid.filter(x => x.type.toLowerCase().includes('péage') || x.type.toLowerCase().includes('peage')).reduce((s, x) => s + x.amount, 0);
@@ -414,7 +454,7 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'bordereau') {
-        await printBordereauForDepart(depart);
+        await printBordereauForDepart(depart, session?.station_id);
         return;
       }
       await loadDeparts();

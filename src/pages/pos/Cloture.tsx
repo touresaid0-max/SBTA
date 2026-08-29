@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
-  getAllDeparts, getDepartById, cloturerDepart, computeSolde,
+  getAllDeparts, getDepartById, cloturerDepart,
+  computeStationScopedTotals,
   type DepartRecord,
 } from '@/services/pos/departService';
 import { getTicketsForDepart, type TicketRecord } from '@/services/pos/ticketService';
 import { getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
-import { getDepensesForDepart, getDepenseTotalForDepart, type DepenseRecord } from '@/services/pos/depenseService';
+import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
+import { getAll as getAllRecords } from '@/services/pos/offlineStore';
 import { formatCurrency } from '@/utils/formatCurrency';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import {
@@ -39,8 +41,25 @@ export default function POSCloture() {
 
   const loadData = useCallback(async () => {
     try {
-      const all = await getAllDeparts(session?.station_id, session?.counter_id);
-      const active = all.filter(d => !d.cancelled);
+      const [all, allTickets, allBagages, allDepenses] = await Promise.all([
+        getAllDeparts(session?.station_id, session?.counter_id),
+        getAllRecords<TicketRecord>('tickets'),
+        getAllRecords<BagageRecord>('bagages'),
+        getAllRecords<DepenseRecord>('depenses'),
+      ]);
+      const active = all
+        .filter(d => !d.cancelled)
+        .map(d => {
+          const totals = computeStationScopedTotals(d, allTickets, allBagages, allDepenses, session?.station_id);
+          return {
+            ...d,
+            mt_ticket: totals.mt_ticket,
+            mt_bagage: totals.mt_bagage,
+            tot_depense: totals.tot_depense,
+            solde: totals.solde,
+            caisse: totals.caisse,
+          };
+        });
       setDeparts(active);
       if (active.length > 0 && !selectedId) setSelectedId(active[0].id);
     } catch {
@@ -63,6 +82,8 @@ export default function POSCloture() {
   }, [filterDate]);
 
   const [liveTotDepense, setLiveTotDepense] = useState(0);
+  const [scopedMtTicket, setScopedMtTicket] = useState(0);
+  const [scopedMtBagage, setScopedMtBagage] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -70,21 +91,51 @@ export default function POSCloture() {
       const d = await getDepartById(selectedId);
       setSelected(d ?? null);
       if (d) {
-        const [t, b, dp] = await Promise.all([
+        const [t, b, dp, allBagages, allDepenses, allTickets] = await Promise.all([
           getTicketsForDepart(selectedId),
           getBagagesForDepart(selectedId),
           getDepensesForDepart(selectedId),
+          getAllRecords<BagageRecord>('bagages'),
+          getAllRecords<DepenseRecord>('depenses'),
+          getAllRecords<TicketRecord>('tickets'),
         ]);
-        const visibleDepenses = dp.filter(x => x.description !== '__deleted__');
-        setTickets(t.filter(x => x.status !== 'cancelled'));
-        setBagages(b);
-        setDepenses(visibleDepenses);
-        setLiveTotDepense(visibleDepenses.reduce((sum, x) => sum + x.amount, 0));
+        const totals = computeStationScopedTotals(d, allTickets, allBagages, allDepenses, session?.station_id);
+        const activeTickets = t.filter(x => x.status !== 'cancelled');
+        const hasAlloc = !!(d.seat_allocations && d.seat_allocations.length > 0);
+        let displayTickets = activeTickets;
+        let displayBagages = b.filter(x => x.description !== '__deleted__');
+        let displayDepenses = dp.filter(x => x.description !== '__deleted__');
+        if (hasAlloc && session?.station_id) {
+          const { getSeatRangeForStation } = await import('@/services/pos/departService');
+          const range = getSeatRangeForStation(d, session.station_id);
+          if (range) {
+            displayTickets = activeTickets.filter(
+              x => x.seat_number >= range.from && x.seat_number <= range.to,
+            );
+            const stationTicketIds = new Set(displayTickets.map(x => x.id));
+            displayBagages = displayBagages.filter(x => {
+              if (x.ticket_id && stationTicketIds.has(x.ticket_id)) return true;
+              if (x.ticket_id) return false;
+              return session.station_id === d.station_id;
+            });
+            displayDepenses = displayDepenses.filter(x => x.station_id === session.station_id);
+          } else {
+            displayTickets = [];
+            displayBagages = [];
+            displayDepenses = [];
+          }
+        }
+        setTickets(displayTickets);
+        setBagages(displayBagages);
+        setDepenses(displayDepenses);
+        setLiveTotDepense(totals.tot_depense);
+        setScopedMtTicket(totals.mt_ticket);
+        setScopedMtBagage(totals.mt_bagage);
       }
     })();
-  }, [selectedId]);
+  }, [selectedId, session?.station_id]);
 
-  const solde = useMemo(() => selected ? (selected.mt_ticket + selected.mt_bagage - liveTotDepense) : 0, [selected, liveTotDepense]);
+  const solde = useMemo(() => (scopedMtTicket + scopedMtBagage - liveTotDepense), [scopedMtTicket, scopedMtBagage, liveTotDepense]);
 
   // Toggle individual depart selection for batch
   const toggleSelect = (id: string) => {
@@ -319,7 +370,7 @@ export default function POSCloture() {
                     <TicketIcon className="w-3.5 h-3.5" style={{ color: 'var(--info)' }} />
                     <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>MT Ticket</p>
                   </div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(selected.mt_ticket)}</p>
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(scopedMtTicket)}</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{tickets.length} ticket(s)</p>
                 </div>
                 <div className="rounded-lg p-2.5" style={{ backgroundColor: 'var(--surface-raised)' }}>
@@ -327,7 +378,7 @@ export default function POSCloture() {
                     <Package className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
                     <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>MT Bagage</p>
                   </div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(selected.mt_bagage)}</p>
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(scopedMtBagage)}</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{bagages.length} bagage(s)</p>
                 </div>
                 <div className="rounded-lg p-2.5" style={{ backgroundColor: 'var(--surface-raised)' }}>
@@ -387,9 +438,9 @@ export default function POSCloture() {
                       cloture: selected.cloture,
                       cloture_at: selected.cloture_at,
                       cloture_by: selected.cloture_by,
-                      mt_ticket: selected.mt_ticket,
-                      mt_bagage: selected.mt_bagage,
-                      tot_depense: selected.tot_depense,
+                      mt_ticket: scopedMtTicket,
+                      mt_bagage: scopedMtBagage,
+                      tot_depense: liveTotDepense,
                       solde: selected.solde,
                     }}
                     stationId={session?.station_id}

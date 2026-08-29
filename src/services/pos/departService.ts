@@ -162,6 +162,88 @@ export function computeSolde(d: DepartRecord): number {
   return d.mt_ticket + d.mt_bagage - d.tot_depense;
 }
 
+export interface StationScopedTotals {
+  mt_ticket: number;
+  mt_bagage: number;
+  tot_depense: number;
+  solde: number;
+  caisse: number;
+  tickets_count: number;
+  bagages_count: number;
+  scoped: boolean;
+}
+
+export function computeStationScopedTotals(
+  depart: DepartRecord,
+  tickets: import('./db').TicketRecord[],
+  bagages: import('./db').BagageRecord[],
+  depenses: import('./db').DepenseRecord[],
+  stationId: string | undefined,
+): StationScopedTotals {
+  const hasAllocations = !!(depart.seat_allocations && depart.seat_allocations.length > 0);
+
+  if (!stationId || !hasAllocations) {
+    const totDepense = depenses
+      .filter(d => d.depart_id === depart.id && d.description !== '__deleted__')
+      .reduce((s, d) => s + d.amount, 0);
+    const ticketsForDepart = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled');
+    const bagagesForDepart = bagages.filter(b => b.depart_id === depart.id && b.description !== '__deleted__');
+    const mtTicket = ticketsForDepart.reduce((s, t) => s + t.price, 0);
+    const mtBagage = bagagesForDepart.reduce((s, b) => s + b.price, 0);
+    return {
+      mt_ticket: mtTicket,
+      mt_bagage: mtBagage,
+      tot_depense: totDepense,
+      solde: mtTicket + mtBagage - totDepense,
+      caisse: mtTicket + mtBagage - totDepense,
+      tickets_count: ticketsForDepart.length,
+      bagages_count: bagagesForDepart.length,
+      scoped: false,
+    };
+  }
+
+  const range = getSeatRangeForStation(depart, stationId);
+  const stationTickets = range
+    ? tickets.filter(t =>
+        t.depart_id === depart.id &&
+        t.status !== 'cancelled' &&
+        t.seat_number >= range.from &&
+        t.seat_number <= range.to,
+      )
+    : [];
+  const stationTicketIds = new Set(stationTickets.map(t => t.id));
+
+  const primaryStationId = depart.station_id;
+  const stationBagages = bagages.filter(b => {
+    if (b.depart_id !== depart.id) return false;
+    if (b.description === '__deleted__') return false;
+    if (b.ticket_id && stationTicketIds.has(b.ticket_id)) return true;
+    if (b.ticket_id) return false;
+    return stationId === primaryStationId;
+  });
+
+  const stationDepenses = depenses.filter(d =>
+    d.depart_id === depart.id &&
+    d.description !== '__deleted__' &&
+    d.station_id === stationId,
+  );
+
+  const mtTicket = stationTickets.reduce((s, t) => s + t.price, 0);
+  const mtBagage = stationBagages.reduce((s, b) => s + b.price, 0);
+  const totDepense = stationDepenses.reduce((s, d) => s + d.amount, 0);
+
+  return {
+    mt_ticket: mtTicket,
+    mt_bagage: mtBagage,
+    tot_depense: totDepense,
+    solde: mtTicket + mtBagage - totDepense,
+    caisse: mtTicket + mtBagage - totDepense,
+    tickets_count: stationTickets.length,
+    bagages_count: stationBagages.length,
+    scoped: true,
+  };
+}
+
 export async function cloturerDepart(
   departId: string,
   userName?: string,
