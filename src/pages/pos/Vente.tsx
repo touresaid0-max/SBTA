@@ -685,8 +685,8 @@ export default function POSVente() {
             <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>Nouveau Ticket</h3>
               <div className="flex flex-wrap gap-4 mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={isReduced} onChange={e => setIsReduced(e.target.checked)} className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
+                <label className="flex items-center gap-2 cursor-not-allowed opacity-60">
+                  <input type="checkbox" checked={isReduced} onChange={e => setIsReduced(e.target.checked)} disabled className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
                   <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Réduction</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
