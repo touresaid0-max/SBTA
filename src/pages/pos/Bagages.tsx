@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { getDepartById, type DepartRecord } from '@/services/pos/departService';
-import { getStations, type StationRef } from '@/services/pos/ticketService';
+import { getDepartById, getSeatRangeForStation, type DepartRecord } from '@/services/pos/departService';
+import { getStations, getTicketsForDepart, type StationRef, type TicketRecord } from '@/services/pos/ticketService';
 import {
   registerBagage, getBagagesForDepart, findTicketByNumber,
   type BagageRecord,
@@ -24,6 +24,7 @@ export default function POSBagages() {
 
   const [depart, setDepart] = useState<DepartRecord | null>(null);
   const [bagages, setBagages] = useState<BagageRecord[]>([]);
+  const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [stations, setStations] = useState<StationRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -57,11 +58,13 @@ export default function POSBagages() {
         return;
       }
       setDepart(d);
-      const [b, s] = await Promise.all([
+      const [b, t, s] = await Promise.all([
         getBagagesForDepart(departId),
+        getTicketsForDepart(departId),
         getStations(),
       ]);
       setBagages(b);
+      setTickets(t);
       setStations(s);
     } catch {
       // non-critical
@@ -74,9 +77,25 @@ export default function POSBagages() {
     loadData();
   }, [loadData]);
 
+  const hasAllocations = !!(depart?.seat_allocations && depart.seat_allocations.length > 0);
+  const stationRange = hasAllocations && session?.station_id ? getSeatRangeForStation(depart!, session.station_id) : null;
+
+  const scopedBagages = useMemo(() => {
+    const active = bagages.filter(b => b.description !== '__deleted__');
+    if (!hasAllocations || !stationRange) return active;
+    const scopedTicketIds = new Set(
+      tickets.filter(t => t.seat_number >= stationRange.from && t.seat_number <= stationRange.to).map(t => t.id)
+    );
+    return active.filter(b => {
+      if (b.ticket_id && scopedTicketIds.has(b.ticket_id)) return true;
+      if (b.ticket_id) return false;
+      return session?.station_id === depart?.station_id;
+    });
+  }, [bagages, tickets, hasAllocations, stationRange, session?.station_id, depart?.station_id]);
+
   const bagageTotal = useMemo(() => {
-    return bagages.reduce((sum, b) => sum + b.price, 0);
-  }, [bagages]);
+    return scopedBagages.reduce((sum, b) => sum + b.price, 0);
+  }, [scopedBagages]);
 
   const handleFindTicket = async () => {
     if (!departId || !ticketNumber) return;
@@ -136,11 +155,13 @@ export default function POSBagages() {
       }
 
       // Refresh
-      const [b, updatedDepart] = await Promise.all([
+      const [b, t, updatedDepart] = await Promise.all([
         getBagagesForDepart(departId),
+        getTicketsForDepart(departId),
         getDepartById(departId),
       ]);
       setBagages(b);
+      setTickets(t);
       if (updatedDepart) setDepart(updatedDepart);
 
       setSuccess(`Bagage enregistré — ${bagage.bagage_number}`);
@@ -214,7 +235,7 @@ export default function POSBagages() {
           </div>
           <div className="text-sm">
             <span className="font-bold" style={{ color: 'var(--text-muted)' }}>MT Bagage: </span>
-            <span className="font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(depart.mt_bagage)}</span>
+            <span className="font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(bagageTotal)}</span>
           </div>
         </div>
 
@@ -241,7 +262,7 @@ export default function POSBagages() {
                 </h3>
               </div>
               <div className="max-h-96 overflow-y-auto">
-                {bagages.length === 0 ? (
+                {scopedBagages.length === 0 ? (
                   <p className="text-center text-xs py-8" style={{ color: 'var(--text-muted)' }}>Aucun bagage enregistré</p>
                 ) : (
                   <table className="w-full" style={{ borderCollapse: 'collapse' }}>
@@ -255,7 +276,7 @@ export default function POSBagages() {
                       </tr>
                     </thead>
                     <tbody>
-                      {bagages.map(b => (
+                      {scopedBagages.map(b => (
                         <tr key={b.id} style={{ borderTop: '1px solid var(--border)' }}>
                           <td className="px-2 py-2 text-xs font-mono" style={{ color: 'var(--text-primary)' }}>{b.bagage_number}</td>
                           <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{b.destination}</td>

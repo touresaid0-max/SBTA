@@ -286,8 +286,27 @@ export default function POSVente() {
 
   const isSecondaryStation = depart && session?.station_id && depart.station_id !== session.station_id;
 
-  const ticketTotal = useMemo(() => tickets.reduce((sum, t) => sum + t.price, 0), [tickets]);
-  const bagageTotal = useMemo(() => bagages.reduce((sum, b) => sum + b.price, 0), [bagages]);
+  const hasAllocations = !!(depart?.seat_allocations && depart.seat_allocations.length > 0);
+  const stationRange = hasAllocations && session?.station_id ? getSeatRangeForStation(depart!, session.station_id) : null;
+
+  const scopedTickets = useMemo(() => {
+    if (!hasAllocations || !stationRange) return tickets;
+    return tickets.filter(t => t.seat_number >= stationRange.from && t.seat_number <= stationRange.to);
+  }, [tickets, hasAllocations, stationRange]);
+
+  const scopedBagages = useMemo(() => {
+    if (!hasAllocations) return bagages.filter(b => b.description !== '__deleted__');
+    const scopedTicketIds = new Set(scopedTickets.map(t => t.id));
+    return bagages.filter(b => {
+      if (b.description === '__deleted__') return false;
+      if (b.ticket_id && scopedTicketIds.has(b.ticket_id)) return true;
+      if (b.ticket_id) return false;
+      return session?.station_id === depart?.station_id;
+    });
+  }, [bagages, hasAllocations, scopedTickets, session?.station_id, depart?.station_id]);
+
+  const ticketTotal = useMemo(() => scopedTickets.reduce((sum, t) => sum + t.price, 0), [scopedTickets]);
+  const bagageTotal = useMemo(() => scopedBagages.reduce((sum, b) => sum + b.price, 0), [scopedBagages]);
   const depenseTotal = useMemo(() => depenses.reduce((sum, d) => sum + d.amount, 0), [depenses]);
   const solde = useMemo(() => ticketTotal + bagageTotal - depenseTotal, [ticketTotal, bagageTotal, depenseTotal]);
 
@@ -649,7 +668,7 @@ export default function POSVente() {
                 </h3>
               </div>
               <div className="max-h-96 overflow-y-auto">
-                {tickets.length === 0 ? (
+                {scopedTickets.length === 0 ? (
                   <p className="text-center text-xs py-8" style={{ color: 'var(--text-muted)' }}>Aucun ticket vendu</p>
                 ) : (
                   <table className="w-full" style={{ borderCollapse: 'collapse' }}>
@@ -664,7 +683,7 @@ export default function POSVente() {
                       </tr>
                     </thead>
                     <tbody>
-                      {tickets.map(t => (
+                      {scopedTickets.map(t => (
                         <tr key={t.id} style={{ borderTop: '1px solid var(--border)' }}>
                           <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-primary)' }}>{t.destination}</td>
                           <td className="px-2 py-2 text-xs text-right" style={{ color: 'var(--text-primary)' }}>{formatCurrency(t.price)}</td>
@@ -696,16 +715,16 @@ export default function POSVente() {
                   </table>
                 )}
                 {/* Bagages summary */}
-                {bagages.length > 0 && (
+                {scopedBagages.length > 0 && (
                   <>
                     <div className="px-3 py-1.5" style={{ backgroundColor: 'var(--surface-raised)', borderTop: '1px solid var(--border)' }}>
                       <p className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-                        <Package className="w-3 h-3" /> Bagages ({bagages.length})
+                        <Package className="w-3 h-3" /> Bagages ({scopedBagages.length})
                       </p>
                     </div>
                     <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                       <tbody>
-                        {bagages.filter(b => b.description !== '__deleted__').map(b => (
+                        {scopedBagages.map(b => (
                           <tr key={b.id} style={{ borderTop: '1px solid var(--border)' }}>
                             <td className="px-2 py-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
                               <span className="font-bold" style={{ color: b.with_ticket ? 'var(--info)' : 'var(--warning)' }}>
