@@ -498,7 +498,7 @@ export default function POSVente() {
 
   if (loading) {
     return (
-      <POSLayout showBack stationName={session?.station_name} activeRoute="Vente de tickets">
+      <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute="Vente de tickets">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary)' }} />
         </div>
@@ -508,7 +508,7 @@ export default function POSVente() {
 
   if (!depart) {
     return (
-      <POSLayout showBack stationName={session?.station_name} activeRoute="Vente de tickets">
+      <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute="Vente de tickets">
         <div className="text-center py-20">
           <AlertCircle className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--danger)' }} />
           <p style={{ color: 'var(--text-secondary)' }}>{error || 'Départ introuvable'}</p>
@@ -521,7 +521,7 @@ export default function POSVente() {
   }
 
   return (
-    <POSLayout showBack stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${depart.route_name ?? ''})`}>
+    <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${depart.route_name ?? ''})`}>
       <div className="max-w-5xl mx-auto">
         {/* Status warning banners */}
         {depart.cancelled && (

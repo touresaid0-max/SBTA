@@ -8,20 +8,31 @@ interface POSLayoutProps {
   stationName?: string;
   activeRoute?: string;
   showBack?: boolean;
+  backTo?: string;
 }
 
-export default function POSLayout({ children, stationName, activeRoute, showBack }: POSLayoutProps) {
+export default function POSLayout({ children, stationName, activeRoute, showBack, backTo }: POSLayoutProps) {
   const navigate = useNavigate();
+
+  const goBack = () => {
+    if (backTo) {
+      navigate(backTo);
+    } else if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/guichet/accueil');
+    }
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        navigate(-1);
+        goBack();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate]);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--bg-subtle)' }}>
@@ -32,7 +43,7 @@ export default function POSLayout({ children, stationName, activeRoute, showBack
         <div className="flex items-center gap-3 min-w-0">
           {showBack && (
             <button
-              onClick={() => navigate(-1)}
+              onClick={goBack}
               className="flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0 transition-opacity hover:bg-white/15"
               aria-label="Retour"
             >
