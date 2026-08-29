@@ -496,6 +496,80 @@ export async function transferTicketsToDepart(
   });
 }
 
+export interface TransferResult {
+  success: boolean;
+  transferred: number[];
+  message: string;
+}
+
+export async function transferSeatsToStation(
+  departId: string,
+  fromStationId: string,
+  toStationId: string,
+  count: number,
+): Promise<TransferResult> {
+  const depart = await getDepartById(departId);
+  if (!depart) return { success: false, transferred: [], message: 'Départ introuvable' };
+  if (!depart.seat_allocations || depart.seat_allocations.length === 0) {
+    return { success: false, transferred: [], message: 'Aucune répartition de sièges sur ce départ' };
+  }
+  const fromAlloc = depart.seat_allocations.find(a => a.station_id === fromStationId);
+  const toAlloc = depart.seat_allocations.find(a => a.station_id === toStationId);
+  if (!fromAlloc) return { success: false, transferred: [], message: 'Gare source introuvable dans la répartition' };
+  if (!toAlloc) return { success: false, transferred: [], message: 'Gare destinataire introuvable dans la répartition' };
+
+  const allTickets = await getAll<TicketRecord>('tickets');
+  const soldSeatsInFromRange = new Set(
+    allTickets
+      .filter(t => t.depart_id === departId && t.status !== 'cancelled' && t.seat_number >= fromAlloc.seat_from && t.seat_number <= fromAlloc.seat_to)
+      .map(t => t.seat_number),
+  );
+
+  const freeSeatsInFrom: number[] = [];
+  for (let s = fromAlloc.seat_from; s <= fromAlloc.seat_to; s++) {
+    if (!soldSeatsInFromRange.has(s)) freeSeatsInFrom.push(s);
+  }
+
+  if (freeSeatsInFrom.length === 0) {
+    return { success: false, transferred: [], message: 'Aucun siège libre disponible dans la gare source' };
+  }
+
+  const toTransferCount = Math.min(count, freeSeatsInFrom.length);
+  const seatsToTransfer = freeSeatsInFrom.slice(0, toTransferCount);
+
+  const newAllocations = depart.seat_allocations.map(a => {
+    if (a.station_id === fromStationId) {
+      const transferredSet = new Set(seatsToTransfer);
+      const remainingSeats: number[] = [];
+      for (let s = a.seat_from; s <= a.seat_to; s++) {
+        if (!transferredSet.has(s)) remainingSeats.push(s);
+      }
+      if (remainingSeats.length === 0) {
+        return { ...a, seat_from: 0, seat_to: -1 };
+      }
+      const newFrom = Math.min(...remainingSeats);
+      const newTo = Math.max(...remainingSeats);
+      return { ...a, seat_from: newFrom, seat_to: newTo };
+    }
+    if (a.station_id === toStationId) {
+      const allSeats = new Set<number>();
+      for (let s = a.seat_from; s <= a.seat_to; s++) allSeats.add(s);
+      for (const s of seatsToTransfer) allSeats.add(s);
+      const sorted = [...allSeats].sort((x, y) => x - y);
+      return { ...a, seat_from: sorted[0], seat_to: sorted[sorted.length - 1] };
+    }
+    return a;
+  }).filter(a => a.seat_to >= a.seat_from);
+
+  await localUpdate<DepartRecord>('departs', departId, { seat_allocations: newAllocations });
+
+  return {
+    success: true,
+    transferred: seatsToTransfer,
+    message: `${seatsToTransfer.length} siège(s) transféré(s) de ${fromAlloc.station_name} vers ${toAlloc.station_name}`,
+  };
+}
+
 export async function getSoldSeatNumbers(departId: string): Promise<number[]> {
   const all = await getAll<TicketRecord>('tickets');
   return all

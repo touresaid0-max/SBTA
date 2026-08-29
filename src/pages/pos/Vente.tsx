@@ -11,7 +11,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation } from '@/services/pos/departService';
+import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, transferSeatsToStation } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
@@ -86,6 +86,12 @@ export default function POSVente() {
   const [bagSelling, setBagSelling] = useState(false);
   const [bagError, setBagError] = useState('');
   const [bagSuccess, setBagSuccess] = useState('');
+
+  // Seat transfer state
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferCount, setTransferCount] = useState(1);
+  const [transferTargetId, setTransferTargetId] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!departId) return;
@@ -304,6 +310,50 @@ export default function POSVente() {
       return session?.station_id === depart?.station_id;
     });
   }, [bagages, hasAllocations, scopedTickets, session?.station_id, depart?.station_id]);
+
+  const stationSeatsSoldCount = useMemo(() => {
+    if (!depart || !session?.station_id) return depart?.seats_sold ?? 0;
+    return seatsVendusForStation(tickets, depart, session.station_id);
+  }, [depart, tickets, session?.station_id]);
+
+  const stationSeatsFree = useMemo(() => {
+    if (!depart || !session?.station_id) return (depart?.seats_total ?? 0) - (depart?.seats_sold ?? 0);
+    return seatsLibresForStation(tickets, depart, session.station_id);
+  }, [depart, tickets, session?.station_id]);
+
+  const stationFinishedSelling = hasAllocations && stationSeatsFree === 0 && stationSeatsSoldCount > 0;
+
+  const otherStationsWithFreeSeats = useMemo(() => {
+    if (!depart?.seat_allocations) return [];
+    return depart.seat_allocations.filter(a => {
+      if (a.station_id === session?.station_id) return false;
+      const sold = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled' && t.seat_number >= a.seat_from && t.seat_number <= a.seat_to).length;
+      const allocated = a.seat_to - a.seat_from + 1;
+      return allocated - sold > 0;
+    });
+  }, [depart?.seat_allocations, depart?.id, tickets, session?.station_id]);
+
+  const handleTransferSeats = async () => {
+    if (!depart || !session?.station_id || !transferTargetId) return;
+    setTransferring(true);
+    setError('');
+    try {
+      const result = await transferSeatsToStation(depart.id, transferTargetId, session.station_id, transferCount);
+      if (result.success) {
+        setSuccess(result.message);
+        setTransferOpen(false);
+        setTransferTargetId('');
+        setTransferCount(1);
+        await loadData();
+      } else {
+        setError(result.message);
+      }
+    } catch {
+      setError('Erreur lors du transfert de sièges');
+    } finally {
+      setTransferring(false);
+    }
+  };
 
   const ticketTotal = useMemo(() => scopedTickets.reduce((sum, t) => sum + t.price, 0), [scopedTickets]);
   const bagageTotal = useMemo(() => scopedBagages.reduce((sum, b) => sum + b.price, 0), [scopedBagages]);
@@ -581,20 +631,87 @@ export default function POSVente() {
                   <tr style={{ color: 'var(--text-muted)' }}>
                     <th className="px-2 py-2 text-base font-bold text-left">Gare</th>
                     <th className="px-2 py-2 text-base font-bold text-center">Sièges attribués</th>
+                    <th className="px-2 py-2 text-sm font-bold text-center">Total</th>
+                    <th className="px-2 py-2 text-sm font-bold text-center">Vendus</th>
+                    <th className="px-2 py-2 text-sm font-bold text-center">Libres</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {depart.seat_allocations.map((a, i) => (
+                  {depart.seat_allocations.map((a, i) => {
+                    const aSold = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled' && t.seat_number >= a.seat_from && t.seat_number <= a.seat_to).length;
+                    const aAllocated = a.seat_to - a.seat_from + 1;
+                    const aFree = aAllocated - aSold;
+                    return (
                     <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
                       <td className="px-2 py-2 text-base font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
                         {a.station_name}{a.station_id === session?.station_id ? ' (vous)' : ''}
                       </td>
                       <td className="px-2 py-2 text-base text-center font-bold" style={{ color: 'var(--text-secondary)' }}>{a.seat_from} à {a.seat_to}</td>
+                      <td className="px-2 py-2 text-sm text-center" style={{ color: 'var(--text-muted)' }}>{aAllocated}</td>
+                      <td className="px-2 py-2 text-sm text-center" style={{ color: 'var(--success)' }}>{aSold}</td>
+                      <td className="px-2 py-2 text-sm text-center" style={{ color: aFree > 0 ? 'var(--info)' : 'var(--text-muted)' }}>{aFree}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+
+            {stationFinishedSelling && otherStationsWithFreeSeats.length > 0 && !depart.cancelled && !depart.cloture && (
+              <div className="mt-3 rounded-lg p-3" style={{ backgroundColor: 'var(--warning-light)', border: '1px solid var(--warning)' }}>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 text-sm font-bold" style={{ color: 'var(--warning)' }}>
+                    <Armchair className="w-4 h-4 flex-shrink-0" />
+                    Vous avez vendu tous vos sièges. Vous pouvez octroyer des sièges libres d'une autre gare.
+                  </div>
+                  <button
+                    onClick={() => setTransferOpen(o => !o)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white whitespace-nowrap"
+                    style={{ backgroundColor: 'var(--warning)' }}
+                  >
+                    {transferOpen ? 'Annuler' : 'Charger dans une autre gare'}
+                  </button>
+                </div>
+                {transferOpen && (
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    <div className="flex-1 min-w-[180px]">
+                      <label className="block text-xs font-bold mb-1" style={{ color: 'var(--text-secondary)' }}>Gare source</label>
+                      <select
+                        value={transferTargetId}
+                        onChange={e => setTransferTargetId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border-2 text-sm"
+                        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+                      >
+                        <option value="">Sélectionner...</option>
+                        {otherStationsWithFreeSeats.map(a => (
+                          <option key={a.station_id} value={a.station_id}>{a.station_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ width: 90 }}>
+                      <label className="block text-xs font-bold mb-1" style={{ color: 'var(--text-secondary)' }}>Nb sièges</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={transferCount}
+                        onChange={e => setTransferCount(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-full px-3 py-2 rounded-lg border-2 text-sm"
+                        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+                      />
+                    </div>
+                    <button
+                      onClick={handleTransferSeats}
+                      disabled={transferring || !transferTargetId}
+                      className="px-4 py-2 rounded-lg font-bold text-white text-sm disabled:opacity-50 flex items-center gap-1.5"
+                      style={{ backgroundColor: 'var(--success)' }}
+                    >
+                      {transferring ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      Transférer
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
