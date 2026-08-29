@@ -53,10 +53,6 @@ export default function ChangeRequestModal({
       toast.error('La description de l\'erreur est obligatoire');
       return;
     }
-    if (requestType === 'modification' && !modificationDetails.trim()) {
-      toast.error('Veuillez indiquer les informations à modifier');
-      return;
-    }
     if (isEmergency && !emergencyJustification.trim()) {
       toast.error('La justification de l\'urgence est obligatoire');
       return;
@@ -222,23 +218,6 @@ export default function ChangeRequestModal({
             />
           </div>
 
-          {/* Modification details (only for modification) */}
-          {requestType === 'modification' && (
-            <div>
-              <label className={labelClass} style={{ color: '#111827' }}>
-                Informations à modifier <span style={{ color: '#EF4444' }}>*</span>
-              </label>
-              <textarea
-                value={modificationDetails}
-                onChange={(e) => setModificationDetails(e.target.value)}
-                placeholder="Indiquez les informations à modifier et les nouvelles valeurs..."
-                rows={3}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-          )}
-
           {/* Justification document */}
           <div>
             <label className={labelClass} style={{ color: '#111827' }}>
@@ -262,21 +241,6 @@ export default function ChangeRequestModal({
                 Parcourir
               </button>
             </div>
-          </div>
-
-          {/* Additional comment */}
-          <div>
-            <label className={labelClass} style={{ color: '#111827' }}>
-              Commentaire complémentaire
-            </label>
-            <textarea
-              value={additionalComment}
-              onChange={(e) => setAdditionalComment(e.target.value)}
-              placeholder="Tout commentaire utile..."
-              rows={2}
-              className={inputClass}
-              style={inputStyle}
-            />
           </div>
 
           {/* Emergency procedure */}
