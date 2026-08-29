@@ -156,6 +156,7 @@ export default function POSVente() {
   // Sync structure-selected seats → existing selectedSeats (number[])
   useEffect(() => {
     if (!structureMode) { setStructSelectedSeats([]); return; }
+    if (!depart) return;
     const valid = structSelectedSeats.filter(s => {
       const n = parseInt(s.label, 10);
       if (Number.isNaN(n)) return false;
