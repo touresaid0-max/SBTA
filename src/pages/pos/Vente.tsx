@@ -24,6 +24,8 @@ import {
   Package, Banknote, XCircle,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import { fetchScheduleSeatMap } from '@/services/seatMap.service';
+import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
 
 export default function POSVente() {
   const { id: departId } = useParams<{ id: string }>();
@@ -58,6 +60,13 @@ export default function POSVente() {
   const [printError, setPrintError] = useState('');
   const [pendingReprint, setPendingReprint] = useState<TicketRecord[]>([]);
   const [printing, setPrinting] = useState(false);
+
+  // Vente avec structure — shows the real bus seat layout
+  const [structureMode, setStructureMode] = useState(false);
+  const [seatMap, setSeatMap] = useState<ScheduleSeatMap | null>(null);
+  const [seatMapLoading, setSeatMapLoading] = useState(false);
+  const [seatMapError, setSeatMapError] = useState('');
+  const [structSelectedSeats, setStructSelectedSeats] = useState<StructSeat[]>([]);
 
   // Loyalty state
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -121,6 +130,58 @@ export default function POSVente() {
   }, [departId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Fetch seat map when structure mode is enabled
+  useEffect(() => {
+    if (!structureMode || !departId) { setSeatMap(null); setSeatMapError(''); return; }
+    let cancelled = false;
+    setSeatMapLoading(true);
+    setSeatMapError('');
+    fetchScheduleSeatMap(departId)
+      .then(data => { if (!cancelled) setSeatMap(data); })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : 'Erreur';
+        if (msg === '__NO_BUS__') {
+          setSeatMapError('Aucun bus assigné à ce départ — structure indisponible');
+        } else {
+          setSeatMapError(msg);
+        }
+        setSeatMap(null);
+      })
+      .finally(() => { if (!cancelled) setSeatMapLoading(false); });
+    return () => { cancelled = true; };
+  }, [structureMode, departId]);
+
+  // Sync structure-selected seats → existing selectedSeats (number[])
+  useEffect(() => {
+    if (!structureMode) { setStructSelectedSeats([]); return; }
+    const valid = structSelectedSeats.filter(s => {
+      const n = parseInt(s.label, 10);
+      if (Number.isNaN(n)) return false;
+      if (n < depart.seats_from || n > depart.seats_total) return false;
+      if (allowedSeatRange && (n < allowedSeatRange.from || n > allowedSeatRange.to)) return false;
+      if (soldSeats.includes(n)) return false;
+      return true;
+    });
+    const nums = valid.map(s => parseInt(s.label, 10)).sort((a, b) => a - b);
+    setSelectedSeats(nums);
+  }, [structSelectedSeats, structureMode, depart, allowedSeatRange, soldSeats]);
+
+  // Clear structure selection when structure mode is turned off
+  useEffect(() => {
+    if (!structureMode) setStructSelectedSeats([]);
+  }, [structureMode]);
+
+  const toggleStructSeat = (seat: StructSeat) => {
+    const n = parseInt(seat.label, 10);
+    if (Number.isNaN(n)) return;
+    setStructSelectedSeats(prev =>
+      prev.some(s => s.id === seat.id)
+        ? prev.filter(s => s.id !== seat.id)
+        : [...prev, seat]
+    );
+  };
 
   // Auto-select destination and compute tarif when depart/stations/lignes load
   useEffect(() => {
@@ -683,7 +744,15 @@ export default function POSVente() {
           <div className="lg:col-span-2 order-1 lg:order-2 space-y-4">
             {/* ── Ticket block ── */}
             <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>Nouveau Ticket</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Nouveau Ticket</h3>
+                <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg" style={{ backgroundColor: structureMode ? 'var(--primary-light)' : 'var(--surface-raised)', border: '1px solid', borderColor: structureMode ? 'var(--primary)' : 'var(--border)' }}>
+                  <input type="checkbox" checked={structureMode} onChange={e => { setStructureMode(e.target.checked); if (!e.target.checked) { setStructSelectedSeats([]); setSelectedSeats([]); } }} className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
+                  <span className="text-xs font-bold flex items-center gap-1" style={{ color: structureMode ? 'var(--primary)' : 'var(--text-secondary)' }}>
+                    <Armchair className="w-3.5 h-3.5" /> Vente avec structure
+                  </span>
+                </label>
+              </div>
               <div className="flex flex-wrap gap-4 mb-3">
                 <label className="flex items-center gap-2 cursor-not-allowed opacity-60">
                   <input type="checkbox" checked={isReduced} onChange={e => setIsReduced(e.target.checked)} disabled className="w-4 h-4" style={{ accentColor: 'var(--primary)' }} />
@@ -702,6 +771,118 @@ export default function POSVente() {
                   <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Imprimer ticket</span>
                 </label>
               </div>
+
+              {/* ── Structure du bus (affichée si Vente avec structure est activé) ── */}
+              {structureMode && (
+                <div className="mb-4">
+                  {seatMapLoading ? (
+                    <div className="flex items-center justify-center py-12 rounded-xl" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)' }}>
+                      <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--primary)' }} />
+                      <span className="ml-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Chargement de la structure du bus…</span>
+                    </div>
+                  ) : seatMapError ? (
+                    <div className="rounded-xl px-3 py-3 flex items-center gap-2 text-sm" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid var(--danger)' }}>
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" /> {seatMapError}
+                    </div>
+                  ) : seatMap ? (
+                    <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)' }}>
+                      <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                        <div className="flex items-center gap-2">
+                          <Armchair className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                          <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Structure — {seatMap.bus_registration}</span>
+                        </div>
+                        <span className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>{seatMap.available_count} libres / {seatMap.total_seats}</span>
+                      </div>
+                      <div className="p-3 sm:p-4 overflow-x-auto max-h-[340px] overflow-y-auto">
+                        <div className="flex flex-col gap-1.5">
+                          {seatMap.enriched_layout.filter(r => r.seats.some(s => s.side !== 'back')).map((row) => {
+                            const leftSeats = row.seats.filter(s => s.side === 'left');
+                            const rightSeats = row.seats.filter(s => s.side === 'right');
+                            const renderSeat = (seat: StructSeat) => {
+                              const n = parseInt(seat.label, 10);
+                              const isSelected = structSelectedSeats.some(s => s.id === seat.id);
+                              const isSold = !Number.isNaN(n) && soldSeats.includes(n);
+                              const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to);
+                              const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
+                              const seatColor = isSelected
+                                ? 'bg-[#0B7439] border-[#085c2d] text-white'
+                                : isSold || seat.status === 'occupied'
+                                  ? 'bg-red-500 border-red-600 text-white cursor-not-allowed'
+                                  : seat.status === 'online_reserved'
+                                    ? 'bg-[#FCD34D] border-[#D97706] text-[#78350F] cursor-not-allowed'
+                                    : isOutAllowed
+                                      ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed'
+                                      : seat.type === 'vip'
+                                        ? 'bg-[#FFFBEB] border-[#FCD34D] text-[#92400E] hover:bg-amber-100 cursor-pointer'
+                                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-[#0B7439] hover:text-[#0B7439] cursor-pointer';
+                              return (
+                                <button
+                                  key={seat.id}
+                                  type="button"
+                                  disabled={disabledSeat}
+                                  onClick={() => !disabledSeat && toggleStructSeat(seat)}
+                                  title={`Siège ${seat.label}${isSold ? ' — Vendu' : isOutAllowed ? ' — Autre gare' : ''}`}
+                                  className={`flex flex-col items-center justify-center rounded-lg border-2 select-none transition-all w-[34px] h-[36px] flex-shrink-0 ${seatColor}`}
+                                >
+                                  <span className="text-[11px] font-bold leading-none">{seat.label}</span>
+                                </button>
+                              );
+                            };
+                            const leftCols = seatMap.config.columns_left ?? 2;
+                            const rightCols = seatMap.config.columns_right ?? 2;
+                            const leftW = leftCols * 34 + Math.max(0, leftCols - 1) * 6;
+                            return (
+                              <div key={`row-${row.row}`} className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-400 font-medium text-right flex-shrink-0" style={{ width: 18 }}>{row.row}</span>
+                                <div className="flex items-center gap-[6px]" style={{ width: leftW }}>
+                                  {leftSeats.map(renderSeat)}
+                                  {leftSeats.length < leftCols && Array.from({ length: leftCols - leftSeats.length }).map((_, i) => <div key={`el-${i}`} className="flex-shrink-0" style={{ width: 34, height: 36 }} />)}
+                                </div>
+                                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 20 }}><div className="w-px h-6 bg-slate-200" /></div>
+                                <div className="flex items-center gap-[6px]">
+                                  {rightSeats.map(renderSeat)}
+                                  {rightSeats.length < rightCols && Array.from({ length: rightCols - rightSeats.length }).map((_, i) => <div key={`er-${i}`} className="flex-shrink-0" style={{ width: 34, height: 36 }} />)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {seatMap.enriched_layout.some(r => r.seats.every(s => s.side === 'back')) && (
+                            <>
+                              <div className="flex items-center gap-2 my-0.5"><div className="flex-1 border-t border-dashed border-slate-200" /></div>
+                              {seatMap.enriched_layout.filter(r => r.seats.every(s => s.side === 'back')).map((row) => (
+                                <div key={`back-${row.row}`} className="flex items-center gap-2">
+                                  <span className="text-[10px] text-slate-400 flex-shrink-0" style={{ width: 18 }}>—</span>
+                                  <div className="flex gap-[6px]">
+                                    {row.seats.filter(s => s.side === 'back').map(seat => {
+                                      const n = parseInt(seat.label, 10);
+                                      const isSelected = structSelectedSeats.some(s => s.id === seat.id);
+                                      const isSold = !Number.isNaN(n) && soldSeats.includes(n);
+                                      const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to);
+                                      const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
+                                      const seatColor = isSelected ? 'bg-[#0B7439] border-[#085c2d] text-white' : isSold ? 'bg-red-500 border-red-600 text-white cursor-not-allowed' : isOutAllowed ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-[#0B7439] hover:text-[#0B7439] cursor-pointer';
+                                      return (
+                                        <button key={seat.id} type="button" disabled={disabledSeat} onClick={() => !disabledSeat && toggleStructSeat(seat)} title={`Siège ${seat.label}`} className={`flex flex-col items-center justify-center rounded-lg border-2 select-none transition-all w-[34px] h-[36px] flex-shrink-0 ${seatColor}`}>
+                                          <span className="text-[11px] font-bold leading-none">{seat.label}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {selectedSeats.length > 0 && (
+                        <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderTop: '1px solid var(--border)' }}>
+                          <span className="text-xs font-bold" style={{ color: 'var(--primary)' }}>{selectedSeats.length} siège(s) : {selectedSeats.join(', ')}</span>
+                          <button type="button" onClick={() => { setStructSelectedSeats([]); setSelectedSeats([]); }} className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Effacer</button>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Destination */}
@@ -730,10 +911,10 @@ export default function POSVente() {
                   </select>
                 </div>
 
-                {/* N° Siège — multi-select dropdown */}
-                <div ref={seatDropdownRef} className="relative">
+                {/* N° Siège — multi-select dropdown (disabled in structure mode) */}
+                <div ref={seatDropdownRef} className="relative" style={{ opacity: structureMode ? 0.5 : 1, pointerEvents: structureMode ? 'none' : 'auto' }}>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                    N° Siège {allowedSeatRange ? `(${allowedSeatRange.from}–${allowedSeatRange.to})` : `(${depart.seats_from}–${depart.seats_total})`}
+                    N° Siège {allowedSeatRange ? `(${allowedSeatRange.from}–${allowedSeatRange.to})` : `(${depart.seats_from}–${depart.seats_total})`}{structureMode ? ' — via structure' : ''}
                   </label>
                   {/* Trigger button */}
                   <button
