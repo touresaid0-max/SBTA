@@ -136,13 +136,16 @@ export async function getDepartById(id: string): Promise<DepartRecord | undefine
 }
 
 export function seatsAllocatedForStation(d: DepartRecord, stationId: string): number {
-  return getSeatNumbersForStation(d, stationId).length;
+  if (!d.seat_allocations || d.seat_allocations.length === 0) return d.seats_total;
+  const alloc = d.seat_allocations.find(a => a.station_id === stationId);
+  if (!alloc) return d.seats_total;
+  return alloc.seat_to - alloc.seat_from + 1;
 }
 
 export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
-  const allowedSeats = new Set(getSeatNumbersForStation(d, stationId));
-  if (allowedSeats.size === 0) return d.seats_sold;
-  return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && allowedSeats.has(t.seat_number)).length;
+  const range = getSeatRangeForStation(d, stationId);
+  if (!range) return d.seats_sold;
+  return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && t.seat_number >= range.from && t.seat_number <= range.to).length;
 }
 
 export function seatsLibres(d: DepartRecord): number {
@@ -199,13 +202,13 @@ export function computeStationScopedTotals(
     };
   }
 
-  const stationSeats = getSeatNumbersForStation(depart, stationId);
-  const stationSeatSet = new Set(stationSeats);
-  const stationTickets = stationSeats.length > 0
+  const range = getSeatRangeForStation(depart, stationId);
+  const stationTickets = range
     ? tickets.filter(t =>
         t.depart_id === depart.id &&
         t.status !== 'cancelled' &&
-        stationSeatSet.has(t.seat_number),
+        t.seat_number >= range.from &&
+        t.seat_number <= range.to,
       )
     : [];
   const stationTicketIds = new Set(stationTickets.map(t => t.id));
@@ -365,37 +368,19 @@ export async function getDepartsForOtherStations(currentStationId: string, count
   return result;
 }
 
-function allocSeats(a: SeatAllocation): number[] {
-  if (a.seats && a.seats.length > 0) return [...a.seats].sort((x, y) => x - y);
-  const arr: number[] = [];
-  for (let s = a.seat_from; s <= a.seat_to; s++) arr.push(s);
-  return arr;
-}
-
-export function getSeatNumbersForStation(
-  depart: DepartRecord,
-  stationId: string,
-): number[] {
-  if (!depart.seat_allocations || depart.seat_allocations.length === 0) {
-    if (depart.station_id === stationId) {
-      const arr: number[] = [];
-      for (let s = depart.seats_from; s <= depart.seats_total; s++) arr.push(s);
-      return arr;
-    }
-    return [];
-  }
-  const alloc = depart.seat_allocations.find(a => a.station_id === stationId);
-  if (!alloc) return [];
-  return allocSeats(alloc);
-}
-
 export function getSeatRangeForStation(
   depart: DepartRecord,
   stationId: string,
 ): { from: number; to: number } | null {
-  const seats = getSeatNumbersForStation(depart, stationId);
-  if (seats.length === 0) return null;
-  return { from: seats[0], to: seats[seats.length - 1] };
+  if (!depart.seat_allocations || depart.seat_allocations.length === 0) {
+    if (depart.station_id === stationId) {
+      return { from: depart.seats_from, to: depart.seats_total };
+    }
+    return null;
+  }
+  const alloc = depart.seat_allocations.find(a => a.station_id === stationId);
+  if (!alloc) return null;
+  return { from: alloc.seat_from, to: alloc.seat_to };
 }
 
 export function isSeatAllowedForStation(
@@ -403,7 +388,9 @@ export function isSeatAllowedForStation(
   stationId: string,
   seatNumber: number,
 ): boolean {
-  return getSeatNumbersForStation(depart, stationId).includes(seatNumber);
+  const range = getSeatRangeForStation(depart, stationId);
+  if (!range) return false;
+  return seatNumber >= range.from && seatNumber <= range.to;
 }
 
 export function getStationNameForSeat(
@@ -411,10 +398,8 @@ export function getStationNameForSeat(
   seatNumber: number,
 ): string | null {
   if (!depart.seat_allocations || depart.seat_allocations.length === 0) return null;
-  for (const a of depart.seat_allocations) {
-    if (allocSeats(a).includes(seatNumber)) return a.station_name;
-  }
-  return null;
+  const alloc = depart.seat_allocations.find(a => seatNumber >= a.seat_from && seatNumber <= a.seat_to);
+  return alloc?.station_name ?? null;
 }
 
 export async function findParentDepartForBus(busId: string, currentStationId: string): Promise<DepartRecord | null> {
@@ -438,23 +423,19 @@ export function validateSeatAllocations(
   busCapacity: number,
 ): string | null {
   if (allocations.length === 0) return null;
-  const allSeats: number[] = [];
   for (const a of allocations) {
-    const seats = allocSeats(a);
-    if (seats.length === 0) continue;
-    for (const s of seats) {
-      if (s < 1 || s > busCapacity) {
-        return `Les sièges doivent être entre 1 et ${busCapacity}`;
-      }
-      allSeats.push(s);
+    if (a.seat_from < 1 || a.seat_to > busCapacity) {
+      return `Les sièges doivent être entre 1 et ${busCapacity}`;
+    }
+    if (a.seat_from > a.seat_to) {
+      return `La plage ${a.seat_from}-${a.seat_to} pour ${a.station_name} est invalide`;
     }
   }
-  const seen = new Set<number>();
-  for (const s of allSeats) {
-    if (seen.has(s)) {
-      return `Le siège ${s} est attribué à plusieurs gares en même temps`;
+  const sorted = [...allocations].sort((a, b) => a.seat_from - b.seat_from);
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].seat_from <= sorted[i - 1].seat_to) {
+      return `Chevauchement détecté entre ${sorted[i - 1].station_name} (${sorted[i - 1].seat_from}-${sorted[i - 1].seat_to}) et ${sorted[i].station_name} (${sorted[i].seat_from}-${sorted[i].seat_to})`;
     }
-    seen.add(s);
   }
   return null;
 }
@@ -537,18 +518,17 @@ export async function transferSeatsToStation(
   if (!fromAlloc) return { success: false, transferred: [], message: 'Gare source introuvable dans la répartition' };
   if (!toAlloc) return { success: false, transferred: [], message: 'Gare destinataire introuvable dans la répartition' };
 
-  const fromSeats = allocSeats(fromAlloc);
-  const toSeats = new Set(allocSeats(toAlloc));
-
-  // A seat is only free in the source if it's not sold AND not already in the target's range
   const allTickets = await getAll<TicketRecord>('tickets');
-  const soldSeats = new Set(
+  const soldSeatsInFromRange = new Set(
     allTickets
-      .filter(t => t.depart_id === departId && t.status !== 'cancelled')
+      .filter(t => t.depart_id === departId && t.status !== 'cancelled' && t.seat_number >= fromAlloc.seat_from && t.seat_number <= fromAlloc.seat_to)
       .map(t => t.seat_number),
   );
 
-  const freeSeatsInFrom = fromSeats.filter(s => !soldSeats.has(s) && !toSeats.has(s));
+  const freeSeatsInFrom: number[] = [];
+  for (let s = fromAlloc.seat_from; s <= fromAlloc.seat_to; s++) {
+    if (!soldSeatsInFromRange.has(s)) freeSeatsInFrom.push(s);
+  }
 
   if (freeSeatsInFrom.length === 0) {
     return { success: false, transferred: [], message: 'Aucun siège libre disponible dans la gare source' };
@@ -556,31 +536,30 @@ export async function transferSeatsToStation(
 
   const toTransferCount = Math.min(count, freeSeatsInFrom.length);
   const seatsToTransfer = freeSeatsInFrom.slice(0, toTransferCount);
-  const transferSet = new Set(seatsToTransfer);
 
-  // Build new allocations with explicit seats arrays — no overlap possible
   const newAllocations = depart.seat_allocations.map(a => {
     if (a.station_id === fromStationId) {
-      const remaining = allocSeats(a).filter(s => !transferSet.has(s));
-      return { ...a, seats: remaining, seat_from: remaining[0] ?? 0, seat_to: remaining[remaining.length - 1] ?? -1 };
+      const transferredSet = new Set(seatsToTransfer);
+      const remainingSeats: number[] = [];
+      for (let s = a.seat_from; s <= a.seat_to; s++) {
+        if (!transferredSet.has(s)) remainingSeats.push(s);
+      }
+      if (remainingSeats.length === 0) {
+        return { ...a, seat_from: 0, seat_to: -1 };
+      }
+      const newFrom = Math.min(...remainingSeats);
+      const newTo = Math.max(...remainingSeats);
+      return { ...a, seat_from: newFrom, seat_to: newTo };
     }
     if (a.station_id === toStationId) {
-      const merged = [...allocSeats(a), ...seatsToTransfer].sort((x, y) => x - y);
-      return { ...a, seats: merged, seat_from: merged[0], seat_to: merged[merged.length - 1] };
+      const allSeats = new Set<number>();
+      for (let s = a.seat_from; s <= a.seat_to; s++) allSeats.add(s);
+      for (const s of seatsToTransfer) allSeats.add(s);
+      const sorted = [...allSeats].sort((x, y) => x - y);
+      return { ...a, seat_from: sorted[0], seat_to: sorted[sorted.length - 1] };
     }
     return a;
-  });
-
-  // Safety check: no seat appears in two allocations
-  const allAssigned = new Map<number, string>();
-  for (const a of newAllocations) {
-    for (const s of allocSeats(a)) {
-      if (allAssigned.has(s)) {
-        return { success: false, transferred: [], message: `Conflit: le siège ${s} serait attribué à deux gares` };
-      }
-      allAssigned.set(s, a.station_id);
-    }
-  }
+  }).filter(a => a.seat_to >= a.seat_from);
 
   await localUpdate<DepartRecord>('departs', departId, { seat_allocations: newAllocations });
 

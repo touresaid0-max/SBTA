@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { getDepartById, getSeatNumbersForStation, type DepartRecord } from '@/services/pos/departService';
+import { getDepartById, getSeatRangeForStation, type DepartRecord } from '@/services/pos/departService';
 import { getStations, getTicketsForDepart, type StationRef, type TicketRecord } from '@/services/pos/ticketService';
 import {
   registerBagage, getBagagesForDepart, findTicketByNumber,
@@ -78,23 +78,20 @@ export default function POSBagages() {
   }, [loadData]);
 
   const hasAllocations = !!(depart?.seat_allocations && depart.seat_allocations.length > 0);
-  const stationSeatSet = useMemo(() => {
-    if (!hasAllocations || !depart || !session?.station_id) return null;
-    return new Set(getSeatNumbersForStation(depart, session.station_id));
-  }, [hasAllocations, depart, session?.station_id]);
+  const stationRange = hasAllocations && session?.station_id ? getSeatRangeForStation(depart!, session.station_id) : null;
 
   const scopedBagages = useMemo(() => {
     const active = bagages.filter(b => b.description !== '__deleted__');
-    if (!hasAllocations || !stationSeatSet) return active;
+    if (!hasAllocations || !stationRange) return active;
     const scopedTicketIds = new Set(
-      tickets.filter(t => stationSeatSet.has(t.seat_number)).map(t => t.id)
+      tickets.filter(t => t.seat_number >= stationRange.from && t.seat_number <= stationRange.to).map(t => t.id)
     );
     return active.filter(b => {
       if (b.ticket_id && scopedTicketIds.has(b.ticket_id)) return true;
       if (b.ticket_id) return false;
       return session?.station_id === depart?.station_id;
     });
-  }, [bagages, tickets, hasAllocations, stationSeatSet, session?.station_id, depart?.station_id]);
+  }, [bagages, tickets, hasAllocations, stationRange, session?.station_id, depart?.station_id]);
 
   const bagageTotal = useMemo(() => {
     return scopedBagages.reduce((sum, b) => sum + b.price, 0);
