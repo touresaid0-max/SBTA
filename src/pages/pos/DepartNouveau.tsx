@@ -440,10 +440,10 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
           {/* Seat allocation section */}
           {enableOtherStation && seatsTotal > 0 && !isLinked && (
             <div className="mt-5 rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)' }}>
-              <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--primary)', fontSize: '24px', lineHeight: 1.2 }}>
-                <Armchair className="w-6 h-6" /> Répartition des sièges par gare
+              <h3 className="text-sm font-bold mb-1 flex items-center gap-2" style={{ color: 'var(--primary)' }}>
+                <Armchair className="w-4 h-4" /> Répartition des sièges
               </h3>
-              <p className="text-base font-bold mb-3" style={{ color: 'var(--text-secondary)' }}>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
                 Capacité du bus : {seatsTotal} places · Gare primaire : <strong>{session?.station_name ?? 'Gare principale'}</strong>
               </p>
 
@@ -453,9 +453,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                   <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ backgroundColor: 'var(--surface-raised)', color: 'var(--text-secondary)' }}>
-                        <th className="px-3 py-2 text-base font-bold text-left">Gare</th>
-                        <th className="px-3 py-2 text-base font-bold text-center">Sièges attribués</th>
-                        <th className="px-3 py-2 text-base font-bold text-right">Nbre</th>
+                        <th className="px-3 py-2 text-xs font-bold text-left">Gare</th>
+                        <th className="px-3 py-2 text-xs font-bold text-center">Sièges attribués</th>
+                        <th className="px-3 py-2 text-xs font-bold text-right">Nbre</th>
                         <th className="px-3 py-2"></th>
                       </tr>
                     </thead>
@@ -468,9 +468,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                         if (primaryTo >= primaryFrom) {
                           return (
                             <tr style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--primary-light)' }}>
-                              <td className="px-3 py-2 text-base font-bold" style={{ color: 'var(--primary)' }}>{session?.station_name ?? 'Gare primaire'}</td>
-                              <td className="px-3 py-2 text-base text-center font-bold" style={{ color: 'var(--primary)' }}>{primaryFrom} à {primaryTo}</td>
-                              <td className="px-3 py-2 text-base text-center font-bold" style={{ color: 'var(--primary)' }}>{primaryTo - primaryFrom + 1}</td>
+                              <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--primary)' }}>{session?.station_name ?? 'Gare primaire'}</td>
+                              <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--primary)' }}>{primaryFrom} à {primaryTo}</td>
+                              <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: 'var(--primary)' }}>{primaryTo - primaryFrom + 1}</td>
                               <td className="px-3 py-2"></td>
                             </tr>
                           );
@@ -479,9 +479,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                       })()}
                       {seatAllocations.map((a, i) => (
                         <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                          <td className="px-3 py-2 text-base font-bold" style={{ color: 'var(--text-primary)' }}>{a.station_name}</td>
-                          <td className="px-3 py-2 text-base text-center font-bold" style={{ color: 'var(--text-primary)' }}>{a.seat_from} à {a.seat_to}</td>
-                          <td className="px-3 py-2 text-base text-center font-bold" style={{ color: 'var(--text-primary)' }}>{a.seat_to - a.seat_from + 1}</td>
+                          <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{a.station_name}</td>
+                          <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--text-primary)' }}>{a.seat_from} à {a.seat_to}</td>
+                          <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: 'var(--text-primary)' }}>{a.seat_to - a.seat_from + 1}</td>
                           <td className="px-3 py-2 text-right">
                             <button
                               type="button"
@@ -497,9 +497,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                     </tbody>
                     <tfoot>
                       <tr style={{ borderTop: '2px solid var(--border)' }}>
-                        <td className="px-3 py-2 text-base font-bold" style={{ color: 'var(--text-primary)' }}>Total attribué</td>
+                        <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Total attribué</td>
                         <td className="px-3 py-2"></td>
-                        <td className="px-3 py-2 text-base text-center font-bold" style={{ color: seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0) + (seatAllocations.length > 0 ? seatAllocations[0].seat_from - seatsFrom : 0) > seatsTotal ? 'var(--danger)' : 'var(--success)' }}>
+                        <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0) + (seatAllocations.length > 0 ? seatAllocations[0].seat_from - seatsFrom : 0) > seatsTotal ? 'var(--danger)' : 'var(--success)' }}>
                           {seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0) + (seatAllocations.length > 0 ? seatAllocations[0].seat_from - seatsFrom : 0)} / {seatsTotal}
                         </td>
                         <td className="px-3 py-2"></td>

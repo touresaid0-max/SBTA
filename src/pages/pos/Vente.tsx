@@ -490,24 +490,24 @@ export default function POSVente() {
         {/* Seat allocation recap table */}
         {depart.seat_allocations && depart.seat_allocations.length > 0 && (
           <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <p className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
-              <Armchair className="w-3.5 h-3.5" /> Répartition des sièges par gare
+            <p className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)', fontSize: '24px', lineHeight: 1.2 }}>
+              <Armchair className="w-6 h-6" /> Répartition des sièges par gare
             </p>
             <div className="overflow-x-auto">
               <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--text-muted)' }}>
-                    <th className="px-2 py-1.5 text-xs font-bold text-left">Gare</th>
-                    <th className="px-2 py-1.5 text-xs font-bold text-center">Sièges attribués</th>
+                    <th className="px-2 py-2 text-base font-bold text-left">Gare</th>
+                    <th className="px-2 py-2 text-base font-bold text-center">Sièges attribués</th>
                   </tr>
                 </thead>
                 <tbody>
                   {depart.seat_allocations.map((a, i) => (
                     <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td className="px-2 py-1.5 text-xs font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
+                      <td className="px-2 py-2 text-base font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
                         {a.station_name}{a.station_id === session?.station_id ? ' (vous)' : ''}
                       </td>
-                      <td className="px-2 py-1.5 text-xs text-center" style={{ color: 'var(--text-secondary)' }}>{a.seat_from} à {a.seat_to}</td>
+                      <td className="px-2 py-2 text-base text-center font-bold" style={{ color: 'var(--text-secondary)' }}>{a.seat_from} à {a.seat_to}</td>
                     </tr>
                   ))}
                 </tbody>
