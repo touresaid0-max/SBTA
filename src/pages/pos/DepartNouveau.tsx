@@ -533,29 +533,23 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                   />
                 </div>
                 <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nombre de sièges</label>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                    Nombre de sièges <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />
+                  </label>
                   <input
                     type="number"
-                    min={1}
-                    value={newAllocSeatCount || ''}
-                    onChange={e => {
-                      setNewAllocSeatCount(e.target.value);
-                      const count = parseInt(e.target.value) || 0;
-                      if (count > 0 && seatsTotal > 0) {
-                        const usedSeats = new Set<number>();
-                        seatAllocations.forEach(a => { for (let s = a.seat_from; s <= a.seat_to; s++) usedSeats.add(s); });
-                        let startFrom = seatsFrom;
-                        for (let s = seatsFrom; s <= seatsTotal; s++) {
-                          if (!usedSeats.has(s)) { startFrom = s; break; }
-                        }
-                        setNewAllocSeatFrom(String(startFrom));
-                        setNewAllocSeatTo(String(Math.min(startFrom + count - 1, seatsTotal)));
-                      }
-                    }}
+                    readOnly
+                    value={(() => {
+                      const from = parseInt(newAllocSeatFrom);
+                      const to = parseInt(newAllocSeatTo);
+                      if (!isNaN(from) && !isNaN(to) && to >= from) return to - from + 1;
+                      return newAllocSeatCount || '';
+                    })()}
                     className={fieldInput}
-                    style={fieldStyle}
-                    placeholder="Ex: 31"
+                    style={{ ...fieldStyle, cursor: 'not-allowed', opacity: 0.7 }}
+                    placeholder={selectedBus ? `${selectedBus.capacity}` : '0'}
                   />
+                  <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Calculé automatiquement depuis le bus</p>
                 </div>
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Premier numéro de siège</label>
