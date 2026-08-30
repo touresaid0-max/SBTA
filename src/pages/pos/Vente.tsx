@@ -11,7 +11,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation } from '@/services/pos/departService';
+import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
@@ -21,7 +21,7 @@ import type { DepartRecord } from '@/services/pos/departService';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock, RotateCw,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
-  Package, Banknote, XCircle,
+  Package, Banknote, XCircle, ArrowRightLeft, Unlock, X,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { fetchScheduleSeatMap } from '@/services/seatMap.service';
@@ -86,6 +86,13 @@ export default function POSVente() {
   const [bagSelling, setBagSelling] = useState(false);
   const [bagError, setBagError] = useState('');
   const [bagSuccess, setBagSuccess] = useState('');
+
+  // Seat transfer state (between stations)
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferTargetStation, setTransferTargetStation] = useState('');
+  const [transferSeatCount, setTransferSeatCount] = useState(1);
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState('');
 
   const loadData = useCallback(async () => {
     if (!departId) return;
@@ -269,10 +276,11 @@ export default function POSVente() {
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
     if (allowedSeatRange && session?.station_id) {
-      return seatsLibresForStation(tickets, depart, session.station_id);
+      const libres = seatsLibresForStation(tickets, depart, session.station_id);
+      return Math.max(0, libres - lockedSeats.length);
     }
     return depart.seats_total - depart.seats_sold;
-  }, [depart, tickets, allowedSeatRange, session?.station_id]);
+  }, [depart, tickets, allowedSeatRange, session?.station_id, lockedSeats]);
 
   const stationSeatsAllocated = useMemo(() => {
     if (!depart || !session?.station_id) return depart?.seats_total ?? 0;
@@ -283,6 +291,11 @@ export default function POSVente() {
     if (!depart || !session?.station_id) return depart?.seats_sold ?? 0;
     return seatsVendusForStation(tickets, depart, session.station_id);
   }, [depart, tickets, session?.station_id]);
+
+  const lockedSeats = useMemo(() => {
+    if (!depart || !session?.station_id) return [];
+    return getTransferredSeatsForStation(depart, session.station_id);
+  }, [depart, session?.station_id]);
 
   const isSecondaryStation = depart && session?.station_id && depart.station_id !== session.station_id;
 
@@ -360,6 +373,9 @@ export default function POSVente() {
         return;
       }
       if (soldSeats.includes(seat)) { setError(`Le siège n°${seat} est déjà vendu`); return; }
+      if (depart && session?.station_id && isSeatTransferredLocked(depart, session.station_id, seat)) {
+        setError(`Le siège n°${seat} a été transféré à une autre gare — verrouillé`); return;
+      }
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
     if (tarif <= 0) { setError('Tarif invalide — vérifiez la destination'); return; }
@@ -443,6 +459,35 @@ export default function POSVente() {
     if (depart) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
   };
   void handlePrintTicket;
+
+  const handleTransferSeats = async () => {
+    if (!depart || !departId || !session?.station_id) return;
+    setTransferError('');
+    if (!transferTargetStation) { setTransferError('Veuillez sélectionner une gare destinataire'); return; }
+    if (transferSeatCount <= 0) { setTransferError('Veuillez saisir un nombre de sièges valide'); return; }
+    setTransferring(true);
+    try {
+      await transferSeatsBetweenStations({
+        departId,
+        fromStationId: session.station_id,
+        toStationId: transferTargetStation,
+        seatCount: transferSeatCount,
+        transferredBy: session?.full_name,
+      });
+      const updatedDepart = await getDepartById(departId);
+      if (updatedDepart) setDepart(updatedDepart);
+      const targetName = depart.seat_allocations?.find(a => a.station_id === transferTargetStation)?.station_name ?? 'gare destinataire';
+      setSuccess(`${transferSeatCount} siège(s) transféré(s) vers ${targetName} — disponibles à la vente`);
+      setShowTransferModal(false);
+      setTransferTargetStation('');
+      setTransferSeatCount(1);
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err: any) {
+      setTransferError(err?.message ?? 'Erreur lors du transfert');
+    } finally {
+      setTransferring(false);
+    }
+  };
 
   const handleSellBagage = async () => {
     if (!depart || !departId || !bagMode) return;
@@ -572,28 +617,152 @@ export default function POSVente() {
         {/* Seat allocation recap table */}
         {depart.seat_allocations && depart.seat_allocations.length > 0 && (
           <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <p className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)', fontSize: '24px', lineHeight: 1.2 }}>
-              <Armchair className="w-6 h-6" /> Répartition des sièges par gare
-            </p>
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <p className="font-bold flex items-center gap-2" style={{ color: 'var(--text-secondary)', fontSize: '24px', lineHeight: 1.2 }}>
+                <Armchair className="w-6 h-6" /> Répartition des sièges par gare
+              </p>
+              {session?.station_id && (() => {
+                const myFreeSeats = getAvailableSeatsForTransfer(depart, tickets, session.station_id);
+                const otherStations = depart.seat_allocations!.filter(a => a.station_id !== session.station_id);
+                return otherStations.length > 0 && myFreeSeats.length > 0 && !depart.cloture && !depart.cancelled ? (
+                  <button
+                    onClick={() => { setTransferError(''); setShowTransferModal(true); }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors"
+                    style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', border: '1px solid var(--primary)' }}
+                  >
+                    <ArrowRightLeft className="w-4 h-4" /> Charger dans une autre gare
+                  </button>
+                ) : null;
+              })()}
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--text-muted)' }}>
-                    <th className="px-2 py-2 text-base font-bold text-left">Gare</th>
-                    <th className="px-2 py-2 text-base font-bold text-center">Sièges attribués</th>
+                    <th className="px-2 py-2 text-sm font-bold text-left">Gare</th>
+                    <th className="px-2 py-2 text-sm font-bold text-center">Attribués</th>
+                    <th className="px-2 py-2 text-sm font-bold text-center">Vendus</th>
+                    <th className="px-2 py-2 text-sm font-bold text-center">Libres</th>
+                    <th className="px-2 py-2 text-sm font-bold text-center">Transférés</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {depart.seat_allocations.map((a, i) => (
-                    <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td className="px-2 py-2 text-base font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
-                        {a.station_name}{a.station_id === session?.station_id ? ' (vous)' : ''}
-                      </td>
-                      <td className="px-2 py-2 text-base text-center font-bold" style={{ color: 'var(--text-secondary)' }}>{a.seat_from} à {a.seat_to}</td>
-                    </tr>
-                  ))}
+                  {depart.seat_allocations.map((a, i) => {
+                    const sold = seatsVendusForStation(tickets, depart, a.station_id);
+                    const allocated = a.seat_to - a.seat_from + 1;
+                    const libres = allocated - sold;
+                    const transferredOut = getTransferredSeatsForStation(depart, a.station_id).length;
+                    const receivedTransfers = (depart.seat_transfers ?? []).filter(tr => tr.to_station_id === a.station_id).reduce((sum, tr) => sum + (tr.seat_to - tr.seat_from + 1), 0);
+                    return (
+                      <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td className="px-2 py-2 text-sm font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
+                          {a.station_name}{a.station_id === session?.station_id ? ' (vous)' : ''}
+                        </td>
+                        <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--text-secondary)' }}>{a.seat_from}–{a.seat_to}</td>
+                        <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--danger)' }}>{sold}</td>
+                        <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: libres > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{libres}</td>
+                        <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--warning)' }}>
+                          {transferredOut > 0 ? `−${transferredOut}` : receivedTransfers > 0 ? `+${receivedTransfers}` : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+            {depart.seat_transfers && depart.seat_transfers.length > 0 && (
+              <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                <p className="text-xs font-bold flex items-center gap-1.5 mb-1" style={{ color: 'var(--text-muted)' }}>
+                  <Unlock className="w-3.5 h-3.5" /> Historique des transferts
+                </p>
+                {depart.seat_transfers.map((tr, i) => {
+                  const fromName = depart.seat_allocations?.find(a => a.station_id === tr.from_station_id)?.station_name ?? tr.from_station_id;
+                  const toName = depart.seat_allocations?.find(a => a.station_id === tr.to_station_id)?.station_name ?? tr.to_station_id;
+                  return (
+                    <p key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {fromName} → {toName} : sièges {tr.seat_from}–{tr.seat_to} ({tr.seat_to - tr.seat_from + 1} siège(s))
+                    </p>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Seat transfer modal */}
+        {showTransferModal && depart && session?.station_id && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => !transferring && setShowTransferModal(false)}>
+            <div className="rounded-2xl p-5 w-full max-w-md" style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)' }} onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                  <ArrowRightLeft className="w-5 h-5" style={{ color: 'var(--primary)' }} /> Transfert de sièges
+                </h3>
+                <button onClick={() => !transferring && setShowTransferModal(false)} disabled={transferring} className="p-1 rounded-lg" style={{ color: 'var(--text-muted)' }}>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {transferError && (
+                <div className="rounded-lg px-3 py-2 mb-3 flex items-start gap-2 text-xs" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /><span>{transferError}</span>
+                </div>
+              )}
+              <div className="space-y-3">
+                <div>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Gare source</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={session.station_name ?? 'Votre gare'}
+                    className={fieldInput}
+                    style={{ ...fieldStyle, opacity: 0.6 }}
+                  />
+                </div>
+                <div>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Gare destinataire</label>
+                  <select
+                    value={transferTargetStation}
+                    onChange={e => setTransferTargetStation(e.target.value)}
+                    disabled={transferring}
+                    className={fieldInput}
+                    style={fieldStyle}
+                  >
+                    <option value="">— Sélectionner —</option>
+                    {depart.seat_allocations!.filter(a => a.station_id !== session.station_id).map(a => (
+                      <option key={a.station_id} value={a.station_id}>{a.station_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                    Nombre de sièges à transférer
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={getAvailableSeatsForTransfer(depart, tickets, session.station_id).length}
+                    value={transferSeatCount || ''}
+                    onChange={e => setTransferSeatCount(parseInt(e.target.value) || 0)}
+                    disabled={transferring}
+                    className={fieldInput}
+                    style={fieldStyle}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    {getAvailableSeatsForTransfer(depart, tickets, session.station_id).length} siège(s) libre(s) disponible(s) au transfert
+                  </p>
+                </div>
+                <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}>
+                  Les sièges transférés seront <strong>verrouillés</strong> dans votre gare et <strong>disponibles à la vente</strong> dans la gare destinataire.
+                </div>
+              </div>
+              <button
+                onClick={handleTransferSeats}
+                disabled={transferring || !transferTargetStation || transferSeatCount <= 0}
+                className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2"
+                style={{ backgroundColor: 'var(--primary)' }}
+              >
+                {transferring ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
+                {transferring ? 'Transfert en cours…' : 'Confirmer le transfert'}
+              </button>
             </div>
           </div>
         )}
@@ -979,6 +1148,7 @@ export default function POSVente() {
                         (_, i) => i + (allowedSeatRange?.from ?? depart.seats_from)
                       ).map(n => {
                         const sold = soldSeats.includes(n);
+                        const locked = lockedSeats.includes(n);
                         const checked = selectedSeats.includes(n);
                         return (
                           <label
@@ -986,23 +1156,24 @@ export default function POSVente() {
                             className="flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none"
                             style={{
                               backgroundColor: checked ? 'var(--primary-light)' : 'transparent',
-                              opacity: sold ? 0.45 : 1,
-                              cursor: sold ? 'not-allowed' : 'pointer',
+                              opacity: (sold || locked) ? 0.45 : 1,
+                              cursor: (sold || locked) ? 'not-allowed' : 'pointer',
                               borderBottom: '1px solid var(--border)',
                             }}
                           >
                             <input
                               type="checkbox"
                               checked={checked}
-                              disabled={sold}
-                              onChange={() => !sold && toggleSeat(n)}
+                              disabled={sold || locked}
+                              onChange={() => !sold && !locked && toggleSeat(n)}
                               className="w-4 h-4 flex-shrink-0"
                               style={{ accentColor: 'var(--primary)' }}
                             />
-                            <span className="text-sm font-bold" style={{ color: sold ? 'var(--text-muted)' : checked ? 'var(--primary)' : 'var(--text-primary)' }}>
+                            <span className="text-sm font-bold" style={{ color: (sold || locked) ? 'var(--text-muted)' : checked ? 'var(--primary)' : 'var(--text-primary)' }}>
                               {n}
                             </span>
                             {sold && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--danger)' }}>Vendu</span>}
+                            {locked && !sold && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--warning)' }}>Transféré</span>}
                           </label>
                         );
                       })}

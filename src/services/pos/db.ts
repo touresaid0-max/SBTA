@@ -10,6 +10,15 @@ export interface SeatAllocation {
   seat_to: number;
 }
 
+export interface SeatTransfer {
+  from_station_id: string;
+  to_station_id: string;
+  seat_from: number;
+  seat_to: number;
+  transferred_at: string;
+  transferred_by?: string;
+}
+
 export interface DepartRecord {
   id: string;
   departure_number: number;
@@ -37,6 +46,7 @@ export interface DepartRecord {
   seats_from: number;
   seats_sold: number;
   seat_allocations?: SeatAllocation[];
+  seat_transfers?: SeatTransfer[];
   station_id: string;
   station_name?: string;
   arrival_station_id?: string;

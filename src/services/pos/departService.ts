@@ -1,9 +1,9 @@
-import { type DepartRecord, type SeatAllocation, type TicketRecord } from './db';
+import { type DepartRecord, type SeatAllocation, type SeatTransfer, type TicketRecord } from './db';
 import { localInsert, localUpdate, getAll } from './offlineStore';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
 
-export type { DepartRecord, SeatAllocation };
+export type { DepartRecord, SeatAllocation, SeatTransfer };
 
 export interface LigneRef { id: string; name: string; origin_station_id: string; destination_station_id: string; destination_city_id?: string; base_price: number; is_active: boolean }
 export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string; brand?: string; model?: string; seats_sold_from?: number }
@@ -501,4 +501,126 @@ export async function getSoldSeatNumbers(departId: string): Promise<number[]> {
   return all
     .filter(t => t.depart_id === departId && t.status !== 'cancelled')
     .map(t => t.seat_number);
+}
+
+// ── Seat transfer between stations (same depart) ──
+
+export function getTransferredSeatsForStation(
+  depart: DepartRecord,
+  stationId: string,
+): number[] {
+  const seats: number[] = [];
+  for (const tr of depart.seat_transfers ?? []) {
+    if (tr.from_station_id === stationId) {
+      for (let s = tr.seat_from; s <= tr.seat_to; s++) seats.push(s);
+    }
+  }
+  return seats;
+}
+
+export function getReceivedTransfersForStation(
+  depart: DepartRecord,
+  stationId: string,
+): SeatTransfer[] {
+  return (depart.seat_transfers ?? []).filter(tr => tr.to_station_id === stationId);
+}
+
+export function isSeatTransferredLocked(
+  depart: DepartRecord,
+  stationId: string,
+  seatNumber: number,
+): boolean {
+  return getTransferredSeatsForStation(depart, stationId).includes(seatNumber);
+}
+
+export function getAvailableSeatsForTransfer(
+  depart: DepartRecord,
+  tickets: TicketRecord[],
+  fromStationId: string,
+): number[] {
+  const range = getSeatRangeForStation(depart, fromStationId);
+  if (!range) return [];
+  const sold = new Set(
+    tickets
+      .filter(t => t.depart_id === depart.id && t.status !== 'cancelled')
+      .map(t => t.seat_number),
+  );
+  const locked = new Set(getTransferredSeatsForStation(depart, fromStationId));
+  const available: number[] = [];
+  for (let s = range.from; s <= range.to; s++) {
+    if (!sold.has(s) && !locked.has(s)) available.push(s);
+  }
+  return available;
+}
+
+export async function transferSeatsBetweenStations(params: {
+  departId: string;
+  fromStationId: string;
+  toStationId: string;
+  seatCount: number;
+  transferredBy?: string;
+}): Promise<DepartRecord> {
+  const depart = await getDepartById(params.departId);
+  if (!depart) throw new Error('Départ introuvable');
+  if (!depart.seat_allocations || depart.seat_allocations.length === 0) {
+    throw new Error('Aucune répartition de sièges pour ce départ');
+  }
+
+  const allTickets = await getAll<TicketRecord>('tickets');
+  const available = getAvailableSeatsForTransfer(depart, allTickets, params.fromStationId);
+
+  if (available.length === 0) {
+    throw new Error('Aucun siège libre disponible au transfert dans cette gare');
+  }
+
+  const count = Math.min(params.seatCount, available.length);
+  const seatsToTransfer = available.slice(0, count);
+  const seatFrom = seatsToTransfer[0];
+  const seatTo = seatsToTransfer[count - 1];
+
+  const fromAlloc = depart.seat_allocations.find(a => a.station_id === params.fromStationId);
+  const toAlloc = depart.seat_allocations.find(a => a.station_id === params.toStationId);
+  if (!fromAlloc) throw new Error('Gare source introuvable dans la répartition');
+  if (!toAlloc) throw new Error('Gare destinataire introuvable dans la répartition');
+
+  const transfers: SeatTransfer[] = [
+    ...(depart.seat_transfers ?? []),
+    {
+      from_station_id: params.fromStationId,
+      to_station_id: params.toStationId,
+      seat_from: seatFrom,
+      seat_to: seatTo,
+      transferred_at: new Date().toISOString(),
+      transferred_by: params.transferredBy,
+    },
+  ];
+
+  const updatedAllocations = depart.seat_allocations.map(a => {
+    if (a.station_id === params.toStationId) {
+      const newTo = Math.max(a.seat_to, seatTo);
+      const newFrom = Math.min(a.seat_from, seatFrom);
+      return { ...a, seat_from: newFrom, seat_to: newTo };
+    }
+    return a;
+  });
+
+  const updated = await localUpdate<DepartRecord>('departs', params.departId, {
+    seat_allocations: updatedAllocations,
+    seat_transfers: transfers,
+  });
+
+  try {
+    await supabase
+      .from('schedules')
+      .update({
+        seat_allocations: updatedAllocations,
+        seat_transfers: transfers,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', params.departId);
+  } catch {
+    /* offline: local-only */
+  }
+
+  return updated ?? { ...depart, seat_allocations: updatedAllocations, seat_transfers: transfers };
 }
