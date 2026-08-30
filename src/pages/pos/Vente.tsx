@@ -273,6 +273,11 @@ export default function POSVente() {
     return getSeatRangeForStation(depart, session.station_id);
   }, [depart, session?.station_id]);
 
+  const lockedSeats = useMemo(() => {
+    if (!depart || !session?.station_id) return [];
+    return getTransferredSeatsForStation(depart, session.station_id);
+  }, [depart, session?.station_id]);
+
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
     if (allowedSeatRange && session?.station_id) {
@@ -291,11 +296,6 @@ export default function POSVente() {
     if (!depart || !session?.station_id) return depart?.seats_sold ?? 0;
     return seatsVendusForStation(tickets, depart, session.station_id);
   }, [depart, tickets, session?.station_id]);
-
-  const lockedSeats = useMemo(() => {
-    if (!depart || !session?.station_id) return [];
-    return getTransferredSeatsForStation(depart, session.station_id);
-  }, [depart, session?.station_id]);
 
   const isSecondaryStation = depart && session?.station_id && depart.station_id !== session.station_id;
 
