@@ -136,16 +136,24 @@ export async function getDepartById(id: string): Promise<DepartRecord | undefine
 }
 
 export function seatsAllocatedForStation(d: DepartRecord, stationId: string): number {
-  if (!d.seat_allocations || d.seat_allocations.length === 0) return d.seats_total;
-  const alloc = d.seat_allocations.find(a => a.station_id === stationId);
-  if (!alloc) return d.seats_total;
-  return alloc.seat_to - alloc.seat_from + 1;
+  let base: number;
+  if (!d.seat_allocations || d.seat_allocations.length === 0) {
+    base = d.seats_total;
+  } else {
+    const alloc = d.seat_allocations.find(a => a.station_id === stationId);
+    if (!alloc) base = d.seats_total;
+    else base = alloc.seat_to - alloc.seat_from + 1;
+  }
+  return base + getReceivedTransferSeatsForStation(d, stationId).length;
 }
 
 export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
   const range = getSeatRangeForStation(d, stationId);
-  if (!range) return d.seats_sold;
-  return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && t.seat_number >= range.from && t.seat_number <= range.to).length;
+  const received = getReceivedTransferSeatsForStation(d, stationId);
+  const inSeatPool = (seatNumber: number) =>
+    (range && seatNumber >= range.from && seatNumber <= range.to) || received.includes(seatNumber);
+  if (!range && received.length === 0) return d.seats_sold;
+  return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && inSeatPool(t.seat_number)).length;
 }
 
 export function seatsLibres(d: DepartRecord): number {
@@ -389,8 +397,8 @@ export function isSeatAllowedForStation(
   seatNumber: number,
 ): boolean {
   const range = getSeatRangeForStation(depart, stationId);
-  if (!range) return false;
-  return seatNumber >= range.from && seatNumber <= range.to;
+  if (range && seatNumber >= range.from && seatNumber <= range.to) return true;
+  return getReceivedTransferSeatsForStation(depart, stationId).includes(seatNumber);
 }
 
 export function getStationNameForSeat(
@@ -527,6 +535,23 @@ export function getReceivedTransfersForStation(
   stationId: string,
 ): SeatTransfer[] {
   return (depart.seat_transfers ?? []).filter(tr => tr.to_station_id === stationId);
+}
+
+export function getReceivedTransferSeatsForStation(
+  depart: DepartRecord,
+  stationId: string,
+): number[] {
+  const seats: number[] = [];
+  for (const tr of depart.seat_transfers ?? []) {
+    if (tr.to_station_id === stationId) {
+      if (tr.seats && tr.seats.length > 0) {
+        seats.push(...tr.seats);
+      } else {
+        for (let s = tr.seat_from; s <= tr.seat_to; s++) seats.push(s);
+      }
+    }
+  }
+  return seats;
 }
 
 export function isSeatTransferredLocked(

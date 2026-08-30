@@ -11,7 +11,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
+import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
@@ -278,6 +278,23 @@ export default function POSVente() {
     return getTransferredSeatsForStation(depart, session.station_id);
   }, [depart, session?.station_id]);
 
+  const receivedTransferSeats = useMemo(() => {
+    if (!depart || !session?.station_id) return [];
+    return getReceivedTransferSeatsForStation(depart, session.station_id);
+  }, [depart, session?.station_id]);
+
+  const sellableSeatNumbers = useMemo(() => {
+    if (!depart) return [];
+    const base: number[] = [];
+    const from = allowedSeatRange?.from ?? depart.seats_from;
+    const to = allowedSeatRange?.to ?? depart.seats_total;
+    for (let n = from; n <= to; n++) base.push(n);
+    for (const n of receivedTransferSeats) {
+      if (!base.includes(n)) base.push(n);
+    }
+    return base.sort((a, b) => a - b);
+  }, [depart, allowedSeatRange, receivedTransferSeats]);
+
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
     if (allowedSeatRange && session?.station_id) {
@@ -304,8 +321,12 @@ export default function POSVente() {
 
   const scopedTickets = useMemo(() => {
     if (!hasAllocations || !stationRange) return tickets;
-    return tickets.filter(t => t.seat_number >= stationRange.from && t.seat_number <= stationRange.to);
-  }, [tickets, hasAllocations, stationRange]);
+    const received = receivedTransferSeats;
+    return tickets.filter(t => {
+      if (t.status === 'cancelled') return false;
+      return (t.seat_number >= stationRange.from && t.seat_number <= stationRange.to) || received.includes(t.seat_number);
+    });
+  }, [tickets, hasAllocations, stationRange, receivedTransferSeats]);
 
   const scopedBagages = useMemo(() => {
     if (!hasAllocations) return bagages.filter(b => b.description !== '__deleted__');
@@ -365,7 +386,7 @@ export default function POSVente() {
       if (seat < depart.seats_from || seat > depart.seats_total) {
         setError(`Le siège n°${seat} est hors de la plage autorisée (${depart.seats_from}–${depart.seats_total})`); return;
       }
-      if (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to)) {
+      if (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to) && !receivedTransferSeats.includes(seat)) {
         const ownerStation = getStationNameForSeat(depart, seat);
         setError(ownerStation && ownerStation !== session?.station_name
           ? `Le siège n°${seat} est réservé à la gare de ${ownerStation}.`
@@ -992,7 +1013,7 @@ export default function POSVente() {
                               const n = parseInt(seat.label, 10);
                               const isSelected = structSelectedSeats.some(s => s.id === seat.id);
                               const isSold = !Number.isNaN(n) && soldSeats.includes(n);
-                              const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to);
+                              const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to) && !receivedTransferSeats.includes(n);
                               const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
                               const seatColor = isSelected
                                 ? 'bg-[#0B7439] border-[#085c2d] text-white'
@@ -1047,7 +1068,7 @@ export default function POSVente() {
                                       const n = parseInt(seat.label, 10);
                                       const isSelected = structSelectedSeats.some(s => s.id === seat.id);
                                       const isSold = !Number.isNaN(n) && soldSeats.includes(n);
-                                      const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to);
+                                      const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to) && !receivedTransferSeats.includes(n);
                                       const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
                                       const seatColor = isSelected ? 'bg-[#0B7439] border-[#085c2d] text-white' : isSold ? 'bg-red-500 border-red-600 text-white cursor-not-allowed' : isOutAllowed ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-[#0B7439] hover:text-[#0B7439] cursor-pointer';
                                       return (
@@ -1143,12 +1164,10 @@ export default function POSVente() {
                         )}
                       </div>
                       {/* Seat list */}
-                      {Array.from(
-                        { length: (allowedSeatRange?.to ?? depart.seats_total) - (allowedSeatRange?.from ?? depart.seats_from) + 1 },
-                        (_, i) => i + (allowedSeatRange?.from ?? depart.seats_from)
-                      ).map(n => {
+                      {sellableSeatNumbers.map(n => {
                         const sold = soldSeats.includes(n);
                         const locked = lockedSeats.includes(n);
+                        const isReceived = receivedTransferSeats.includes(n);
                         const checked = selectedSeats.includes(n);
                         return (
                           <label
@@ -1174,6 +1193,7 @@ export default function POSVente() {
                             </span>
                             {sold && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--danger)' }}>Vendu</span>}
                             {locked && !sold && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--warning)' }}>Transféré</span>}
+                            {isReceived && !sold && !locked && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--success)' }}>Reçu</span>}
                           </label>
                         );
                       })}
