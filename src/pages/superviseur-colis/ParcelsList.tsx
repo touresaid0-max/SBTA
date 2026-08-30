@@ -234,12 +234,13 @@ export default function SuperviseurParcelsList() {
         return
       }
 
-      await updateParcelFields(editParcel.id, fields as any)
+      await updateParcelFields(editParcel.id, fields)
       toast.success('Courrier mis à jour')
       closeEdit()
-      load()
+      await load()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erreur lors de la mise à jour')
+      const msg = (err as any)?.message || (err as any)?.details || 'Erreur lors de la mise à jour'
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
@@ -252,7 +253,8 @@ export default function SuperviseurParcelsList() {
       toast.success('Courrier supprimé')
       load()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erreur lors de la suppression')
+      const msg = (err as any)?.message || (err as any)?.details || 'Erreur lors de la suppression'
+      toast.error(msg)
     }
   }
 

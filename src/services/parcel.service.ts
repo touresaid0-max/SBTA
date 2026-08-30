@@ -113,7 +113,7 @@ export async function bulkUpdateParcelStatus(
 
 export async function updateParcelFields(
   parcelId: string,
-  fields: Partial<Pick<Parcel, 'parcel_code' | 'sender_name' | 'sender_phone' | 'recipient_name' | 'recipient_phone' | 'recipient_city' | 'origin_station_id' | 'destination_station_id' | 'total_amount' | 'delivery_fee' | 'status' | 'registered_at' | 'content_description' | 'notes' | 'bus_registration' | 'driver_id'>>,
+  fields: Partial<Pick<Parcel, 'parcel_code' | 'sender_name' | 'sender_phone' | 'recipient_name' | 'recipient_phone' | 'recipient_city' | 'origin_station_id' | 'destination_station_id' | 'total_amount' | 'delivery_fee' | 'status' | 'registered_at' | 'content_description' | 'notes' | 'driver_id'>> & { bus_id?: string | null },
 ): Promise<void> {
   const now = new Date().toISOString()
   const { data: { user } } = await supabase.auth.getUser()
@@ -141,8 +141,9 @@ export async function updateParcelFields(
     }
   }
 
-  const { error } = await supabase.from('parcels').update(payload).eq('id', parcelId)
+  const { error, count } = await supabase.from('parcels').update(payload).eq('id', parcelId).select('id')
   if (error) throw error
+  if (count === 0) throw new Error('Aucune ligne mise à jour — vérifiez vos permissions.')
 
   if (fields.status === 'arrive') {
     try {
