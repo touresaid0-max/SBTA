@@ -652,7 +652,7 @@ export default function POSVente() {
                     const allocated = a.seat_to - a.seat_from + 1;
                     const libres = allocated - sold;
                     const transferredOut = getTransferredSeatsForStation(depart, a.station_id).length;
-                    const receivedTransfers = (depart.seat_transfers ?? []).filter(tr => tr.to_station_id === a.station_id).reduce((sum, tr) => sum + (tr.seat_to - tr.seat_from + 1), 0);
+                    const receivedTransfers = (depart.seat_transfers ?? []).filter(tr => tr.to_station_id === a.station_id).reduce((sum, tr) => sum + (tr.seats?.length ?? (tr.seat_to - tr.seat_from + 1)), 0);
                     return (
                       <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
                         <td className="px-2 py-2 text-sm font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
@@ -680,7 +680,7 @@ export default function POSVente() {
                   const toName = depart.seat_allocations?.find(a => a.station_id === tr.to_station_id)?.station_name ?? tr.to_station_id;
                   return (
                     <p key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {fromName} → {toName} : sièges {tr.seat_from}–{tr.seat_to} ({tr.seat_to - tr.seat_from + 1} siège(s))
+                      {fromName} → {toName} : sièges {tr.seat_from}–{tr.seat_to} ({tr.seats?.length ?? (tr.seat_to - tr.seat_from + 1)} siège(s))
                     </p>
                   );
                 })}

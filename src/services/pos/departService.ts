@@ -512,7 +512,11 @@ export function getTransferredSeatsForStation(
   const seats: number[] = [];
   for (const tr of depart.seat_transfers ?? []) {
     if (tr.from_station_id === stationId) {
-      for (let s = tr.seat_from; s <= tr.seat_to; s++) seats.push(s);
+      if (tr.seats && tr.seats.length > 0) {
+        seats.push(...tr.seats);
+      } else {
+        for (let s = tr.seat_from; s <= tr.seat_to; s++) seats.push(s);
+      }
     }
   }
   return seats;
@@ -590,22 +594,13 @@ export async function transferSeatsBetweenStations(params: {
       to_station_id: params.toStationId,
       seat_from: seatFrom,
       seat_to: seatTo,
+      seats: seatsToTransfer,
       transferred_at: new Date().toISOString(),
       transferred_by: params.transferredBy,
     },
   ];
 
-  const updatedAllocations = depart.seat_allocations.map(a => {
-    if (a.station_id === params.toStationId) {
-      const newTo = Math.max(a.seat_to, seatTo);
-      const newFrom = Math.min(a.seat_from, seatFrom);
-      return { ...a, seat_from: newFrom, seat_to: newTo };
-    }
-    return a;
-  });
-
   const updated = await localUpdate<DepartRecord>('departs', params.departId, {
-    seat_allocations: updatedAllocations,
     seat_transfers: transfers,
   });
 
@@ -613,7 +608,6 @@ export async function transferSeatsBetweenStations(params: {
     await supabase
       .from('schedules')
       .update({
-        seat_allocations: updatedAllocations,
         seat_transfers: transfers,
         updated_at: new Date().toISOString(),
       })
@@ -622,5 +616,5 @@ export async function transferSeatsBetweenStations(params: {
     /* offline: local-only */
   }
 
-  return updated ?? { ...depart, seat_allocations: updatedAllocations, seat_transfers: transfers };
+  return updated ?? { ...depart, seat_transfers: transfers };
 }

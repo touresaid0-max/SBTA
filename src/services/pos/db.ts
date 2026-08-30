@@ -15,6 +15,7 @@ export interface SeatTransfer {
   to_station_id: string;
   seat_from: number;
   seat_to: number;
+  seats: number[];
   transferred_at: string;
   transferred_by?: string;
 }
