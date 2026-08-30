@@ -58,6 +58,11 @@ export default function ParcelDetail() {
   const [editRecipientName, setEditRecipientName] = useState('')
   const [savingName, setSavingName] = useState(false)
 
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false)
+  const [deliveryName, setDeliveryName] = useState('')
+  const [deliveryPhone, setDeliveryPhone] = useState('')
+  const [deliveryCni, setDeliveryCni] = useState('')
+
   const canEditNames = parcel != null && !['expedie', 'arrive', 'livre', 'retourne', 'perdu'].includes(parcel.status)
 
   async function handleSaveName(field: 'sender_name' | 'recipient_name') {
@@ -158,11 +163,20 @@ export default function ParcelDetail() {
 
   async function handleAdvance(newStatus: ParcelStatus) {
     if (!parcel) return
+    if (newStatus === 'livre') {
+      setShowDeliveryModal(true)
+      return
+    }
+    await doAdvance(newStatus)
+  }
+
+  async function doAdvance(newStatus: ParcelStatus, additionalData?: Record<string, unknown>) {
+    if (!parcel) return
     setActionLoading(true)
     try {
-      await updateParcelStatus(parcel.id, newStatus)
+      await updateParcelStatus(parcel.id, newStatus, additionalData)
       toast.success(`Statut mis a jour : ${STATUS_CONFIG[newStatus].label}`)
-      setParcel(prev => prev ? { ...prev, status: newStatus } : prev)
+      setParcel(prev => prev ? { ...prev, status: newStatus, ...additionalData } : prev)
       const evts = await fetchTrackingEvents(parcel.id)
       setEvents(evts)
 
@@ -179,6 +193,35 @@ export default function ParcelDetail() {
     } finally {
       setActionLoading(false)
     }
+  }
+
+  async function confirmDelivery() {
+    if (!parcel) return
+    const name = deliveryName.trim()
+    const phone = deliveryPhone.trim()
+    const cni = deliveryCni.trim()
+    if (!name && !phone && !cni) {
+      toast.error('Veuillez renseigner au moins une information d\u2019identification du client')
+      return
+    }
+    const additionalData: Record<string, unknown> = {}
+    if (name) {
+      additionalData.delivery_recipient_name = name
+      additionalData.delivery_id_type = 'name'
+    }
+    if (phone) {
+      additionalData.delivery_recipient_phone = phone
+      if (!additionalData.delivery_id_type) additionalData.delivery_id_type = 'phone'
+    }
+    if (cni) {
+      additionalData.delivery_id_number = cni
+      if (!additionalData.delivery_id_type) additionalData.delivery_id_type = 'cni'
+    }
+    setShowDeliveryModal(false)
+    await doAdvance('livre', additionalData)
+    setDeliveryName('')
+    setDeliveryPhone('')
+    setDeliveryCni('')
   }
 
   async function handleResendSms(logId: string) {
@@ -749,6 +792,98 @@ export default function ParcelDetail() {
           </div>
         )}
       </div>
+
+      {/* Delivery confirmation modal */}
+      {showDeliveryModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setShowDeliveryModal(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl shadow-2xl"
+            style={{ backgroundColor: 'var(--surface)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h3 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
+                Retrait du courrier {parcel?.parcel_code}
+              </h3>
+              <button onClick={() => setShowDeliveryModal(false)} className="p-1 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: '#FEF3C7', border: '1px solid #D97706' }}>
+                <p className="text-xs font-medium leading-relaxed" style={{ color: '#92400E' }}>
+                  Veuillez renseigner au moins une information permettant d'identifier le client qui retire le colis.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Numéro CNI du client
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryCni}
+                    onChange={e => setDeliveryCni(e.target.value)}
+                    placeholder="Ex : C123456789"
+                    className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"
+                    style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Nom du client
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryName}
+                    onChange={e => setDeliveryName(e.target.value)}
+                    placeholder="Nom et prénom"
+                    className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"
+                    style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Numéro de téléphone
+                  </label>
+                  <input
+                    type="tel"
+                    value={deliveryPhone}
+                    onChange={e => setDeliveryPhone(e.target.value)}
+                    placeholder="Ex : 07 00 00 00 00"
+                    className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"
+                    style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 flex gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+              <button
+                onClick={() => setShowDeliveryModal(false)}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmDelivery}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50"
+                style={{ backgroundColor: '#0B7439', color: '#fff' }}
+              >
+                {actionLoading ? 'Enregistrement...' : 'Confirmer le retrait'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
