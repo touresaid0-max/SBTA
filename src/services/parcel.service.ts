@@ -113,12 +113,13 @@ export async function bulkUpdateParcelStatus(
 
 export async function updateParcelFields(
   parcelId: string,
-  fields: Partial<Pick<Parcel, 'parcel_code' | 'sender_name' | 'sender_phone' | 'recipient_name' | 'recipient_phone' | 'recipient_city' | 'origin_station_id' | 'destination_station_id' | 'total_amount' | 'delivery_fee' | 'status' | 'registered_at' | 'content_description' | 'notes' | 'driver_id'>> & { bus_id?: string | null },
+  fields: Partial<Pick<Parcel, 'parcel_code' | 'sender_name' | 'sender_phone' | 'recipient_name' | 'recipient_phone' | 'recipient_city' | 'origin_station_id' | 'destination_station_id' | 'delivery_fee' | 'status' | 'registered_at' | 'content_description' | 'notes' | 'driver_id'>> & { bus_id?: string | null },
 ): Promise<void> {
   const now = new Date().toISOString()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const payload: Record<string, unknown> = { ...fields, updated_at: now }
+  const { total_amount: _omit, ...rest } = fields as Record<string, unknown>
+  const payload: Record<string, unknown> = { ...rest, updated_at: now }
 
   if (fields.status) {
     switch (fields.status) {

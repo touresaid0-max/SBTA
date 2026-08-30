@@ -214,9 +214,15 @@ export default function SuperviseurParcelsList() {
       if (editForm.origin_station_id !== editParcel.origin_station_id) fields.origin_station_id = editForm.origin_station_id
       if (editForm.destination_station_id !== editParcel.destination_station_id) fields.destination_station_id = editForm.destination_station_id
       const newAmount = Number(editForm.total_amount)
-      if (newAmount !== Number(editParcel.total_amount)) fields.total_amount = newAmount
       const newFee = Number(editForm.delivery_fee)
-      if (newFee !== Number(editParcel.delivery_fee)) fields.delivery_fee = newFee
+      const currentAmount = Number(editParcel.total_amount)
+      const currentFee = Number(editParcel.delivery_fee)
+      const smsFee = Number(editParcel.sms_tracking_fee ?? 100)
+      if (newFee !== currentFee) {
+        fields.delivery_fee = newFee
+      } else if (newAmount !== currentAmount) {
+        fields.delivery_fee = newAmount - smsFee
+      }
       if (editForm.status !== editParcel.status) fields.status = editForm.status
       const regDate = editForm.registered_at ? new Date(editForm.registered_at).toISOString() : editParcel.registered_at
       if (regDate !== editParcel.registered_at) fields.registered_at = regDate
