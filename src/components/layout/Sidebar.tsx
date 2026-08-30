@@ -384,8 +384,9 @@ export default function Sidebar({ open, collapsed, onClose, onToggleCollapse }: 
   // Agent colis: hide "Nouveau courrier" for entrant-only agents
   const colisDir = user.colis_direction ?? null;
   const canSortant = !colisDir || colisDir.length === 0 || colisDir.includes('sortant');
-  const filteredMenuItems = user.role === 'agent_colis' && !canSortant
-    ? menuItems.filter((item: any) => !item.children && item.path !== '/agent-colis/new')
+  const isEntrantOnly = user.role === 'agent_colis' && !canSortant;
+  const filteredMenuItems = isEntrantOnly
+    ? menuItems.filter((item: any) => !item.children && item.path !== '/agent-colis/new' && item.path !== '/agent-colis/sms-fees')
     : menuItems;
 
   const matchPath = (path: string) => {

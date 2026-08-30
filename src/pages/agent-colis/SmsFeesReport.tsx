@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Navigate } from 'react-router-dom'
 import { MessageSquare, Calendar, Hash, Banknote, TrendingUp, Loader2 } from 'lucide-react'
 import { format, startOfDay, endOfDay, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -46,6 +47,11 @@ function getPeriodLabel(period: PeriodType, refDate: Date): string {
 
 export default function SmsFeesReport() {
   const { user } = useAuthStore()
+
+  const colisDir = user?.colis_direction ?? null
+  const isEntrantOnly = user?.role === 'agent_colis' && !(colisDir && colisDir.length > 0 && colisDir.includes('sortant'))
+  if (isEntrantOnly) return <Navigate to="/agent-colis/dashboard" replace />
+
   const [period, setPeriod] = useState<PeriodType>('daily')
   const [refDate, setRefDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [loading, setLoading] = useState(true)
