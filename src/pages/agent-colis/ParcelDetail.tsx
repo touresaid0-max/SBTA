@@ -7,6 +7,10 @@ import { fr } from 'date-fns/locale'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { fetchTrackingEvents, updateParcelStatus, updateParcelNames } from '@/services/parcel.service'
+import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
+import { getLocalParcel, getLocalTrackingEvents, localUpdateParcel, parcelRecordToParcel } from '@/services/courrier/offlineStore'
+import { useConnection } from '@/services/courrier/ConnectionContext'
+import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { fetchSmsLogs, resendSms } from '@/services/emisSms.service'
 import type { SmsLog } from '@/services/emisSms.service'
 import ParcelStatusStepper from '@/components/parcel/ParcelStatusStepper'
@@ -28,6 +32,7 @@ export default function ParcelDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuthStore()
+  const conn = useConnection()
 
   const [parcel, setParcel] = useState<Parcel | null>(null)
   const [scheduleInfo, setScheduleInfo] = useState<{
@@ -90,6 +95,17 @@ export default function ParcelDetail() {
     async function load() {
       setLoading(true)
       try {
+        // Offline: try local store first
+        if (!courrierIsOnline()) {
+          const localParcel = await getLocalParcel(id)
+          if (localParcel) {
+            setParcel(parcelRecordToParcel(localParcel))
+            const localEvts = await getLocalTrackingEvents(id)
+            setEvents(localEvts as any)
+            return
+          }
+        }
+
         const { data, error } = await supabase
           .from('parcels')
           .select(`
@@ -153,6 +169,16 @@ export default function ParcelDetail() {
         const logs = await fetchSmsLogs(id)
         setSmsLogs(logs)
       } catch {
+        // If online fetch fails, try local fallback
+        try {
+          const localParcel = await getLocalParcel(id)
+          if (localParcel) {
+            setParcel(parcelRecordToParcel(localParcel))
+            const localEvts = await getLocalTrackingEvents(id)
+            setEvents(localEvts as any)
+            return
+          }
+        } catch { /* local fallback also failed */ }
         toast.error('Erreur chargement courrier')
       } finally {
         setLoading(false)
@@ -174,18 +200,35 @@ export default function ParcelDetail() {
     if (!parcel) return
     setActionLoading(true)
     try {
-      await updateParcelStatus(parcel.id, newStatus, additionalData)
-      toast.success(`Statut mis a jour : ${STATUS_CONFIG[newStatus].label}`)
-      setParcel(prev => prev ? { ...prev, status: newStatus, ...additionalData } : prev)
-      const evts = await fetchTrackingEvents(parcel.id)
-      setEvents(evts)
+      if (!courrierIsOnline()) {
+        const now = new Date().toISOString()
+        const patch: Record<string, unknown> = { status: newStatus, ...additionalData }
+        switch (newStatus) {
+          case 'mis_en_paquet': patch.packaged_at = now; break
+          case 'expedie': patch.shipped_at = now; break
+          case 'arrive': patch.arrived_at = now; break
+          case 'livre': patch.delivered_at = now; break
+        }
+        await localUpdateParcel(parcel.id, patch as any)
+        toast.success(`Statut mis à jour : ${STATUS_CONFIG[newStatus].label}`)
+        setParcel(prev => prev ? { ...prev, status: newStatus, ...additionalData } as Parcel : prev)
+        const localEvts = await getLocalTrackingEvents(parcel.id)
+        setEvents(localEvts as any)
+        conn.setPendingCount(await getPendingCount())
+      } else {
+        await updateParcelStatus(parcel.id, newStatus, additionalData)
+        toast.success(`Statut mis a jour : ${STATUS_CONFIG[newStatus].label}`)
+        setParcel(prev => prev ? { ...prev, status: newStatus, ...additionalData } : prev)
+        const evts = await fetchTrackingEvents(parcel.id)
+        setEvents(evts)
 
-      if (newStatus === 'arrive') {
-        const logs = await fetchSmsLogs(parcel.id)
-        setSmsLogs(logs)
-        const arrivedLog = logs.find(l => l.sms_type === 'ARRIVED')
-        if (arrivedLog?.status === 'FAILED' || !arrivedLog) {
-          toast('Statut mis a jour, mais SMS non envoye.', { icon: '\u26A0\uFE0F' })
+        if (newStatus === 'arrive') {
+          const logs = await fetchSmsLogs(parcel.id)
+          setSmsLogs(logs)
+          const arrivedLog = logs.find(l => l.sms_type === 'ARRIVED')
+          if (arrivedLog?.status === 'FAILED' || !arrivedLog) {
+            toast('Statut mis a jour, mais SMS non envoye.', { icon: '\u26A0\uFE0F' })
+          }
         }
       }
     } catch (e: any) {
@@ -292,6 +335,15 @@ export default function ParcelDetail() {
 
   return (
     <div className="agent-colis-theme p-3 sm:p-4 lg:p-6 max-w-3xl mx-auto space-y-4 sm:space-y-5 lg:space-y-6 overflow-x-hidden">
+
+      <CourrierOfflineBanner
+        status={conn.status}
+        syncing={conn.syncing}
+        pendingCount={conn.pendingCount}
+        lastSyncError={conn.lastSyncError}
+        onShowQueue={() => {}}
+        onSyncNow={() => {}}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between gap-2">

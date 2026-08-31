@@ -5,6 +5,10 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { createParcel, fetchParcelAgentInfo, markTicketPrinted } from '@/services/parcel.service'
+import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
+import { localInsertParcel } from '@/services/courrier/offlineStore'
+import { useConnection } from '@/services/courrier/ConnectionContext'
+import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import type { ParcelNature, ParcelPriority, Parcel } from '@/types/parcel.types'
@@ -75,6 +79,8 @@ export default function NewParcelForm() {
 
   const total = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
+  const conn = useConnection()
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!myStation) { toast.error('Aucune gare associée à votre compte'); return }
@@ -85,6 +91,79 @@ export default function NewParcelForm() {
 
     setLoading(true)
     try {
+      // Offline path: save locally, queue for sync, skip server-only features
+      if (!courrierIsOnline()) {
+        const now = new Date().toISOString()
+        const localId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const tempCode = `LOCAL-${Date.now().toString().slice(-6)}`
+        const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
+
+        const localParcel = await localInsertParcel({
+          parcel_code: tempCode,
+          reference: '',
+          daily_sequence: 0,
+          sender_name: form.sender_name,
+          sender_phone: form.sender_phone,
+          sender_address: null,
+          recipient_name: form.recipient_name,
+          recipient_phone: form.recipient_phone,
+          recipient_city: form.recipient_city,
+          recipient_address: null,
+          origin_station_id: myStation.id,
+          origin_station_name: myStation.name,
+          destination_station_id: form.destination_station_id,
+          destination_station_name: stations.find(s => s.id === form.destination_station_id)?.name ?? '',
+          schedule_id: null,
+          driver_id: null,
+          bus_id: null,
+          declared_value: Number(form.declared_value),
+          delivery_fee: Number(form.delivery_fee),
+          sms_tracking_fee: Number(form.sms_tracking_fee),
+          total_amount: totalAmount,
+          priority: form.priority,
+          planned_date: form.planned_date || null,
+          nature: form.nature,
+          content_description: form.content_description,
+          notes: form.notes || null,
+          status: 'enregistre',
+          registered_at: now,
+          registered_by: user?.id ?? null,
+          packaged_at: null,
+          shipped_at: null,
+          arrived_at: null,
+          delivered_at: null,
+          tracking_url: '',
+          sms_sent_at: null,
+          company_id: null,
+          ticket_printed: false,
+          delivery_recipient_name: null,
+          delivery_recipient_phone: null,
+          delivery_id_number: null,
+          delivery_id_type: null,
+        })
+
+        toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
+
+        // Print ticket with local data
+        try {
+          const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
+          await printParcelTicket(buildReceiptData(
+            { ...localParcel, origin_station_name: myStation.name, parcel_code: localParcel.parcel_code } as Parcel,
+            myStation.name,
+            stationPhone,
+            null,
+            null,
+            agentInfo,
+          ))
+          await localInsertParcel({ ...localParcel, ticket_printed: true } as any)
+        } catch { /* printing failure must not block */ }
+
+        conn.setPendingCount(await getPendingCount())
+        navigate('/agent-colis/dashboard')
+        return
+      }
+
+      // Online path: original flow
       // Vérifier qu'un code agence est configuré pour cette destination
       const { data: destCode } = await supabase
         .from('station_destination_agency_codes')
@@ -209,6 +288,15 @@ export default function NewParcelForm() {
 
   return (
     <div className="agent-colis-theme p-3 sm:p-4 lg:p-6 max-w-3xl mx-auto overflow-x-hidden">
+
+      <CourrierOfflineBanner
+        status={conn.status}
+        syncing={conn.syncing}
+        pendingCount={conn.pendingCount}
+        lastSyncError={conn.lastSyncError}
+        onShowQueue={() => {}}
+        onSyncNow={() => {}}
+      />
       {/* Header */}
       <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
         <button onClick={() => navigate(-1)} className="p-2 rounded-lg hover:bg-gray-100 flex-shrink-0">

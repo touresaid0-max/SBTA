@@ -266,6 +266,7 @@ import POSConvois from './pages/pos/Convois';
 import POSParametres from './pages/pos/Parametres';
 import { POSSessionProvider } from './services/pos/POSSessionContext';
 import { ConnectionProvider } from './services/pos/ConnectionContext';
+import { ConnectionProvider as CourrierConnectionProvider } from './services/courrier/ConnectionContext';
 
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
@@ -528,10 +529,10 @@ function App() {
             <Route path="agent-reservation/faq"        element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationFaq /></ProtectedRoute>} />
             <Route path="agent-reservation/policies"   element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationPolicies /></ProtectedRoute>} />
 
-            <Route path="agent-colis/dashboard" element={<ProtectedRoute roles={['agent_colis']}><AgentColisDashboard /></ProtectedRoute>} />
-            <Route path="agent-colis/new" element={<ProtectedRoute roles={['agent_colis']}><NewParcelForm /></ProtectedRoute>} />
-            <Route path="agent-colis/parcels/:id" element={<ProtectedRoute roles={['agent_colis']}><ParcelDetail /></ProtectedRoute>} />
-            <Route path="agent-colis/scan" element={<ProtectedRoute roles={['agent_colis']}><QrScanner /></ProtectedRoute>} />
+            <Route path="agent-colis/dashboard" element={<ProtectedRoute roles={['agent_colis']}><CourrierConnectionProvider><AgentColisDashboard /></CourrierConnectionProvider></ProtectedRoute>} />
+            <Route path="agent-colis/new" element={<ProtectedRoute roles={['agent_colis']}><CourrierConnectionProvider><NewParcelForm /></CourrierConnectionProvider></ProtectedRoute>} />
+            <Route path="agent-colis/parcels/:id" element={<ProtectedRoute roles={['agent_colis']}><CourrierConnectionProvider><ParcelDetail /></CourrierConnectionProvider></ProtectedRoute>} />
+            <Route path="agent-colis/scan" element={<ProtectedRoute roles={['agent_colis']}><CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider></ProtectedRoute>} />
             <Route path="superviseur-colis/expense-entry" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><AgentColisExpenses /></ProtectedRoute>} />
             <Route path="superviseur-colis/expense-report" element={<ProtectedRoute roles={['superviseur_colis', 'admin', 'daf']}><AgentColisExpenseReport /></ProtectedRoute>} />
             <Route path="agent-colis/sms-fees" element={<ProtectedRoute roles={['agent_colis', 'superviseur_colis']}><AgentColisSmsFeesReport /></ProtectedRoute>} />

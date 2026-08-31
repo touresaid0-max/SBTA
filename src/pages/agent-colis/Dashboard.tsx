@@ -22,6 +22,12 @@ import {
 import { getParcelActionPermission } from '@/utils/parcelPermissions'
 import { printBordereauCourrier } from '@/utils/printBordereau'
 import type { Parcel, ParcelStatus } from '@/types/parcel.types'
+import { useConnection } from '@/services/courrier/ConnectionContext'
+import { useAutoSync } from '@/services/courrier/useAutoSync'
+import { isOnline as courrierIsOnline, flushSyncQueue, getPendingCount } from '@/services/courrier/syncEngine'
+import { getAllLocalParcels, localUpdateParcel, parcelRecordToParcel, syncParcelsFromServer } from '@/services/courrier/offlineStore'
+import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
+import { CourrierSyncQueueModal } from '@/components/parcel/CourrierSyncQueueModal'
 
 // A bordereau group = all parcels sharing the same bus + destination
 interface BordereauGroup {
@@ -73,6 +79,9 @@ const INCOMING_STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 export default function AgentColisDashboard() {
   const { user } = useAuthStore()
   const navigate  = useNavigate()
+  const conn = useConnection()
+  useAutoSync(user?.station_id ?? undefined)
+  const [showSyncQueue, setShowSyncQueue] = useState(false)
 
   // All fetched data (full period for lists)
   const [outgoing, setOutgoing] = useState<Parcel[]>([])
@@ -150,12 +159,43 @@ export default function AgentColisDashboard() {
     if (!stationId) return
     setLoading(true)
     try {
+      // Offline mode: load from local IndexedDB
+      if (!courrierIsOnline()) {
+        const localParcels = await getAllLocalParcels()
+        const parcels = localParcels.map(parcelRecordToParcel)
+        const out = parcels.filter(p => p.origin_station_id === stationId)
+        const inc = parcels.filter(p => p.destination_station_id === stationId)
+        setOutgoing(out)
+        setIncoming(inc)
+        prevIncomingIds.current = new Set(inc.map(p => p.id))
+        return
+      }
+
+      // Online mode: fetch from Supabase + merge local unsynced parcels
       const [out, inc] = await Promise.all([
         fetchOutgoingParcelsPeriod(stationId, period),
         fetchIncomingParcelsPeriod(stationId, period),
       ])
-      setOutgoing(out)
-      setIncoming(inc)
+
+      // Merge any local-only parcels (created offline and not yet synced)
+      const localParcels = await getAllLocalParcels()
+      const unsyncedLocal = localParcels.filter(p => !p.synced)
+      if (unsyncedLocal.length > 0) {
+        const localOut = unsyncedLocal
+          .filter(p => p.origin_station_id === stationId)
+          .map(parcelRecordToParcel)
+        const localInc = unsyncedLocal
+          .filter(p => p.destination_station_id === stationId)
+          .map(parcelRecordToParcel)
+        const existingIds = new Set([...out.map(p => p.id), ...inc.map(p => p.id)])
+        const mergedOut = [...out, ...localOut.filter(p => !existingIds.has(p.id))]
+        const mergedInc = [...inc, ...localInc.filter(p => !existingIds.has(p.id))]
+        setOutgoing(mergedOut)
+        setIncoming(mergedInc)
+      } else {
+        setOutgoing(out)
+        setIncoming(inc)
+      }
 
       // Detect truly new arrivals since last load
       const newOnes = inc.filter(p => !prevIncomingIds.current.has(p.id) && p.status !== 'livre')
@@ -172,7 +212,19 @@ export default function AgentColisDashboard() {
       }
       prevIncomingIds.current = new Set(inc.map(p => p.id))
     } catch {
-      toast.error('Erreur chargement courriers')
+      // If online fetch fails, try local fallback
+      if (courrierIsOnline()) {
+        try {
+          const localParcels = await getAllLocalParcels()
+          const parcels = localParcels.map(parcelRecordToParcel)
+          setOutgoing(parcels.filter(p => p.origin_station_id === stationId))
+          setIncoming(parcels.filter(p => p.destination_station_id === stationId))
+        } catch {
+          toast.error('Erreur chargement courriers')
+        }
+      } else {
+        toast.error('Erreur chargement courriers')
+      }
     } finally {
       setLoading(false)
     }
@@ -393,10 +445,25 @@ export default function AgentColisDashboard() {
     setBulkLoading(dest)
     setBulkConfirm(null)
     try {
-      const { updated } = await bulkUpdateParcelStatus(ids, action)
-      const label = action === 'mis_en_paquet' ? 'mis en paquet' : 'expédiés'
-      toast.success(`${updated} courrier${updated > 1 ? 's' : ''} ${label} — ${dest}`)
-      loadParcels()
+      if (!courrierIsOnline()) {
+        const now = new Date().toISOString()
+        for (const id of ids) {
+          const patch: Record<string, unknown> = { status: action }
+          if (action === 'mis_en_paquet') patch.packaged_at = now
+          else if (action === 'expedie') patch.shipped_at = now
+          await localUpdateParcel(id, patch as any)
+        }
+        const label = action === 'mis_en_paquet' ? 'mis en paquet' : 'expédiés'
+        toast.success(`${ids.length} courrier${ids.length > 1 ? 's' : ''} ${label} — ${dest}`)
+        const count = await getPendingCount()
+        conn.setPendingCount(count)
+        loadParcels()
+      } else {
+        const { updated } = await bulkUpdateParcelStatus(ids, action)
+        const label = action === 'mis_en_paquet' ? 'mis en paquet' : 'expédiés'
+        toast.success(`${updated} courrier${updated > 1 ? 's' : ''} ${label} — ${dest}`)
+        loadParcels()
+      }
     } catch (e: any) {
       toast.error(e.message || 'Erreur lors de la mise à jour')
     } finally {
@@ -415,9 +482,26 @@ export default function AgentColisDashboard() {
   async function doAdvance(parcel: Parcel, nextStatus: ParcelStatus, additionalData?: Record<string, unknown>) {
     setActionLoading(parcel.id)
     try {
-      await updateParcelStatus(parcel.id, nextStatus, additionalData)
-      toast.success(`Statut mis à jour : ${STATUS_CONFIG[nextStatus].label}`)
-      loadParcels()
+      if (!courrierIsOnline()) {
+        // Offline: update local IndexedDB, queue for sync
+        const now = new Date().toISOString()
+        const patch: Record<string, unknown> = { status: nextStatus, ...additionalData }
+        switch (nextStatus) {
+          case 'mis_en_paquet': patch.packaged_at = now; break
+          case 'expedie': patch.shipped_at = now; break
+          case 'arrive': patch.arrived_at = now; break
+          case 'livre': patch.delivered_at = now; break
+        }
+        await localUpdateParcel(parcel.id, patch as any)
+        toast.success(`Statut mis à jour : ${STATUS_CONFIG[nextStatus].label}`)
+        const count = await getPendingCount()
+        conn.setPendingCount(count)
+        loadParcels()
+      } else {
+        await updateParcelStatus(parcel.id, nextStatus, additionalData)
+        toast.success(`Statut mis à jour : ${STATUS_CONFIG[nextStatus].label}`)
+        loadParcels()
+      }
     } catch (e: any) {
       toast.error(e.message)
     } finally {
@@ -560,6 +644,23 @@ export default function AgentColisDashboard() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="agent-colis-theme p-3 sm:p-4 lg:p-6 space-y-4 sm:space-y-5 lg:space-y-6 overflow-x-hidden" style={{ backgroundColor: 'var(--bg-subtle)', minHeight: '100vh' }}>
+
+      {/* Offline / Online status banner */}
+      <CourrierOfflineBanner
+        status={conn.status}
+        syncing={conn.syncing}
+        pendingCount={conn.pendingCount}
+        lastSyncError={conn.lastSyncError}
+        onShowQueue={() => setShowSyncQueue(true)}
+        onSyncNow={async () => { const r = await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); if (r.failed === 0 && r.processed > 0) conn.setLastSyncedAt(new Date().toISOString()); void syncParcelsFromServer(stationId ?? undefined); loadParcels(); }}
+      />
+
+      {/* Sync queue modal */}
+      <CourrierSyncQueueModal
+        open={showSyncQueue}
+        onClose={() => setShowSyncQueue(false)}
+        onSyncNow={async () => { const r = await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); if (r.failed === 0 && r.processed > 0) conn.setLastSyncedAt(new Date().toISOString()); void syncParcelsFromServer(stationId ?? undefined); loadParcels(); }}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
