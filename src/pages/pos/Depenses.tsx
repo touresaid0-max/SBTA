@@ -7,7 +7,7 @@ import { createDepense, getDepensesForDepart, getDepenseTotalForDepart, type Dep
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
   AlertCircle, CheckCircle, Loader2, Plus,
-  Receipt,
+  Receipt, Calendar,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
@@ -31,6 +31,7 @@ export default function POSDepenses() {
   const [success, setSuccess] = useState('');
 
   const [liveTotDepense, setLiveTotDepense] = useState(0);
+  const [departDateFilter, setDepartDateFilter] = useState(new Date().toISOString().split('T')[0]);
 
   // Form state
   const [type, setType] = useState(EXPENSE_TYPES[0]);
@@ -42,7 +43,7 @@ export default function POSDepenses() {
   const loadData = useCallback(async () => {
     try {
       const all = await getAllDeparts(session?.station_id, session?.counter_id);
-      const active = all.filter(d => !d.cancelled && !d.cloture);
+      const active = all.filter(d => !d.cancelled && !d.cloture && d.departure_date === departDateFilter);
       setDeparts(active);
       if (active.length > 0 && !selectedDepartId) {
         setSelectedDepartId(active[0].id);
@@ -52,9 +53,12 @@ export default function POSDepenses() {
     } finally {
       setLoading(false);
     }
-  }, [session?.station_id, session?.counter_id]);
+  }, [session?.station_id, session?.counter_id, departDateFilter]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Reset selected depart when date filter changes
+  useEffect(() => { setSelectedDepartId(''); }, [departDateFilter]);
 
   useEffect(() => {
     (async () => {
@@ -141,6 +145,28 @@ export default function POSDepenses() {
             <CheckCircle className="w-4 h-4" /> {success}
           </div>
         )}
+
+        {/* Date filter */}
+        <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <Calendar className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--primary)' }} />
+          <div className="flex-1">
+            <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Date personnalisée</label>
+            <input
+              type="date"
+              value={departDateFilter}
+              onChange={e => setDepartDateFilter(e.target.value)}
+              className={fieldInput}
+              style={fieldStyle}
+            />
+          </div>
+          <button
+            onClick={() => setDepartDateFilter(new Date().toISOString().split('T')[0])}
+            className="px-3 py-2.5 rounded-lg text-xs font-bold flex-shrink-0"
+            style={{ border: '2px solid var(--border)', color: 'var(--text-secondary)' }}
+          >
+            Aujourd'hui
+          </button>
+        </div>
 
         {/* Departure summary */}
         <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
