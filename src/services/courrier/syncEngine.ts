@@ -53,6 +53,10 @@ function mapParcelInsert(payload: Record<string, unknown>): Record<string, unkno
   const p = payload;
   return {
     id: p.id,
+    parcel_code: p.parcel_code ?? null,
+    reference: p.reference ?? null,
+    daily_sequence: p.daily_sequence ?? null,
+    tracking_url: p.tracking_url ?? null,
     sender_name: p.sender_name ?? '',
     sender_phone: p.sender_phone ?? '',
     sender_address: p.sender_address ?? null,

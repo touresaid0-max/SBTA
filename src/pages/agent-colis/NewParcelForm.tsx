@@ -8,6 +8,7 @@ import { createParcel, fetchParcelAgentInfo, markTicketPrinted } from '@/service
 import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
 import { localInsertParcel } from '@/services/courrier/offlineStore'
 import { getReferentiel } from '@/services/courrier/referentiels'
+import { generateOfflineParcelCodes } from '@/services/courrier/parcelCodeGenerator'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
@@ -111,13 +112,25 @@ export default function NewParcelForm() {
       if (!courrierIsOnline()) {
         const now = new Date().toISOString()
         const localId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-        const tempCode = `LOCAL-${Date.now().toString().slice(-6)}`
         const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
+        // Look up agency_code from cached station referentiels
+        let agencyCode: string | null = null
+        const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
+        if (cachedStations) {
+          const myStationData = cachedStations.find(s => s.id === myStation.id)
+          agencyCode = myStationData?.agency_code ?? null
+        }
+
+        // Generate proper parcel codes matching the online DB trigger format
+        const { parcel_code, reference, daily_sequence, tracking_url } =
+          await generateOfflineParcelCodes(myStation.id, agencyCode)
+
         const localParcel = await localInsertParcel({
-          parcel_code: tempCode,
-          reference: '',
-          daily_sequence: 0,
+          parcel_code,
+          reference,
+          daily_sequence,
+          tracking_url,
           sender_name: form.sender_name,
           sender_phone: form.sender_phone,
           sender_address: null,
@@ -148,7 +161,6 @@ export default function NewParcelForm() {
           shipped_at: null,
           arrived_at: null,
           delivered_at: null,
-          tracking_url: '',
           sms_sent_at: null,
           company_id: null,
           ticket_printed: false,
