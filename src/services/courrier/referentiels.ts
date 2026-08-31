@@ -10,10 +10,11 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
   if (!isOnline()) return;
 
   try {
-    // Stations
+    // Stations — include city relation for offline parcel creation
     const { data: stations } = await supabase
       .from('stations')
-      .select('id, name, agency_code')
+      .select('id, name, agency_code, is_active, cities(name)')
+      .eq('is_active', true)
       .order('name');
     if (stations) {
       await db.referentiels.put({

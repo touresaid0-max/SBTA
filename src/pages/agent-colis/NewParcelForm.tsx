@@ -7,6 +7,7 @@ import { supabase } from '@/services/supabase'
 import { createParcel, fetchParcelAgentInfo, markTicketPrinted } from '@/services/parcel.service'
 import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
 import { localInsertParcel } from '@/services/courrier/offlineStore'
+import { getReferentiel } from '@/services/courrier/referentiels'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
@@ -63,12 +64,27 @@ export default function NewParcelForm() {
 
   useEffect(() => {
     async function loadStations() {
-      const { data: stData } = await supabase
-        .from('stations')
-        .select('id, name, cities(name)')
-        .eq('is_active', true)
-        .order('name')
-      setStations((stData ?? []).map((s: any) => ({ id: s.id, name: s.name, city_name: s.cities?.name ?? '' })))
+      // Online: fetch from Supabase and cache locally via referentiels refresh
+      if (courrierIsOnline()) {
+        try {
+          const { data: stData } = await supabase
+            .from('stations')
+            .select('id, name, cities(name)')
+            .eq('is_active', true)
+            .order('name')
+          const mapped = (stData ?? []).map((s: any) => ({ id: s.id, name: s.name, city_name: s.cities?.name ?? '' }))
+          setStations(mapped)
+          return
+        } catch {
+          // Network failed mid-fetch — fall through to local cache
+        }
+      }
+
+      // Offline (or online fetch failed): load from local IndexedDB cache
+      const cached = await getReferentiel<{ id: string; name: string; cities?: { name?: string } }>('stations_all')
+      if (cached) {
+        setStations(cached.map(s => ({ id: s.id, name: s.name, city_name: s.cities?.name ?? '' })))
+      }
     }
     loadStations()
   }, [])

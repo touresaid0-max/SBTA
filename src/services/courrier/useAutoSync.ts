@@ -3,6 +3,7 @@ import { useConnection } from './ConnectionContext';
 import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError } from './syncEngine';
 import { syncParcelsFromServer } from './offlineStore';
 import { ensureAuthSession } from './offlineAuth';
+import { refreshAllReferentiels } from './referentiels';
 
 export function useAutoSync(stationId?: string) {
   const {
@@ -45,6 +46,8 @@ export function useAutoSync(stationId?: string) {
       if (!isOnline()) return;
 
       await syncParcelsFromServer(stationRef.current);
+
+      await refreshAllReferentiels(stationRef.current);
 
       const remaining = await updateQueueState();
       if (result.failed === 0 && result.conflicts.length === 0 && remaining === 0) {
