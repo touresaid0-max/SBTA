@@ -144,6 +144,7 @@ import ChangeRequestsPage from './pages/change-requests/ChangeRequestsPage';
 import Archives from './pages/admin/Archives';
 import RamassageHistorique from './pages/admin/RamassageHistorique';
 import Connexion from './pages/admin/Connexion';
+import PrintCustomization from './pages/admin/PrintCustomization';
 import RHDashboard from './pages/rh/Dashboard';
 import EmployeesPage from './pages/rh/EmployeesPage';
 import EmployeeDetail from './pages/rh/EmployeeDetail';
@@ -352,6 +353,7 @@ function App() {
             <Route path="admin/archives" element={<ProtectedRoute roles={['admin']}><Archives /></ProtectedRoute>} />
             <Route path="admin/ramassage-historique" element={<ProtectedRoute roles={['admin','daf','gestionnaire']}><RamassageHistorique /></ProtectedRoute>} />
             <Route path="admin/connexion" element={<ProtectedRoute roles={['admin']}><Connexion /></ProtectedRoute>} />
+            <Route path="admin/personnalisation" element={<ProtectedRoute roles={['admin']}><PrintCustomization /></ProtectedRoute>} />
             <Route path="reports/driver-performance" element={<ProtectedRoute roles={['admin', 'gestionnaire']}><DriverPerformanceReport /></ProtectedRoute>} />
             <Route path="daf/dashboard" element={<ProtectedRoute roles={['daf','dg']}><DAFDashboard /></ProtectedRoute>} />
             <Route path="daf/financial-report" element={<ProtectedRoute roles={['daf','dg']}><DAFFinancialReport /></ProtectedRoute>} />

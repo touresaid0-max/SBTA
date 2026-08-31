@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { format } from 'date-fns';
+import { getPrintCustomization } from '../services/printCustomization';
 
 export interface BaggageTicketData {
   baggage_number: string;
@@ -25,7 +26,10 @@ function fmtAmount(n: number): string {
   return result + ' F';
 }
 
-export function printBaggageTicket(data: BaggageTicketData) {
+export async function printBaggageTicket(data: BaggageTicketData) {
+  const customization = await getPrintCustomization();
+  const phoneLine = customization.bus_ticket_phones[0] || '01 14 34 60 / 01 14 34 87';
+  const customNotes = customization.baggage_notes;
   const W = 80;
   const L = 4;
   const R = 76;
@@ -77,7 +81,7 @@ export function printBaggageTicket(data: BaggageTicketData) {
       doc.setFontSize(5);
       doc.setFont('helvetica', 'normal');
       doc.text("Societe Bonkoungou Transport de L'Agneby", R, y + 13, { align: 'right' });
-      doc.text('Tel 01 14 34 60 / 01 14 34 87', R, y + 16, { align: 'right' });
+      doc.text(`Tel ${phoneLine}`, R, y + 16, { align: 'right' });
 
       y += 18;
       solid(y);
@@ -250,6 +254,20 @@ export function printBaggageTicket(data: BaggageTicketData) {
     doc.setFontSize(6);
     doc.text(data.station_name, MID, y + 1, { align: 'center' });
     y += 3;
+
+    // -- Custom notes (main ticket only) --
+    if (!isSouche && customNotes.length > 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5);
+      for (const note of customNotes) {
+        const noteLines = doc.splitTextToSize(note, R - L - 2);
+        for (let i = 0; i < Math.min(noteLines.length, 3); i++) {
+          doc.text(noteLines[i], L + 1, y + 1);
+          y += 2.5;
+        }
+      }
+      y += 1;
+    }
 
     // outer border
     doc.setDrawColor(0);

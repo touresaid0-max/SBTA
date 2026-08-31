@@ -1,5 +1,6 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
 import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, type PrintTicketData, type PrintBagageData } from './escpos';
+import { getPrintCustomization } from '../printCustomization';
 
 export type { PrintTicketData, PrintBagageData };
 
@@ -128,9 +129,12 @@ async function sendQzTray(data: Uint8Array, settings: PrintSettings): Promise<bo
   });
 }
 
-function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string {
+async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): Promise<string> {
   const { ticket, depart, stationName } = data;
   const mm = settings.width_mm;
+  const customization = await getPrintCustomization();
+  const phoneLine = customization.bus_ticket_phones[0] || 'Tel 01 14 34 60 / 01 14 34 87';
+  const customNotes = customization.bus_ticket_notes;
 
   const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
   const originCity = (routeParts[0] ?? stationName ?? 'ABIDJAN').toUpperCase();
@@ -170,7 +174,7 @@ function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string
     <div class="brand">
       <div class="brand-name">SBTA</div>
       <div class="brand-sub">Societe Bonkoungou Transport de L&apos;Agneby</div>
-      <div class="brand-sub">Tel 01 14 34 60 / 01 14 34 87</div>
+      <div class="brand-sub">${escapeHtml(phoneLine)}</div>
     </div>
   </div>
   ` : `
@@ -217,15 +221,7 @@ function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): string
   ${reducedBadge}${reportedBadge}
 
   ${!isSouche ? `
-  <div class="section notes">
-    <div class="note">NB. Tout ticket encaisse n est plus remboursable</div>
-  </div>
-  <div class="section notes">
-    <div class="note">SBTA pas responsable ces bagages sans ticket</div>
-  </div>
-  <div class="section notes">
-    <div class="note">VEUILLEZ CONSERVER LES TICKETS JUSQU&apos;A DESTINATION</div>
-  </div>
+  ${customNotes.map(note => `<div class="section notes"><div class="note">${escapeHtml(note)}</div></div>`).join('')}
   ` : ''}
 
   <div class="footer">
@@ -369,7 +365,7 @@ function makeQRText(data: string): string {
 async function printBrowser(payload: PrintPayload, settings: PrintSettings): Promise<boolean> {
   let html: string;
   if (payload.type === 'ticket' && payload.ticket) {
-    html = buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName }, settings);
+    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName }, settings);
   } else if (payload.type === 'bagage' && payload.bagage) {
     html = buildHTMLBagage({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName }, settings);
   } else {

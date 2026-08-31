@@ -6,6 +6,7 @@ import { QRCodeCanvas } from 'qrcode.react'
 import type { ParcelReceiptData, Parcel } from '@/types/parcel.types'
 import type { ScheduledBus } from '@/components/parcel/BusSelector'
 import { setPrintingGuard } from '@/store/authStore'
+import { getPrintCustomization } from '@/services/printCustomization'
 
 function generateQRDataUrl(value: string, size = 100): Promise<string> {
   return new Promise((resolve) => {
@@ -49,6 +50,11 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
   const qrDataUrl = await generateQRDataUrl(data.parcel_code, 100)
   const logoUrl = window.location.origin + '/logo-sbta.JPG'
+  const customization = await getPrintCustomization()
+  const customNotes = customization.parcel_notes
+  const notesHtml = customNotes.length > 0
+    ? customNotes.map(n => escHtml(n)).join('<br>')
+    : `${escHtml(data.legal_note_1)}<br>\n    NB: ${escHtml(data.legal_note_2)}`
 
   const html = `<!DOCTYPE html>
 <html>
@@ -328,8 +334,7 @@ ${[1, 2].map(copyNum => `
   </table>
 
   <div class="notes-box">
-    ${escHtml(data.legal_note_1)}<br>
-    NB: ${escHtml(data.legal_note_2)}
+    ${notesHtml}
   </div>
 
   <div class="qr-section">

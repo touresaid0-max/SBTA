@@ -53,6 +53,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Historique ramassage', path: '/admin/ramassage-historique', icon: <Bus className="w-5 h-5" /> },
     { label: "Exécution demandes", path: '/admin/change-requests/execution', icon: <Wrench className="w-5 h-5" /> },
     { label: 'Journal des demandes', path: '/admin/change-requests/audit', icon: <ScrollText className="w-5 h-5" /> },
+    { label: 'Personnalisation', path: '/admin/personnalisation', icon: <Settings className="w-5 h-5" /> },
   ],
   daf: [
     { label: 'Tableau de bord',    path: '/daf/dashboard',          icon: <LayoutDashboard className="w-5 h-5" /> },
