@@ -785,6 +785,25 @@ export default function ParcelDetail() {
                     {evt.performer_name && (
                       <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>par {evt.performer_name}</p>
                     )}
+                    {evt.event_type === 'livre' && evt.metadata && (evt.metadata.delivery_recipient_name || evt.metadata.delivery_recipient_phone || evt.metadata.delivery_id_number) && (
+                      <div className="mt-1.5 rounded-lg px-2.5 py-1.5 space-y-0.5" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                        {evt.metadata.delivery_id_number as string && (
+                          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            <span className="font-semibold">CNI :</span> {evt.metadata.delivery_id_number as string}
+                          </p>
+                        )}
+                        {evt.metadata.delivery_recipient_name as string && (
+                          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            <span className="font-semibold">Nom :</span> {evt.metadata.delivery_recipient_name as string}
+                          </p>
+                        )}
+                        {evt.metadata.delivery_recipient_phone as string && (
+                          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            <span className="font-semibold">Téléphone :</span> {evt.metadata.delivery_recipient_phone as string}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )
