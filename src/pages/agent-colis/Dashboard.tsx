@@ -94,6 +94,7 @@ export default function AgentColisDashboard() {
   const [period,         setPeriod]         = useState<ParcelPeriod>('today')
   const [outStatusFilter, setOutStatusFilter] = useState<StatusFilter>('all')
   const [incStatusFilter, setIncStatusFilter] = useState<StatusFilter>('all')
+  const [pickupCodeSearch, setPickupCodeSearch] = useState('')
 
   // Alerts for new incoming
   const [newAlerts, setNewAlerts] = useState<{ id: string; code: string; sender: string; origin: string }[]>([])
@@ -405,9 +406,11 @@ export default function AgentColisDashboard() {
   }, [outgoing, outStatusFilter])
 
   const filteredIncoming = useMemo(() => {
-    if (incStatusFilter === 'all') return incoming
-    return incoming.filter(p => p.status === incStatusFilter)
-  }, [incoming, incStatusFilter])
+    let list = incStatusFilter === 'all' ? incoming : incoming.filter(p => p.status === incStatusFilter)
+    const q = pickupCodeSearch.trim().toLowerCase()
+    if (q) list = list.filter(p => p.parcel_code.toLowerCase().includes(q))
+    return list
+  }, [incoming, incStatusFilter, pickupCodeSearch])
 
   const displayList = tab === 'sortants' ? filteredOutgoing : filteredIncoming
 
@@ -866,7 +869,7 @@ export default function AgentColisDashboard() {
           {tab === 'entrants' && (
             <button
               onClick={() => navigate('/agent-colis/scan')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ml-auto flex-shrink-0"
               style={{ backgroundColor: '#0B7439', color: '#fff' }}
             >
               <QrCode className="w-3.5 h-3.5" />
@@ -913,6 +916,38 @@ export default function AgentColisDashboard() {
           </button>
         </div>
 
+        {/* Barre de recherche CODE DE RETRAIT — onglet entrants */}
+        {tab === 'entrants' && (
+          <div className="rounded-xl p-3 sm:p-4 flex items-center gap-3" style={{ backgroundColor: '#f0faf4', border: '2px solid #0B7439' }}>
+            <Search className="w-5 h-5 flex-shrink-0" style={{ color: '#0B7439' }} />
+            <div className="flex-1 min-w-0">
+              <label className="block text-xs font-bold mb-0.5" style={{ color: '#0B7439' }}>CODE DE RETRAIT</label>
+              <input
+                type="text"
+                value={pickupCodeSearch}
+                onChange={e => setPickupCodeSearch(e.target.value)}
+                placeholder="Saisir le code de retrait du courrier..."
+                className="w-full px-3 py-2 rounded-lg text-sm font-mono font-semibold outline-none focus:ring-2 focus:ring-green-500"
+                style={{
+                  border: '1px solid #0B7439',
+                  backgroundColor: '#fff',
+                  color: 'var(--text-primary)',
+                }}
+              />
+            </div>
+            {pickupCodeSearch && (
+              <button
+                onClick={() => setPickupCodeSearch('')}
+                className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium flex-shrink-0"
+                style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+              >
+                <X className="w-3.5 h-3.5" />
+                Effacer
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Liste */}
         {loading ? (
           <div className="py-12 flex justify-center">
@@ -921,12 +956,18 @@ export default function AgentColisDashboard() {
         ) : displayList.length === 0 ? (
           <div className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
             <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium">Aucun courrier {tab === 'sortants' ? 'sortant' : 'entrant'}</p>
+            <p className="text-sm font-medium">
+              {tab === 'entrants' && pickupCodeSearch.trim()
+                ? 'Aucun courrier trouvé pour ce code de retrait'
+                : `Aucun courrier ${tab === 'sortants' ? 'sortant' : 'entrant'}`}
+            </p>
             <p className="text-xs mt-1">
-              Période : {PERIOD_LABELS[period]}
+              {tab === 'entrants' && pickupCodeSearch.trim()
+                ? `Code recherché : ${pickupCodeSearch.trim()}`
+                : <>Période : {PERIOD_LABELS[period]}
               {(tab === 'sortants' ? outStatusFilter : incStatusFilter) !== 'all'
                 ? ` · Statut : ${STATUS_CONFIG[tab === 'sortants' ? outStatusFilter as ParcelStatus : incStatusFilter as ParcelStatus]?.label}`
-                : ''}
+                : ''}</>}
             </p>
           </div>
         ) : groupByDest && destinationGroups.length > 0 ? (
