@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Users, Bus, TrendingUp, Download, Printer, Ban,
-  AlertOctagon, Receipt, Wallet, Landmark, Search,
+  AlertOctagon, Receipt, Wallet, Landmark, Search, Filter,
 } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees, fetchPayrollByCompany } from '@/services/hr.service'
+import { resolveCompanyIds, type CompanyWithHierarchy } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type {
   Employee, CompanyPayroll, EmployeeSuspension, ExplanationRequest,
   SalaryDeduction, EmployeeLoan, PaySlip,
@@ -84,6 +86,8 @@ interface ReportDef {
   load: () => Promise<any[]>
   columns: ReportColumn[]
   summary: (rows: any[]) => ReportStat[]
+  dateField?: (row: any) => string | null
+  companyField?: (row: any) => string | null
 }
 
 const REPORTS: ReportDef[] = [
@@ -94,6 +98,8 @@ const REPORTS: ReportDef[] = [
     icon: Users,
     color: '#0B7439',
     load: () => fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
+    dateField: (e: Employee) => e.hire_date ?? null,
+    companyField: (e: Employee) => e.company_id ?? null,
     columns: [
       { header: 'Matricule', cell: (e: Employee) => e.employee_id ?? '—' },
       { header: 'Nom complet', cell: (e: Employee) => e.full_name },
@@ -124,6 +130,8 @@ const REPORTS: ReportDef[] = [
       const all = await fetchEmployees({ company_id: null, station_id: null, role: 'chauffeur', contract_type: null, contract_nature: null, status: null, search: '' })
       return all
     },
+    dateField: (e: Employee) => e.hire_date ?? null,
+    companyField: (e: Employee) => e.company_id ?? null,
     columns: [
       { header: 'Nom complet', cell: (e: Employee) => e.full_name },
       { header: 'Société', cell: (e: Employee) => e.company_code ?? 'HOLDING' },
@@ -161,6 +169,8 @@ const REPORTS: ReportDef[] = [
         .order('created_at', { ascending: false })
       return (data ?? []) as EmployeeSuspension[]
     },
+    dateField: (s: EmployeeSuspension) => s.start_date ?? null,
+    companyField: (s: EmployeeSuspension) => s.company_id ?? null,
     columns: [
       { header: 'Employé', cell: (s: EmployeeSuspension) => s.employee_name },
       { header: 'Société', cell: (s: EmployeeSuspension) => s.company?.code ?? '—' },
@@ -190,6 +200,8 @@ const REPORTS: ReportDef[] = [
         .order('request_date', { ascending: false })
       return (data ?? []) as ExplanationRequest[]
     },
+    dateField: (r: ExplanationRequest) => r.request_date ?? null,
+    companyField: (r: ExplanationRequest) => r.company_id ?? null,
     columns: [
       { header: 'Employé', cell: (r: ExplanationRequest) => r.employee_name },
       { header: 'Société', cell: (r: ExplanationRequest) => r.company?.code ?? '—' },
@@ -214,6 +226,7 @@ const REPORTS: ReportDef[] = [
     icon: TrendingUp,
     color: '#0B7439',
     load: () => fetchPayrollByCompany(),
+    companyField: (c: CompanyPayroll) => c.company_id ?? null,
     columns: [
       { header: 'Société', cell: (c: CompanyPayroll) => c.company_name },
       { header: 'Code', cell: (c: CompanyPayroll) => c.company_code },
@@ -249,6 +262,8 @@ const REPORTS: ReportDef[] = [
         .order('created_at', { ascending: false })
       return (data ?? []) as SalaryDeduction[]
     },
+    dateField: (d: SalaryDeduction) => `${d.period_year}-${String(d.period_month).padStart(2, '0')}` ?? null,
+    companyField: (d: SalaryDeduction) => d.company_id ?? null,
     columns: [
       { header: 'Employé', cell: (d: SalaryDeduction) => d.employee_name },
       { header: 'Société', cell: (d: SalaryDeduction) => d.company?.code ?? '—' },
@@ -280,6 +295,8 @@ const REPORTS: ReportDef[] = [
         .order('created_at', { ascending: false })
       return (data ?? []) as EmployeeLoan[]
     },
+    dateField: (l: EmployeeLoan) => l.request_date ?? null,
+    companyField: (l: EmployeeLoan) => l.company_id ?? null,
     columns: [
       { header: 'Employé', cell: (l: EmployeeLoan) => l.employee_name },
       { header: 'Société', cell: (l: EmployeeLoan) => l.company?.code ?? '—' },
@@ -311,6 +328,8 @@ const REPORTS: ReportDef[] = [
         .order('employee_name')
       return (data ?? []) as PaySlip[]
     },
+    dateField: (p: PaySlip) => `${p.period_year}-${String(p.period_month).padStart(2, '0')}` ?? null,
+    companyField: (p: PaySlip) => p.company_id ?? null,
     columns: [
       { header: 'Employé', cell: (p: PaySlip) => p.employee_name },
       { header: 'Société', cell: (p: PaySlip) => p.company?.code ?? '—' },
@@ -412,12 +431,28 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [companies, setCompanies] = useState<CompanyWithHierarchy[]>([])
+  const [companyFilter, setCompanyFilter] = useState('')
+  const [periodMode, setPeriodMode] = useState<'all' | 'month' | 'custom'>('all')
+  const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7))
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+
+  useEffect(() => {
+    supabase.from('companies').select('id, name, code, parent_id, is_group').order('name')
+      .then(({ data }) => { if (data) setCompanies(data as CompanyWithHierarchy[]) })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     setSearch('')
+    setCompanyFilter('')
+    setPeriodMode('all')
+    setDateFrom('')
+    setDateTo('')
     def.load()
       .then(data => { if (!cancelled) setRows(data) })
       .catch(err => { if (!cancelled) { console.error(err); setError('Impossible de charger les données de ce rapport.') } })
@@ -426,10 +461,37 @@ export default function ReportsPage() {
   }, [def])
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows
-    const q = search.toLowerCase()
-    return rows.filter(r => def.columns.some(c => c.cell(r).toLowerCase().includes(q)))
-  }, [rows, search, def])
+    let result = rows
+    // company filter
+    if (companyFilter && def.companyField) {
+      const matchIds = resolveCompanyIds(companyFilter, companies)
+      result = result.filter(r => {
+        const cid = def.companyField!(r)
+        return cid != null && matchIds.includes(cid)
+      })
+    }
+    // period filter
+    if (periodMode !== 'all' && def.dateField) {
+      result = result.filter(r => {
+        const d = def.dateField!(r)
+        if (!d) return false
+        if (periodMode === 'month' && monthFilter) {
+          if (!d.startsWith(monthFilter)) return false
+        }
+        if (periodMode === 'custom') {
+          if (dateFrom && d < dateFrom) return false
+          if (dateTo && d > dateTo) return false
+        }
+        return true
+      })
+    }
+    // text search
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      result = result.filter(r => def.columns.some(c => c.cell(r).toLowerCase().includes(q)))
+    }
+    return result
+  }, [rows, search, def, companyFilter, companies, periodMode, monthFilter, dateFrom, dateTo])
 
   const stats = useMemo(() => def.summary(filtered), [filtered, def])
   const Icon = def.icon
@@ -497,16 +559,74 @@ export default function ReportsPage() {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8AA898]" />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Rechercher dans le rapport…"
-          className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-[#E2EAE5] focus:outline-none focus:ring-2 focus:ring-[#0B7439]/30"
-        />
+      {/* Search + Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8AA898]" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher dans le rapport…"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-[#E2EAE5] focus:outline-none focus:ring-2 focus:ring-[#0B7439]/30"
+          />
+        </div>
+        <button onClick={() => setShowFilters(!showFilters)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
+          style={{ backgroundColor: showFilters ? '#0B743910' : 'white', border: '1px solid #E2EAE5', color: showFilters ? '#0B7439' : '#4A6B55' }}>
+          <Filter className="w-3.5 h-3.5" />Filtres
+        </button>
       </div>
+
+      {showFilters && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl p-4 bg-white border border-[#E2EAE5]">
+          {def.companyField && (
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Société</label>
+              <CompanyGroupSelect
+                companies={companies}
+                value={companyFilter}
+                onChange={setCompanyFilter}
+                placeholder="Toutes les sociétés"
+                className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]"
+              />
+            </div>
+          )}
+          {def.dateField && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Période</label>
+                <select value={periodMode} onChange={e => setPeriodMode(e.target.value as any)}
+                  className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]">
+                  <option value="all">Toutes périodes</option>
+                  <option value="month">Par mois</option>
+                  <option value="custom">Dates personnalisées</option>
+                </select>
+              </div>
+              {periodMode === 'month' && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Mois</label>
+                  <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
+                    className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]" />
+                </div>
+              )}
+              {periodMode === 'custom' && (
+                <div className="col-span-1 sm:col-span-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Du</label>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Au</label>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]" />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
