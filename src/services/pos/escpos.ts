@@ -5,9 +5,6 @@ export interface PrintTicketData {
   ticket: TicketRecord;
   depart: DepartRecord;
   stationName?: string;
-  chefGarePhone?: string | null;
-  chefGareName?: string | null;
-  guichetPhone?: string | null;
 }
 
 export interface PrintBagageData {
@@ -122,19 +119,10 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   }
   parts.push(setAlign('center'), setBold(true), text('SBTA TRANSPORT'), lineFeed());
   parts.push(setBold(false), text(stationName ?? 'Gare'), lineFeed());
-
-  // Contact phones from Chef de Gare and Guichet profiles
-  if (data.chefGarePhone) {
-    const chefLine = data.chefGareName
-      ? `${data.chefGarePhone} Chef: ${data.chefGareName}`
-      : `${data.chefGarePhone} Chef de Gare`;
-    parts.push(text(chefLine), lineFeed());
-  }
-  if (data.guichetPhone) {
-    parts.push(text(`${data.guichetPhone} Guichet`), lineFeed());
-  }
-
   parts.push(text(dashLine(w)), lineFeed());
+
+  // Body
+  parts.push(setAlign('left'), setBold(true), text('TICKET PASSAGER'), lineFeed(), setBold(false));
 
   parts.push(text(`${padRight('Gare:', 12)}${stationName ?? '-'}`), lineFeed());
   parts.push(text(`${padRight('Ligne:', 12)}${depart.route_name ?? '-'}`), lineFeed());

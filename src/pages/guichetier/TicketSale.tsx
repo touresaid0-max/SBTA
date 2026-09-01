@@ -25,7 +25,6 @@ import OfflineBanner from '../../components/guichetier/OfflineBanner';
 import OfflineQueue from '../../components/guichetier/OfflineQueue';
 import { printBaggageTicket, generateBaggageNumber, type BaggageTicketData } from '../../utils/printBaggageTicket';
 import { generateBookingReference } from '../../utils/generateBookingReference';
-import { fetchTicketContacts, type TicketContacts } from '../../utils/ticketContacts';
 
 interface City { id: string; name: string; }
 interface Station { id: string; name: string; city_id: string; }
@@ -177,7 +176,6 @@ export default function TicketSale() {
   const [myCityId, setMyCityId] = useState<string | null>(null);
   const [myStationName, setMyStationName] = useState<string | null>(null);
   const [assignedDestCityIds, setAssignedDestCityIds] = useState<string[] | null>(null);
-  const [ticketContacts, setTicketContacts] = useState<TicketContacts>({ chefGareName: null, chefGarePhone: null, guichetPhone: null });
 
   const [search, setSearch] = useState({
     origin_city_id: '',
@@ -287,9 +285,6 @@ export default function TicketSale() {
 
         setAssignedDestCityIds([...destIds] as string[]);
       }
-
-      // Fetch Chef de Gare + Guichetier phone numbers for ticket printing
-      fetchTicketContacts(data.id, data.station_id).then(setTicketContacts);
     });
 
     loadCities();
@@ -1206,26 +1201,8 @@ export default function TicketSale() {
     doc.text('Societe Bonkoungou Transport de L\'Agneby', R, 15, { align: 'right' });
     doc.text('Tel 01 14 34 60 / 01 14 34 87', R, 18.5, { align: 'right' });
 
-    // Contact phones from Chef de Gare and Guichet profiles
-    let contactY = 21;
-    if (ticketContacts.chefGarePhone) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6);
-      const chefLine = ticketContacts.chefGareName
-        ? `${ticketContacts.chefGarePhone} — Chef de Gare : ${ticketContacts.chefGareName}`
-        : `${ticketContacts.chefGarePhone} — Chef de Gare`;
-      doc.text(chefLine, L, contactY);
-      contactY += 3;
-    }
-    if (ticketContacts.guichetPhone) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6);
-      doc.text(`${ticketContacts.guichetPhone} — Guichet`, L, contactY);
-      contactY += 3;
-    }
-
-    solid(contactY);
-    let y = contactY; // running vertical cursor
+    solid(21);
+    let y = 21; // running vertical cursor
 
     // Gare label width (measured once at the size used below)
     doc.setFont('helvetica', 'normal');

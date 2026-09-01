@@ -13,7 +13,6 @@ import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
 import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
-import { fetchTicketContacts, type TicketContacts } from '@/utils/ticketContacts';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
 import { printBaggageTicket } from '@/utils/printBaggageTicket';
@@ -94,7 +93,6 @@ export default function POSVente() {
   const [transferSeatCount, setTransferSeatCount] = useState(1);
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
-  const [ticketContacts, setTicketContacts] = useState<TicketContacts>({ chefGareName: null, chefGarePhone: null, guichetPhone: null });
 
   const loadData = useCallback(async () => {
     if (!departId) return;
@@ -139,10 +137,6 @@ export default function POSVente() {
   }, [departId]);
 
   useEffect(() => { loadData(); }, [loadData]);
-
-  useEffect(() => {
-    fetchTicketContacts(session?.counter_id ?? null, session?.station_id ?? null).then(setTicketContacts);
-  }, [session?.counter_id, session?.station_id]);
 
   // Fetch seat map when structure mode is enabled
   useEffect(() => {
@@ -463,7 +457,7 @@ export default function POSVente() {
     const failed: TicketRecord[] = [];
     for (const ticket of ticketsToPrint) {
       try {
-        const ok = await PrintService.printTicket({ ticket, depart: dep, stationName: stName, chefGarePhone: ticketContacts.chefGarePhone, chefGareName: ticketContacts.chefGareName, guichetPhone: ticketContacts.guichetPhone });
+        const ok = await PrintService.printTicket({ ticket, depart: dep, stationName: stName });
         if (!ok) { failed.push(ticket); }
       } catch {
         failed.push(ticket);
@@ -483,7 +477,7 @@ export default function POSVente() {
   };
 
   const handlePrintTicket = (ticket: TicketRecord) => {
-    if (depart) PrintService.printTicket({ ticket, depart, stationName: session?.station_name, chefGarePhone: ticketContacts.chefGarePhone, chefGareName: ticketContacts.chefGareName, guichetPhone: ticketContacts.guichetPhone });
+    if (depart) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
   };
   void handlePrintTicket;
 
