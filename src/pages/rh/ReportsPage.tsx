@@ -473,8 +473,12 @@ export default function ReportsPage() {
   const [stationFilter, setStationFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([])
 
   const isEmployeeReport = reportKey === 'employes' || reportKey === 'chauffeurs'
+  const availableRoles = selectedCategories.flatMap(cat =>
+    ROLE_CATEGORIES.find(c => c.value === cat)?.roles ?? []
+  )
 
   useEffect(() => {
     supabase.from('companies').select('id, name, code, parent_id, is_group').order('name')
@@ -497,6 +501,7 @@ export default function ReportsPage() {
     setStationFilter('')
     setStatusFilter('')
     setSelectedCategories([])
+    setSelectedRoles([])
     def.load()
       .then(data => { if (!cancelled) setRows(data) })
       .catch(err => { if (!cancelled) { console.error(err); setError('Impossible de charger les données de ce rapport.') } })
@@ -529,9 +534,10 @@ export default function ReportsPage() {
         result = result.filter((e: Employee) => e.status === statusFilter)
       }
       if (selectedCategories.length > 0) {
-        const matchRoles = new Set(selectedCategories.flatMap(cat =>
+        const catRoles = new Set(selectedCategories.flatMap(cat =>
           ROLE_CATEGORIES.find(c => c.value === cat)?.roles ?? []
         ))
+        const matchRoles = selectedRoles.length > 0 ? new Set(selectedRoles) : catRoles
         result = result.filter((e: Employee) => matchRoles.has(e.role))
       }
     }
@@ -565,7 +571,7 @@ export default function ReportsPage() {
       })
     }
     return result
-  }, [rows, search, def, companyFilter, companies, periodMode, monthFilter, dateFrom, dateTo, isEmployeeReport, contractType, contractNature, stationFilter, statusFilter, selectedCategories])
+  }, [rows, search, def, companyFilter, companies, periodMode, monthFilter, dateFrom, dateTo, isEmployeeReport, contractType, contractNature, stationFilter, statusFilter, selectedCategories, selectedRoles])
 
   const stats = useMemo(() => def.summary(filtered), [filtered, def])
   const Icon = def.icon
@@ -706,9 +712,12 @@ export default function ReportsPage() {
                     const active = selectedCategories.includes(cat.value)
                     return (
                       <button key={cat.value} type="button"
-                        onClick={() => setSelectedCategories(prev =>
-                          active ? prev.filter(c => c !== cat.value) : [...prev, cat.value]
-                        )}
+                        onClick={() => {
+                          setSelectedCategories(prev =>
+                            active ? prev.filter(c => c !== cat.value) : [...prev, cat.value]
+                          )
+                          setSelectedRoles([])
+                        }}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                         style={{
                           backgroundColor: active ? '#0B7439' : '#F4F7F5',
@@ -721,6 +730,35 @@ export default function ReportsPage() {
                   })}
                 </div>
               </div>
+              {selectedCategories.length > 0 && (
+                <div className="col-span-1 sm:col-span-3">
+                  <label className="block text-xs font-semibold mb-1.5 text-[#4A6B55]">Poste</label>
+                  <div className="flex flex-wrap gap-2">
+                    {availableRoles.map(role => {
+                      const active = selectedRoles.includes(role)
+                      return (
+                        <button key={role} type="button"
+                          onClick={() => setSelectedRoles(prev =>
+                            active ? prev.filter(r => r !== role) : [...prev, role]
+                          )}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                          style={{
+                            backgroundColor: active ? '#0B7439' : '#F4F7F5',
+                            color: active ? '#fff' : '#4A6B55',
+                            border: '1px solid ' + (active ? '#0B7439' : '#E2EAE5'),
+                          }}>
+                          {ROLE_LABELS[role] ?? role}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-[#8AA898] mt-1">
+                    {selectedRoles.length > 0
+                      ? `${selectedRoles.length} poste(s) sélectionné(s) — filtrage par poste`
+                      : `Tous les postes des catégories sélectionnées`}
+                  </p>
+                </div>
+              )}
             </>
           )}
           {def.dateField && (
