@@ -27,6 +27,10 @@ export default function LoansPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [companyFilter, setCompanyFilter] = useState('')
+  const [periodMode, setPeriodMode] = useState<'all' | 'month' | 'custom'>('all')
+  const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7))
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -68,6 +72,13 @@ export default function LoansPage() {
     if (search) {
       const q = search.toLowerCase()
       if (!l.employee_name.toLowerCase().includes(q)) return false
+    }
+    if (periodMode === 'month' && monthFilter) {
+      if (!l.request_date || !l.request_date.startsWith(monthFilter)) return false
+    }
+    if (periodMode === 'custom') {
+      if (dateFrom && l.request_date && l.request_date < dateFrom) return false
+      if (dateTo && l.request_date && l.request_date > dateTo) return false
     }
     return true
   })
@@ -255,6 +266,36 @@ export default function LoansPage() {
               style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
             />
           </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Periode</label>
+            <select value={periodMode} onChange={e => setPeriodMode(e.target.value as any)}
+              className="w-full px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+              <option value="all">Toutes periodes</option>
+              <option value="month">Par mois</option>
+              <option value="custom">Dates personnalisees</option>
+            </select>
+          </div>
+          {periodMode === 'month' && (
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Mois</label>
+              <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
+                className="w-full px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
+            </div>
+          )}
+          {periodMode === 'custom' && (
+            <div className="col-span-2 sm:col-span-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Du</label>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Au</label>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="w-full px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -270,13 +311,14 @@ export default function LoansPage() {
                 <th className="text-right px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Echeances</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Mensualite</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Restant</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Date demande</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Statut</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Aucun emprunt</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Aucun emprunt</td></tr>
               ) : filtered.map(l => {
                 const sm = STATUS_MAP[l.status] ?? STATUS_MAP.en_cours
                 return (
@@ -290,6 +332,7 @@ export default function LoansPage() {
                     <td className="px-4 py-3 text-right text-xs font-bold" style={{ color: Number(l.remaining_balance) > 0 ? '#DC2626' : '#0B7439' }}>
                       {fmt(Number(l.remaining_balance))} F
                     </td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{l.request_date ? new Date(l.request_date).toLocaleDateString('fr-FR') : '-'}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="px-2 py-0.5 rounded-full text-xs font-bold" style={{ backgroundColor: sm.bg, color: sm.color }}>{sm.label}</span>
                     </td>
