@@ -36,6 +36,7 @@ interface PrintPayload {
   bagage?: BagageRecord;
   depart: DepartRecord;
   stationName?: string;
+  phoneLine?: string;
 }
 
 async function sendWebSerial(data: Uint8Array): Promise<boolean> {
@@ -130,10 +131,10 @@ async function sendQzTray(data: Uint8Array, settings: PrintSettings): Promise<bo
 }
 
 async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): Promise<string> {
-  const { ticket, depart, stationName } = data;
+  const { ticket, depart, stationName, phoneLine: overridePhone } = data;
   const mm = settings.width_mm;
   const customization = await getPrintCustomization();
-  const phoneLine = customization.bus_ticket_phones[0] || 'Tel 01 14 34 60 / 01 14 34 87';
+  const phoneLine = overridePhone || customization.bus_ticket_phones[0] || 'Tel 01 14 34 60 / 01 14 34 87';
   const customNotes = customization.bus_ticket_notes;
 
   const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
@@ -292,10 +293,11 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 }
 
 function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string {
-  const { bagage, depart, stationName } = data;
+  const { bagage, depart, stationName, phoneLine } = data;
   const widthPx = settings.width_mm === 80 ? 320 : 224;
   const headerHtml = settings.header_lines.map(l => `<div class="hdr">${escapeHtml(l)}</div>`).join('');
   const footerHtml = settings.footer_lines.map(l => `<div class="ftr">${escapeHtml(l)}</div>`).join('');
+  const phoneHtml = phoneLine ? `<div class="center">Tel ${escapeHtml(phoneLine)}</div>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
   * { font-family: 'Courier New', monospace; font-size: 12px; }
@@ -312,6 +314,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   ${headerHtml}
   <div class="center bold">SBTA TRANSPORT</div>
   <div class="center">${escapeHtml(stationName ?? 'Gare')}</div>
+  ${phoneHtml}
   <div class="dash">-</div>
   <div class="center bold">RECU BAGAGE</div>
   <div class="dash">-</div>
@@ -365,9 +368,9 @@ function makeQRText(data: string): string {
 async function printBrowser(payload: PrintPayload, settings: PrintSettings): Promise<boolean> {
   let html: string;
   if (payload.type === 'ticket' && payload.ticket) {
-    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName }, settings);
+    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
   } else if (payload.type === 'bagage' && payload.bagage) {
-    html = buildHTMLBagage({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName }, settings);
+    html = buildHTMLBagage({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
   } else {
     return false;
   }
@@ -422,6 +425,7 @@ export const PrintService = {
       ticket: data.ticket,
       depart: data.depart,
       stationName: data.stationName,
+      phoneLine: data.phoneLine,
     });
   },
 
@@ -431,6 +435,7 @@ export const PrintService = {
       bagage: data.bagage,
       depart: data.depart,
       stationName: data.stationName,
+      phoneLine: data.phoneLine,
     });
   },
 
@@ -442,9 +447,9 @@ export const PrintService = {
     const settings = await getPrintSettings();
     let escposData: Uint8Array;
     if (payload.type === 'ticket' && payload.ticket) {
-      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName }, settings);
+      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
     } else if (payload.type === 'bagage' && payload.bagage) {
-      escposData = buildBagageESCPOS({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName }, settings);
+      escposData = buildBagageESCPOS({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
     } else {
       return false;
     }

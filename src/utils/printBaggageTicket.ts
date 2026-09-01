@@ -14,6 +14,7 @@ export interface BaggageTicketData {
   owner_phone: string;
   station_name: string;
   mode_label?: string | null;
+  phoneLine?: string;
 }
 
 function fmtAmount(n: number): string {
@@ -28,7 +29,7 @@ function fmtAmount(n: number): string {
 
 export async function printBaggageTicket(data: BaggageTicketData) {
   const customization = await getPrintCustomization();
-  const phoneLine = customization.bus_ticket_phones[0] || '01 14 34 60 / 01 14 34 87';
+  const phoneLine = data.phoneLine || customization.bus_ticket_phones[0] || '01 14 34 60 / 01 14 34 87';
   const customNotes = customization.baggage_notes;
   const W = 80;
   const L = 4;

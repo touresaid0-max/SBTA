@@ -5,12 +5,14 @@ export interface PrintTicketData {
   ticket: TicketRecord;
   depart: DepartRecord;
   stationName?: string;
+  phoneLine?: string;
 }
 
 export interface PrintBagageData {
   bagage: BagageRecord;
   depart: DepartRecord;
   stationName?: string;
+  phoneLine?: string;
 }
 
 type PrintableType = 'ticket' | 'bagage';
@@ -119,6 +121,9 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   }
   parts.push(setAlign('center'), setBold(true), text('SBTA TRANSPORT'), lineFeed());
   parts.push(setBold(false), text(stationName ?? 'Gare'), lineFeed());
+  if (data.phoneLine) {
+    parts.push(text(`Tel ${data.phoneLine}`), lineFeed());
+  }
   parts.push(text(dashLine(w)), lineFeed());
 
   // Body

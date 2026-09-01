@@ -18,6 +18,7 @@ import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depense
 import { printBaggageTicket } from '@/utils/printBaggageTicket';
 import { formatCurrency } from '@/utils/formatCurrency';
 import type { DepartRecord } from '@/services/pos/departService';
+import { getTicketPhoneLine } from '@/services/ticketPhones.service';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock, RotateCw,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
@@ -60,6 +61,7 @@ export default function POSVente() {
   const [printError, setPrintError] = useState('');
   const [pendingReprint, setPendingReprint] = useState<TicketRecord[]>([]);
   const [printing, setPrinting] = useState(false);
+  const [ticketPhoneLine, setTicketPhoneLine] = useState<string | undefined>(undefined);
 
   // Vente avec structure — shows the real bus seat layout
   const [structureMode, setStructureMode] = useState(false);
@@ -137,6 +139,12 @@ export default function POSVente() {
   }, [departId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (session?.counter_id) {
+      getTicketPhoneLine(session.counter_id).then(setTicketPhoneLine).catch(() => {});
+    }
+  }, [session?.counter_id]);
 
   // Fetch seat map when structure mode is enabled
   useEffect(() => {
@@ -457,7 +465,7 @@ export default function POSVente() {
     const failed: TicketRecord[] = [];
     for (const ticket of ticketsToPrint) {
       try {
-        const ok = await PrintService.printTicket({ ticket, depart: dep, stationName: stName });
+        const ok = await PrintService.printTicket({ ticket, depart: dep, stationName: stName, phoneLine: ticketPhoneLine });
         if (!ok) { failed.push(ticket); }
       } catch {
         failed.push(ticket);
@@ -477,7 +485,7 @@ export default function POSVente() {
   };
 
   const handlePrintTicket = (ticket: TicketRecord) => {
-    if (depart) PrintService.printTicket({ ticket, depart, stationName: session?.station_name });
+    if (depart) PrintService.printTicket({ ticket, depart, stationName: session?.station_name, phoneLine: ticketPhoneLine });
   };
   void handlePrintTicket;
 
@@ -564,6 +572,7 @@ export default function POSVente() {
         owner_phone: bagage.owner_phone,
         station_name: session?.station_name ?? 'Gare SBTA',
         mode_label: bagMode === 'avec' ? 'Avec Ticket' : 'Sans Ticket',
+        phoneLine: ticketPhoneLine,
       });
 
       setBagSuccess(`Bagage enregistré — N° ${bagage.bagage_number}`);

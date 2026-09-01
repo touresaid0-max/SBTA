@@ -25,6 +25,7 @@ import OfflineBanner from '../../components/guichetier/OfflineBanner';
 import OfflineQueue from '../../components/guichetier/OfflineQueue';
 import { printBaggageTicket, generateBaggageNumber, type BaggageTicketData } from '../../utils/printBaggageTicket';
 import { generateBookingReference } from '../../utils/generateBookingReference';
+import { getTicketPhoneLine } from '../../services/ticketPhones.service';
 
 interface City { id: string; name: string; }
 interface Station { id: string; name: string; city_id: string; }
@@ -176,6 +177,7 @@ export default function TicketSale() {
   const [myCityId, setMyCityId] = useState<string | null>(null);
   const [myStationName, setMyStationName] = useState<string | null>(null);
   const [assignedDestCityIds, setAssignedDestCityIds] = useState<string[] | null>(null);
+  const [ticketPhoneLine, setTicketPhoneLine] = useState<string>('01 14 34 60 / 01 14 34 87');
 
   const [search, setSearch] = useState({
     origin_city_id: '',
@@ -248,6 +250,7 @@ export default function TicketSale() {
         setMyStationName(st.name ?? null);
         setSearch(prev => ({ ...prev, origin_city_id: st.city_id }));
       }
+      getTicketPhoneLine(data.id).then(setTicketPhoneLine).catch(() => {});
       const { data: crData } = await supabase
         .from('counter_routes')
         .select('route_id, routes:route_id(destination_city_id)')
@@ -1199,7 +1202,7 @@ export default function TicketSale() {
     doc.setFontSize(5.5);
     doc.setFont('helvetica', 'normal');
     doc.text('Societe Bonkoungou Transport de L\'Agneby', R, 15, { align: 'right' });
-    doc.text('Tel 01 14 34 60 / 01 14 34 87', R, 18.5, { align: 'right' });
+    doc.text(`Tel ${ticketPhoneLine}`, R, 18.5, { align: 'right' });
 
     solid(21);
     let y = 21; // running vertical cursor
@@ -1458,7 +1461,7 @@ export default function TicketSale() {
 
     // Bagage avec ticket — imprimé pour le même siège juste après le billet de voyage
     if (confirmedTicket.baggage) {
-      printBaggageTicket(confirmedTicket.baggage);
+      printBaggageTicket({ ...confirmedTicket.baggage, phoneLine: ticketPhoneLine });
     }
   };
 
@@ -1522,7 +1525,7 @@ export default function TicketSale() {
         mode_label: modeLabel,
       };
 
-      printBaggageTicket(ticketData);
+      printBaggageTicket({ ...ticketData, phoneLine: ticketPhoneLine });
       toast.success('Ticket bagage imprime');
 
       setBaggageForm({
