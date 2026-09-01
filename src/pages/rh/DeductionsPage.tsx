@@ -3,6 +3,8 @@ import { MinusCircle, Plus, Search, Download, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees } from '@/services/hr.service'
+import { resolveCompanyIds, type CompanyWithHierarchy } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { SalaryDeduction, Employee } from '@/types/hr.types'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n))
@@ -24,14 +26,15 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; label: string }
   cancelled: { bg: '#F3F4F6', color: '#6B7280', label: 'Annulee' },
 }
 
-interface CompanyOption { id: string; name: string; code: string }
+interface CompanyOption { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }
 
 export default function DeductionsPage() {
   const [deductions, setDeductions] = useState<SalaryDeduction[]>([])
-  const [companies, setCompanies] = useState<CompanyOption[]>([])
+  const [companies, setCompanies] = useState<CompanyWithHierarchy[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [companyFilter, setCompanyFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear())
   const [monthFilter, setMonthFilter] = useState(new Date().getMonth() + 1)
@@ -64,11 +67,11 @@ export default function DeductionsPage() {
           .eq('period_year', yearFilter)
           .eq('period_month', monthFilter)
           .order('created_at', { ascending: false }),
-        supabase.from('companies').select('id, name, code').order('name'),
+        supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
         fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       if (dedRes.data) setDeductions(dedRes.data as SalaryDeduction[])
-      if (compsRes.data) setCompanies(compsRes.data as CompanyOption[])
+      if (compsRes.data) setCompanies(compsRes.data as CompanyWithHierarchy[])
       setEmployees(empsData)
     } catch { toast.error('Erreur de chargement') }
     finally { setLoading(false) }
@@ -77,6 +80,10 @@ export default function DeductionsPage() {
   useEffect(() => { loadData() }, [loadData])
 
   const filtered = deductions.filter(d => {
+    if (companyFilter) {
+      const matchIds = resolveCompanyIds(companyFilter, companies)
+      if (!matchIds.includes(d.company_id ?? '')) return false
+    }
     if (typeFilter && d.deduction_type !== typeFilter) return false
     if (search && !d.employee_name.toLowerCase().includes(search.toLowerCase())) return false
     return true
@@ -172,6 +179,12 @@ export default function DeductionsPage() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
+        <CompanyGroupSelect
+          companies={companies}
+          value={companyFilter}
+          onChange={setCompanyFilter}
+          className="px-3 py-2 rounded-lg text-sm"
+        />
         <select value={monthFilter} onChange={e => setMonthFilter(Number(e.target.value))}
           className="px-3 py-2 rounded-lg text-sm" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
           {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}

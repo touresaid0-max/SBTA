@@ -5,7 +5,8 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees, deactivateEmployee } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
-import { resolveCompanyIds, buildCompanyGroups } from '@/utils/companyGroups'
+import { resolveCompanyIds } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { Employee, EmployeeFilters, ContractType, ContractNature } from '@/types/hr.types'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -156,31 +157,12 @@ export default function EmployeesPage() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Company */}
           <div className="relative">
-            <select
+            <CompanyGroupSelect
+              companies={companies}
               value={filters.company_id ?? ''}
-              onChange={e => setFilters(p => ({ ...p, company_id: e.target.value || null }))}
+              onChange={(id) => setFilters(p => ({ ...p, company_id: id || null }))}
               className="w-full border border-[#E2EAE5] rounded-lg px-3 py-2 text-sm appearance-none text-[#374151] bg-white pr-8"
-            >
-              <option value="">Toutes les sociétés</option>
-              {(() => {
-                const { groups, standalone } = buildCompanyGroups(companies)
-                return (
-                  <>
-                    {groups.map(g => (
-                      <optgroup key={g.group.id} label={g.group.name}>
-                        <option value={g.group.id}>{g.group.name} (groupe + sous-groupes)</option>
-                        {g.subsidiaries.map(s => (
-                          <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                    {standalone.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-                    ))}
-                  </>
-                )
-              })()}
-            </select>
+            />
             <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
           </div>
 

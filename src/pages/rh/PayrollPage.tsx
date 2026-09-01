@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Building2, Users, TrendingUp, DollarSign, ChevronDown, ChevronRight } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Building2, Users, TrendingUp, DollarSign, ChevronDown, ChevronRight, Search } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
 import { fetchPayrollByCompany } from '@/services/hr.service'
+import { resolveCompanyIds, type CompanyWithHierarchy } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
+import { supabase } from '@/services/supabase'
 import type { CompanyPayroll } from '@/types/hr.types'
 
 const COMPANY_COLORS = ['#0B7439', '#1D6FA4', '#D97706', '#475569', '#AF3029']
@@ -22,6 +25,9 @@ interface ExpandedRows { [id: string]: boolean }
 
 export default function PayrollPage() {
   const [payroll, setPayroll] = useState<CompanyPayroll[]>([])
+  const [companies, setCompanies] = useState<CompanyWithHierarchy[]>([])
+  const [companyFilter, setCompanyFilter] = useState('')
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<ExpandedRows>({})
 
@@ -30,18 +36,36 @@ export default function PayrollPage() {
       .then(setPayroll)
       .catch(console.error)
       .finally(() => setLoading(false))
+    supabase.from('companies').select('id, name, code, parent_id, is_group').order('name')
+      .then(({ data }) => { if (data) setCompanies(data as CompanyWithHierarchy[]) })
   }, [])
 
-  const totalMasse     = payroll.reduce((s, c) => s + Number(c.masse_salariale), 0)
-  const totalEmp       = payroll.reduce((s, c) => s + Number(c.total_employees), 0)
-  const totalActifs    = payroll.reduce((s, c) => s + Number(c.employes_actifs), 0)
-  const totalInactifs  = payroll.reduce((s, c) => s + Number(c.employes_inactifs), 0)
+  const filteredPayroll = useMemo(() => {
+    let result = payroll
+    if (companyFilter) {
+      const matchIds = resolveCompanyIds(companyFilter, companies)
+      result = result.filter(c => matchIds.includes(c.company_id))
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      result = result.filter(c =>
+        c.company_name.toLowerCase().includes(q) ||
+        c.company_code.toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [payroll, companyFilter, companies, search])
+
+  const totalMasse     = filteredPayroll.reduce((s, c) => s + Number(c.masse_salariale), 0)
+  const totalEmp       = filteredPayroll.reduce((s, c) => s + Number(c.total_employees), 0)
+  const totalActifs    = filteredPayroll.reduce((s, c) => s + Number(c.employes_actifs), 0)
+  const totalInactifs  = filteredPayroll.reduce((s, c) => s + Number(c.employes_inactifs), 0)
   const avgSalaire     = totalEmp > 0 ? totalMasse / totalEmp : 0
 
   const toggleExpand = (id: string) =>
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
 
-  const radarData = payroll.map((c, i) => ({
+  const radarData = filteredPayroll.map((c, i) => ({
     subject: c.company_code,
     chauffeurs:   Number(c.nb_chauffeurs),
     guichetiers:  Number(c.nb_guichetiers),
@@ -65,13 +89,32 @@ export default function PayrollPage() {
         <p className="text-sm text-[#6B7280] mt-1">Consolidation SBTA Holding — tous salariés</p>
       </div>
 
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <CompanyGroupSelect
+          companies={companies}
+          value={companyFilter}
+          onChange={setCompanyFilter}
+          className="px-3 py-2 rounded-lg text-sm border border-[#E2EAE5] text-[#374151] bg-white"
+        />
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher une société..."
+            className="w-full pl-9 pr-3 py-2 rounded-lg text-sm border border-[#E2EAE5] text-[#374151] bg-white"
+          />
+        </div>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { icon: DollarSign, label: 'Masse salariale totale', value: `${fmtM(totalMasse)} FCFA`, color: '#0B7439' },
           { icon: Users,      label: 'Total effectif',         value: totalEmp,                    color: '#1D6FA4' },
           { icon: TrendingUp, label: 'Salaire moyen',          value: `${fmt(Math.round(avgSalaire))} F`, color: '#D97706' },
-          { icon: Building2,  label: 'Sociétés',               value: payroll.length,              color: '#475569' },
+          { icon: Building2,  label: 'Sociétés',               value: filteredPayroll.length,       color: '#475569' },
         ].map(kpi => (
           <div key={kpi.label} className="bg-white rounded-2xl border border-[#E2EAE5] p-5 flex items-center gap-4">
             <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -108,7 +151,7 @@ export default function PayrollPage() {
               </tr>
             </thead>
             <tbody>
-              {payroll.map((c, i) => {
+              {filteredPayroll.map((c, i) => {
                 const isOpen = expanded[c.company_id]
                 const share = totalMasse > 0 ? (Number(c.masse_salariale) / totalMasse) * 100 : 0
                 return (
@@ -176,10 +219,10 @@ export default function PayrollPage() {
                 <td className="px-4 py-3 text-right font-bold">{totalEmp}</td>
                 <td className="px-4 py-3 text-right font-bold text-[#0B7439]">{totalActifs}</td>
                 <td className="px-4 py-3 text-right font-bold">
-                  {payroll.reduce((s, c) => s + Number(c.titulaires), 0)}
+                  {filteredPayroll.reduce((s, c) => s + Number(c.titulaires), 0)}
                 </td>
                 <td className="px-4 py-3 text-right font-bold">
-                  {payroll.reduce((s, c) => s + Number(c.contractuels), 0)}
+                  {filteredPayroll.reduce((s, c) => s + Number(c.contractuels), 0)}
                 </td>
                 <td className="px-4 py-3 text-right font-bold text-[#0B7439]">{fmt(totalMasse)} F</td>
                 <td className="px-4 py-3 text-right font-bold">{fmt(Math.round(avgSalaire))} F</td>
@@ -196,12 +239,12 @@ export default function PayrollPage() {
         <div className="bg-white rounded-2xl border border-[#E2EAE5] p-6">
           <h3 className="font-bold text-[#1A2E22] mb-4">Masse salariale par société</h3>
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={payroll} margin={{ top: 0, right: 8, left: 8, bottom: 0 }}>
+            <BarChart data={filteredPayroll} margin={{ top: 0, right: 8, left: 8, bottom: 0 }}>
               <XAxis dataKey="company_code" tick={{ fontSize: 12, fill: '#6B7280' }} />
               <YAxis tickFormatter={v => `${(v / 1_000_000).toFixed(1)}M`} tick={{ fontSize: 11, fill: '#6B7280' }} />
               <Tooltip formatter={(v: number) => [`${fmt(v)} FCFA`, 'Masse salariale']} />
               <Bar dataKey="masse_salariale" radius={[6, 6, 0, 0]}>
-                {payroll.map((_, i) => <Cell key={i} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} />)}
+                {filteredPayroll.map((_, i) => <Cell key={i} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -212,7 +255,7 @@ export default function PayrollPage() {
           <h3 className="font-bold text-[#1A2E22] mb-4">Répartition effectif par poste clé</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart
-              data={payroll}
+              data={filteredPayroll}
               margin={{ top: 0, right: 8, left: 8, bottom: 0 }}
             >
               <XAxis dataKey="company_code" tick={{ fontSize: 12, fill: '#6B7280' }} />
