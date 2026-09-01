@@ -36,6 +36,9 @@ interface PrintPayload {
   bagage?: BagageRecord;
   depart: DepartRecord;
   stationName?: string;
+  chefGarePhone?: string | null;
+  chefGareName?: string | null;
+  guichetPhone?: string | null;
 }
 
 async function sendWebSerial(data: Uint8Array): Promise<boolean> {
@@ -163,6 +166,19 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   const reducedBadge = ticket.is_reduced ? `<div class="badge">** REDUCTION APPLIQUEE **</div>` : '';
   const reportedBadge = ticket.is_reported ? `<div class="badge">** TICKET REPORTE **</div>` : '';
 
+  const contactLines: string[] = [];
+  if (data.chefGarePhone) {
+    contactLines.push(data.chefGareName
+      ? `${escapeHtml(data.chefGarePhone)} — Chef de Gare : ${escapeHtml(data.chefGareName)}`
+      : `${escapeHtml(data.chefGarePhone)} — Chef de Gare`);
+  }
+  if (data.guichetPhone) {
+    contactLines.push(`${escapeHtml(data.guichetPhone)} — Guichet`);
+  }
+  const contactHtml = contactLines.length > 0
+    ? `<div class="contact-lines">${contactLines.map(l => `<div class="contact-line">${l}</div>`).join('')}</div>`
+    : '';
+
   const block = (isSouche: boolean) => `
 <div class="ticket-block">
 
@@ -177,6 +193,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
       <div class="brand-sub">${escapeHtml(phoneLine)}</div>
     </div>
   </div>
+  ${contactHtml}
   ` : `
   <div class="souche-title">SOUCHE</div>
   `}
@@ -246,6 +263,9 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   .brand { flex: 1 1 auto; text-align: right; line-height: 1.25; }
   .brand-name { font-size: 30px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
   .brand-sub { font-size: 11px; }
+
+  .contact-lines { padding: 2px 0 4px; }
+  .contact-line { font-size: 10px; text-align: left; line-height: 1.3; }
 
   .souche-title { font-style: italic; font-weight: bold; font-size: 20px; text-align: center; margin: 10px 0; }
 
@@ -365,7 +385,7 @@ function makeQRText(data: string): string {
 async function printBrowser(payload: PrintPayload, settings: PrintSettings): Promise<boolean> {
   let html: string;
   if (payload.type === 'ticket' && payload.ticket) {
-    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName }, settings);
+    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, chefGarePhone: payload.chefGarePhone, chefGareName: payload.chefGareName, guichetPhone: payload.guichetPhone }, settings);
   } else if (payload.type === 'bagage' && payload.bagage) {
     html = buildHTMLBagage({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName }, settings);
   } else {
@@ -422,6 +442,9 @@ export const PrintService = {
       ticket: data.ticket,
       depart: data.depart,
       stationName: data.stationName,
+      chefGarePhone: data.chefGarePhone,
+      chefGareName: data.chefGareName,
+      guichetPhone: data.guichetPhone,
     });
   },
 
@@ -442,7 +465,7 @@ export const PrintService = {
     const settings = await getPrintSettings();
     let escposData: Uint8Array;
     if (payload.type === 'ticket' && payload.ticket) {
-      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName }, settings);
+      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, chefGarePhone: payload.chefGarePhone, chefGareName: payload.chefGareName, guichetPhone: payload.guichetPhone }, settings);
     } else if (payload.type === 'bagage' && payload.bagage) {
       escposData = buildBagageESCPOS({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName }, settings);
     } else {
