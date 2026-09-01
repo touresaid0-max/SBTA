@@ -3,6 +3,8 @@ import { MessageSquareWarning, Plus, Search, Download, X, Eye } from 'lucide-rea
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees } from '@/services/hr.service'
+import { resolveCompanyIds } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { ExplanationRequest, Employee } from '@/types/hr.types'
 
 const STATUS_MAP: Record<string, { bg: string; color: string; label: string }> = {
@@ -12,7 +14,7 @@ const STATUS_MAP: Record<string, { bg: string; color: string; label: string }> =
   classe: { bg: '#F3F4F6', color: '#6B7280', label: 'Classe' },
 }
 
-interface CompanyOption { id: string; name: string; code: string }
+interface CompanyOption { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }
 
 export default function ExplanationsPage() {
   const [requests, setRequests] = useState<ExplanationRequest[]>([])
@@ -39,7 +41,7 @@ export default function ExplanationsPage() {
         supabase.from('explanation_requests')
           .select('*, company:companies(id, name, code)')
           .order('request_date', { ascending: false }),
-        supabase.from('companies').select('id, name, code').order('name'),
+        supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
         fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       if (reqRes.data) setRequests(reqRes.data as ExplanationRequest[])
@@ -53,7 +55,10 @@ export default function ExplanationsPage() {
 
   const filtered = requests.filter(r => {
     if (statusFilter && r.status !== statusFilter) return false
-    if (companyFilter && r.company_id !== companyFilter) return false
+    if (companyFilter) {
+      const matchIds = resolveCompanyIds(companyFilter, companies)
+      if (!matchIds.includes(r.company_id)) return false
+    }
     if (search && !r.employee_name.toLowerCase().includes(search.toLowerCase()) && !r.motif.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
@@ -189,11 +194,14 @@ export default function ExplanationsPage() {
           <option value="">Tous statuts</option>
           {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
-        <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
-          className="px-3 py-2 rounded-lg text-sm" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-          <option value="">Toutes societes</option>
-          {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <CompanyGroupSelect
+          companies={companies}
+          value={companyFilter}
+          onChange={setCompanyFilter}
+          placeholder="Toutes societes"
+          className="px-3 py-2 rounded-lg text-sm"
+          style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+        />
       </div>
 
       <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>

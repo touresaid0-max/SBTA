@@ -3,6 +3,8 @@ import { Wallet, Plus, Search, Filter, Download, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees } from '@/services/hr.service'
+import { resolveCompanyIds } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { EmployeeLoan, Employee } from '@/types/hr.types'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n))
@@ -14,7 +16,7 @@ const STATUS_MAP: Record<string, { bg: string; color: string; label: string }> =
   annule: { bg: '#F3F4F6', color: '#6B7280', label: 'Annule' },
 }
 
-interface CompanyOption { id: string; name: string; code: string }
+interface CompanyOption { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }
 
 export default function LoansPage() {
   const [loans, setLoans] = useState<EmployeeLoan[]>([])
@@ -44,7 +46,7 @@ export default function LoansPage() {
         supabase.from('employee_loans')
           .select('*, company:companies(id, name, code)')
           .order('created_at', { ascending: false }),
-        supabase.from('companies').select('id, name, code').order('name'),
+        supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
         fetchEmployees({ company_id: null, station_id: null, role: null, contract_type: null, contract_nature: null, status: null, search: '' }),
       ])
       if (loansRes.data) setLoans(loansRes.data as EmployeeLoan[])
@@ -59,7 +61,10 @@ export default function LoansPage() {
   const filtered = loans.filter(l => {
     if (typeFilter && l.loan_type !== typeFilter) return false
     if (statusFilter && l.status !== statusFilter) return false
-    if (companyFilter && l.company_id !== companyFilter) return false
+    if (companyFilter) {
+      const matchIds = resolveCompanyIds(companyFilter, companies)
+      if (!matchIds.includes(l.company_id)) return false
+    }
     if (search) {
       const q = search.toLowerCase()
       if (!l.employee_name.toLowerCase().includes(q)) return false
@@ -241,11 +246,14 @@ export default function LoansPage() {
           </div>
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Societe</label>
-            <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
-              className="w-full px-2 py-1.5 rounded-lg text-xs" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-              <option value="">Toutes</option>
-              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <CompanyGroupSelect
+              companies={companies}
+              value={companyFilter}
+              onChange={setCompanyFilter}
+              placeholder="Toutes"
+              className="w-full px-2 py-1.5 rounded-lg text-xs"
+              style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+            />
           </div>
         </div>
       )}

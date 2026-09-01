@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { FileCheck, Download, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
+import { resolveCompanyIds } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { PaySlip } from '@/types/hr.types'
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n))
 const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
 
-interface CompanyOption { id: string; name: string; code: string }
+interface CompanyOption { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }
 
 type DeclarationType = 'cnps_monthly' | 'disa_annual' | 'dis_individual'
 const DECL_TABS: { key: DeclarationType; label: string }[] = [
@@ -37,7 +39,7 @@ export default function DeclarationsPage() {
 
       const [slipsRes, compsRes] = await Promise.all([
         query,
-        supabase.from('companies').select('id, name, code').order('name'),
+        supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
       ])
       if (slipsRes.data) setSlips(slipsRes.data as PaySlip[])
       if (compsRes.data) setCompanies(compsRes.data as CompanyOption[])
@@ -48,7 +50,10 @@ export default function DeclarationsPage() {
   useEffect(() => { loadData() }, [loadData])
 
   const filtered = slips.filter(s => {
-    if (companyFilter && s.company_id !== companyFilter) return false
+    if (companyFilter) {
+      const matchIds = resolveCompanyIds(companyFilter, companies)
+      if (!matchIds.includes(s.company_id)) return false
+    }
     return true
   })
 
@@ -137,11 +142,14 @@ export default function DeclarationsPage() {
           className="px-3 py-2 rounded-lg text-sm" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
           {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
-          className="px-3 py-2 rounded-lg text-sm" style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-          <option value="">Toutes societes</option>
-          {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <CompanyGroupSelect
+          companies={companies}
+          value={companyFilter}
+          onChange={setCompanyFilter}
+          placeholder="Toutes societes"
+          className="px-3 py-2 rounded-lg text-sm"
+          style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+        />
       </div>
 
       {/* Summary by company */}

@@ -8,6 +8,8 @@ import {
   payContractualDays,
 } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
+import { resolveCompanyIds } from '@/utils/companyGroups'
+import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { DriverDailyLog } from '@/types/hr.types'
 
 interface ContractualDriver {
@@ -49,7 +51,7 @@ export default function ContractualPayPage() {
   const [companyFilter, setCompanyFilter] = useState('')
   const [payFilter,   setPayFilter]   = useState<'all' | 'paid' | 'pending'>('all')
   const [detail,      setDetail]      = useState<DetailModal | null>(null)
-  const [companies,   setCompanies]   = useState<{ id: string; name: string; code: string }[]>([])
+  const [companies,   setCompanies]   = useState<{ id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }[]>([])
   const [month] = useState(currentMonth())
 
   const loadDrivers = async () => {
@@ -79,7 +81,7 @@ export default function ContractualPayPage() {
   useEffect(() => {
     Promise.all([
       loadDrivers(),
-      supabase.from('companies').select('id, name, code').order('name').then(({ data }) => setCompanies(data ?? [])),
+      supabase.from('companies').select('id, name, code, parent_id, is_group').order('name').then(({ data }) => setCompanies(data ?? [])),
     ]).finally(() => setLoading(false))
   }, [])
 
@@ -108,7 +110,10 @@ export default function ContractualPayPage() {
   const filteredDrivers = drivers.filter(d => {
     const matchSearch = !search || d.full_name.toLowerCase().includes(search.toLowerCase()) ||
       (d.employee_id ?? '').toLowerCase().includes(search.toLowerCase())
-    const matchCompany = !companyFilter || d.company_name === companyFilter
+    const matchCompany = !companyFilter || resolveCompanyIds(companyFilter, companies).some(id => {
+      const comp = companies.find(c => c.id === id)
+      return comp?.name === d.company_name
+    })
     const matchPay = payFilter === 'all' ||
       (payFilter === 'paid'    && d.current_month_earnings > 0 && d.days_worked_this_month === 0) ||
       (payFilter === 'pending' && d.current_month_earnings > 0)
@@ -153,11 +158,13 @@ export default function ContractualPayPage() {
               placeholder="Rechercher un chauffeur..."
               className="w-full pl-9 pr-4 py-2 border border-[#E2EAE5] rounded-xl text-sm focus:outline-none focus:border-[#0B7439]" />
           </div>
-          <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
-            className="border border-[#E2EAE5] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0B7439]">
-            <option value="">Toutes les sociétés</option>
-            {companies.map(c => <option key={c.id} value={c.name}>{c.name} ({c.code})</option>)}
-          </select>
+          <CompanyGroupSelect
+            companies={companies}
+            value={companyFilter}
+            onChange={setCompanyFilter}
+            placeholder="Toutes les sociétés"
+            className="border border-[#E2EAE5] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0B7439]"
+          />
         </div>
       </div>
 
