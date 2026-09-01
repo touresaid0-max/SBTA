@@ -30,6 +30,9 @@ const ROLE_LABELS: Record<string, string> = {
   gerant_principal: 'Gérant Principal',
   responsable_assurance: 'Responsable Service Assurance',
   responsable_logistique: 'Responsable Logistique',
+  charge_achat: "Chargé d'Achat",
+  agent_colis: 'Agent Courrier', superviseur_colis: 'Superviseur Courrier',
+  gestion_agboville: 'Gestion Agboville', carburant: 'Agent Carburant',
 }
 
 const SUSPENSION_LABELS: Record<string, string> = {
@@ -61,6 +64,32 @@ const DEDUCTION_STATUS: Record<string, string> = {
 }
 
 const MONTHS = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc']
+
+const CONTRACT_TYPES: { value: string; label: string }[] = [
+  { value: 'titulaire', label: 'Titulaires' },
+  { value: 'contractuel', label: 'Contractuels' },
+  { value: 'stagiaire', label: 'Stagiaires' },
+]
+
+const CONTRACT_NATURES: { value: string; label: string }[] = [
+  { value: 'CDI', label: 'CDI' },
+  { value: 'CDD', label: 'CDD' },
+]
+
+const EMPLOYEE_STATUSES: { value: string; label: string }[] = [
+  { value: 'active', label: 'Actifs' },
+  { value: 'pending', label: 'En attente' },
+  { value: 'suspended', label: 'Suspendus' },
+]
+
+const ROLE_CATEGORIES: { value: string; label: string; roles: string[] }[] = [
+  { value: 'direction', label: 'Direction', roles: ['admin', 'dg', 'daf', 'rh', 'gestionnaire', 'gestion_agboville', 'gerant_principal', 'planificateur', 'comptable'] },
+  { value: 'operationnel', label: 'Opérationnel', roles: ['chauffeur', 'guichetier', 'mecanicien', 'pompiste', 'chef_garage', 'chef_gare', 'bagagiste', 'agent_reservation', 'responsable_assurance', 'responsable_logistique', 'charge_achat', 'carburant'] },
+  { value: 'courrier', label: 'Courrier', roles: ['agent_colis', 'superviseur_colis'] },
+]
+
+const ALL_ROLES = ROLE_CATEGORIES.flatMap(c => c.roles)
+
 
 // ──────────────────────────────────────────────────────────────
 // Report definitions
@@ -438,10 +467,20 @@ export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [stations, setStations] = useState<{ id: string; name: string }[]>([])
+  const [contractType, setContractType] = useState('')
+  const [contractNature, setContractNature] = useState('')
+  const [stationFilter, setStationFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+
+  const isEmployeeReport = reportKey === 'employes' || reportKey === 'chauffeurs'
 
   useEffect(() => {
     supabase.from('companies').select('id, name, code, parent_id, is_group').order('name')
       .then(({ data }) => { if (data) setCompanies(data as CompanyWithHierarchy[]) })
+    supabase.from('stations').select('id, name').order('name')
+      .then(({ data }) => { if (data) setStations(data ?? []) })
   }, [])
 
   useEffect(() => {
@@ -453,6 +492,11 @@ export default function ReportsPage() {
     setPeriodMode('all')
     setDateFrom('')
     setDateTo('')
+    setContractType('')
+    setContractNature('')
+    setStationFilter('')
+    setStatusFilter('')
+    setSelectedCategories([])
     def.load()
       .then(data => { if (!cancelled) setRows(data) })
       .catch(err => { if (!cancelled) { console.error(err); setError('Impossible de charger les données de ce rapport.') } })
@@ -469,6 +513,27 @@ export default function ReportsPage() {
         const cid = def.companyField!(r)
         return cid != null && matchIds.includes(cid)
       })
+    }
+    // employee-specific filters
+    if (isEmployeeReport) {
+      if (contractType) {
+        result = result.filter((e: Employee) => e.contract_type === contractType)
+      }
+      if (contractNature) {
+        result = result.filter((e: Employee) => e.contract_nature === contractNature)
+      }
+      if (stationFilter) {
+        result = result.filter((e: Employee) => e.station_id === stationFilter)
+      }
+      if (statusFilter) {
+        result = result.filter((e: Employee) => e.status === statusFilter)
+      }
+      if (selectedCategories.length > 0) {
+        const matchRoles = new Set(selectedCategories.flatMap(cat =>
+          ROLE_CATEGORIES.find(c => c.value === cat)?.roles ?? []
+        ))
+        result = result.filter((e: Employee) => matchRoles.has(e.role))
+      }
     }
     // period filter
     if (periodMode !== 'all' && def.dateField) {
@@ -490,8 +555,17 @@ export default function ReportsPage() {
       const q = search.toLowerCase()
       result = result.filter(r => def.columns.some(c => c.cell(r).toLowerCase().includes(q)))
     }
+    // sort: employee reports sorted by company code then name
+    if (isEmployeeReport) {
+      result = [...result].sort((a, b) => {
+        const ca = (a as Employee).company_code ?? 'ZZZ'
+        const cb = (b as Employee).company_code ?? 'ZZZ'
+        if (ca !== cb) return ca.localeCompare(cb)
+        return ((a as Employee).full_name ?? '').localeCompare((b as Employee).full_name ?? '')
+      })
+    }
     return result
-  }, [rows, search, def, companyFilter, companies, periodMode, monthFilter, dateFrom, dateTo])
+  }, [rows, search, def, companyFilter, companies, periodMode, monthFilter, dateFrom, dateTo, isEmployeeReport, contractType, contractNature, stationFilter, statusFilter, selectedCategories])
 
   const stats = useMemo(() => def.summary(filtered), [filtered, def])
   const Icon = def.icon
@@ -590,6 +664,64 @@ export default function ReportsPage() {
                 className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]"
               />
             </div>
+          )}
+          {isEmployeeReport && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Contrat</label>
+                <select value={contractType} onChange={e => setContractType(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]">
+                  <option value="">Tous les contrats</option>
+                  {CONTRACT_TYPES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Nature</label>
+                <select value={contractNature} onChange={e => setContractNature(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]">
+                  <option value="">Toutes les natures</option>
+                  {CONTRACT_NATURES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Gare</label>
+                <select value={stationFilter} onChange={e => setStationFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]">
+                  <option value="">Toutes les gares</option>
+                  {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#4A6B55]">Statut</label>
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded-lg text-xs border border-[#E2EAE5] text-[#1A2E22]">
+                  <option value="">Tous les statuts</option>
+                  {EMPLOYEE_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div className="col-span-1 sm:col-span-3">
+                <label className="block text-xs font-semibold mb-1.5 text-[#4A6B55]">Postes / Catégories</label>
+                <div className="flex flex-wrap gap-2">
+                  {ROLE_CATEGORIES.map(cat => {
+                    const active = selectedCategories.includes(cat.value)
+                    return (
+                      <button key={cat.value} type="button"
+                        onClick={() => setSelectedCategories(prev =>
+                          active ? prev.filter(c => c !== cat.value) : [...prev, cat.value]
+                        )}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        style={{
+                          backgroundColor: active ? '#0B7439' : '#F4F7F5',
+                          color: active ? '#fff' : '#4A6B55',
+                          border: '1px solid ' + (active ? '#0B7439' : '#E2EAE5'),
+                        }}>
+                        {cat.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
           )}
           {def.dateField && (
             <>
