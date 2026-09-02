@@ -110,6 +110,8 @@ export interface BagageRecord {
   owner_name: string;
   owner_phone: string;
   print_bagage: boolean;
+  station_id?: string;
+  counter_id?: string;
   created_at: string;
   updated_at: string;
   synced?: boolean;
