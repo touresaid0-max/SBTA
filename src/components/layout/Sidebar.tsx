@@ -163,6 +163,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
         { label: 'Ramassage',   path: '/chef-gare/ramassage',          icon: <ArrowDownToLine className="w-5 h-5" /> },
         { label: 'Convois',     path: '/chef-gare/convoys',            icon: <Truck className="w-5 h-5" /> },
         { label: 'Bagagistes',  path: '/chef-gare/baggage-handlers',   icon: <Luggage className="w-5 h-5" /> },
+        { label: 'Rapport bagages', path: '/chef-gare/baggage-report',     icon: <Package className="w-5 h-5" /> },
       ],
     },
     {
@@ -344,6 +345,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Synthèse bus',   path: '/logistique/bus-synthesis', icon: <Bus className="w-5 h-5" /> },
     { label: 'Bilan',          path: '/logistique/bilan',         icon: <ClipboardList className="w-5 h-5" /> },
     { label: 'Rapport conducteur', path: '/logistique/driver-report', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Rapport Bagage',  path: '/logistique/baggage-report', icon: <Package className="w-5 h-5" /> },
   ],
   gestion_agboville: [
     { label: 'Tableau de bord',  path: '/gestion-agboville/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },

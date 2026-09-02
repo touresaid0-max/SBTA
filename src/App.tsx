@@ -113,6 +113,7 @@ import ChefGareDailyPlanning from './pages/chef_gare/DailyPlanning';
 import ChefGareNewSchedule from './pages/chef_gare/NewSchedule';
 import ChefGareCounters from './pages/chef_gare/Counters';
 import ChefGareBaggageHandlers from './pages/chef_gare/BaggageHandlers';
+import ChefGareDailyBaggageReport from './pages/chef_gare/DailyBaggageReport';
 import ChefGareSalesTracking from './pages/chef_gare/SalesTracking';
 import ChefGareDailyReport from './pages/chef_gare/DailyReport';
 import ChefGareStationDisplay from './pages/chef_gare/StationDisplayWrapper';
@@ -234,6 +235,7 @@ import LogistiqueFleetBilan from './pages/logistique/FleetBilan';
 import LogistiqueDriverReport from './pages/logistique/DriverReport';
 import LogistiqueReparations from './pages/logistique/Reparations';
 import LogistiqueRapportReparations from './pages/logistique/RapportReparations';
+import LogistiqueBaggageReportDashboard from './pages/logistique/BaggageReportDashboard';
 import AgentReservationDashboard from './pages/agent-reservation/Dashboard';
 import AgentReservationUsers from './pages/agent-reservation/MobileUsers';
 import AgentReservationTickets from './pages/agent-reservation/Tickets';
@@ -449,6 +451,7 @@ function App() {
             <Route path="chef-gare/schedules/grouped" element={<ProtectedRoute roles={['chef_gare']}><ChefGareGroupedPlanning /></ProtectedRoute>} />
             <Route path="chef-gare/counters" element={<ProtectedRoute roles={['chef_gare']}><ChefGareCounters /></ProtectedRoute>} />
             <Route path="chef-gare/baggage-handlers" element={<ProtectedRoute roles={['chef_gare']}><ChefGareBaggageHandlers /></ProtectedRoute>} />
+            <Route path="chef-gare/baggage-report" element={<ProtectedRoute roles={['chef_gare']}><ChefGareDailyBaggageReport /></ProtectedRoute>} />
             <Route path="chef-gare/sales" element={<ProtectedRoute roles={['chef_gare']}><ChefGareSalesTracking /></ProtectedRoute>} />
             <Route path="chef-gare/convoys" element={<ProtectedRoute roles={['chef_gare']}><ChefGareConvoys /></ProtectedRoute>} />
             <Route path="chef-gare/ramassage" element={<ProtectedRoute roles={['chef_gare']}><ChefGareRamassage /></ProtectedRoute>} />
@@ -521,6 +524,7 @@ function App() {
             <Route path="logistique/driver-report"    element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDriverReport /></ProtectedRoute>} />
             <Route path="logistique/reparations"      element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueReparations /></ProtectedRoute>} />
             <Route path="logistique/rapport-reparations" element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueRapportReparations /></ProtectedRoute>} />
+            <Route path="logistique/baggage-report" element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueBaggageReportDashboard /></ProtectedRoute>} />
 
             <Route path="agent-reservation/dashboard"  element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationDashboard /></ProtectedRoute>} />
             <Route path="agent-reservation/users"      element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationUsers /></ProtectedRoute>} />
