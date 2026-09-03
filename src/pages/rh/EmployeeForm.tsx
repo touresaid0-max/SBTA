@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, User, Building2, Car, Info, ChevronDown, Camera, X, Search } from 'lucide-react'
+import { ArrowLeft, Save, User, Building2, Car, Info, ChevronDown, Camera, X, Search, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { uploadAvatar } from '@/services/hr.service'
@@ -12,7 +12,7 @@ import { computeAge, monthsUntilRetirement, RETIREMENT_AGE, RETIREMENT_ALERT_MON
 
 const EDGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rh-create-employee`
 
-async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): Promise<void> {
+async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): Promise<string | undefined> {
   const { data: { session } } = await supabase.auth.getSession()
   const res = await fetch(EDGE_URL, {
     method,
@@ -24,6 +24,21 @@ async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): 
   })
   const json = await res.json()
   if (!res.ok) throw new Error(json.error ?? `Erreur ${res.status}`)
+  return json.employee?.id as string | undefined
+}
+
+async function syncCounterRoute(employeeId: string, routeId: string | null): Promise<void> {
+  const { data: counter } = await supabase
+    .from('counters')
+    .select('id')
+    .eq('assigned_user_id', employeeId)
+    .maybeSingle()
+  if (!counter) return
+  if (routeId) {
+    await supabase.from('counter_routes').upsert({ counter_id: counter.id, route_id: routeId })
+  } else {
+    await supabase.from('counter_routes').delete().eq('counter_id', counter.id)
+  }
 }
 
 const OPERATIONAL_ROLES: SBTARole[] = [
@@ -156,6 +171,8 @@ export default function EmployeeForm() {
   const [avatarPreview, setAvatarPreview] = useState<string>('')
   const [busSearch, setBusSearch]     = useState('')
   const [busOpen, setBusOpen]         = useState(false)
+  const [routeSearch, setRouteSearch] = useState('')
+  const [routeOpen, setRouteOpen]     = useState(false)
   const avatarInputRef                = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -252,8 +269,9 @@ export default function EmployeeForm() {
       setForm(f => ({ ...f, company_id: '' }))
     }
   }, [form.role]) // eslint-disable-line react-hooks/exhaustive-deps
-  const isDriver      = form.role === 'chauffeur'
-  const isContractuel = form.contract_type === 'contractuel'
+  const isDriver       = form.role === 'chauffeur'
+  const isGuichetier   = form.role === 'guichetier'
+  const isContractuel  = form.contract_type === 'contractuel'
 
   const validate = () => {
     if (!form.first_name.trim()) { toast.error('Le prénom est obligatoire'); return false }
@@ -299,7 +317,7 @@ export default function EmployeeForm() {
     license_category:  isDriver ? form.license_category || null : null,
     avatar_url:        form.avatar_url.trim() || null,
     daily_rate:        isDriver && isContractuel && form.daily_rate ? parseFloat(form.daily_rate) : null,
-    assigned_route_id: isDriver && form.assigned_route_id ? form.assigned_route_id : null,
+    assigned_route_id: (isDriver || isGuichetier) && form.assigned_route_id ? form.assigned_route_id : null,
     technician_type_id: form.role === 'mecanicien' && form.technician_type_id ? form.technician_type_id : null,
   })
 
@@ -336,9 +354,11 @@ export default function EmployeeForm() {
           const url = await uploadAvatar(id, avatarFile, table)
           setForm(p => ({ ...p, avatar_url: url }))
         }
+        if (isGuichetier) await syncCounterRoute(id, base.assigned_route_id)
         toast.success('Employé mis à jour')
       } else {
-        await callEdge('POST', { ...base, ...emails })
+        const empId = await callEdge('POST', { ...base, ...emails })
+        if (isGuichetier && empId) await syncCounterRoute(empId, base.assigned_route_id)
         toast.success(
           `Fiche créée pour ${form.first_name} ${form.last_name}. L'administrateur pourra créer le compte de connexion.`,
           { duration: 5000 }
@@ -600,6 +620,68 @@ export default function EmployeeForm() {
               </select>
             </SelectWrap>
           </FieldGroup>
+          {isGuichetier && (
+            <FieldGroup label="Itinéraire" hint="Sera automatiquement affecté au guichet de cet employé dans Chef de Gare → Guichets → Gérer les lignes">
+              {(() => {
+                const selectedRoute = routes.find(r => r.id === form.assigned_route_id) ?? null
+                const q = routeSearch.trim().toLowerCase()
+                const searchedRoutes = q
+                  ? routes.filter(r => r.name.toLowerCase().includes(q))
+                  : routes
+                if (selectedRoute) {
+                  return (
+                    <div className="flex items-center gap-2 border border-[#0B7439] bg-[#F0FAF4] rounded-xl px-3 py-2.5">
+                      <MapPin className="w-4 h-4 text-[#0B7439] flex-shrink-0" />
+                      <span className="text-sm text-[#1A2E22] font-medium">{selectedRoute.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => { setForm(p => ({ ...p, assigned_route_id: '' })); setRouteSearch(''); setRouteOpen(false) }}
+                        className="ml-auto p-1 rounded-lg text-[#4A6B55] hover:bg-[#DCEEE3] transition-colors"
+                        title="Changer d'itinéraire"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
+                    <input
+                      value={routeSearch}
+                      onChange={e => { setRouteSearch(e.target.value); setRouteOpen(true) }}
+                      onFocus={() => setRouteOpen(true)}
+                      onBlur={() => setTimeout(() => setRouteOpen(false), 150)}
+                      className={inputCls + ' pl-9'}
+                      placeholder="Rechercher un itinéraire…"
+                    />
+                    {routeOpen && (
+                      <div className="absolute z-20 mt-1 w-full max-h-60 overflow-auto bg-white border border-[#E2EAE5] rounded-xl shadow-lg">
+                        {searchedRoutes.length === 0 ? (
+                          <div className="px-3 py-2.5 text-sm text-[#8AA898]">
+                            {routes.length === 0 ? 'Aucun itinéraire disponible' : `Aucun itinéraire ne correspond à « ${routeSearch} »`}
+                          </div>
+                        ) : (
+                          searchedRoutes.map(r => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={() => { setForm(p => ({ ...p, assigned_route_id: r.id })); setRouteSearch(''); setRouteOpen(false) }}
+                              className="w-full text-left px-3 py-2.5 text-sm text-[#374151] hover:bg-[#F0FAF4] transition-colors"
+                            >
+                              <span className="font-medium text-[#1A2E22]">{r.name}</span>
+                              <span className="text-[#8AA898] ml-2">({r.base_price.toLocaleString('fr-CI')} F)</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </FieldGroup>
+          )}
           <FieldGroup label="Type de contrat" required>
             <SelectWrap>
               <select value={form.contract_type} onChange={set('contract_type')} className={selectCls}>
