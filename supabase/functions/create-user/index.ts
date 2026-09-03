@@ -80,6 +80,7 @@ Deno.serve(async (req: Request) => {
       license_category,
       technician_type_id,
       colis_direction,
+      assigned_route_ids,
       send_invitation,
     } = body;
 
@@ -244,6 +245,15 @@ Deno.serve(async (req: Request) => {
       description: `${send_invitation ? "Invitation envoyée" : "Utilisateur créé"} : ${first_name} ${last_name} (${role})`,
       new_values: { email, role, company_id: profileData.company_id, station_id: profileData.station_id },
     });
+
+    // If guichetier, save assigned_route_ids to employees (triggers counter_routes sync)
+    if (role === "guichetier" && Array.isArray(assigned_route_ids)) {
+      const { error: routeError } = await supabaseAdmin
+        .from("employees")
+        .update({ assigned_route_ids, updated_at: new Date().toISOString() })
+        .or(`id.eq.${employee_id},auth_user_id.eq.${authUserId}`);
+      if (routeError) throw new Error(routeError.message);
+    }
 
     // If comptable, save multi-company assignments using service role (bypasses RLS)
     if (role === "comptable" && Array.isArray(assigned_company_ids) && assigned_company_ids.length > 0) {

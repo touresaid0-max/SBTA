@@ -289,6 +289,9 @@ export default function Users() {
         if (formData.role === 'agent_colis') {
           payload.colis_direction = formData.colis_direction.length > 0 ? formData.colis_direction : null;
         }
+        if (formData.role === 'guichetier') {
+          payload.assigned_route_ids = formData.assigned_route_ids;
+        }
 
         const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
           method: 'POST',
@@ -346,20 +349,15 @@ export default function Users() {
         } else {
           updateData.colis_direction = null;
         }
-        // Guichetier: save assigned_route_ids to both users and employees
-        if (formData.role === 'guichetier') {
-          updateData.assigned_route_ids = formData.assigned_route_ids.length > 0 ? formData.assigned_route_ids : [];
-        } else if (editingUser.role === 'guichetier' && formData.role !== 'guichetier') {
-          updateData.assigned_route_ids = [];
-        }
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
-        // Sync assigned_route_ids to employees table (triggers counter_routes sync)
+        // assigned_route_ids is stored on employees; its database trigger syncs counter_routes.
         if (formData.role === 'guichetier' || (editingUser.role === 'guichetier' && formData.role !== 'guichetier')) {
-          await supabase.from('employees').update({
+          const { error: employeeError } = await supabase.from('employees').update({
             assigned_route_ids: formData.role === 'guichetier' ? formData.assigned_route_ids : [],
             updated_at: new Date().toISOString(),
           }).or(`id.eq.${editingUser.id},auth_user_id.eq.${editingUser.id}`);
+          if (employeeError) throw employeeError;
         }
 
         // If comptable, sync multi-company assignments via SECURITY DEFINER function
