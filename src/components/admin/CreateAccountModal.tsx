@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { X, Eye, EyeOff, RefreshCw, CheckCircle, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Eye, EyeOff, RefreshCw, CheckCircle, User, MapPin, Search } from 'lucide-react';
 import { createAccountByAdmin, type PendingEmployee } from '../../services/employeeAccount.service';
 import { generateSecurePassword } from '../../utils/generatePassword';
+import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -46,6 +47,12 @@ function passwordStrength(pwd: string): { score: number; label: string; color: s
   return { score, label: 'Très fort', color: '#065F46' };
 }
 
+interface Route {
+  id: string;
+  name: string;
+  base_price: number;
+}
+
 interface Props {
   employee: PendingEmployee;
   onClose: () => void;
@@ -58,6 +65,26 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
   const [showPassword, setShowPassword] = useState(false);
   const [sendWelcomeEmail, setSendWelcomeEmail] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
+  const [routeSearch, setRouteSearch] = useState('');
+  const [routeOpen, setRouteOpen] = useState(false);
+
+  const isGuichetier = employee.role === 'guichetier';
+
+  useEffect(() => {
+    if (!isGuichetier) return;
+    supabase.from('routes').select('id, name, base_price').eq('is_active', true).order('name')
+      .then(({ data }) => { if (data) setRoutes(data as Route[]); });
+  }, [isGuichetier]);
+
+  useEffect(() => {
+    if (!isGuichetier) return;
+    supabase.from('employees').select('assigned_route_ids').eq('id', employee.id).maybeSingle()
+      .then(({ data }) => {
+        if (data?.assigned_route_ids) setSelectedRouteIds(data.assigned_route_ids as string[]);
+      });
+  }, [isGuichetier, employee.id]);
 
   const strength = passwordStrength(password);
   const canSubmit = email.trim().length > 0 && password.length >= 8 && !isCreating;
@@ -77,6 +104,7 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
         email: email.trim(),
         password,
         send_welcome_email: sendWelcomeEmail,
+        ...(isGuichetier ? { assigned_route_ids: selectedRouteIds } : {}),
       });
       toast.success(`Compte créé pour ${employee.first_name} ${employee.last_name}`);
       onSuccess();
@@ -86,6 +114,11 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
       setIsCreating(false);
     }
   };
+
+  const availableRoutes = routes.filter(r =>
+    !selectedRouteIds.includes(r.id) &&
+    (routeSearch.trim() ? r.name.toLowerCase().includes(routeSearch.trim().toLowerCase()) : true)
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -134,6 +167,77 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
             <strong>Information :</strong> Vous créez uniquement les identifiants de connexion.
             Les données RH ont déjà été saisies par le Responsable RH.
           </div>
+
+          {/* Itinéraires (guichetier only) */}
+          {isGuichetier && (
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: '#1A2E22' }}>
+                Itinéraires
+              </label>
+              <p className="text-xs mb-2" style={{ color: '#8AA898' }}>
+                Sera automatiquement affecté au guichet dans Chef de Gare → Guichets → Gérer les lignes assignées. Vous pouvez sélectionner plusieurs itinéraires.
+              </p>
+              <div className="space-y-2">
+                {selectedRouteIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedRouteIds.map(rid => {
+                      const r = routes.find(x => x.id === rid);
+                      if (!r) return null;
+                      return (
+                        <span key={rid} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium" style={{ backgroundColor: '#F0FAF4', border: '1px solid #0B7439', color: '#0B7439' }}>
+                          <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                          {r.name}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRouteIds(prev => prev.filter(x => x !== rid))}
+                            className="ml-0.5 p-0.5 rounded hover:bg-[#DCEEE3] transition-colors"
+                            title="Retirer cet itinéraire"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
+                  <input
+                    value={routeSearch}
+                    onChange={e => { setRouteSearch(e.target.value); setRouteOpen(true); }}
+                    onFocus={() => setRouteOpen(true)}
+                    onBlur={() => setTimeout(() => setRouteOpen(false), 150)}
+                    className="w-full border rounded-xl px-3 py-2.5 pl-9 text-sm focus:outline-none focus:ring-2"
+                    style={{ borderColor: '#E2EAE5' }}
+                    placeholder={selectedRouteIds.length > 0 ? "Ajouter un autre itinéraire…" : "Rechercher un itinéraire…"}
+                  />
+                  {routeOpen && (
+                    <div className="absolute z-20 mt-1 w-full max-h-60 overflow-auto bg-white border rounded-xl shadow-lg" style={{ borderColor: '#E2EAE5' }}>
+                      {availableRoutes.length > 0 ? (
+                        availableRoutes.map(r => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => { setSelectedRouteIds(prev => [...prev, r.id]); setRouteSearch(''); setRouteOpen(false); }}
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F0FAF4] transition-colors"
+                            style={{ color: '#374151' }}
+                          >
+                            <span className="font-medium" style={{ color: '#1A2E22' }}>{r.name}</span>
+                            <span className="ml-2" style={{ color: '#8AA898' }}>({r.base_price.toLocaleString('fr-CI')} F)</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2.5 text-sm" style={{ color: '#8AA898' }}>
+                          {routes.length === 0 ? 'Aucun itinéraire disponible' : routeSearch.trim() ? `Aucun itinéraire ne correspond à « ${routeSearch} »` : 'Tous les itinéraires sont déjà sélectionnés'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Email */}
           <div>
@@ -255,6 +359,11 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
               <div className="text-sm" style={{ color: '#1A2E22' }}>
                 <span style={{ color: '#4A6B55' }}>Email envoyé :</span> {sendWelcomeEmail ? 'Oui' : 'Non'}
               </div>
+              {isGuichetier && selectedRouteIds.length > 0 && (
+                <div className="text-sm" style={{ color: '#1A2E22' }}>
+                  <span style={{ color: '#4A6B55' }}>Itinéraires :</span> {selectedRouteIds.map(id => routes.find(r => r.id === id)?.name).filter(Boolean).join(', ')}
+                </div>
+              )}
             </div>
           )}
 

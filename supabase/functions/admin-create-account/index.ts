@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { employee_id, email, password } = await req.json();
+    const { employee_id, email, password, assigned_route_ids } = await req.json();
 
     if (!employee_id) throw new Error("employee_id requis");
     if (!password) throw new Error("Mot de passe requis");
@@ -156,6 +156,7 @@ Deno.serve(async (req: Request) => {
       license_expiry:  employee.license_expiry ?? null,
       license_category: employee.license_category ?? null,
       assigned_route_id: employee.assigned_route_id ?? null,
+      assigned_route_ids: Array.isArray(assigned_route_ids) && assigned_route_ids.length > 0 ? assigned_route_ids : (employee.assigned_route_ids ?? null),
       avatar_url:    employee.avatar_url ?? null,
       status:        "active",
       is_active:     true,
@@ -179,6 +180,7 @@ Deno.serve(async (req: Request) => {
         account_created_by: caller.id,
         professional_email: accountEmail,
         updated_at:         new Date().toISOString(),
+        ...(assigned_route_ids !== undefined ? { assigned_route_ids: Array.isArray(assigned_route_ids) && assigned_route_ids.length > 0 ? assigned_route_ids : [] } : {}),
       })
       .eq("id", employee_id);
 

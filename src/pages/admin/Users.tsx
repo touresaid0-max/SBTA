@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Pencil, Ban, Key, User as UserIcon,
   Search, AlertCircle, CheckCircle, X, Clock, Users as UsersIcon,
-  Trash2, AlertTriangle, RotateCcw, Truck,
+  Trash2, AlertTriangle, RotateCcw, Truck, MapPin,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import DataTable from '../../components/shared/DataTable';
@@ -89,6 +89,7 @@ const LICENSE_CATEGORIES = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 interface Company { id: string; name: string }
 interface Station { id: string; name: string }
+interface Route { id: string; name: string; base_price: number }
 
 const emptyForm = () => ({
   email: '',
@@ -109,6 +110,7 @@ const emptyForm = () => ({
   send_invitation: false,
   status: 'active',
   colis_direction: [] as string[],
+  assigned_route_ids: [] as string[],
 });
 
 type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
@@ -129,6 +131,9 @@ export default function Users() {
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState(emptyForm());
   const [comptableAssignedCompanies, setComptableAssignedCompanies] = useState<string[]>([]);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [routeSearch, setRouteSearch] = useState('');
+  const [routeOpen, setRouteOpen] = useState(false);
 
   // Employés en attente
   const [pendingEmployees, setPendingEmployees] = useState<PendingEmployee[]>([]);
@@ -145,7 +150,7 @@ export default function Users() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const [usersRes, empRes, companiesRes, stationsRes, techTypesRes] = await Promise.all([
+      const [usersRes, empRes, companiesRes, stationsRes, routesRes, techTypesRes] = await Promise.all([
         supabase
           .from('users')
           .select('*, companies(name), organizations!users_organization_id_fkey(name)')
@@ -158,12 +163,14 @@ export default function Users() {
           .order('created_at', { ascending: false }),
         supabase.from('companies').select('id, name').order('name'),
         supabase.from('stations').select('id, name').eq('is_active', true).order('name'),
+        supabase.from('routes').select('id, name, base_price').eq('is_active', true).order('name'),
         fetchTypesTechniciens(),
       ]);
 
       if (usersRes.error) throw usersRes.error;
       setCompanies(companiesRes.data ?? []);
-      setStations(stationsRes.data ?? []);
+      if (stationsRes.data) setStations(stationsRes.data);
+      if (routesRes.data) setRoutes(routesRes.data as Route[]);
       if (techTypesRes) setTechTypes(techTypesRes);
 
       const usersData: UserRow[] = (usersRes.data ?? []).map(u => ({ ...u }));
@@ -339,8 +346,21 @@ export default function Users() {
         } else {
           updateData.colis_direction = null;
         }
+        // Guichetier: save assigned_route_ids to both users and employees
+        if (formData.role === 'guichetier') {
+          updateData.assigned_route_ids = formData.assigned_route_ids.length > 0 ? formData.assigned_route_ids : [];
+        } else if (editingUser.role === 'guichetier' && formData.role !== 'guichetier') {
+          updateData.assigned_route_ids = [];
+        }
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
+        // Sync assigned_route_ids to employees table (triggers counter_routes sync)
+        if (formData.role === 'guichetier' || (editingUser.role === 'guichetier' && formData.role !== 'guichetier')) {
+          await supabase.from('employees').update({
+            assigned_route_ids: formData.role === 'guichetier' ? formData.assigned_route_ids : [],
+            updated_at: new Date().toISOString(),
+          }).or(`id.eq.${editingUser.id},auth_user_id.eq.${editingUser.id}`);
+        }
 
         // If comptable, sync multi-company assignments via SECURITY DEFINER function
         if (formData.role === 'comptable') {
@@ -380,10 +400,21 @@ export default function Users() {
       license_category: user.license_category || 'D',
       technician_type_id: user.technician_type_id || '',
       colis_direction: user.colis_direction ?? [],
+      assigned_route_ids: [],
       password: '',
       send_invitation: false,
       status: user.status || 'active',
     });
+    // Load assigned routes if guichetier
+    if (user.role === 'guichetier') {
+      const { data: emp } = await supabase.from('employees')
+        .select('assigned_route_ids')
+        .or(`id.eq.${user.id},auth_user_id.eq.${user.id}`)
+        .maybeSingle();
+      if (emp?.assigned_route_ids) {
+        setFormData(prev => ({ ...prev, assigned_route_ids: emp.assigned_route_ids as string[] }));
+      }
+    }
     // Load comptable company assignments if role is comptable
     if (user.role === 'comptable') {
       const { data: ccData } = await supabase
@@ -1129,6 +1160,84 @@ export default function Users() {
                     <option value="">{REQUIRES_STATION.includes(formData.role) ? '— Sélectionner une gare —' : '— Aucune (non affecté) —'}</option>
                     {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
+                </div>
+              )}
+              {formData.role === 'guichetier' && (
+                <div className="p-4 rounded-lg" style={{ backgroundColor: '#f0faf4', border: '1px solid #0B7439' }}>
+                  <div className="flex gap-2 mb-1">
+                    <MapPin className="w-5 h-5 flex-shrink-0" style={{ color: '#0B7439' }} />
+                    <label className="text-sm font-medium" style={{ color: '#0B7439' }}>
+                      Itinéraires
+                    </label>
+                  </div>
+                  <p className="text-xs mb-2" style={{ color: '#0B7439' }}>
+                    Sera automatiquement affecté au guichet dans Chef de Gare → Guichets → Gérer les lignes assignées.
+                  </p>
+                  {formData.assigned_route_ids.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {formData.assigned_route_ids.map(rid => {
+                        const r = routes.find(x => x.id === rid);
+                        if (!r) return null;
+                        return (
+                          <span key={rid} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium" style={{ backgroundColor: '#F0FAF4', border: '1px solid #0B7439', color: '#0B7439' }}>
+                            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                            {r.name}
+                            <button
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, assigned_route_ids: prev.assigned_route_ids.filter(x => x !== rid) }))}
+                              className="ml-0.5 p-0.5 rounded hover:bg-[#DCEEE3] transition-colors"
+                              title="Retirer cet itinéraire"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
+                    <input
+                      value={routeSearch}
+                      onChange={e => { setRouteSearch(e.target.value); setRouteOpen(true); }}
+                      onFocus={() => setRouteOpen(true)}
+                      onBlur={() => setTimeout(() => setRouteOpen(false), 150)}
+                      className="w-full border rounded-xl px-3 py-2.5 pl-9 text-sm focus:outline-none focus:ring-2"
+                      style={{ borderColor: '#E2EAE5' }}
+                      placeholder={formData.assigned_route_ids.length > 0 ? "Ajouter un autre itinéraire…" : "Rechercher un itinéraire…"}
+                    />
+                    {routeOpen && (
+                      <div className="absolute z-20 mt-1 w-full max-h-60 overflow-auto bg-white border rounded-xl shadow-lg" style={{ borderColor: '#E2EAE5' }}>
+                        {(() => {
+                          const q = routeSearch.trim().toLowerCase();
+                          const available = routes.filter(r =>
+                            !formData.assigned_route_ids.includes(r.id) &&
+                            (q ? r.name.toLowerCase().includes(q) : true)
+                          );
+                          if (available.length === 0) {
+                            return (
+                              <div className="px-3 py-2.5 text-sm" style={{ color: '#8AA898' }}>
+                                {routes.length === 0 ? 'Aucun itinéraire disponible' : q ? `Aucun itinéraire ne correspond à « ${routeSearch} »` : 'Tous les itinéraires sont déjà sélectionnés'}
+                              </div>
+                            );
+                          }
+                          return available.map(r => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={() => { setFormData(prev => ({ ...prev, assigned_route_ids: [...prev.assigned_route_ids, r.id] })); setRouteSearch(''); setRouteOpen(false); }}
+                              className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F0FAF4] transition-colors"
+                              style={{ color: '#374151' }}
+                            >
+                              <span className="font-medium" style={{ color: '#1A2E22' }}>{r.name}</span>
+                              <span className="ml-2" style={{ color: '#8AA898' }}>({r.base_price.toLocaleString('fr-CI')} F)</span>
+                            </button>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               {formData.role === 'agent_colis' && (

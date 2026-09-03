@@ -71,6 +71,7 @@ export async function createAccountByAdmin(params: {
   email: string;
   password: string;
   send_welcome_email: boolean;
+  assigned_route_ids?: string[];
 }) {
   const { data: { session } } = await supabase.auth.getSession();
 
