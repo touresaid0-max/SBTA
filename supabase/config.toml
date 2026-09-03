@@ -1,0 +1,47 @@
+[functions.admin-create-account]
+verify_jwt = true
+
+[functions.bootstrap-reset-passwords]
+verify_jwt = true
+
+[functions.calculate-route-distance]
+verify_jwt = true
+
+[functions.create-user]
+verify_jwt = true
+
+[functions.create-user-with-password]
+verify_jwt = true
+
+[functions.logistique-drivers]
+verify_jwt = true
+
+[functions.mobile-otp]
+verify_jwt = true
+
+[functions.reset-user-password]
+verify_jwt = true
+
+[functions.rh-create-employee]
+verify_jwt = true
+
+[functions.send-parcel-sms]
+verify_jwt = true
+
+[functions.update-user-email]
+verify_jwt = true
+
+[functions.update-user-role]
+verify_jwt = true
+
+[functions.validate-ticket-sale]
+verify_jwt = true
+
+[functions.wave-create-checkout]
+verify_jwt = true
+
+[functions.wave-verify-payment]
+verify_jwt = true
+
+[functions.wave-webhook]
+verify_jwt = false

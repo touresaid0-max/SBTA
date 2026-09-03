@@ -27,7 +27,7 @@ async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): 
   return json.employee?.id as string | undefined
 }
 
-async function syncCounterRoute(employeeId: string, routeId: string | null): Promise<void> {
+async function syncCounterRoute(employeeId: string, routeIds: string[] | null): Promise<void> {
   const { data: emp } = await supabase
     .from('employees')
     .select('auth_user_id')
@@ -40,8 +40,21 @@ async function syncCounterRoute(employeeId: string, routeId: string | null): Pro
     .in('assigned_user_id', lookupIds)
     .maybeSingle()
   if (!counter) return
-  if (routeId) {
-    await supabase.from('counter_routes').upsert({ counter_id: counter.id, route_id: routeId })
+  if (routeIds && routeIds.length > 0) {
+    const { data: existing } = await supabase
+      .from('counter_routes')
+      .select('route_id')
+      .eq('counter_id', counter.id)
+    const existingIds = new Set((existing || []).map((r: any) => r.route_id))
+    const toAdd = routeIds.filter(id => !existingIds.has(id))
+    const toRemove = [...existingIds].filter(id => !routeIds.includes(id))
+    if (toRemove.length > 0) {
+      await supabase.from('counter_routes').delete()
+        .eq('counter_id', counter.id).in('route_id', toRemove)
+    }
+    if (toAdd.length > 0) {
+      await supabase.from('counter_routes').insert(toAdd.map(route_id => ({ counter_id: counter.id, route_id })))
+    }
   } else {
     await supabase.from('counter_routes').delete().eq('counter_id', counter.id)
   }
@@ -121,6 +134,7 @@ interface FormData {
   avatar_url:           string
   daily_rate:           string
   assigned_route_id:    string
+  assigned_route_ids:   string[]
   technician_type_id:   string
 }
 
@@ -130,7 +144,7 @@ const EMPTY_FORM: FormData = {
   contract_type: '', contract_nature: '', hire_date: '', salary: '', employee_id: '',
   cnps_number: '', children_count: '0', marital_status: '', bus_id: '',
   license_number: '', license_expiry: '', license_category: '',
-  avatar_url: '', daily_rate: '', assigned_route_id: '',
+  avatar_url: '', daily_rate: '', assigned_route_id: '', assigned_route_ids: [],
   technician_type_id: '',
 }
 
@@ -237,6 +251,7 @@ export default function EmployeeForm() {
           avatar_url:         data.avatar_url ?? '',
           daily_rate:         data.daily_rate?.toString() ?? '',
           assigned_route_id:  data.assigned_route_id ?? '',
+          assigned_route_ids:  data.assigned_route_ids ?? [],
           technician_type_id: data.technician_type_id ?? '',
         })
       }
@@ -324,6 +339,7 @@ export default function EmployeeForm() {
     avatar_url:        form.avatar_url.trim() || null,
     daily_rate:        isDriver && isContractuel && form.daily_rate ? parseFloat(form.daily_rate) : null,
     assigned_route_id: (isDriver || isGuichetier) && form.assigned_route_id ? form.assigned_route_id : null,
+    assigned_route_ids: isGuichetier && form.assigned_route_ids.length > 0 ? form.assigned_route_ids : null,
     technician_type_id: form.role === 'mecanicien' && form.technician_type_id ? form.technician_type_id : null,
   })
 
@@ -360,11 +376,11 @@ export default function EmployeeForm() {
           const url = await uploadAvatar(id, avatarFile, table)
           setForm(p => ({ ...p, avatar_url: url }))
         }
-        if (isGuichetier) await syncCounterRoute(id, base.assigned_route_id)
+        if (isGuichetier) await syncCounterRoute(id, base.assigned_route_ids)
         toast.success('Employé mis à jour')
       } else {
         const empId = await callEdge('POST', { ...base, ...emails })
-        if (isGuichetier && empId) await syncCounterRoute(empId, base.assigned_route_id)
+        if (isGuichetier && empId) await syncCounterRoute(empId, base.assigned_route_ids)
         toast.success(
           `Fiche créée pour ${form.first_name} ${form.last_name}. L'administrateur pourra créer le compte de connexion.`,
           { duration: 5000 }
@@ -627,65 +643,72 @@ export default function EmployeeForm() {
             </SelectWrap>
           </FieldGroup>
           {isGuichetier && (
-            <FieldGroup label="Itinéraire" hint="Sera automatiquement affecté au guichet de cet employé dans Chef de Gare → Guichets → Gérer les lignes">
-              {(() => {
-                const selectedRoute = routes.find(r => r.id === form.assigned_route_id) ?? null
-                const q = routeSearch.trim().toLowerCase()
-                const searchedRoutes = q
-                  ? routes.filter(r => r.name.toLowerCase().includes(q))
-                  : routes
-                if (selectedRoute) {
-                  return (
-                    <div className="flex items-center gap-2 border border-[#0B7439] bg-[#F0FAF4] rounded-xl px-3 py-2.5">
-                      <MapPin className="w-4 h-4 text-[#0B7439] flex-shrink-0" />
-                      <span className="text-sm text-[#1A2E22] font-medium">{selectedRoute.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => { setForm(p => ({ ...p, assigned_route_id: '' })); setRouteSearch(''); setRouteOpen(false) }}
-                        className="ml-auto p-1 rounded-lg text-[#4A6B55] hover:bg-[#DCEEE3] transition-colors"
-                        title="Changer d'itinéraire"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )
-                }
-                return (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
-                    <input
-                      value={routeSearch}
-                      onChange={e => { setRouteSearch(e.target.value); setRouteOpen(true) }}
-                      onFocus={() => setRouteOpen(true)}
-                      onBlur={() => setTimeout(() => setRouteOpen(false), 150)}
-                      className={inputCls + ' pl-9'}
-                      placeholder="Rechercher un itinéraire…"
-                    />
-                    {routeOpen && (
-                      <div className="absolute z-20 mt-1 w-full max-h-60 overflow-auto bg-white border border-[#E2EAE5] rounded-xl shadow-lg">
-                        {searchedRoutes.length === 0 ? (
-                          <div className="px-3 py-2.5 text-sm text-[#8AA898]">
-                            {routes.length === 0 ? 'Aucun itinéraire disponible' : `Aucun itinéraire ne correspond à « ${routeSearch} »`}
+            <FieldGroup label="Itinéraires" hint="Sera automatiquement affecté au guichet de cet employé dans Chef de Gare → Guichets → Gérer les lignes. Vous pouvez sélectionner plusieurs itinéraires.">
+              <div className="space-y-2">
+                {form.assigned_route_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {form.assigned_route_ids.map(rid => {
+                      const r = routes.find(x => x.id === rid)
+                      if (!r) return null
+                      return (
+                        <span key={rid} className="inline-flex items-center gap-1.5 bg-[#F0FAF4] border border-[#0B7439] text-[#0B7439] rounded-lg px-2.5 py-1 text-sm font-medium">
+                          <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                          {r.name}
+                          <button
+                            type="button"
+                            onClick={() => setForm(p => ({ ...p, assigned_route_ids: p.assigned_route_ids.filter(x => x !== rid) }))}
+                            className="ml-0.5 p-0.5 rounded hover:bg-[#DCEEE3] transition-colors"
+                            title="Retirer cet itinéraire"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+                  {(() => {
+                    const q = routeSearch.trim().toLowerCase()
+                    const availableRoutes = routes.filter(r =>
+                      !form.assigned_route_ids.includes(r.id) &&
+                      (q ? r.name.toLowerCase().includes(q) : true)
+                    )
+                    return (
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
+                        <input
+                          value={routeSearch}
+                          onChange={e => { setRouteSearch(e.target.value); setRouteOpen(true) }}
+                          onFocus={() => setRouteOpen(true)}
+                          onBlur={() => setTimeout(() => setRouteOpen(false), 150)}
+                          className={inputCls + ' pl-9'}
+                          placeholder={form.assigned_route_ids.length > 0 ? "Ajouter un autre itinéraire…" : "Rechercher un itinéraire…"}
+                        />
+                        {routeOpen && availableRoutes.length > 0 && (
+                          <div className="absolute z-20 mt-1 w-full max-h-60 overflow-auto bg-white border border-[#E2EAE5] rounded-xl shadow-lg">
+                            {availableRoutes.map(r => (
+                              <button
+                                key={r.id}
+                                type="button"
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => { setForm(p => ({ ...p, assigned_route_ids: [...p.assigned_route_ids, r.id] })); setRouteSearch(''); setRouteOpen(false) }}
+                                className="w-full text-left px-3 py-2.5 text-sm text-[#374151] hover:bg-[#F0FAF4] transition-colors"
+                              >
+                                <span className="font-medium text-[#1A2E22]">{r.name}</span>
+                                <span className="text-[#8AA898] ml-2">({r.base_price.toLocaleString('fr-CI')} F)</span>
+                              </button>
+                            ))}
                           </div>
-                        ) : (
-                          searchedRoutes.map(r => (
-                            <button
-                              key={r.id}
-                              type="button"
-                              onMouseDown={e => e.preventDefault()}
-                              onClick={() => { setForm(p => ({ ...p, assigned_route_id: r.id })); setRouteSearch(''); setRouteOpen(false) }}
-                              className="w-full text-left px-3 py-2.5 text-sm text-[#374151] hover:bg-[#F0FAF4] transition-colors"
-                            >
-                              <span className="font-medium text-[#1A2E22]">{r.name}</span>
-                              <span className="text-[#8AA898] ml-2">({r.base_price.toLocaleString('fr-CI')} F)</span>
-                            </button>
-                          ))
+                        )}
+                        {routeOpen && availableRoutes.length === 0 && (
+                          <div className="absolute z-20 mt-1 w-full bg-white border border-[#E2EAE5] rounded-xl shadow-lg px-3 py-2.5 text-sm text-[#8AA898]">
+                            {routes.length === 0 ? 'Aucun itinéraire disponible' : q ? `Aucun itinéraire ne correspond à « ${routeSearch} »` : 'Tous les itinéraires sont déjà sélectionnés'}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                )
-              })()}
+                    )
+                  })()}
+              </div>
             </FieldGroup>
           )}
           <FieldGroup label="Type de contrat" required>

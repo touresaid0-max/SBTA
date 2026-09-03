@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
       hire_date, contract_type, contract_nature, salary, daily_rate,
       cnps_number, children_count, marital_status,
       bus_id, license_number, license_expiry, license_category,
-      employee_id, assigned_route_id, avatar_url,
+      employee_id, assigned_route_id, assigned_route_ids, avatar_url,
       technician_type_id,
     } = body;
 
@@ -154,6 +154,7 @@ Deno.serve(async (req: Request) => {
         license_category:   license_category || null,
         avatar_url:         avatar_url?.trim() || null,
         assigned_route_id:  assigned_route_id || null,
+        assigned_route_ids: Array.isArray(assigned_route_ids) && assigned_route_ids.length > 0 ? assigned_route_ids : null,
         technician_type_id: role === "mecanicien" && technician_type_id ? technician_type_id : null,
         employee_id:        finalEmployeeId,
         account_status:     "pending",
