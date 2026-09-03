@@ -28,10 +28,16 @@ async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): 
 }
 
 async function syncCounterRoute(employeeId: string, routeId: string | null): Promise<void> {
+  const { data: emp } = await supabase
+    .from('employees')
+    .select('auth_user_id')
+    .eq('id', employeeId)
+    .maybeSingle()
+  const lookupIds = [employeeId, emp?.auth_user_id].filter(Boolean) as string[]
   const { data: counter } = await supabase
     .from('counters')
     .select('id')
-    .eq('assigned_user_id', employeeId)
+    .in('assigned_user_id', lookupIds)
     .maybeSingle()
   if (!counter) return
   if (routeId) {
