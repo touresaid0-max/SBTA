@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit2, Trash2, Building2, Search, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, Plus, CreditCard as Edit2, Trash2, Building2, Search, X, MapPin, ChevronDown } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 
@@ -62,6 +62,15 @@ export default function Counters() {
     is_active: true
   });
 
+  // Station autocomplete state
+  const [stationSearch, setStationSearch] = useState('');
+  const [stationOpen, setStationOpen] = useState(false);
+
+  const selectedStation = useMemo(
+    () => stations.find(s => s.id === formData.station_id) ?? null,
+    [stations, formData.station_id]
+  );
+
   useEffect(() => {
     loadData();
     loadStations();
@@ -78,7 +87,7 @@ export default function Counters() {
 
       if (error) throw error;
       setStations(data || []);
-    } catch (error: any) {
+    } catch {
       toast.error('Erreur de chargement des gares');
     }
   };
@@ -94,10 +103,26 @@ export default function Counters() {
 
       if (error) throw error;
       setGuichetiers(data || []);
-    } catch (error: any) {
+    } catch {
       toast.error('Erreur de chargement des guichetiers');
     }
   };
+
+  // Guichetiers already assigned to a counter (excluding the one being edited)
+  const assignedGuichetierIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of counters) {
+      if (c.assigned_user_id && c.id !== editingId) {
+        ids.add(c.assigned_user_id);
+      }
+    }
+    return ids;
+  }, [counters, editingId]);
+
+  const availableGuichetiers = useMemo(
+    () => guichetiers.filter(g => !assignedGuichetierIds.has(g.id)),
+    [guichetiers, assignedGuichetierIds]
+  );
 
   const loadStationChefs = async (stationId: string) => {
     if (!stationId) {
@@ -118,13 +143,15 @@ export default function Counters() {
           full_name: row.manager?.full_name || '—',
         }))
       );
-    } catch (error: any) {
+    } catch {
       setStationChefs([]);
     }
   };
 
-  const handleStationChange = (stationId: string) => {
+  const handleStationSelect = (stationId: string) => {
     setFormData((prev) => ({ ...prev, station_id: stationId, manager_id: '' }));
+    setStationSearch('');
+    setStationOpen(false);
     loadStationChefs(stationId);
   };
 
@@ -138,7 +165,7 @@ export default function Counters() {
 
       if (error) throw error;
       setCounters(data || []);
-    } catch (error: any) {
+    } catch {
       toast.error('Erreur de chargement');
     } finally {
       setLoading(false);
@@ -175,7 +202,7 @@ export default function Counters() {
       setShowForm(false);
       setEditingId(null);
       resetForm();
-      loadData();
+      await loadData();
     } catch (error: any) {
       toast.error(error.message);
     }
@@ -220,6 +247,8 @@ export default function Counters() {
       is_active: true
     });
     setStationChefs([]);
+    setStationSearch('');
+    setStationOpen(false);
   };
 
   if (loading) {
@@ -238,6 +267,15 @@ export default function Counters() {
       c.manager?.full_name,
     ].some((x) => (x ?? '').toLowerCase().includes(q));
   });
+
+  // Station autocomplete filtered list
+  const stationQuery = stationSearch.trim().toLowerCase();
+  const filteredStations = stationQuery
+    ? stations.filter(s =>
+        s.name.toLowerCase().includes(stationQuery) ||
+        (s.cities?.name ?? '').toLowerCase().includes(stationQuery)
+      )
+    : stations;
 
   return (
     <div className="p-8">
@@ -292,21 +330,78 @@ export default function Counters() {
 
             <form onSubmit={handleSubmit} className="p-6">
               <div className="space-y-4">
+                {/* Gare — autocomplete search */}
                 <div>
                   <label className="block mb-2 font-medium">Gare *</label>
-                  <select
-                    value={formData.station_id}
-                    onChange={(e) => handleStationChange(e.target.value)}
-                    className="w-full p-3 border rounded-lg"
-                    required
-                  >
-                    <option value="">Sélectionner une gare</option>
-                    {stations.map((station) => (
-                      <option key={station.id} value={station.id}>
-                        {station.name} {station.cities?.name && `- ${station.cities.name}`}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    {selectedStation ? (
+                      <div
+                        className="w-full p-3 border rounded-lg flex items-center justify-between cursor-pointer"
+                        onClick={() => { setStationOpen(true); setStationSearch(''); }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--primary)' }} />
+                          <span className="font-medium">{selectedStation.name}</span>
+                          {selectedStation.cities?.name && (
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                              — {selectedStation.cities.name}
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleStationSelect(''); }}
+                          className="p-0.5 rounded hover:bg-gray-100"
+                          title="Changer de gare"
+                        >
+                          <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                        <input
+                          type="text"
+                          value={stationSearch}
+                          onChange={(e) => { setStationSearch(e.target.value); setStationOpen(true); }}
+                          onFocus={() => setStationOpen(true)}
+                          onBlur={() => setTimeout(() => setStationOpen(false), 200)}
+                          className="w-full pl-10 pr-10 py-3 border rounded-lg focus:outline-none focus:ring-2"
+                          style={{ borderColor: 'var(--border)' }}
+                          placeholder="Rechercher une gare..."
+                          required={!selectedStation}
+                        />
+                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                      </div>
+                    )}
+                    {stationOpen && !selectedStation && (
+                      <div className="absolute z-30 mt-1 w-full max-h-60 overflow-auto bg-white border rounded-lg shadow-lg" style={{ borderColor: 'var(--border)' }}>
+                        {filteredStations.length > 0 ? (
+                          filteredStations.map((station) => (
+                            <button
+                              key={station.id}
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => handleStationSelect(station.id)}
+                              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                            >
+                              <MapPin className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--primary)' }} />
+                              <div>
+                                <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{station.name}</div>
+                                {station.cities?.name && (
+                                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{station.cities.name}</div>
+                                )}
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Aucune gare trouvée
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -329,12 +424,22 @@ export default function Counters() {
                     className="w-full p-3 border rounded-lg"
                   >
                     <option value="">Aucun (non assigné)</option>
-                    {guichetiers.map((user) => (
+                    {availableGuichetiers.map((user) => (
                       <option key={user.id} value={user.id}>
                         {user.full_name} ({user.email})
                       </option>
                     ))}
                   </select>
+                  {availableGuichetiers.length === 0 && guichetiers.length > 0 && (
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Tous les guichetiers sont déjà affectés à un guichet.
+                    </p>
+                  )}
+                  {availableGuichetiers.length < guichetiers.length && availableGuichetiers.length > 0 && (
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      {guichetiers.length - availableGuichetiers.length} guichetier(s) déjà affecté(s) — non affiché(s).
+                    </p>
+                  )}
                 </div>
 
                 {stationChefs.length > 1 && (
