@@ -349,20 +349,18 @@ export async function fetchCarsDisponibles(): Promise<GarageCarDisponible[]> {
   return data ?? []
 }
 
-// ── Techniciens (comptes utilisateurs actifs avec le rôle technicien) ──
+// ── Techniciens (employés ayant le rôle technicien, y compris en attente de compte) ──
 export async function fetchTechniciens(): Promise<{ id: string; full_name: string; type_technicien_id: string | null; type_technicien_nom: string | null }[]> {
-  const { data: users, error: usersError } = await supabase
-    .from('users')
+  const { data: employees, error: empError } = await supabase
+    .from('employees')
     .select('id, first_name, last_name, technician_type_id')
     .eq('role', 'mecanicien')
-    .eq('status', 'active')
-    .eq('is_active', true)
     .order('first_name')
     .order('last_name')
-  if (usersError) throw usersError
+  if (empError) throw empError
 
   const technicianTypeIds = [...new Set(
-    (users ?? []).map(user => user.technician_type_id).filter((id): id is string => Boolean(id)),
+    (employees ?? []).map(emp => emp.technician_type_id).filter((id): id is string => Boolean(id)),
   )]
   const { data: types, error: typesError } = technicianTypeIds.length
     ? await supabase.from('garage_types_techniciens').select('id, nom').in('id', technicianTypeIds)
@@ -370,11 +368,11 @@ export async function fetchTechniciens(): Promise<{ id: string; full_name: strin
   if (typesError) throw typesError
 
   const typesById = new Map((types ?? []).map(type => [type.id, type.nom.trim()]))
-  return (users ?? []).map(user => ({
-    id: user.id,
-    full_name: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.id.slice(0, 8),
-    type_technicien_id: user.technician_type_id,
-    type_technicien_nom: user.technician_type_id ? typesById.get(user.technician_type_id) ?? null : null,
+  return (employees ?? []).map(emp => ({
+    id: emp.id,
+    full_name: `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim() || emp.id.slice(0, 8),
+    type_technicien_id: emp.technician_type_id,
+    type_technicien_nom: emp.technician_type_id ? typesById.get(emp.technician_type_id) ?? null : null,
   }))
 }
 
