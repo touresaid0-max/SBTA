@@ -418,7 +418,7 @@ export default function POSDeparts() {
     setActionLoading(true);
     try {
       if (action === 'vente') {
-        navigate(`/guichet/depart/${depart.id}/vente`);
+        navigate(`/guichet/depart/${depart.id}/vente`, { replace: true });
         return;
       }
       if (action === 'confirmer') {
