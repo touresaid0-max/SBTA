@@ -85,6 +85,30 @@ export default function ChefGareDashboard() {
     if (user?.id) loadAll();
   }, [user]);
 
+  // Realtime: auto-refresh when a guichet makes a sale or modifies charges
+  useEffect(() => {
+    const channel = supabase
+      .channel('chef-gare-dashboard-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => {
+        loadAll();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'counter_charges' }, () => {
+        loadAll();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
+        loadAll();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'baggage_tickets' }, () => {
+        loadAll();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings' }, () => {
+        loadAll();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
   const loadAll = async () => {
     setLoading(true);
     try {

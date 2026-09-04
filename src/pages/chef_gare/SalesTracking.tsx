@@ -76,6 +76,30 @@ export default function ChefGareSalesTracking() {
 
   useEffect(() => { load(); }, [range?.start, range?.end]);
 
+  // Realtime: auto-refresh when a guichet makes a sale or modifies charges
+  useEffect(() => {
+    const channel = supabase
+      .channel('chef-gare-sales-tracking-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'counter_charges' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'baggage_tickets' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings' }, () => {
+        load();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [range?.start, range?.end]);
+
   const load = async () => {
     if (!range) return;
     setLoading(true);

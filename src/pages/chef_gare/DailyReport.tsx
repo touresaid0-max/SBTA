@@ -41,6 +41,30 @@ export default function ChefGareDailyReport() {
 
   useEffect(() => { load(); }, [dateFilter]);
 
+  // Realtime: auto-refresh when a guichet makes a sale or modifies charges
+  useEffect(() => {
+    const channel = supabase
+      .channel('chef-gare-daily-report-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'counter_charges' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'baggage_tickets' }, () => {
+        load();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings' }, () => {
+        load();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [dateFilter]);
+
   const load = async () => {
     setLoading(true);
     try {
