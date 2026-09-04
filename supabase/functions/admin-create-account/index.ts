@@ -156,7 +156,6 @@ Deno.serve(async (req: Request) => {
       license_expiry:  employee.license_expiry ?? null,
       license_category: employee.license_category ?? null,
       assigned_route_id: employee.assigned_route_id ?? null,
-      assigned_route_ids: Array.isArray(assigned_route_ids) && assigned_route_ids.length > 0 ? assigned_route_ids : (employee.assigned_route_ids ?? null),
       avatar_url:    employee.avatar_url ?? null,
       status:        "active",
       is_active:     true,
