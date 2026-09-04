@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { X, Pencil, Plus, Truck, Wrench, Building2, Layers, GitBranch, FileText, CircleDot } from 'lucide-react'
+import { X, Pencil, Plus, Truck, Wrench, Building2, Layers, GitBranch, FileText, CircleDot, UserCog } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
 import {
@@ -12,11 +12,13 @@ import {
   fetchGroupes, fetchSettings, updateSetting,
 } from '@/services/garageSbta.service'
 import type { GarageFournisseur, GarageCar, GarageTypeTechnicien, GarageFamille, GarageSousFamille, GarageGroupe, GarageSetting } from '@/types/garage.types'
+import { supabase } from '@/services/supabase'
+import { createEmployeeByHR } from '@/services/employeeAccount.service'
 import GarageReports from './Reports'
 
-type Section = 'fournisseurs' | 'cars' | 'types_techniciens' | 'familles' | 'sous_familles' | 'rapports'
+type Section = 'fournisseurs' | 'cars' | 'types_techniciens' | 'techniciens' | 'familles' | 'sous_familles' | 'rapports'
 
-const VALID_SECTIONS: Section[] = ['fournisseurs', 'cars', 'types_techniciens', 'familles', 'sous_familles', 'rapports']
+const VALID_SECTIONS: Section[] = ['fournisseurs', 'cars', 'types_techniciens', 'techniciens', 'familles', 'sous_familles', 'rapports']
 
 export default function GarageParametres() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -34,6 +36,8 @@ export default function GarageParametres() {
   const [sousFamilles, setSousFamilles] = useState<GarageSousFamille[]>([])
   const [groupes, setGroupes] = useState<GarageGroupe[]>([])
   const [settings, setSettings] = useState<GarageSetting[]>([])
+  const [techniciens, setTechniciens] = useState<TechnicienRow[]>([])
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(false)
 
   const loadFournisseurs = useCallback(async () => {
@@ -72,19 +76,48 @@ export default function GarageParametres() {
     finally { setLoading(false) }
   }, [])
 
+  const loadTechniciens = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [empRes, compRes] = await Promise.all([
+        supabase.from('employees').select('id, first_name, last_name, phone, role, company_id, technician_type_id, account_status, companies(name)').eq('role', 'mecanicien').order('first_name'),
+        supabase.from('companies').select('id, name').order('name'),
+      ])
+      if (empRes.error) throw empRes.error
+      if (compRes.error) throw compRes.error
+      setCompanies(compRes.data ?? [])
+      const techRows: TechnicienRow[] = (empRes.data ?? []).map((e: any) => ({
+        id: e.id,
+        first_name: e.first_name,
+        last_name: e.last_name,
+        phone: e.phone ?? '',
+        company_id: e.company_id ?? '',
+        company_name: e.companies?.name ?? '—',
+        technician_type_id: e.technician_type_id ?? '',
+        account_status: e.account_status ?? 'pending',
+      }))
+      setTechniciens(techRows)
+      const tt = await fetchTypesTechniciens()
+      setTypesTech(tt)
+    } catch { toast.error('Erreur de chargement des techniciens') }
+    finally { setLoading(false) }
+  }, [])
+
   useEffect(() => {
     if (section === 'fournisseurs') loadFournisseurs()
     else if (section === 'cars') loadCars()
     else if (section === 'types_techniciens') loadTypesTech()
+    else if (section === 'techniciens') loadTechniciens()
     else if (section === 'familles') loadFamilles()
     else if (section === 'sous_familles') loadSousFamilles()
     else if (section === 'rapports') loadRapports()
-  }, [section, loadFournisseurs, loadCars, loadTypesTech, loadFamilles, loadSousFamilles, loadRapports])
+  }, [section, loadFournisseurs, loadCars, loadTypesTech, loadTechniciens, loadFamilles, loadSousFamilles, loadRapports])
 
   const sections: { key: Section; label: string; icon: typeof Truck }[] = [
     { key: 'fournisseurs', label: 'Fournisseurs', icon: Building2 },
     { key: 'cars', label: 'Cars', icon: Truck },
     { key: 'types_techniciens', label: 'Type de techniciens', icon: Wrench },
+    { key: 'techniciens', label: 'Techniciens', icon: UserCog },
     { key: 'familles', label: 'Familles', icon: Layers },
     { key: 'sous_familles', label: 'Sous familles', icon: GitBranch },
     { key: 'rapports', label: 'Rapports', icon: FileText },
@@ -96,10 +129,11 @@ export default function GarageParametres() {
     if (section === 'fournisseurs') loadFournisseurs()
     else if (section === 'cars') loadCars()
     else if (section === 'types_techniciens') loadTypesTech()
+    else if (section === 'techniciens') loadTechniciens()
     else if (section === 'familles') loadFamilles()
     else if (section === 'sous_familles') loadSousFamilles()
     else if (section === 'rapports') loadRapports()
-  }, [section, loadFournisseurs, loadCars, loadTypesTech, loadFamilles, loadSousFamilles, loadRapports])
+  }, [section, loadFournisseurs, loadCars, loadTypesTech, loadTechniciens, loadFamilles, loadSousFamilles, loadRapports])
 
   return (
     <div className="space-y-5 p-6">
@@ -123,6 +157,7 @@ export default function GarageParametres() {
       {section === 'fournisseurs' && <FournisseursSection data={fournisseurs} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
       {section === 'cars' && <CarsSection data={cars} groupes={groupes} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
       {section === 'types_techniciens' && <TypesTechSection data={typesTech} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
+      {section === 'techniciens' && <TechniciensSection data={techniciens} typesTech={typesTech} companies={companies} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
       {section === 'familles' && <FamillesSection data={familles} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
       {section === 'sous_familles' && <SousFamillesSection data={sousFamilles} familles={familles} loading={loading} onReload={reload} modal={modal} setModal={setModal} />}
       {section === 'rapports' && <GarageReports groupes={groupes} settings={settings} onReload={reload} />}
@@ -350,6 +385,96 @@ function SousFamillesSection({ data, familles, loading, onReload, modal, setModa
           <select value={form.famille_id} onChange={e => setForm({ ...form, famille_id: e.target.value })} className="modal-input">
             <option value="">— Famille —</option>
             {familles.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
+          </select>
+        </Modal>
+      )}
+    </>
+  )
+}
+
+// ── Techniciens ──────────────────────────────────────────────
+interface TechnicienRow {
+  id: string
+  first_name: string
+  last_name: string
+  phone: string
+  company_id: string
+  company_name: string
+  technician_type_id: string
+  account_status: string
+}
+
+function TechniciensSection({ data, typesTech, companies, loading, onReload, modal, setModal }: {
+  data: TechnicienRow[]; typesTech: GarageTypeTechnicien[]; companies: { id: string; name: string }[];
+  loading: boolean; onReload: () => void;
+  modal: { type: string; data: unknown } | null; setModal: (m: { type: string; data: unknown } | null) => void;
+}) {
+  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', company_id: '', technician_type_id: '' })
+  const [saving, setSaving] = useState(false)
+
+  const openCreate = () => { setForm({ first_name: '', last_name: '', phone: '', company_id: '', technician_type_id: '' }); setModal({ type: 'technicien', data: null }) }
+
+  const handleSave = async () => {
+    if (!form.first_name.trim()) { toast.error('Prénom requis'); return }
+    if (!form.last_name.trim()) { toast.error('Nom requis'); return }
+    setSaving(true)
+    try {
+      await createEmployeeByHR({
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        phone: form.phone.trim() || undefined,
+        role: 'mecanicien',
+        company_id: form.company_id || undefined,
+        hire_date: new Date().toISOString().slice(0, 10),
+        contract_type: 'contractuel',
+        technician_type_id: form.technician_type_id || undefined,
+      } as any)
+      toast.success('Technicien créé — visible dans Admin et RH')
+      setModal(null); onReload()
+    } catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
+    finally { setSaving(false) }
+  }
+
+  const statusLabel: Record<string, { label: string; color: string }> = {
+    pending: { label: 'En attente', color: 'text-[#D97706] bg-[#FEF3C7]' },
+    active: { label: 'Actif', color: 'text-[#0B7439] bg-[#E8F5EC]' },
+    suspended: { label: 'Suspendu', color: 'text-[#DC2626] bg-[#FEE2E2]' },
+  }
+
+  return (
+    <>
+      <ListPage title="" data={data} loading={loading} searchFields={['first_name', 'last_name', 'phone', 'company_name']}
+        onCreate={openCreate} createLabel="Créer un technicien"
+        columns={[
+          { key: 'name', label: 'Nom', render: (t: TechnicienRow) => <span className="font-medium text-[#1A2E22]">{t.first_name} {t.last_name}</span> },
+          { key: 'phone', label: 'Téléphone', render: (t: TechnicienRow) => t.phone || '—' },
+          { key: 'company_name', label: 'Société', render: (t: TechnicienRow) => t.company_name },
+          { key: 'type', label: 'Type technicien', render: (t: TechnicienRow) => {
+            const type = typesTech.find(tt => tt.id === t.technician_type_id)
+            return type ? type.nom : '—'
+          }},
+          { key: 'account_status', label: 'Statut compte', render: (t: TechnicienRow) => {
+            const s = statusLabel[t.account_status] ?? statusLabel.pending
+            return <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${s.color}`}>{s.label}</span>
+          }},
+        ]}
+      />
+      {modal?.type === 'technicien' && (
+        <Modal title="Nouveau technicien" onClose={() => setModal(null)} onSave={handleSave}>
+          <input value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} placeholder="Prénom *" className="modal-input" />
+          <input value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} placeholder="Nom *" className="modal-input" />
+          <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="Téléphone" className="modal-input" />
+          <div>
+            <label className="block text-xs font-medium text-[#6B7280] mb-1">Rôle</label>
+            <div className="modal-input bg-[#F4F7F5] text-[#6B7280]">Technicien (mécanicien)</div>
+          </div>
+          <select value={form.company_id} onChange={e => setForm({ ...form, company_id: e.target.value })} className="modal-input">
+            <option value="">— Société —</option>
+            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={form.technician_type_id} onChange={e => setForm({ ...form, technician_type_id: e.target.value })} className="modal-input">
+            <option value="">— Type technicien —</option>
+            {typesTech.map(t => <option key={t.id} value={t.id}>{t.nom}</option>)}
           </select>
         </Modal>
       )}

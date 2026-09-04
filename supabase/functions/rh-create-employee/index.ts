@@ -35,9 +35,9 @@ Deno.serve(async (req: Request) => {
       (caller.user_metadata?.role as string | undefined) ??
       "";
 
-    if (!["rh", "admin"].includes(callerRole)) {
+    if (!["rh", "admin", "gerant_principal"].includes(callerRole)) {
       return new Response(
-        JSON.stringify({ error: "Accès refusé — RH ou Admin uniquement" }),
+        JSON.stringify({ error: "Accès refusé — RH, Admin ou Gérant Principal uniquement" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
