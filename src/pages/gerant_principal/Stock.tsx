@@ -27,6 +27,8 @@ export default function GarageStockPage() {
   const { user } = useAuthStore()
 
   const [entryForm, setEntryForm] = useState({ piece_id: '', quantite: 1, date: new Date().toISOString().slice(0, 10), fournisseur_id: '', effectue_par: '' })
+  const [entryPieceSearch, setEntryPieceSearch] = useState('')
+  const [showEntryPieceList, setShowEntryPieceList] = useState(false)
   const [exitRows, setExitRows] = useState<Array<{
     piece_id: string; quantite: number; prix_unitaire: number; car_id: string; groupe_id: string;
     pieceSearch: string; carSearch: string;
@@ -67,8 +69,15 @@ export default function GarageStockPage() {
     catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
   }
 
+  const selectEntryPiece = (pieceId: string) => {
+    const p = pieces.find(p => p.id === pieceId)
+    setEntryForm({ ...entryForm, piece_id: pieceId })
+    setEntryPieceSearch(p ? `${p.reference} — ${p.nom}` : '')
+    setShowEntryPieceList(false)
+  }
+
   const handleEntry = async () => {
-    if (!entryForm.piece_id || entryForm.quantite <= 0) { toast.error('Pièce et quantité requises'); return }
+    if (!entryForm.piece_id || entryForm.quantite <= 0) { toast.error('Pièces et Pneu requis'); return }
     try {
       await createEntree({ piece_id: entryForm.piece_id, quantite: entryForm.quantite, date: entryForm.date, fournisseur_id: entryForm.fournisseur_id || null, effectue_par: entryForm.effectue_par || user?.full_name || '' })
       toast.success('Entrée enregistrée'); setShowEntry(false); load()
@@ -273,12 +282,43 @@ export default function GarageStockPage() {
               <button onClick={() => setShowEntry(false)} className="p-1 rounded-lg hover:bg-[#F4F7F5]"><ArrowDownToLine className="w-5 h-5 text-[#6B7280]" /></button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Pièce *</label>
-                <select value={entryForm.piece_id} onChange={e => setEntryForm({ ...entryForm, piece_id: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm">
-                  <option value="">—</option>
-                  {pieces.map(p => <option key={p.id} value={p.id}>{p.reference} — {p.nom}</option>)}
-                </select>
+              <div className="relative">
+                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Pièces et Pneu *</label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+                  <input
+                    value={entryPieceSearch}
+                    onChange={e => { setEntryPieceSearch(e.target.value); setEntryForm({ ...entryForm, piece_id: '' }); setShowEntryPieceList(true) }}
+                    onFocus={() => setShowEntryPieceList(true)}
+                    onBlur={() => setTimeout(() => setShowEntryPieceList(false), 200)}
+                    placeholder="Rechercher une pièce ou un pneu..."
+                    className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20"
+                  />
+                </div>
+                {showEntryPieceList && (() => {
+                  const q = entryPieceSearch.trim().toLowerCase()
+                  const filtered = q
+                    ? pieces.filter(p => p.nom.toLowerCase().includes(q) || p.reference.toLowerCase().includes(q) || (p.famille?.nom ?? '').toLowerCase().includes(q) || (p.sous_famille?.nom ?? '').toLowerCase().includes(q)).slice(0, 10)
+                    : pieces.slice(0, 10)
+                  return filtered.length > 0 ? (
+                    <div className="absolute z-20 mt-1 w-full bg-white border border-[#E2EAE5] rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                      {filtered.map(p => (
+                        <button
+                          key={p.id}
+                          onMouseDown={() => selectEntryPiece(p.id)}
+                          className="w-full text-left px-3 py-2 hover:bg-[#F0F7F2] border-b border-[#F0F4F1] last:border-0"
+                        >
+                          <div className="text-sm font-medium text-[#1A2E22]">{p.nom}</div>
+                          <div className="text-xs text-[#6B7280]">
+                            {p.reference}
+                            {p.famille?.nom && ` · ${p.famille.nom}`}
+                            {p.sous_famille?.nom && ` / ${p.sous_famille.nom}`}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null
+                })()}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
