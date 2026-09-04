@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { X, Pencil, Plus, Truck, Wrench, Building2, Layers, GitBranch, FileText, CircleDot, UserCog } from 'lucide-react'
+import { X, Pencil, Plus, Truck, Wrench, Building2, Layers, GitBranch, FileText, CircleDot, UserCog, Power, PowerOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
 import {
@@ -14,6 +14,8 @@ import {
 import type { GarageFournisseur, GarageCar, GarageTypeTechnicien, GarageFamille, GarageSousFamille, GarageGroupe, GarageSetting } from '@/types/garage.types'
 import { supabase } from '@/services/supabase'
 import { createEmployeeByHR } from '@/services/employeeAccount.service'
+import { deactivateEmployee, reactivateEmployee } from '@/services/hr.service'
+import ChangeRequestButton from '@/components/shared/ChangeRequestButton'
 import GarageReports from './Reports'
 
 type Section = 'fournisseurs' | 'cars' | 'types_techniciens' | 'techniciens' | 'familles' | 'sous_familles' | 'rapports'
@@ -413,6 +415,10 @@ function TechniciensSection({ data, typesTech, companies, loading, onReload, mod
   const [saving, setSaving] = useState(false)
 
   const openCreate = () => { setForm({ first_name: '', last_name: '', phone: '', company_id: '', technician_type_id: '' }); setModal({ type: 'technicien', data: null }) }
+  const openEdit = (t: TechnicienRow) => {
+    setForm({ first_name: t.first_name, last_name: t.last_name, phone: t.phone, company_id: t.company_id, technician_type_id: t.technician_type_id })
+    setModal({ type: 'technicien_edit', data: t })
+  }
 
   const handleSave = async () => {
     if (!form.first_name.trim()) { toast.error('Prénom requis'); return }
@@ -435,10 +441,43 @@ function TechniciensSection({ data, typesTech, companies, loading, onReload, mod
     finally { setSaving(false) }
   }
 
+  const handleEditSave = async () => {
+    const t = modal?.data as TechnicienRow | null
+    if (!t) return
+    if (!form.first_name.trim()) { toast.error('Prénom requis'); return }
+    if (!form.last_name.trim()) { toast.error('Nom requis'); return }
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('employees').update({
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        phone: form.phone.trim() || null,
+        company_id: form.company_id || null,
+        technician_type_id: form.technician_type_id || null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', t.id)
+      if (error) throw error
+      toast.success('Technicien modifié')
+      setModal(null); onReload()
+    } catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
+    finally { setSaving(false) }
+  }
+
+  const handleToggleActive = async (t: TechnicienRow) => {
+    if (t.account_status === 'inactive') {
+      try { await reactivateEmployee(t.id); toast.success('Technicien réactivé'); onReload() }
+      catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
+    } else {
+      try { await deactivateEmployee(t.id, 'Désactivé par le Gérant Principal', ''); toast.success('Technicien désactivé'); onReload() }
+      catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
+    }
+  }
+
   const statusLabel: Record<string, { label: string; color: string }> = {
     pending: { label: 'En attente', color: 'text-[#D97706] bg-[#FEF3C7]' },
     active: { label: 'Actif', color: 'text-[#0B7439] bg-[#E8F5EC]' },
     suspended: { label: 'Suspendu', color: 'text-[#DC2626] bg-[#FEE2E2]' },
+    inactive: { label: 'Désactivé', color: 'text-[#6B7280] bg-[#F3F4F6]' },
   }
 
   return (
@@ -458,7 +497,42 @@ function TechniciensSection({ data, typesTech, companies, loading, onReload, mod
             return <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${s.color}`}>{s.label}</span>
           }},
         ]}
+        rowActions={(t: TechnicienRow) => (
+          <div className="flex items-center justify-center gap-1">
+            <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-[#FEF3C7] text-[#D97706]" title="Modifier"><Pencil className="w-4 h-4" /></button>
+            <button onClick={() => handleToggleActive(t)} className={`p-1.5 rounded-lg ${t.account_status === 'inactive' ? 'hover:bg-[#E8F5EC] text-[#0B7439]' : 'hover:bg-[#FEF2F2] text-[#AF3029]'}`} title={t.account_status === 'inactive' ? 'Réactiver' : 'Désactiver'}>
+              {t.account_status === 'inactive' ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
+            </button>
+            <ChangeRequestButton
+              operationType="technician"
+              operationId={t.id}
+              operationTable="employees"
+              operationReference={`${t.first_name} ${t.last_name}`}
+              operationSnapshot={{ first_name: t.first_name, last_name: t.last_name, phone: t.phone, company_id: t.company_id, technician_type_id: t.technician_type_id, role: 'mecanicien' }}
+              compact
+            />
+          </div>
+        )}
       />
+      {modal?.type === 'technicien_edit' && (
+        <Modal title="Modifier le technicien" onClose={() => setModal(null)} onSave={handleEditSave}>
+          <input value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} placeholder="Prénom *" className="modal-input" />
+          <input value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} placeholder="Nom *" className="modal-input" />
+          <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="Téléphone" className="modal-input" />
+          <div>
+            <label className="block text-xs font-medium text-[#6B7280] mb-1">Rôle</label>
+            <div className="modal-input bg-[#F4F7F5] text-[#6B7280]">Technicien</div>
+          </div>
+          <select value={form.company_id} onChange={e => setForm({ ...form, company_id: e.target.value })} className="modal-input">
+            <option value="">— Société —</option>
+            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={form.technician_type_id} onChange={e => setForm({ ...form, technician_type_id: e.target.value })} className="modal-input">
+            <option value="">— Type technicien —</option>
+            {typesTech.map(tt => <option key={tt.id} value={tt.id}>{tt.nom}</option>)}
+          </select>
+        </Modal>
+      )}
       {modal?.type === 'technicien' && (
         <Modal title="Nouveau technicien" onClose={() => setModal(null)} onSave={handleSave}>
           <input value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} placeholder="Prénom *" className="modal-input" />
