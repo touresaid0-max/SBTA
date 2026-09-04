@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home, MapPin, Ticket } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
 
 interface POSLayoutProps {
@@ -9,11 +9,9 @@ interface POSLayoutProps {
   activeRoute?: string;
   showBack?: boolean;
   backTo?: string;
-  showSalesNavigation?: boolean;
-  salesPath?: string;
 }
 
-export default function POSLayout({ children, stationName, activeRoute, showBack, backTo, showSalesNavigation = false, salesPath }: POSLayoutProps) {
+export default function POSLayout({ children, stationName, activeRoute, showBack, backTo }: POSLayoutProps) {
   const navigate = useNavigate();
 
   const goBack = () => {
@@ -64,28 +62,6 @@ export default function POSLayout({ children, stationName, activeRoute, showBack
               </p>
             )}
           </div>
-          {showSalesNavigation && salesPath && (
-            <nav className="flex items-center gap-1 rounded-xl p-1 flex-shrink-0" style={{ backgroundColor: 'rgba(0, 0, 0, 0.14)' }} aria-label="Navigation de vente">
-              <button
-                type="button"
-                onClick={() => navigate('/guichet/accueil')}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors hover:bg-white/15"
-              >
-                <Home className="w-4 h-4" />
-                Accueil
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate(salesPath)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors"
-                style={{ backgroundColor: 'white', color: 'var(--primary)' }}
-                aria-current="page"
-              >
-                <Ticket className="w-4 h-4" />
-                Vente
-              </button>
-            </nav>
-          )}
         </div>
       </header>
 
