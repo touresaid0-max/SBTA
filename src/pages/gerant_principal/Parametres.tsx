@@ -466,7 +466,7 @@ function TechniciensSection({ data, typesTech, companies, loading, onReload, mod
           <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="Téléphone" className="modal-input" />
           <div>
             <label className="block text-xs font-medium text-[#6B7280] mb-1">Rôle</label>
-            <div className="modal-input bg-[#F4F7F5] text-[#6B7280]">Technicien (mécanicien)</div>
+            <div className="modal-input bg-[#F4F7F5] text-[#6B7280]">Technicien</div>
           </div>
           <select value={form.company_id} onChange={e => setForm({ ...form, company_id: e.target.value })} className="modal-input">
             <option value="">— Société —</option>
