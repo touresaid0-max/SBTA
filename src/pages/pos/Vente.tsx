@@ -26,12 +26,14 @@ import {
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { fetchScheduleSeatMap } from '@/services/seatMap.service';
+import { useConnection } from '@/services/pos/ConnectionContext';
 import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
 
 export default function POSVente() {
   const { id: departId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { session } = usePOSSession();
+  const { lastSyncedAt, syncing } = useConnection();
 
   const [depart, setDepart] = useState<DepartRecord | null>(null);
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
@@ -140,6 +142,15 @@ export default function POSVente() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Auto-reload after offline sync completes so seats/tickets reflect server state
+  const prevSyncingRef = useRef(false);
+  useEffect(() => {
+    if (prevSyncingRef.current && !syncing && lastSyncedAt) {
+      loadData();
+    }
+    prevSyncingRef.current = syncing;
+  }, [syncing, lastSyncedAt, loadData]);
+
   useEffect(() => {
     if (session?.counter_id) {
       getTicketPhoneLine(session.counter_id).then(setTicketPhoneLine).catch(() => {});
@@ -166,7 +177,7 @@ export default function POSVente() {
       })
       .finally(() => { if (!cancelled) setSeatMapLoading(false); });
     return () => { cancelled = true; };
-  }, [structureMode, departId]);
+  }, [structureMode, departId, lastSyncedAt]);
 
   // Sync structure-selected seats → existing selectedSeats (number[])
   useEffect(() => {

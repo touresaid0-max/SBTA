@@ -2,6 +2,8 @@ import { useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin } from 'lucide-react';
 import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
+import { usePOSSession } from '@/services/pos/POSSessionContext';
+import { useAutoSync } from '@/services/pos/useAutoSync';
 
 interface POSLayoutProps {
   children: ReactNode;
@@ -13,6 +15,8 @@ interface POSLayoutProps {
 
 export default function POSLayout({ children, stationName, activeRoute, showBack, backTo }: POSLayoutProps) {
   const navigate = useNavigate();
+  const { session } = usePOSSession();
+  useAutoSync(session?.station_id);
 
   const goBack = () => {
     if (backTo) {
