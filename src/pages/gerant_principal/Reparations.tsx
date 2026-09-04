@@ -295,6 +295,134 @@ function TechnicienAutocomplete({
   )
 }
 
+function BusAutocomplete({
+  buses,
+  value,
+  onChange,
+  inputCls,
+}: {
+  buses: GarageBus[]
+  value: string
+  onChange: (id: string) => void
+  inputCls: string
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [highlighted, setHighlighted] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const selected = useMemo(() => buses.find(b => b.id === value), [buses, value])
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return buses
+    const q = query.toLowerCase().trim()
+    return buses.filter(b =>
+      b.immatriculation.toLowerCase().includes(q) ||
+      (b.company?.name?.toLowerCase().includes(q) ?? false),
+    )
+  }, [buses, query])
+
+  useEffect(() => {
+    if (highlighted >= filtered.length) setHighlighted(0)
+  }, [filtered.length, highlighted])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        if (selected) setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [selected])
+
+  const handleSelect = (bus: GarageBus) => {
+    onChange(bus.id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setOpen(true)
+        e.preventDefault()
+      }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlighted(h => Math.min(h + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlighted(h => Math.max(h - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filtered[highlighted]) handleSelect(filtered[highlighted])
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+      setQuery('')
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      {open ? (
+        <div className={`flex items-center gap-2 ${inputCls}`}>
+          <Search className="w-4 h-4 flex-shrink-0 text-[#6B7280]" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => { setQuery(e.target.value); setOpen(true); setHighlighted(0) }}
+            onKeyDown={handleKeyDown}
+            placeholder="Rechercher une immatriculation..."
+            className="flex-1 bg-transparent outline-none text-sm"
+            autoFocus
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={`flex items-center justify-between gap-2 ${inputCls} text-left`}
+        >
+          <span className={selected ? 'text-[#1A2E22] font-mono font-medium' : 'text-[#9CA3AF]'}>
+            {selected ? selected.immatriculation : 'Rechercher une immatriculation...'}
+          </span>
+          <ChevronDown className="w-4 h-4 flex-shrink-0 text-[#6B7280]" />
+        </button>
+      )}
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border border-[#E2EAE5] bg-white max-h-56 overflow-y-auto shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-center text-[#6B7280]">Aucun car trouvé</div>
+          ) : (
+            filtered.map((bus, idx) => (
+              <button
+                key={bus.id}
+                type="button"
+                onMouseEnter={() => setHighlighted(idx)}
+                onClick={() => handleSelect(bus)}
+                className="w-full text-left px-3 py-2.5 flex flex-col gap-0.5 transition-colors"
+                style={{ backgroundColor: idx === highlighted ? '#F0F7F4' : 'transparent' }}
+              >
+                <span className={`text-sm font-mono font-medium truncate ${bus.id === value ? 'text-[#0B7439]' : 'text-[#1A2E22]'}`}>
+                  {bus.immatriculation}
+                </span>
+                {bus.company?.name && (
+                  <span className="text-xs text-[#6B7280] truncate">{bus.company.name}</span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function GarageReparations() {
   const [reparations, setReparations] = useState<GarageReparation[]>([])
   const [buses, setBuses] = useState<GarageBus[]>([])
@@ -436,10 +564,12 @@ export default function GarageReparations() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#4A6B55] mb-1">Car *</label>
-                  <select value={form.bus_id} onChange={e => setForm({ ...form, bus_id: e.target.value })} className={inputCls}>
-                    <option value="">—</option>
-                    {buses.map(b => <option key={b.id} value={b.id}>{b.immatriculation}</option>)}
-                  </select>
+                  <BusAutocomplete
+                    buses={buses}
+                    value={form.bus_id}
+                    onChange={(id) => setForm({ ...form, bus_id: id })}
+                    inputCls={inputCls}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#4A6B55] mb-1">Date</label>
