@@ -4,7 +4,7 @@ import jsPDF from 'jspdf'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import {
-  fetchSorties, fetchPneus, fetchCommandes, fetchSettings, updateSetting, fetchCompaniesForGarage,
+  fetchSorties, fetchPneus, fetchCommandes, fetchSettings, updateSetting, fetchCompaniesForGarage, fetchTireStock,
 } from '@/services/garageSbta.service'
 import type { GarageSortiePiece, GaragePneu, GarageCommandePiece, GarageGroupe, GarageSetting, GarageCompany } from '@/types/garage.types'
 import { addReportHeader, addReportFooter, ensureSpace, formatDate, formatFCFA, type ReportFilters } from '@/components/garage/reportHelpers'
@@ -42,6 +42,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
   const [reportType, setReportType] = useState<ReportType>('pieces_groupe')
   const [sorties, setSorties] = useState<GarageSortiePiece[]>([])
   const [pneus, setPneus] = useState<GaragePneu[]>([])
+  const [tireStock, setTireStock] = useState<{ nom: string; stock_actuel: number }[]>([])
   const [commandes, setCommandes] = useState<GarageCommandePiece[]>([])
   const [companies, setCompanies] = useState<GarageCompany[]>([])
   const [filters, setFilters] = useState<ReportFilters>({
@@ -55,8 +56,8 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
   const [editingPrices, setEditingPrices] = useState(false)
 
   useEffect(() => {
-    Promise.all([fetchSorties(), fetchPneus(), fetchCommandes(), fetchCompaniesForGarage()])
-      .then(([s, p, c, comps]) => { setSorties(s); setPneus(p); setCommandes(c); setCompanies(comps) })
+    Promise.all([fetchSorties(), fetchPneus(), fetchCommandes(), fetchCompaniesForGarage(), fetchTireStock()])
+      .then(([s, p, c, comps, ts]) => { setSorties(s); setPneus(p); setCommandes(c); setCompanies(comps); setTireStock(ts) })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
   }, [])
@@ -307,9 +308,16 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
       drawPdfRight(doc, formatPdfNumber(totalMontant), colRight - 2, totalsTop + 7)
       y = totalsTop + 18
       doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-      doc.text(`ARRIVAGE ACTUEL = ${formatPdfNumber(totalQty)} pcs`, margin, y); y += 5
-      doc.text(`PNEUS SORTIS = ${formatPdfNumber(totalQty)} pcs`, margin, y); y += 5
-      doc.text('STOCK ACTUEL = 0 pcs', margin, y)
+      const tireNom = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'LONG-MARCH'
+      const searchKey = tireNom.includes('MICHELIN') ? 'MICHELIN' : 'LONG-MARCH'
+      const stockRow = tireStock.find(ts => ts.nom?.toUpperCase().includes(searchKey))
+      const arrivage = stockRow?.stock_actuel ?? 0
+      const allSorties = sorties.filter(s => s.piece?.nom?.toUpperCase() === tireNom)
+      const pneusSortis = allSorties.reduce((sum, s) => sum + s.quantite, 0)
+      const stockActuel = arrivage - pneusSortis
+      doc.text(`ARRIVAGE ACTUEL = ${formatPdfNumber(arrivage)} pcs`, margin, y); y += 5
+      doc.text(`PNEUS SORTIS = ${formatPdfNumber(pneusSortis)} pcs`, margin, y); y += 5
+      doc.text(`STOCK ACTUEL = ${formatPdfNumber(stockActuel)} pcs`, margin, y)
       doc.text(`Fait à Abidjan le ${formatDate(new Date())}`, pw - margin, y, { align: 'right' })
     }
 
@@ -460,7 +468,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
           {Object.keys(grouped).length === 0 ? (
             <p className="text-center py-12 text-[#8AA898]">Aucune donnée pour cette période</p>
           ) : (reportType === 'pneus_michelin' || reportType === 'pneus_long_march') ? (
-            <TireReportPreview reportType={reportType} grouped={grouped} filters={filters} titles={titles} />
+            <TireReportPreview reportType={reportType} grouped={grouped} filters={filters} titles={titles} tireStock={tireStock} allSorties={sorties} />
           ) : Object.entries(grouped).map(([gname, items]) => (
             <div key={gname} className="mb-6">
               <div className="bg-[#B8B8B8] px-3 py-2 font-bold text-[#1A2E22]">GROUPE : {gname}</div>
@@ -508,11 +516,13 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
 }
 
 // ── Tire report preview (Michelin / Long-March) ──────────────
-function TireReportPreview({ reportType, grouped, filters, titles }: {
+function TireReportPreview({ reportType, grouped, filters, titles, tireStock, allSorties }: {
   reportType: 'pneus_michelin' | 'pneus_long_march'
   grouped: Record<string, GarageSortiePiece[] | GaragePneu[] | GarageCommandePiece[]>
   filters: ReportFilters
   titles: Record<ReportType, string>
+  tireStock: { nom: string; stock_actuel: number }[]
+  allSorties: GarageSortiePiece[]
 }) {
   const typeLabel = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'LONG-MARCH'
   const fmtNum = (n: number | string | null | undefined) =>
@@ -588,15 +598,26 @@ function TireReportPreview({ reportType, grouped, filters, titles }: {
           BILAN DES PNEUS
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black">
-          <div className="px-3 py-2 text-sm text-black">
-            ARRIVAGE ACTUEL = <span className="font-bold">{fmtNum(grandQty)}</span> pcs
-          </div>
-          <div className="px-3 py-2 text-sm text-black">
-            PNEUS SORTIS = <span className="font-bold">{fmtNum(grandQty)}</span> pcs
-          </div>
-          <div className="px-3 py-2 text-sm text-black">
-            STOCK ACTUEL = <span className="font-bold">0</span> pcs
-          </div>
+          {(() => {
+            const searchKey = typeLabel.includes('MICHELIN') ? 'MICHELIN' : 'LONG-MARCH'
+            const stockRow = tireStock.find(ts => ts.nom?.toUpperCase().includes(searchKey))
+            const arrivage = stockRow?.stock_actuel ?? 0
+            const totalSortis = allSorties.filter(s => s.piece?.nom?.toUpperCase() === typeLabel).reduce((sum, s) => sum + s.quantite, 0)
+            const stockActuel = arrivage - totalSortis
+            return (
+              <>
+                <div className="px-3 py-2 text-sm text-black">
+                  ARRIVAGE ACTUEL = <span className="font-bold">{fmtNum(arrivage)}</span> pcs
+                </div>
+                <div className="px-3 py-2 text-sm text-black">
+                  PNEUS SORTIS = <span className="font-bold">{fmtNum(totalSortis)}</span> pcs
+                </div>
+                <div className="px-3 py-2 text-sm text-black">
+                  STOCK ACTUEL = <span className="font-bold">{fmtNum(stockActuel)}</span> pcs
+                </div>
+              </>
+            )
+          })()}
         </div>
         <div className="border-t border-black px-3 py-2 flex items-center justify-between">
           <span className="font-bold text-black text-sm">TOTAUX {fmtNum(grandMontant)}</span>

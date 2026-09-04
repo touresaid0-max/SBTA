@@ -444,6 +444,29 @@ export async function createPneu(p: {
   if (error) throw error
 }
 
+// ── Stock pneus (stock actuel depuis garage_stock) ────────────
+export async function fetchTireStock(): Promise<{ nom: string; stock_actuel: number }[]> {
+  const { data: pieces, error: piecesError } = await supabase
+    .from('garage_pieces')
+    .select('id, nom')
+    .ilike('nom', '%MICHELIN%')
+  if (piecesError) throw piecesError
+  const { data: pieces2, error: pieces2Error } = await supabase
+    .from('garage_pieces')
+    .select('id, nom')
+    .ilike('nom', '%LONG-MARCH%')
+  if (pieces2Error) throw pieces2Error
+  const allPieces = [...(pieces ?? []), ...(pieces2 ?? [])]
+  if (allPieces.length === 0) return []
+  const { data: stockRows, error: stockError } = await supabase
+    .from('garage_stock')
+    .select('quantite, piece_id')
+    .in('piece_id', allPieces.map(p => p.id))
+  if (stockError) throw stockError
+  const pieceById = new Map(allPieces.map(p => [p.id, p.nom]))
+  return (stockRows ?? []).map(row => ({ nom: pieceById.get(row.piece_id) ?? '—', stock_actuel: row.quantite }))
+}
+
 // ── Settings ─────────────────────────────────────────────────
 export async function fetchSettings(): Promise<GarageSetting[]> {
   const { data, error } = await supabase.from('garage_settings').select('*')
