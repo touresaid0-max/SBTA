@@ -189,6 +189,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     tot_depense: 0,
     solde: 0,
     caisse: 0,
+    breakdown_transfer: 0,
   };
 }
 
@@ -263,6 +264,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
             arrival_station_id: existing.arrival_station_id,
             is_ramassage: existing.is_ramassage ?? localRecord.is_ramassage,
             source: existing.source,
+            breakdown_transfer: existing.breakdown_transfer ?? 0,
           });
         } else {
           await (db.departs as any).put({ ...localRecord, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
@@ -286,17 +288,31 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
           }
         }
 
+        const { data: breakdownData } = await supabase
+          .from('schedule_receipt_summary')
+          .select('schedule_id, breakdown_transfer')
+          .in('schedule_id', scheduleIds)
+          .gt('breakdown_transfer', 0);
+
+        const breakdownMap = new Map<string, number>();
+        for (const b of breakdownData ?? []) {
+          breakdownMap.set(b.schedule_id, Number(b.breakdown_transfer ?? 0));
+        }
+
         for (const sid of scheduleIds) {
           const activeTickets = (remoteReservations as unknown as Record<string, unknown>[])
             .filter(r => r.schedule_id === sid && r.status !== 'annulee');
           const newSeatsSold = activeTickets.length;
-          const newMtTicket = activeTickets.reduce((sum, t) => sum + Number(t.total_price ?? 0), 0);
+          const grossMtTicket = activeTickets.reduce((sum, t) => sum + Number(t.total_price ?? 0), 0);
+          const breakdownTransfer = breakdownMap.get(sid) ?? 0;
+          const newMtTicket = grossMtTicket - breakdownTransfer;
           const existing = await (db.departs as any).get(sid);
           if (existing) {
             await (db.departs as any).put({
               ...existing,
               seats_sold: newSeatsSold,
               mt_ticket: newMtTicket,
+              breakdown_transfer: breakdownTransfer,
               solde: newMtTicket + existing.mt_bagage - existing.tot_depense,
               caisse: newMtTicket + existing.mt_bagage - existing.tot_depense,
               updated_at: new Date().toISOString(),

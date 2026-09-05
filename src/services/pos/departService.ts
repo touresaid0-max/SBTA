@@ -196,7 +196,9 @@ export function computeStationScopedTotals(
       .reduce((s, d) => s + d.amount, 0);
     const ticketsForDepart = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled');
     const bagagesForDepart = bagages.filter(b => b.depart_id === depart.id && b.description !== '__deleted__');
-    const mtTicket = ticketsForDepart.reduce((s, t) => s + t.price, 0);
+    const grossTicket = ticketsForDepart.reduce((s, t) => s + t.price, 0);
+    const breakdownTransfer = depart.breakdown_transfer ?? 0;
+    const mtTicket = grossTicket - breakdownTransfer;
     const mtBagage = bagagesForDepart.reduce((s, b) => s + b.price, 0);
     return {
       mt_ticket: mtTicket,
@@ -236,7 +238,9 @@ export function computeStationScopedTotals(
     d.station_id === stationId,
   );
 
-  const mtTicket = stationTickets.reduce((s, t) => s + t.price, 0);
+  const grossTicket = stationTickets.reduce((s, t) => s + t.price, 0);
+  const breakdownTransfer = depart.breakdown_transfer ?? 0;
+  const mtTicket = grossTicket - breakdownTransfer;
   const mtBagage = stationBagages.reduce((s, b) => s + b.price, 0);
   const totDepense = stationDepenses.reduce((s, d) => s + d.amount, 0);
 

@@ -63,6 +63,7 @@ export interface DepartRecord {
   tot_depense: number;
   solde: number;
   caisse: number;
+  breakdown_transfer: number;
   confirmed: boolean;
   cancelled: boolean;
   created_at: string;
