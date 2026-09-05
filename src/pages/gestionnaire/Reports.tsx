@@ -14,10 +14,13 @@ const fmtC = (n: number) => fmt(n) + ' FCFA';
 
 interface RouteRow {
   route_id: string; route_name: string; trip_count: number; revenue: number;
-  cc_carburant: number; cc_ration: number; cc_peage: number;
+  cc_carburant: number; cc_ration: number; cc_peage: number; cc_autres: number;
   fuel_enlev: number; expense_reparation: number; total_expense: number; margin: number;
 }
-interface DaySeries { day: string; revenue: number; expenses: number; trip_count: number; }
+interface DaySeries {
+  day: string; revenue: number; expenses: number; trip_count: number;
+  cc_carburant: number; cc_ration: number; cc_peage: number; cc_autres: number;
+}
 
 const PRESETS = [
   { label: '7j',   days: 7 },
@@ -55,6 +58,8 @@ export default function GestionnaireReports() {
       supabase.rpc('get_gestionnaire_revenue_by_route', { p_date_from: dateFrom, p_date_to: dateTo }),
       supabase.rpc('get_gestionnaire_daily_series',     { p_date_from: dateFrom, p_date_to: dateTo }),
     ]);
+    if (routeRes.error) console.error('Erreur rapport par ligne:', routeRes.error);
+    if (seriesRes.error) console.error('Erreur rapport journalier:', seriesRes.error);
     setRoutes((routeRes.data ?? []) as RouteRow[]);
     setSeries((seriesRes.data ?? []) as DaySeries[]);
     setLoading(false);
@@ -64,36 +69,31 @@ export default function GestionnaireReports() {
 
   // ── Aggregations ─────────────────────────────────────────────────────────
   const weeklySeries = (() => {
-    const map: Record<string, { period: string; revenue: number; expenses: number; trips: number }> = {};
+    const map: Record<string, PeriodRow> = {};
     series.forEach(d => {
       const dt = new Date(d.day + 'T00:00:00');
       const wk = format(startOfWeek(dt, { weekStartsOn: 1 }), 'dd/MM/yy', { locale: fr });
-      if (!map[wk]) map[wk] = { period: wk, revenue: 0, expenses: 0, trips: 0 };
-      map[wk].revenue  += Number(d.revenue);
-      map[wk].expenses += Number(d.expenses);
-      map[wk].trips    += Number(d.trip_count);
+      if (!map[wk]) map[wk] = emptyPeriodRow(wk);
+      addPeriodRow(map[wk], d);
     });
     return Object.values(map);
   })();
 
   const monthlySeries = (() => {
-    const map: Record<string, { period: string; revenue: number; expenses: number; trips: number }> = {};
+    const map: Record<string, PeriodRow> = {};
     series.forEach(d => {
       const mo = format(new Date(d.day + 'T00:00:00'), 'MMM yyyy', { locale: fr });
-      if (!map[mo]) map[mo] = { period: mo, revenue: 0, expenses: 0, trips: 0 };
-      map[mo].revenue  += Number(d.revenue);
-      map[mo].expenses += Number(d.expenses);
-      map[mo].trips    += Number(d.trip_count);
+      if (!map[mo]) map[mo] = emptyPeriodRow(mo);
+      addPeriodRow(map[mo], d);
     });
     return Object.values(map);
   })();
 
-  const dailyAgg = series.map(d => ({
-    period:   format(new Date(d.day + 'T00:00:00'), 'dd/MM/yy', { locale: fr }),
-    revenue:  Number(d.revenue),
-    expenses: Number(d.expenses),
-    trips:    Number(d.trip_count),
-    raw_day:  d.day,
+  const dailyAgg: PeriodRow[] = series.map(d => ({
+    period: format(new Date(d.day + 'T00:00:00'), 'dd/MM/yy', { locale: fr }),
+    revenue: Number(d.revenue), expenses: Number(d.expenses), trips: Number(d.trip_count), raw_day: d.day,
+    cc_carburant: Number(d.cc_carburant ?? 0), cc_ration: Number(d.cc_ration ?? 0),
+    cc_peage: Number(d.cc_peage ?? 0), cc_autres: Number(d.cc_autres ?? 0),
   }));
 
   // ── Totals ────────────────────────────────────────────────────────────────
@@ -107,21 +107,25 @@ export default function GestionnaireReports() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(routes.map(r => ({
       Ligne: r.route_name, Voyages: r.trip_count, 'Recettes (FCFA)': r.revenue,
       'Carb. compl.': r.cc_carburant, Rations: r.cc_ration, Péages: r.cc_peage,
-      'Rés. guichetier': r.revenue - r.cc_carburant - r.cc_ration - r.cc_peage,
+      'Autr. dép. (GCH)': r.cc_autres ?? 0,
+      'Rés. guichetier': r.revenue - r.cc_carburant - r.cc_ration - r.cc_peage - (r.cc_autres ?? 0),
       'Marge brute': r.margin,
     }))), 'Par ligne');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(series.map(d => ({
       Date: d.day, Voyages: d.trip_count, Recettes: d.revenue,
-      'Charges guichet': d.expenses,
+      'Carb. compl.': d.cc_carburant, Rations: d.cc_ration, Péages: d.cc_peage,
+      'Autr. dép. (GCH)': d.cc_autres, 'Charges guichet': d.expenses,
       Résultat: Number(d.revenue) - Number(d.expenses),
     }))), 'Journalier');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(weeklySeries.map(w => ({
       Semaine: w.period, Voyages: w.trips, Recettes: w.revenue,
-      'Charges guichet': w.expenses, Résultat: w.revenue - w.expenses,
+      'Carb. compl.': w.cc_carburant, Rations: w.cc_ration, Péages: w.cc_peage,
+      'Autr. dép. (GCH)': w.cc_autres, 'Charges guichet': w.expenses, Résultat: w.revenue - w.expenses,
     }))), 'Hebdo');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(monthlySeries.map(m => ({
       Mois: m.period, Voyages: m.trips, Recettes: m.revenue,
-      'Charges guichet': m.expenses, Résultat: m.revenue - m.expenses,
+      'Carb. compl.': m.cc_carburant, Rations: m.cc_ration, Péages: m.cc_peage,
+      'Autr. dép. (GCH)': m.cc_autres, 'Charges guichet': m.expenses, Résultat: m.revenue - m.expenses,
     }))), 'Mensuel');
     XLSX.writeFile(wb, `rapports_${dateFrom}_${dateTo}.xlsx`);
   };
@@ -248,7 +252,7 @@ function RouteTab({ routes, totRevenue, totTrips, totMargin }:
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
                 {['Ligne', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages',
-                  'Rés. guichetier', 'Marge brute', 'Marge %'].map(h => (
+                  'Autr. dép. (GCH)', 'Rés. guichetier', 'Marge brute', 'Marge %'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap"
                     style={{ color: 'var(--text-secondary)' }}>{h}</th>
                 ))}
@@ -257,7 +261,8 @@ function RouteTab({ routes, totRevenue, totTrips, totMargin }:
             <tbody>
               {routes.map((r, i) => {
                 const resGui = Number(r.revenue) - Number(r.cc_carburant ?? 0)
-                             - Number(r.cc_ration ?? 0) - Number(r.cc_peage ?? 0);
+                             - Number(r.cc_ration ?? 0) - Number(r.cc_peage ?? 0)
+                             - Number(r.cc_autres ?? 0);
                 const mPct   = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
                 return (
                   <tr key={r.route_id || i} className="border-t"
@@ -268,6 +273,7 @@ function RouteTab({ routes, totRevenue, totTrips, totMargin }:
                     <td className="px-4 py-3" style={{ color: '#3B82F6' }}>{fmt(r.cc_carburant ?? 0)}</td>
                     <td className="px-4 py-3" style={{ color: '#F59E0B' }}>{fmt(r.cc_ration ?? 0)}</td>
                     <td className="px-4 py-3" style={{ color: '#6B7280' }}>{fmt(r.cc_peage ?? 0)}</td>
+                    <td className="px-4 py-3" style={{ color: '#6366F1' }}>{fmt(r.cc_autres ?? 0)}</td>
                     <td className="px-4 py-3 font-semibold"
                       style={{ color: resGui >= 0 ? '#3B82F6' : '#EF4444' }}>{fmtC(resGui)}</td>
                     <td className="px-4 py-3 font-semibold"
@@ -285,7 +291,7 @@ function RouteTab({ routes, totRevenue, totTrips, totMargin }:
                 );
               })}
               {routes.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-8 text-sm"
+                <tr><td colSpan={10} className="text-center py-8 text-sm"
                   style={{ color: 'var(--text-muted)' }}>Aucune donnée sur la période</td></tr>
               )}
             </tbody>
@@ -297,7 +303,24 @@ function RouteTab({ routes, totRevenue, totTrips, totMargin }:
 }
 
 // ── Onglet Journalier / Hebdo / Mensuel ───────────────────────────────────────
-interface PeriodRow { period: string; revenue: number; expenses: number; trips: number; raw_day?: string; }
+interface PeriodRow {
+  period: string; revenue: number; expenses: number; trips: number; raw_day?: string;
+  cc_carburant: number; cc_ration: number; cc_peage: number; cc_autres: number;
+}
+
+function emptyPeriodRow(period: string): PeriodRow {
+  return { period, revenue: 0, expenses: 0, trips: 0, cc_carburant: 0, cc_ration: 0, cc_peage: 0, cc_autres: 0 };
+}
+
+function addPeriodRow(target: PeriodRow, source: DaySeries): void {
+  target.revenue += Number(source.revenue);
+  target.expenses += Number(source.expenses);
+  target.trips += Number(source.trip_count);
+  target.cc_carburant += Number(source.cc_carburant ?? 0);
+  target.cc_ration += Number(source.cc_ration ?? 0);
+  target.cc_peage += Number(source.cc_peage ?? 0);
+  target.cc_autres += Number(source.cc_autres ?? 0);
+}
 
 function PeriodTab({
   data, label, chartType,
@@ -386,7 +409,7 @@ function PeriodTab({
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                {[label, 'Voyages', 'Recettes', 'Charges guichet', 'Résultat', 'Marge %', 'Évolution'].map(h => (
+                {[label, 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Autr. dép. (GCH)', 'Charges guichet', 'Résultat', 'Marge %', 'Évolution'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold whitespace-nowrap"
                     style={{ color: 'var(--text-secondary)' }}>{h}</th>
                 ))}
@@ -409,6 +432,10 @@ function PeriodTab({
                     </td>
                     <td className="px-4 py-2.5" style={{ color: 'var(--text-secondary)' }}>{d.trips}</td>
                     <td className="px-4 py-2.5 font-semibold" style={{ color: '#10B981' }}>{fmtC(d.revenue)}</td>
+                    <td className="px-4 py-2.5" style={{ color: '#3B82F6' }}>{fmt(d.cc_carburant)}</td>
+                    <td className="px-4 py-2.5" style={{ color: '#F59E0B' }}>{fmt(d.cc_ration)}</td>
+                    <td className="px-4 py-2.5" style={{ color: '#6B7280' }}>{fmt(d.cc_peage)}</td>
+                    <td className="px-4 py-2.5" style={{ color: '#6366F1' }}>{fmt(d.cc_autres)}</td>
                     <td className="px-4 py-2.5 font-semibold" style={{ color: '#EF4444' }}>{fmtC(d.expenses)}</td>
                     <td className="px-4 py-2.5 font-semibold"
                       style={{ color: res >= 0 ? '#3B82F6' : '#EF4444' }}>{fmtC(res)}</td>
@@ -433,7 +460,7 @@ function PeriodTab({
                 );
               })}
               {data.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-8 text-sm"
+                <tr><td colSpan={11} className="text-center py-8 text-sm"
                   style={{ color: 'var(--text-muted)' }}>Aucune donnée sur la période</td></tr>
               )}
             </tbody>
