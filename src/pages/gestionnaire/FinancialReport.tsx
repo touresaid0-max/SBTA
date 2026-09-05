@@ -168,7 +168,7 @@ export default function FinancialReport() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(routes.map(r => ({
       Ligne: r.route_name, Voyages: r.trip_count, Recettes: r.revenue,
       'Carburant compl.': r.cc_carburant, Rations: r.cc_ration,
-      'Péages guichet': r.cc_peage, 'Autres': r.cc_autres ?? 0,
+      'Péages guichet': r.cc_peage, 'Autr. dép. (GCH)': r.cc_autres ?? 0,
       'Total charges': r.total_expense ?? 0, Marge: r.margin,
     }))), 'Par ligne');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(drivers.map(d => ({
@@ -350,6 +350,7 @@ export default function FinancialReport() {
                       { label: '  Carburant compl. (guichet)', val: kpis?.cc_carburant_complement ?? 0, bold: false, colorKey: 'exp' },
                       { label: '  Rations (guichet)',          val: kpis?.cc_ration ?? 0,               bold: false, colorKey: 'exp' },
                       { label: '  Péages (guichet)',           val: kpis?.cc_peage ?? 0,                bold: false, colorKey: 'exp' },
+                      { label: '  Autr. dép. (GCH)',            val: kpis?.cc_autres ?? 0,                bold: false, colorKey: 'exp' },
                       { label: 'Résultat guichetier',          val: guichetierResult,                   bold: true, colorKey: 'res', res: guichetierResult },
                       { label: '  Carburant cuve',             val: kpis?.fuel_enlevements_amount ?? 0, bold: false, colorKey: 'exp' },
                       { label: '  Réparations (Autres dép. Comptable)', val: kpis?.expense_reparation ?? 0,            bold: false, colorKey: 'exp' },
@@ -433,7 +434,7 @@ export default function FinancialReport() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                      {['Ligne', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Autres', 'Total charges', 'Marge', 'Marge %'].map(h => (
+                      {['Ligne', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Autr. dép. (GCH)', 'Total charges', 'Marge', 'Marge %'].map(h => (
                         <th key={h} className="text-left px-3 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                       ))}
                     </tr>
@@ -449,7 +450,7 @@ export default function FinancialReport() {
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#3B82F6' }}>{fmtCFA(r.cc_carburant ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#F59E0B' }}>{fmtCFA(r.cc_ration ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#10B981' }}>{fmtCFA(r.cc_peage ?? 0)}</td>
-                          <td className="px-3 py-2.5 text-xs" style={{ color: '#8B5CF6' }}>{fmtCFA(r.cc_autres ?? 0)}</td>
+                          <td className="px-3 py-2.5 text-xs" style={{ color: '#6366F1' }}>{fmtCFA(r.cc_autres ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmtCFA(r.total_expense ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs font-bold" style={{ color: r.margin >= 0 ? '#10B981' : '#EF4444' }}>{fmtCFA(r.margin)}</td>
                           <td className="px-3 py-2.5">
