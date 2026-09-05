@@ -10,7 +10,7 @@ const fmtCFA = (n: number) => fmt(n) + ' FCFA';
 
 interface BusRow {
   bus_id: string; registration_number: string; model: string; trip_count: number; revenue: number;
-  cc_carburant: number; cc_ration: number; cc_peage: number;
+  cc_carburant: number; cc_ration: number; cc_peage: number; cc_autres: number;
   fuel_enlev: number; expense_reparation: number; vehicle_exp: number;
   total_expense: number; margin: number;
 }
@@ -94,7 +94,7 @@ export default function BusActivity() {
       'Immatriculation': b.registration_number, 'Modèle': b.model,
       'Voyages': b.trip_count, 'Recettes': b.revenue,
       'Carburant compl. (guichet)': b.cc_carburant, 'Rations (guichet)': b.cc_ration,
-      'Péages (guichet)': b.cc_peage, 'Carburant cuve': b.fuel_enlev,
+      'Péages (guichet)': b.cc_peage, 'Autr. dép. (GCH)': b.cc_autres ?? 0, 'Carburant cuve': b.fuel_enlev,
       'Réparations (comptable)': b.expense_reparation, 'Total charges': b.total_expense, 'Marge': b.margin,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -134,7 +134,7 @@ export default function BusActivity() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                {['Plaque', 'Modèle', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Carb. cuve', 'Réparat. (comptable)', 'Total charges', 'Marge', 'Détail'].map(h => (
+                {['Plaque', 'Modèle', 'Voyages', 'Recettes', 'Carb. compl.', 'Rations', 'Péages', 'Autr. dép. (GCH)', 'Carb. cuve', 'Réparat. (comptable)', 'Total charges', 'Marge', 'Détail'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                 ))}
               </tr>
@@ -158,6 +158,7 @@ export default function BusActivity() {
                   <td className="px-4 py-3 text-xs" style={{ color: '#3B82F6' }}>{fmt(b.cc_carburant)}</td>
                   <td className="px-4 py-3 text-xs" style={{ color: '#F59E0B' }}>{fmt(b.cc_ration)}</td>
                   <td className="px-4 py-3 text-xs" style={{ color: '#10B981' }}>{fmt(b.cc_peage)}</td>
+                  <td className="px-4 py-3 text-xs" style={{ color: '#6366F1' }}>{fmt(b.cc_autres ?? 0)}</td>
                   <td className="px-4 py-3 text-xs" style={{ color: '#F97316' }}>{fmt(b.fuel_enlev)}</td>
                   <td className="px-4 py-3 text-xs" style={{ color: '#EF4444' }}>{fmt(b.expense_reparation)}</td>
                   <td className="px-4 py-3 text-xs font-semibold" style={{ color: '#EF4444' }}>{fmt(b.total_expense)}</td>
@@ -171,7 +172,7 @@ export default function BusActivity() {
                 </tr>
               ))}
               {buses.length === 0 && (
-                <tr><td colSpan={12} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>
+                <tr><td colSpan={13} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>
               )}
             </tbody>
           </table>
