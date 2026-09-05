@@ -68,7 +68,6 @@ export default function POSVente() {
   // Vente avec structure — shows the real bus seat layout
   const [structureMode, setStructureMode] = useState(false);
   const [seatMap, setSeatMap] = useState<ScheduleSeatMap | null>(null);
-  const [seatMapLoading, setSeatMapLoading] = useState(false);
   const [seatMapError, setSeatMapError] = useState('');
   const [structSelectedSeats, setStructSelectedSeats] = useState<StructSeat[]>([]);
 
@@ -161,7 +160,6 @@ export default function POSVente() {
   useEffect(() => {
     if (!structureMode || !departId) { setSeatMap(null); setSeatMapError(''); return; }
     let cancelled = false;
-    setSeatMapLoading(true);
     setSeatMapError('');
     fetchScheduleSeatMap(departId)
       .then(data => { if (!cancelled) setSeatMap(data); })
@@ -175,7 +173,6 @@ export default function POSVente() {
         }
         setSeatMap(null);
       })
-      .finally(() => { if (!cancelled) setSeatMapLoading(false); });
     return () => { cancelled = true; };
   }, [structureMode, departId, lastSyncedAt]);
 
@@ -1006,12 +1003,7 @@ export default function POSVente() {
               {/* ── Structure du bus (affichée si Vente avec structure est activé) ── */}
               {structureMode && (
                 <div className="mb-4">
-                  {seatMapLoading ? (
-                    <div className="flex items-center justify-center py-12 rounded-xl" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)' }}>
-                      <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--primary)' }} />
-                      <span className="ml-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Chargement de la structure du bus…</span>
-                    </div>
-                  ) : seatMapError ? (
+                  {seatMapError ? (
                     <div className="rounded-xl px-3 py-3 flex items-center gap-2 text-sm" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid var(--danger)' }}>
                       <AlertCircle className="w-4 h-4 flex-shrink-0" /> {seatMapError}
                     </div>
