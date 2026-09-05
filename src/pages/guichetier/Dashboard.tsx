@@ -77,7 +77,8 @@ export default function GuichetierDashboard() {
   const totalSeats       = counterDepartures.reduce((s, d) => s + Number(d.seats_sold), 0)
   const totalCapacity    = counterDepartures.reduce((s, d) => s + Number(d.capacity), 0)
   const totalRemaining   = counterDepartures.reduce((s, d) => s + Number(d.seats_remaining), 0)
-  const totalRecettes    = counterDepartures.reduce((s, d) => s + Number(d.total_ticket_amount), 0)
+  const totalBreakdownTransfer = counterDepartures.reduce((s, d) => s + Number(d.breakdown_transfer ?? 0), 0)
+  const totalRecettes    = counterDepartures.reduce((s, d) => s + Number(d.total_ticket_amount), 0) - totalBreakdownTransfer
   const totalChargesDay  = counterDepartures.reduce((s, d) => s + Number(d.total_charges), 0)
 
   // ── Chargement initial ──────────────────────────────────────────
