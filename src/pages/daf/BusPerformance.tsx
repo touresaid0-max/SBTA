@@ -37,6 +37,7 @@ interface BusRow {
   cc_carburant: number;
   cc_ration: number;
   cc_peage: number;
+  cc_autres: number;
   fuel_enlev: number;
   expense_reparation: number;
   expense_autres: number;
@@ -90,6 +91,7 @@ function parseBusRow(r: Record<string, unknown>): BusRow {
   const cc_carburant = safe(r.cc_carburant);
   const cc_ration = safe(r.cc_ration);
   const cc_peage = safe(r.cc_peage);
+  const cc_autres = safe(r.cc_autres);
   const fuel_enlev = safe(r.fuel_enlev);
   const expense_reparation = safe(r.expense_reparation);
   const expense_autres = safe(r.expense_autres);
@@ -97,7 +99,7 @@ function parseBusRow(r: Record<string, unknown>): BusRow {
   const expense_garage_pieces = safe(r.expense_garage_pieces);
   const vehicle_exp = safe(r.vehicle_exp);
   const fuel_carburant_comptable = safe(r.fuel_carburant_comptable);
-  const total_expense = cc_carburant + cc_ration + cc_peage + fuel_enlev
+  const total_expense = cc_carburant + cc_ration + cc_peage + cc_autres + fuel_enlev
     + expense_reparation + expense_autres + expense_charge_stock + expense_garage_pieces + vehicle_exp + fuel_carburant_comptable;
   return {
     bus_id: String(r.bus_id ?? ''),
@@ -109,7 +111,7 @@ function parseBusRow(r: Record<string, unknown>): BusRow {
     trip_count: safe(r.trip_count),
     total_passengers: safe(r.total_passengers),
     avg_fill_rate: safe(r.avg_fill_rate),
-    revenue, cc_carburant, cc_ration, cc_peage, fuel_enlev,
+    revenue, cc_carburant, cc_ration, cc_peage, cc_autres, fuel_enlev,
     expense_reparation, expense_autres, expense_charge_stock, expense_garage_pieces, vehicle_exp, fuel_carburant_comptable,
     total_expense, margin: revenue - total_expense,
     breakdown_received: safe(r.breakdown_received),

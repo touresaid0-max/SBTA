@@ -23,6 +23,7 @@ interface BusRow {
   cc_carburant: number;
   cc_ration: number;
   cc_peage: number;
+  cc_autres: number;
   fuel_enlev: number;
   expense_reparation: number;
   expense_autres: number;
@@ -72,6 +73,7 @@ function parseRow(raw: Record<string, unknown>): BusRow {
     cc_carburant: Number(raw.cc_carburant ?? 0),
     cc_ration: Number(raw.cc_ration ?? 0),
     cc_peage: Number(raw.cc_peage ?? 0),
+    cc_autres: Number(raw.cc_autres ?? 0),
     fuel_enlev: Number(raw.fuel_enlev ?? 0),
     expense_reparation: Number(raw.expense_reparation ?? 0),
     expense_autres: Number(raw.expense_autres ?? 0),

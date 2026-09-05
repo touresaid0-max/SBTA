@@ -20,6 +20,7 @@ interface DriverRow {
   cc_carburant:     number;
   cc_ration:        number;
   cc_peage:         number;
+  cc_autres:        number;
   expense_total:    number;
   avg_rating:       number | null;
 }
@@ -151,6 +152,7 @@ export default function DriversReport() {
       'Carb. compl. (guichet)':  Number(d.cc_carburant ?? 0),
       'Rations (guichet)':       Number(d.cc_ration ?? 0),
       'Péages (guichet)':        Number(d.cc_peage ?? 0),
+      'Autr. dép. (GCH)':        Number(d.cc_autres ?? 0),
       'Total charges guichet':   Number(d.expense_total),
       'Marge (FCFA)':            Number(d.revenue) - Number(d.expense_total),
       'Marge %':                 d.revenue > 0

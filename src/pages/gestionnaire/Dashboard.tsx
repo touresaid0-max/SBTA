@@ -116,9 +116,9 @@ export default function GestionnaireDashboard() {
     </div>
   );
 
-  // Résultat guichetier = Recettes - Rations - Carburant compl. - Péages guichet
+  // Résultat guichetier = Recettes - Rations - Carburant compl. - Péages guichet - Autr. dép. (GCH)
   const guichetierCharges = kpis
-    ? kpis.cc_carburant_complement + kpis.cc_ration + kpis.cc_peage
+    ? kpis.cc_carburant_complement + kpis.cc_ration + kpis.cc_peage + (kpis.cc_autres ?? 0)
     : 0;
   const guichetierResult = kpis ? kpis.total_revenue - guichetierCharges : 0;
 
@@ -132,6 +132,7 @@ export default function GestionnaireDashboard() {
     ? guichetierCharges + kpis.fuel_enlevements_amount + kpis.expense_reparation + kpis.vehicle_expenses_amount + (kpis.fuel_carburant_comptable ?? 0) + kpis.expense_autres + (kpis.expense_charge_stock ?? 0) + (kpis.expense_garage_pieces ?? 0)
     : 0;
 
+
   const topBuses = [...buses].sort((a, b) => b.margin - a.margin).slice(0, 5);
   const deficitBuses = [...buses].filter(b => b.margin < 0).sort((a, b) => a.margin - b.margin).slice(0, 5);
 
@@ -139,6 +140,7 @@ export default function GestionnaireDashboard() {
     { name: 'Carburant compl.', value: kpis.cc_carburant_complement, color: '#3B82F6' },
     { name: 'Rations',          value: kpis.cc_ration,               color: '#F59E0B' },
     { name: 'Péages guichet',   value: kpis.cc_peage,                color: '#10B981' },
+    { name: 'Autr. dép. (GCH)', value: kpis.cc_autres ?? 0,           color: '#6366F1' },
     { name: 'Carburant cuve',              value: kpis.fuel_enlevements_amount,       color: '#F97316' },
     { name: 'Réparations (comptable)',     value: kpis.expense_reparation,            color: '#EF4444' },
     { name: 'Charges achat',              value: kpis.vehicle_expenses_amount,       color: '#06B6D4' },
@@ -206,11 +208,12 @@ export default function GestionnaireDashboard() {
       {/* KPI Row 2 — charges guichetier (sources counter_charges) */}
       <div className="space-y-1">
         <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Charges guichetier (bordereaux départ)</p>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: 'Carburant compl.', val: kpis?.cc_carburant_complement ?? 0, color: '#3B82F6' },
             { label: 'Rations',          val: kpis?.cc_ration ?? 0,               color: '#F59E0B' },
             { label: 'Péages guichet',   val: kpis?.cc_peage ?? 0,                color: '#10B981' },
+            { label: 'Autr. dép. (GCH)', val: kpis?.cc_autres ?? 0,               color: '#6366F1' },
           ].map(item => (
             <div key={item.label} className="rounded-xl border p-4" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
               <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{item.label}</p>
