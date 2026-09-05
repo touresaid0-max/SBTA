@@ -11,7 +11,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Legend, Cell,
 } from 'recharts';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfYear, endOfYear } from 'date-fns';
+import { format, startOfMonth, startOfWeek, startOfYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 import { buildCompanyGroups, resolveCompanyIds } from '../../utils/companyGroups';
@@ -110,10 +110,10 @@ function getDateRange(id: string, customFrom: string, customTo: string) {
   switch (id) {
     case 'custom':  return { from: customFrom, to: customTo };
     case 'jour':    return { from: f(today), to: f(today) };
-    case 'semaine': return { from: f(startOfWeek(today, { weekStartsOn: 1 })), to: f(endOfWeek(today, { weekStartsOn: 1 })) };
-    case 'annee':   return { from: f(startOfYear(today)), to: f(endOfYear(today)) };
+    case 'semaine': return { from: f(startOfWeek(today, { weekStartsOn: 1 })), to: f(today) };
+    case 'annee':   return { from: f(startOfYear(today)), to: f(today) };
     case 'mois':
-    default:        return { from: f(startOfMonth(today)), to: f(endOfMonth(today)) };
+    default:        return { from: f(startOfMonth(today)), to: f(today) };
   }
 }
 
@@ -170,6 +170,11 @@ export default function DAFDashboard() {
       supabase.rpc('get_daf_revenue_by_bus',     { p_company_ids: resolvedIds, p_date_from: dateFrom, p_date_to: dateTo }),
       supabase.rpc('get_daf_daily_series',       { p_company_ids: resolvedIds, p_date_from: dateFrom, p_date_to: dateTo }),
     ]);
+
+    if (kpiRes.error) console.error('DAF get_daf_consolidated_kpis error:', kpiRes.error);
+    if (compRes.error) console.error('DAF get_daf_kpis_by_company error:', compRes.error);
+    if (busRes.error) console.error('DAF get_daf_revenue_by_bus error:', busRes.error);
+    if (serRes.error) console.error('DAF get_daf_daily_series error:', serRes.error);
 
     if (kpiRes.data) {
       const raw = kpiRes.data as Record<string, unknown>;
