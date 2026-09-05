@@ -62,7 +62,7 @@ export default function Login() {
           <div className="flex items-center gap-3">
             <img src="/logosbta.png" alt="SBTA" className="w-16 h-16 object-contain" />
             <div>
-              <span className="text-2xl font-bold text-white tracking-wider">SBTA</span>
+              <span className="text-[35px] font-bold text-white tracking-wider">SBTA</span>
               <p className="text-xs text-green-200 font-medium leading-tight max-w-[180px]">SOCIETE BONKOUNGOU TRANSPORT DE L'AGNEBY</p>
             </div>
           </div>
@@ -102,7 +102,7 @@ export default function Login() {
         <div className="relative z-10 grid grid-cols-3 gap-4">
           {[
             { value: '500+', label: 'Voyages/mois' },
-            { value: '50+', label: 'Bus actifs' },
+            { value: '400+', label: 'Bus actifs' },
             { value: '3', label: 'Compagnies' },
           ].map(({ value, label }) => (
             <div key={label} className="rounded-xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}>
