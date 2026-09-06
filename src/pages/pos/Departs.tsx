@@ -12,6 +12,7 @@ import {
   findNextDepartForRoute, transferTicketsToDepart,
   renumberDepartsAfterCancellation,
   computeStationScopedTotals,
+  autoCloturePastDeparts,
 } from '@/services/pos/departService';
 import { getAll as getAllTickets, getAll as getAllRecords, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
@@ -233,6 +234,7 @@ export default function POSDeparts() {
 
   const loadDeparts = useCallback(async () => {
     await syncDepartsAndTicketsFromServer(session?.station_id);
+    await autoCloturePastDeparts(session?.station_id, session?.counter_id, session?.full_name);
     const [all, tickets, allBagages, allDepenses] = await Promise.all([
       getAllDeparts(session?.station_id, session?.counter_id),
       getAllRecords<TicketRecord>('tickets'),

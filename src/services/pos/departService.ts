@@ -365,6 +365,28 @@ export async function cloturerDepart(
   return updated;
 }
 
+export async function autoCloturePastDeparts(stationId?: string, counterId?: string, userName?: string): Promise<number> {
+  const all = await getAll<DepartRecord>('departs');
+  const now = new Date();
+  let closedCount = 0;
+  for (const d of all) {
+    if (d.cloture || d.cancelled) continue;
+    if (stationId && d.station_id !== stationId && !(d.seat_allocations?.some(a => a.station_id === stationId) ?? false) && d.other_station_id !== stationId) continue;
+    if (counterId && d.counter_id !== counterId) continue;
+    const depDateTime = new Date(d.departure_datetime);
+    if (isNaN(depDateTime.getTime())) continue;
+    if (depDateTime < now) {
+      try {
+        await cloturerDepart(d.id, userName);
+        closedCount++;
+      } catch {
+        // non-critical: skip on error
+      }
+    }
+  }
+  return closedCount;
+}
+
 export async function getDepartsForOtherStations(currentStationId: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
   let result = all.filter(d => {
