@@ -671,12 +671,11 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                 Non
               </button>
               <button
-                onClick={handleConfirm}
-                disabled={saving}
-                className="flex-1 py-3 rounded-xl font-bold text-white disabled:opacity-60"
-                style={{ backgroundColor: 'var(--primary)' }}
+                disabled
+                className="flex-1 py-3 rounded-xl font-bold cursor-not-allowed opacity-50"
+                style={{ backgroundColor: 'var(--text-muted)', color: 'var(--text-secondary)' }}
               >
-                {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Oui'}
+                Oui
               </button>
             </div>
           </div>
