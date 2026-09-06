@@ -603,7 +603,11 @@ export default function POSDeparts() {
                 label="Demander modif./supp."
               />
               {!selectedRow.confirmed && !selectedRow.cancelled && (
-                <button onClick={() => handleAction('confirmer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--success)' }}>
+                <button
+                  disabled
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white cursor-not-allowed opacity-60"
+                  style={{ backgroundColor: 'var(--text-muted)' }}
+                >
                   <CheckCircle className="w-4 h-4" /> Confirmer
                 </button>
               )}
