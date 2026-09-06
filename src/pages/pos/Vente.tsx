@@ -1259,9 +1259,9 @@ export default function POSVente() {
               )}
               <button
                 onClick={handleSell}
-                disabled
-                className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base opacity-60 cursor-not-allowed flex items-center justify-center gap-2"
-                style={{ backgroundColor: 'var(--text-muted)' }}
+                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne'}
+                className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
+                style={{ backgroundColor: 'var(--primary)' }}
               >
                 {selling ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
                 {selectedSeats.length > 1 ? `Vendre ${selectedSeats.length} tickets` : 'Vendre le ticket'}
