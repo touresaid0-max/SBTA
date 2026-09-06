@@ -78,7 +78,7 @@ interface AuditRow {
   performer?: { first_name: string; last_name: string } | null;
 }
 
-const fmt = (n: number) => new Intl.NumberFormat('fr-CI').format(Math.round(n)) + ' FCFA';
+const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)).replace(/\s/g, ' ') + ' FCFA';
 
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string; border: string }> = {
   signalee:  { label: 'Signalée',  bg: '#FEF2F2', color: '#991B1B', border: '#FCA5A5' },

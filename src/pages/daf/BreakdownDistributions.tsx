@@ -5,7 +5,7 @@ import { fr } from 'date-fns/locale';
 import { Wrench, FileDown, Printer, RefreshCw, Filter, Loader2, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const fmt = (n: number) => new Intl.NumberFormat('fr-CI').format(Math.round(n)) + ' FCFA';
+const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n)).replace(/\s/g, ' ') + ' FCFA';
 
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
   signalee: { label: 'Signalée', bg: '#FEF2F2', color: '#991B1B' },
