@@ -169,6 +169,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
     <div class="logo"><img src="/LOGO_SBTA_-1.png" alt="SBTA"/></div>
     <div class="brand">
       <div class="brand-name">SBTA</div>
+      <div class="brand-sub">Société Bonkoungou Transport de l&apos;Angély</div>
       <div class="brand-sub">${escapeHtml(phoneLine)}</div>
     </div>
   </div>
@@ -217,55 +218,66 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
   body { margin: 0; padding: 0; }
-  .ticket-container { width: 100%; max-width: 480px; margin: 0 auto; padding: 2px; }
+  .ticket-container { width: 100%; max-width: 480px; margin: 0 auto; padding: 0; }
 
-  .ticket-block { width: 100%; }
+  .ticket-block { width: 100%; overflow: hidden; }
 
-  .header { display: flex; align-items: center; justify-content: space-between; padding: 1px 0 2px; gap: 6px; }
-  .logo { flex: 0 0 auto; width: 52px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 1px 0 2px; gap: 4px; }
+  .logo { flex: 0 0 auto; width: 48px; }
   .logo img { width: 100%; height: auto; display: block; }
-  .brand { flex: 1 1 auto; text-align: right; line-height: 1.1; }
+  .brand { flex: 1 1 auto; text-align: center; line-height: 1.15; }
   .brand-name { font-size: 22px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
   .brand-sub { font-size: 9px; }
 
-  .souche-title { font-style: italic; font-weight: bold; font-size: 16px; text-align: center; margin: 2px 0; }
+  .souche-title { font-style: italic; font-weight: bold; font-size: 18px; text-align: center; margin: 4px 0; padding: 4px 0; border-top: 2px dashed #000; border-bottom: 2px dashed #000; }
 
-  .section { border-bottom: 1px dashed #000; padding: 2px 1px; }
+  .section { border-bottom: 1px dashed #000; padding: 2px 0; overflow: hidden; }
   .section:first-of-type { border-top: 1px dashed #000; }
 
-  .depart-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 3px 2px; font-size: 18px; font-weight: 900; }
+  .depart-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 3px 0; font-size: 18px; font-weight: 900; }
   .depart-label { flex: 0 0 auto; }
   .depart-sep { flex: 1 1 auto; text-align: center; border-left: 1px solid #000; height: 18px; align-self: center; margin: 0 auto; width: 0; }
   .depart-num { flex: 0 0 auto; }
 
-  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 900; padding: 3px 2px; }
-  .route-from { flex: 0 0 auto; }
-  .route-to { flex: 1 1 auto; text-align: right; word-break: break-word; }
+  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 13px; font-weight: 900; padding: 3px 0; overflow: hidden; }
+  .route-from { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .route-to { flex: 1 1 auto; text-align: right; word-break: break-word; overflow: hidden; text-overflow: ellipsis; }
   .route-to .arrow { font-weight: 900; }
 
-  .line { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 11px; padding: 1px 0; }
+  .line { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 11px; padding: 1px 0; overflow: hidden; }
   .line .lbl { flex: 0 0 auto; }
-  .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; word-break: break-word; }
+  .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; word-break: break-word; overflow: hidden; text-overflow: ellipsis; }
   .val-strong { font-weight: 900; font-size: 12px; }
 
-  .notes { padding: 2px 1px; }
+  .notes { padding: 2px 0; }
   .note { text-align: center; font-size: 10px; }
 
   .badge { text-align: center; font-weight: bold; padding: 2px 0; font-size: 11px; }
 
-  .footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 1px 1px; font-size: 9px; }
+  .footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 1px; font-size: 9px; overflow: hidden; }
 
-  .cut { margin: 4px 0 2px; border-top: 1px dashed #000; }
+  .tear-zone {
+    margin: 2px 0;
+    height: 14px;
+    background: repeating-linear-gradient(135deg, #d0d0d0 0, #d0d0d0 3px, #f5f5f5 3px, #f5f5f5 6px);
+    border-top: 2px dashed #000;
+    border-bottom: 2px dashed #000;
+    text-align: center;
+    font-size: 8px;
+    color: #888;
+    line-height: 14px;
+    letter-spacing: 2px;
+  }
 
   @media print {
     body { margin: 0; padding: 0; background: #fff; }
-    .ticket-container { width: 100% !important; max-width: 480px !important; margin: 0 auto !important; padding: 2px; }
+    .ticket-container { width: 100% !important; max-width: 480px !important; margin: 0 auto !important; padding: 0; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style></head><body>
   <div class="ticket-container">
     ${block(false)}
-    <div class="cut"></div>
+    <div class="tear-zone">✂ ✂ ✂</div>
     ${block(true)}
   </div>
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>

@@ -120,10 +120,12 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
     parts.push(setAlign('center'), text(line), lineFeed());
   }
   parts.push(setAlign('center'), setBold(true), text('SBTA TRANSPORT'), lineFeed());
-  parts.push(setBold(false), text(stationName ?? 'Gare'), lineFeed());
+  parts.push(setBold(false), text('Societe Bonkoungou'), lineFeed());
+  parts.push(text('Transport de l\'Agnely'), lineFeed());
   if (data.phoneLine) {
     parts.push(text(`Tel ${data.phoneLine}`), lineFeed());
   }
+  parts.push(text(stationName ?? 'Gare'), lineFeed());
   parts.push(text(dashLine(w)), lineFeed());
 
   // Body — compact: combine fields on the same line to halve ticket length
@@ -164,6 +166,37 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
     parts.push(text(line), lineFeed());
   }
   parts.push(text('Bon voyage!'), lineFeed());
+
+  // Tear zone + souche (stub copy)
+  parts.push(lineFeed(1));
+  parts.push(text('='.repeat(w)), lineFeed());
+  parts.push(text('  *  *  *  TEAR HERE  *  *  *  '), lineFeed());
+  parts.push(text('='.repeat(w)), lineFeed());
+
+  // Souche header
+  parts.push(setAlign('center'), setBold(true), text('SOUCHE'), lineFeed(), setBold(false));
+
+  // Souche body — same compact layout
+  parts.push(setAlign('left'));
+  parts.push(setBold(true), text(`${padRight('Ligne:', 8)}${routeName}`), lineFeed(), setBold(false));
+  parts.push(text(`${padRight(depLabel, 14)}${dateShort}`), lineFeed());
+  parts.push(setDouble(true), text(padRight(seatTarif, w - tarifPart.length)), text(tarifPart), lineFeed(), setNormal());
+  parts.push(setBold(true), text(`${padRight('Car:', 5)}${padRight(carStr, 10)}N:${ticketStr}`), lineFeed(), setBold(false));
+
+  if (ticket.is_reduced) {
+    parts.push(setBold(true), text('** REDUCTION **'), lineFeed(), setBold(false));
+  }
+  if (ticket.is_reported) {
+    parts.push(setBold(true), text('** TICKET REPORTE **'), lineFeed(), setBold(false));
+  }
+
+  parts.push(text(dashLine(w)), lineFeed());
+
+  // Footer (souche)
+  parts.push(setAlign('center'));
+  for (const line of settings.footer_lines) {
+    parts.push(text(line), lineFeed());
+  }
 
   parts.push(lineFeed(1));
   if (settings.auto_cut) parts.push(cutPaper());
