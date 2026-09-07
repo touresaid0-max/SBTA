@@ -365,41 +365,6 @@ export async function cloturerDepart(
   return updated;
 }
 
-function parseAsUtc(iso: string): Date {
-  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso)) return new Date(iso);
-  return new Date(iso + 'Z');
-}
-
-export async function autoCloturePastDeparts(stationId?: string, counterId?: string, userName?: string): Promise<number> {
-  let serverNow: Date;
-  try {
-    const { data } = await supabase.rpc('now_utc');
-    serverNow = data ? new Date(data as string) : new Date();
-  } catch {
-    serverNow = new Date();
-  }
-  const nowMs = serverNow.getTime();
-
-  const all = await getAll<DepartRecord>('departs');
-  let closedCount = 0;
-  for (const d of all) {
-    if (d.cloture || d.cancelled) continue;
-    if (stationId && d.station_id !== stationId && !(d.seat_allocations?.some(a => a.station_id === stationId) ?? false) && d.other_station_id !== stationId) continue;
-    if (counterId && d.counter_id !== counterId) continue;
-    const depDateTime = parseAsUtc(d.departure_datetime);
-    if (isNaN(depDateTime.getTime())) continue;
-    if (depDateTime.getTime() < nowMs) {
-      try {
-        await cloturerDepart(d.id, userName);
-        closedCount++;
-      } catch {
-        // non-critical: skip on error
-      }
-    }
-  }
-  return closedCount;
-}
-
 export async function getDepartsForOtherStations(currentStationId: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
   let result = all.filter(d => {
