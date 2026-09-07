@@ -140,8 +140,6 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
   const originCity = (routeParts[0] ?? stationName ?? 'ABIDJAN').toUpperCase();
   const destCity   = (routeParts[routeParts.length - 1] ?? ticket.destination).toUpperCase();
-  const gareDepart  = escapeHtml(stationName ?? 'GARE SBTA').toUpperCase();
-  const gareArrivee = escapeHtml(ticket.destination).toUpperCase();
   const seatStr    = ticket.seat_number ? String(ticket.seat_number) : '—';
   const tarifStr   = ticket.price.toLocaleString('fr-FR') + ' f';
   const carPlate   = escapeHtml(depart.bus_plate ?? '—').toUpperCase();
@@ -166,70 +164,52 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
   const block = (isSouche: boolean) => `
 <div class="ticket-block">
-
   ${!isSouche ? `
   <div class="header">
-    <div class="logo">
-      <img src="/LOGO_SBTA_-1.png" alt="SBTA"/>
-    </div>
+    <div class="logo"><img src="/LOGO_SBTA_-1.png" alt="SBTA"/></div>
     <div class="brand">
       <div class="brand-name">SBTA</div>
-      <div class="brand-sub">Societe Bonkoungou Transport de L&apos;Agneby</div>
       <div class="brand-sub">${escapeHtml(phoneLine)}</div>
     </div>
   </div>
   ` : `
   <div class="souche-title">SOUCHE</div>
   `}
-
   <div class="section depart-row">
     <span class="depart-label">DEPART</span>
     <span class="depart-sep"></span>
     <span class="depart-num">${escapeHtml(depNum)}</span>
   </div>
-
   <div class="section route-row">
     <span class="route-from">${escapeHtml(originCity)}</span>
     <span class="route-to"><span class="arrow">=&gt;</span> ${escapeHtml(destCity)}</span>
   </div>
-
-  <div class="section">
-    <div class="line"><span class="lbl">GARE DEPART</span><span class="val">${gareDepart}</span></div>
-    <div class="line"><span class="lbl">GARE ARRIVEE</span><span class="val">${gareArrivee}</span></div>
-  </div>
-
   <div class="section">
     <div class="line">
       <span class="lbl">SIEGE&nbsp;&nbsp;<b class="val-strong">${escapeHtml(seatStr)}</b></span>
       <span class="val">TARIF&nbsp;&nbsp;<b class="val-strong">${escapeHtml(tarifStr)}</b></span>
     </div>
   </div>
-
   <div class="section">
     <div class="line">
       <span class="lbl">CAR&nbsp;&nbsp;<b>${carPlate}</b></span>
       <span class="val">N°TICKET&nbsp;&nbsp;<b>${ticketNum}</b></span>
     </div>
   </div>
-
   <div class="section">
     <div class="line">
       <span class="lbl">DATE :&nbsp;&nbsp;<b>${escapeHtml(dateStr)}</b></span>
       <span class="val">HEURE:&nbsp;&nbsp;<b>${escapeHtml(timeStr)}</b></span>
     </div>
   </div>
-
   ${reducedBadge}${reportedBadge}
-
   ${!isSouche ? `
   ${customNotes.map(note => `<div class="section notes"><div class="note">${escapeHtml(note)}</div></div>`).join('')}
   ` : ''}
-
   <div class="footer">
     <span>V10&nbsp;&nbsp;Imprimer le :</span>
     <span>${escapeHtml(printedAt)}</span>
   </div>
-
 </div>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
@@ -237,49 +217,49 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
   body { margin: 0; padding: 0; }
-  .ticket-container { width: 100%; max-width: 480px; margin: 0 auto; padding: 10px; }
+  .ticket-container { width: 100%; max-width: 480px; margin: 0 auto; padding: 2px; }
 
   .ticket-block { width: 100%; }
 
-  .header { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 8px; gap: 8px; }
-  .logo { flex: 0 0 auto; width: 78px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 1px 0 2px; gap: 6px; }
+  .logo { flex: 0 0 auto; width: 52px; }
   .logo img { width: 100%; height: auto; display: block; }
-  .brand { flex: 1 1 auto; text-align: right; line-height: 1.25; }
-  .brand-name { font-size: 30px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
-  .brand-sub { font-size: 11px; }
+  .brand { flex: 1 1 auto; text-align: right; line-height: 1.1; }
+  .brand-name { font-size: 22px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
+  .brand-sub { font-size: 9px; }
 
-  .souche-title { font-style: italic; font-weight: bold; font-size: 20px; text-align: center; margin: 10px 0; }
+  .souche-title { font-style: italic; font-weight: bold; font-size: 16px; text-align: center; margin: 2px 0; }
 
-  .section { border-bottom: 1.5px dashed #000; padding: 6px 2px; }
-  .section:first-of-type { border-top: 1.5px dashed #000; }
+  .section { border-bottom: 1px dashed #000; padding: 2px 1px; }
+  .section:first-of-type { border-top: 1px dashed #000; }
 
-  .depart-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; font-size: 22px; font-weight: 900; }
+  .depart-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 3px 2px; font-size: 18px; font-weight: 900; }
   .depart-label { flex: 0 0 auto; }
-  .depart-sep { flex: 1 1 auto; text-align: center; border-left: 1.5px solid #000; height: 22px; align-self: center; margin: 0 auto; width: 0; }
+  .depart-sep { flex: 1 1 auto; text-align: center; border-left: 1px solid #000; height: 18px; align-self: center; margin: 0 auto; width: 0; }
   .depart-num { flex: 0 0 auto; }
 
-  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 15px; font-weight: 900; padding: 8px 4px; }
+  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 900; padding: 3px 2px; }
   .route-from { flex: 0 0 auto; }
   .route-to { flex: 1 1 auto; text-align: right; word-break: break-word; }
   .route-to .arrow { font-weight: 900; }
 
-  .line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
+  .line { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 11px; padding: 1px 0; }
   .line .lbl { flex: 0 0 auto; }
   .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; word-break: break-word; }
-  .val-strong { font-weight: 900; font-size: 14px; }
+  .val-strong { font-weight: 900; font-size: 12px; }
 
-  .notes { padding: 4px 2px; }
-  .note { text-align: center; font-size: 11px; }
+  .notes { padding: 2px 1px; }
+  .note { text-align: center; font-size: 10px; }
 
-  .badge { text-align: center; font-weight: bold; padding: 4px 0; font-size: 12px; }
+  .badge { text-align: center; font-weight: bold; padding: 2px 0; font-size: 11px; }
 
-  .footer { display: flex; align-items: center; justify-content: space-between; padding: 6px 2px 2px; font-size: 10px; }
+  .footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 1px 1px; font-size: 9px; }
 
-  .cut { margin: 12px 0 6px; border-top: 2px dashed #000; }
+  .cut { margin: 4px 0 2px; border-top: 1px dashed #000; }
 
   @media print {
     body { margin: 0; padding: 0; background: #fff; }
-    .ticket-container { width: 100% !important; max-width: 480px !important; margin: 0 auto !important; padding: 10px; }
+    .ticket-container { width: 100% !important; max-width: 480px !important; margin: 0 auto !important; padding: 2px; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style></head><body>

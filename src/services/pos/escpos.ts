@@ -126,34 +126,32 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   }
   parts.push(text(dashLine(w)), lineFeed());
 
-  // Body
-  parts.push(setAlign('left'), setBold(true), text('TICKET PASSAGER'), lineFeed(), setBold(false));
+  // Body — compact: combine fields on the same line to halve ticket length
+  parts.push(setAlign('left'));
 
-  parts.push(text(`${padRight('Gare:', 12)}${stationName ?? '-'}`), lineFeed());
-  parts.push(text(`${padRight('Ligne:', 12)}${depart.route_name ?? '-'}`), lineFeed());
-  parts.push(text(`${padRight('Destination:', 12)}${ticket.destination}`), lineFeed());
-  parts.push(text(`${padRight('N° Siège:', 12)}${ticket.seat_number}`), lineFeed());
-  parts.push(text(`${padRight('Climatisé:', 12)}${ticket.is_ac ? 'OUI' : 'NON'}`), lineFeed());
+  // Ligne + Départ N° on same line
+  const routeName = (depart.route_name ?? '-').slice(0, w - 14);
+  parts.push(setBold(true), text(`${padRight('Ligne:', 8)}${routeName}`), lineFeed(), setBold(false));
+  const depLabel = `Dep.${depart.route_number ?? '-'}`;
+  const dateShort = formatDateTime(depart.departure_datetime).slice(0, 10);
+  parts.push(text(`${padRight(depLabel, 14)}${dateShort}`), lineFeed());
+
+  // Siège + Tarif on same line
+  const seatTarif = `${padRight('Siege:', 8)}${String(ticket.seat_number)}`;
+  const tarifPart = `${ticket.price} F`;
+  parts.push(setDouble(true), text(padRight(seatTarif, w - tarifPart.length)), text(tarifPart), lineFeed(), setNormal());
+
+  // Car + N° Ticket on same line
+  const carStr = (depart.bus_plate ?? '-').slice(0, 14);
+  const ticketStr = ticket.ticket_number.slice(0, w - 16);
+  parts.push(setBold(true), text(`${padRight('Car:', 5)}${padRight(carStr, 10)}N:${ticketStr}`), lineFeed(), setBold(false));
 
   if (ticket.is_reduced) {
-    parts.push(setBold(true), text('  ** REDUCTION **'), lineFeed(), setBold(false));
+    parts.push(setBold(true), text('** REDUCTION **'), lineFeed(), setBold(false));
   }
   if (ticket.is_reported) {
-    parts.push(setBold(true), text('  ** TICKET REPORTE **'), lineFeed(), setBold(false));
+    parts.push(setBold(true), text('** TICKET REPORTE **'), lineFeed(), setBold(false));
   }
-
-  parts.push(text(dashLine(w)), lineFeed());
-
-  // Price
-  parts.push(setDouble(true), text(`${padRight('Tarif:', 12)}`), text(`${ticket.price} FCFA`), lineFeed());
-  parts.push(setNormal(), lineFeed());
-
-  // Ticket number
-  parts.push(setBold(true), text(`${padRight('N° Ticket:', 12)}`), text(ticket.ticket_number), lineFeed(), setBold(false));
-
-  // Date/time
-  parts.push(text(`${padRight('Date:', 12)}${formatDateTime(depart.departure_datetime)}`), lineFeed());
-  parts.push(text(`${padRight('Départ N°:', 12)}${depart.route_number} (${depart.route_name ?? ''})`), lineFeed());
 
   parts.push(text(dashLine(w)), lineFeed());
 
@@ -167,7 +165,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   }
   parts.push(text('Bon voyage!'), lineFeed());
 
-  parts.push(lineFeed(2));
+  parts.push(lineFeed(1));
   if (settings.auto_cut) parts.push(cutPaper());
 
   return concat(...parts);
