@@ -223,6 +223,16 @@ function mapRemoteReservationToLocalTicket(r: Record<string, unknown>): Record<s
 export async function syncDepartsAndTicketsFromServer(stationId?: string): Promise<void> {
   if (!isOnline()) return;
   try {
+    // Auto-close departures from past days (server UTC midnight rollover)
+    // This runs BEFORE syncing so closed status is reflected in the pulled data
+    try {
+      await supabase.rpc('auto_terminate_past_schedules', {
+        p_station_id: stationId ?? null,
+      });
+    } catch {
+      // Non-critical: continue with sync even if auto-terminate fails
+    }
+
     const todayStr = new Date().toISOString().slice(0, 10);
     let scheduleQuery = supabase
       .from('schedules')

@@ -431,7 +431,7 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'fermer') {
-        await updateDepart(depart.id, { cloture: true, status: 'closed' });
+        await updateDepart(depart.id, { cloture: true });
       }
       if (action === 'modifier') {
         const [vehs, chfs] = await Promise.all([getVehicules(), getChauffeurs()]);
