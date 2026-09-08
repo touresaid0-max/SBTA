@@ -110,7 +110,7 @@ function formatDateTime(iso: string): string {
 }
 
 export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 40 : 30;
+  const w = settings.width_mm === 80 ? 42 : 32;
   const innerW = w - 2;
   const { ticket, depart, stationName } = data;
 
@@ -123,7 +123,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   parts.push(setBold(false), text('Societe Bonkoungou'), lineFeed());
   parts.push(text('Transport de l\'Agnely'), lineFeed());
   if (data.phoneLine) {
-    parts.push(text(`Tel ${data.phoneLine}`), lineFeed());
+    parts.push(setBold(true), text(`Tel ${data.phoneLine}`), lineFeed(), setBold(false));
   }
   parts.push(text(stationName ?? 'Gare'), lineFeed());
   parts.push(text(`+${'-'.repeat(innerW)}+`), lineFeed());

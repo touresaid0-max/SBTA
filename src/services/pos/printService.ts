@@ -170,7 +170,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
     <div class="brand">
       <div class="brand-name">SBTA</div>
       <div class="brand-sub">Société Bonkoungou Transport de l&apos;Angély</div>
-      <div class="brand-sub">${escapeHtml(phoneLine)}</div>
+      <div class="brand-sub phone">${escapeHtml(phoneLine)}</div>
     </div>
   </div>
   ` : `
@@ -213,7 +213,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   </div>
 </div>`;
 
-  const innerW = mm === 80 ? 300 : 210;
+  const innerW = mm === 80 ? 320 : 224;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
   @page { size: ${mm}mm auto; margin: 0; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -231,6 +231,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   .brand { flex: 1 1 auto; text-align: center; line-height: 1.15; min-width: 0; }
   .brand-name { font-size: 21px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
   .brand-sub { font-size: 8px; white-space: normal; word-break: break-word; }
+  .brand-sub.phone { font-size: 11px; font-weight: 700; }
 
   .souche-title { font-style: italic; font-weight: bold; font-size: 17px; text-align: center; margin: 0; padding: 4px 4px; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
 
