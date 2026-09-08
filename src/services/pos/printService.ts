@@ -162,8 +162,8 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   const reducedBadge = ticket.is_reduced ? `<div class="badge">** REDUCTION APPLIQUEE **</div>` : '';
   const reportedBadge = ticket.is_reported ? `<div class="badge">** TICKET REPORTE **</div>` : '';
 
-  const block = (isSouche: boolean) => `
-<div class="ticket-block">
+  const block = (isSouche: boolean, isFirst: boolean) => `
+<div class="ticket-block${isFirst ? ' first' : ' last'}">
   ${!isSouche ? `
   <div class="header">
     <div class="logo"><img src="/LOGO_SBTA_-1.png" alt="SBTA"/></div>
@@ -213,55 +213,60 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   </div>
 </div>`;
 
+  const innerW = mm === 80 ? 300 : 210;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
   @page { size: ${mm}mm auto; margin: 0; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
   body { margin: 0; padding: 0; }
-  .ticket-container { width: 100%; max-width: 480px; margin: 0 auto; padding: 0; }
+  .ticket-container { width: ${innerW}px; margin: 0 auto; padding: 0; }
 
-  .ticket-block { width: 100%; overflow: hidden; }
+  .ticket-block { width: 100%; border-left: 1px solid #000; border-right: 1px solid #000; overflow: hidden; }
+  .ticket-block.first { border-top: 1px solid #000; }
+  .ticket-block.last { border-bottom: 1px solid #000; }
 
-  .header { display: flex; align-items: center; justify-content: space-between; padding: 1px 0 2px; gap: 4px; }
-  .logo { flex: 0 0 auto; width: 48px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 3px; gap: 4px; }
+  .logo { flex: 0 0 auto; width: 44px; }
   .logo img { width: 100%; height: auto; display: block; }
-  .brand { flex: 1 1 auto; text-align: center; line-height: 1.15; }
-  .brand-name { font-size: 22px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
-  .brand-sub { font-size: 9px; }
+  .brand { flex: 1 1 auto; text-align: center; line-height: 1.15; min-width: 0; }
+  .brand-name { font-size: 21px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
+  .brand-sub { font-size: 8px; white-space: normal; word-break: break-word; }
 
-  .souche-title { font-style: italic; font-weight: bold; font-size: 18px; text-align: center; margin: 4px 0; padding: 4px 0; border-top: 2px dashed #000; border-bottom: 2px dashed #000; }
+  .souche-title { font-style: italic; font-weight: bold; font-size: 17px; text-align: center; margin: 0; padding: 4px 4px; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
 
-  .section { border-bottom: 1px dashed #000; padding: 2px 0; overflow: hidden; }
+  .section { border-bottom: 1px dashed #000; padding: 2px 4px; }
   .section:first-of-type { border-top: 1px dashed #000; }
 
-  .depart-row { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 3px 0; font-size: 18px; font-weight: 900; }
+  .depart-row { display: flex; align-items: center; justify-content: space-between; padding: 3px 4px; font-size: 17px; font-weight: 900; }
   .depart-label { flex: 0 0 auto; }
-  .depart-sep { flex: 1 1 auto; text-align: center; border-left: 1px solid #000; height: 18px; align-self: center; margin: 0 auto; width: 0; }
+  .depart-sep { flex: 1 1 auto; text-align: center; border-left: 1px solid #000; height: 17px; align-self: center; margin: 0 auto; width: 0; }
   .depart-num { flex: 0 0 auto; }
 
-  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 13px; font-weight: 900; padding: 3px 0; overflow: hidden; }
-  .route-from { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .route-to { flex: 1 1 auto; text-align: right; word-break: break-word; overflow: hidden; text-overflow: ellipsis; }
+  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 12px; font-weight: 900; padding: 3px 4px; }
+  .route-from { flex: 0 1 auto; white-space: normal; word-break: break-word; }
+  .route-to { flex: 1 1 auto; text-align: right; white-space: normal; word-break: break-word; }
   .route-to .arrow { font-weight: 900; }
 
-  .line { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 11px; padding: 1px 0; overflow: hidden; }
-  .line .lbl { flex: 0 0 auto; }
-  .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; word-break: break-word; overflow: hidden; text-overflow: ellipsis; }
-  .val-strong { font-weight: 900; font-size: 12px; }
+  .line { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 10px; padding: 1px 4px; flex-wrap: wrap; }
+  .line .lbl { flex: 0 0 auto; white-space: normal; word-break: break-word; }
+  .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; white-space: normal; word-break: break-word; }
+  .val-strong { font-weight: 900; font-size: 11px; }
 
-  .notes { padding: 2px 0; }
-  .note { text-align: center; font-size: 10px; }
+  .notes { padding: 2px 4px; }
+  .note { text-align: center; font-size: 9px; white-space: normal; word-break: break-word; }
 
-  .badge { text-align: center; font-weight: bold; padding: 2px 0; font-size: 11px; }
+  .badge { text-align: center; font-weight: bold; padding: 2px 4px; font-size: 10px; white-space: normal; word-break: break-word; border-bottom: 1px dashed #000; }
 
-  .footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 1px; font-size: 9px; overflow: hidden; }
+  .footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 1px; font-size: 8px; white-space: normal; word-break: break-word; }
 
   .tear-zone {
-    margin: 2px 0;
+    margin: 0;
     height: 14px;
     background: repeating-linear-gradient(135deg, #d0d0d0 0, #d0d0d0 3px, #f5f5f5 3px, #f5f5f5 6px);
-    border-top: 2px dashed #000;
-    border-bottom: 2px dashed #000;
+    border-top: 1px dashed #000;
+    border-bottom: 1px dashed #000;
+    border-left: 1px solid #000;
+    border-right: 1px solid #000;
     text-align: center;
     font-size: 8px;
     color: #888;
@@ -271,14 +276,14 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
   @media print {
     body { margin: 0; padding: 0; background: #fff; }
-    .ticket-container { width: 100% !important; max-width: 480px !important; margin: 0 auto !important; padding: 0; }
+    .ticket-container { width: ${innerW}px !important; margin: 0 auto !important; padding: 0; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style></head><body>
   <div class="ticket-container">
-    ${block(false)}
+    ${block(false, true)}
     <div class="tear-zone">✂ ✂ ✂</div>
-    ${block(true)}
+    ${block(true, false)}
   </div>
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
 </body></html>`;

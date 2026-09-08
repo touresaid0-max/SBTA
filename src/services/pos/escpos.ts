@@ -110,12 +110,12 @@ function formatDateTime(iso: string): string {
 }
 
 export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 42 : 32;
+  const w = settings.width_mm === 80 ? 40 : 30;
+  const innerW = w - 2;
   const { ticket, depart, stationName } = data;
 
   const parts: Uint8Array[] = [init()];
-
-  // Header (custom)
+  const vLine = (content: string): string => `|${content.padEnd(innerW).slice(0, innerW)}|`;
   for (const line of settings.header_lines) {
     parts.push(setAlign('center'), text(line), lineFeed());
   }
@@ -126,48 +126,57 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
     parts.push(text(`Tel ${data.phoneLine}`), lineFeed());
   }
   parts.push(text(stationName ?? 'Gare'), lineFeed());
-  parts.push(text(dashLine(w)), lineFeed());
+  parts.push(text(`+${'-'.repeat(innerW)}+`), lineFeed());
 
   // Body — compact: combine fields on the same line to halve ticket length
   parts.push(setAlign('left'));
-
-  // Ligne + Départ N° on same line
-  const routeName = (depart.route_name ?? '-').slice(0, w - 14);
-  parts.push(setBold(true), text(`${padRight('Ligne:', 8)}${routeName}`), lineFeed(), setBold(false));
+  const routeNameFull = (depart.route_name ?? '-');
+  const routeName = routeNameFull.slice(0, innerW - 8);
+  parts.push(setBold(true), text(vLine(`${padRight('Ligne:', 8)}${routeName}`)), lineFeed(), setBold(false));
+  if (routeNameFull.length > innerW - 8) {
+    parts.push(text(vLine(routeNameFull.slice(innerW - 8))), lineFeed());
+  }
   const depLabel = `Dep.${depart.route_number ?? '-'}`;
   const dateShort = formatDateTime(depart.departure_datetime).slice(0, 10);
-  parts.push(text(`${padRight(depLabel, 14)}${dateShort}`), lineFeed());
+  parts.push(text(vLine(`${padRight(depLabel, 14)}${dateShort}`)), lineFeed());
 
-  // Siège + Tarif on same line
-  const seatTarif = `${padRight('Siege:', 8)}${String(ticket.seat_number)}`;
+  const seatStr = String(ticket.seat_number ?? '-');
   const tarifPart = `${ticket.price} F`;
-  parts.push(setDouble(true), text(padRight(seatTarif, w - tarifPart.length)), text(tarifPart), lineFeed(), setNormal());
+  const seatLine = `${padRight('Siege:', 8)}${seatStr}`;
+  const seatPad = Math.max(innerW - tarifPart.length, seatLine.length + 2);
+  if (seatLine.length <= seatPad) {
+    parts.push(setDouble(true), text(vLine(padRight(seatLine, innerW - tarifPart.length) + tarifPart)), lineFeed(), setNormal());
+  } else {
+    parts.push(setDouble(true), text(vLine(padRight(seatLine, innerW))), lineFeed(), text(vLine(padRight(tarifPart, innerW))), lineFeed(), setNormal());
+  }
 
-  // Car + N° Ticket on same line
   const carStr = (depart.bus_plate ?? '-').slice(0, 14);
-  const ticketStr = ticket.ticket_number.slice(0, w - 16);
-  parts.push(setBold(true), text(`${padRight('Car:', 5)}${padRight(carStr, 10)}N:${ticketStr}`), lineFeed(), setBold(false));
+  const ticketStr = ticket.ticket_number;
+  const carLine = `${padRight('Car:', 5)}${padRight(carStr, 10)}N:${ticketStr}`;
+  if (carLine.length <= innerW) {
+    parts.push(setBold(true), text(vLine(carLine)), lineFeed(), setBold(false));
+  } else {
+    parts.push(setBold(true), text(vLine(`${padRight('Car:', 5)}${carStr}`)), lineFeed(), text(vLine(`N:${ticketStr.slice(0, innerW)}`)), lineFeed(), setBold(false));
+    if (ticketStr.length > innerW - 2) {
+      parts.push(text(vLine(ticketStr.slice(innerW - 2))), lineFeed());
+    }
+  }
 
   if (ticket.is_reduced) {
-    parts.push(setBold(true), text('** REDUCTION **'), lineFeed(), setBold(false));
+    parts.push(setBold(true), text(vLine('** REDUCTION APPLIQUEE **')), lineFeed(), setBold(false));
   }
   if (ticket.is_reported) {
-    parts.push(setBold(true), text('** TICKET REPORTE **'), lineFeed(), setBold(false));
+    parts.push(setBold(true), text(vLine('** TICKET REPORTE **')), lineFeed(), setBold(false));
   }
 
-  parts.push(text(dashLine(w)), lineFeed());
+  parts.push(text(`+${'-'.repeat(innerW)}+`), lineFeed());
 
-  // QR code with ticket number
-  parts.push(qrCode(ticket.ticket_number), lineFeed());
-
-  // Footer (custom)
   parts.push(setAlign('center'));
   for (const line of settings.footer_lines) {
     parts.push(text(line), lineFeed());
   }
   parts.push(text('Bon voyage!'), lineFeed());
 
-  // Tear zone + souche (stub copy)
   parts.push(lineFeed(1));
   parts.push(text('='.repeat(w)), lineFeed());
   parts.push(text('  *  *  *  TEAR HERE  *  *  *  '), lineFeed());
@@ -176,21 +185,34 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   // Souche header
   parts.push(setAlign('center'), setBold(true), text('SOUCHE'), lineFeed(), setBold(false));
 
-  // Souche body — same compact layout
   parts.push(setAlign('left'));
-  parts.push(setBold(true), text(`${padRight('Ligne:', 8)}${routeName}`), lineFeed(), setBold(false));
-  parts.push(text(`${padRight(depLabel, 14)}${dateShort}`), lineFeed());
-  parts.push(setDouble(true), text(padRight(seatTarif, w - tarifPart.length)), text(tarifPart), lineFeed(), setNormal());
-  parts.push(setBold(true), text(`${padRight('Car:', 5)}${padRight(carStr, 10)}N:${ticketStr}`), lineFeed(), setBold(false));
+  parts.push(setBold(true), text(vLine(`${padRight('Ligne:', 8)}${routeName}`)), lineFeed(), setBold(false));
+  if (routeNameFull.length > innerW - 8) {
+    parts.push(text(vLine(routeNameFull.slice(innerW - 8))), lineFeed());
+  }
+  parts.push(text(vLine(`${padRight(depLabel, 14)}${dateShort}`)), lineFeed());
+  if (seatLine.length <= seatPad) {
+    parts.push(setDouble(true), text(vLine(padRight(seatLine, innerW - tarifPart.length) + tarifPart)), lineFeed(), setNormal());
+  } else {
+    parts.push(setDouble(true), text(vLine(padRight(seatLine, innerW))), lineFeed(), text(vLine(padRight(tarifPart, innerW))), lineFeed(), setNormal());
+  }
+  if (carLine.length <= innerW) {
+    parts.push(setBold(true), text(vLine(carLine)), lineFeed(), setBold(false));
+  } else {
+    parts.push(setBold(true), text(vLine(`${padRight('Car:', 5)}${carStr}`)), lineFeed(), text(vLine(`N:${ticketStr.slice(0, innerW)}`)), lineFeed(), setBold(false));
+    if (ticketStr.length > innerW - 2) {
+      parts.push(text(vLine(ticketStr.slice(innerW - 2))), lineFeed());
+    }
+  }
 
   if (ticket.is_reduced) {
-    parts.push(setBold(true), text('** REDUCTION **'), lineFeed(), setBold(false));
+    parts.push(setBold(true), text(vLine('** REDUCTION APPLIQUEE **')), lineFeed(), setBold(false));
   }
   if (ticket.is_reported) {
-    parts.push(setBold(true), text('** TICKET REPORTE **'), lineFeed(), setBold(false));
+    parts.push(setBold(true), text(vLine('** TICKET REPORTE **')), lineFeed(), setBold(false));
   }
 
-  parts.push(text(dashLine(w)), lineFeed());
+  parts.push(text(`+${'-'.repeat(innerW)}+`), lineFeed());
 
   // Footer (souche)
   parts.push(setAlign('center'));
