@@ -293,51 +293,79 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string {
   const { bagage, depart, stationName, phoneLine } = data;
   const widthPx = settings.width_mm === 80 ? 320 : 224;
-  const headerHtml = settings.header_lines.map(l => `<div class="hdr">${escapeHtml(l)}</div>`).join('');
-  const footerHtml = settings.footer_lines.map(l => `<div class="ftr">${escapeHtml(l)}</div>`).join('');
-  const phoneHtml = phoneLine ? `<div class="center bold">Tel ${escapeHtml(phoneLine)}</div>` : '';
-  const destFull = escapeHtml(bagage.destination ?? '-');
-  const destLong = (bagage.destination ?? '-').length > 12;
+  const phone = phoneLine || '01 14 34 60 / 01 14 34 87';
+  const dt = formatDateTime(bagage.created_at);
+  const [datePart, timePart] = dt.split(' ');
+  const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
+  const departure = `${depart.route_number ?? '-'} ${(depart.route_name ?? '-').toUpperCase()}`;
+  const destination = (bagage.destination ?? '-').toUpperCase();
+  const owner = (bagage.owner_name ?? '-').toUpperCase();
+  const description = (bagage.description ?? '-').toUpperCase();
+  const car = bagage.car_plate || depart.bus_plate || '-';
+  const mode = bagage.with_ticket ? 'AVEC TICKET' : 'SANS SIEGE';
+  const station = (stationName ?? 'Gare').toUpperCase();
+  const v = (s: string | number | null | undefined) => escapeHtml(String(s ?? '-').trim() || '-');
+
+  const ticketBlock = (isSouche: boolean) => {
+    const rows: string[] = [];
+    const row = (label: string, val: string) =>
+      `<div class="row"><span class="lbl">${label}</span><span class="val">${v(val)}</span></div>`;
+    rows.push(`<div class="border"></div>`);
+    rows.push(`<div class="right bold">SBTA</div>`);
+    rows.push(`<div class="right">Societe Bonkoungou Transport de L'Agneby</div>`);
+    rows.push(`<div class="right">Tel ${v(phone)}</div>`);
+    rows.push(`<div class="sep"></div>`);
+    rows.push(`<div class="title">${isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'}</div>`);
+    rows.push(`<div class="title">${mode}</div>`);
+    rows.push(`<div class="sep"></div>`);
+    rows.push(row('N BAGAGE', bagage.bagage_number));
+    if (bagage.with_ticket && bagage.ticket_number) { rows.push(`<div class="sep"></div>`); rows.push(row('TICKET', bagage.ticket_number)); }
+    rows.push(`<div class="sep"></div>`);
+    rows.push(row('DEPART', departure));
+    rows.push(`<div class="sep"></div>`);
+    rows.push(row('PRIX', price));
+    rows.push(`<div class="sep"></div>`);
+    rows.push(row('CAR', car));
+    rows.push(`<div class="sep"></div>`);
+    rows.push(`<div class="row"><span class="lbl">DATE</span><span class="val">${v(datePart)}</span><span class="lbl ml">HEURE</span><span class="val">${v(timePart)}</span></div>`);
+    rows.push(`<div class="sep"></div>`);
+    rows.push(row('PROPRIETAIRE', owner));
+    rows.push(row('CONTACT', bagage.owner_phone));
+    rows.push(`<div class="sep"></div>`);
+    rows.push(`<div class="lbl">DESCRIPTION</div>`);
+    rows.push(`<div>${v(description)}</div>`);
+    rows.push(`<div class="sep"></div>`);
+    rows.push(`<div class="center bold">OK</div>`);
+    rows.push(`<div class="center">${v(station)}</div>`);
+    if (!isSouche) {
+      rows.push(`<div class="small">AUCUN REMBOURSEMENT N EST POSSIBLE APRES ENCAISSEMENT</div>`);
+      rows.push(`<div class="small">NB: PASSE UN DELAI DE 14 JOURS, SBTA N EST PAS RESPONSABLE EN CAS DE</div>`);
+      rows.push(`<div class="small">PERTE DE COLIS.</div>`);
+    }
+    rows.push(`<div class="border"></div>`);
+    return rows.join('');
+  };
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 11px; margin: 0; padding: 0; }
+  * { font-family: 'Courier New', monospace; font-size: 11px; margin: 0; padding: 0; line-height: 1.2; }
   body { width: ${widthPx}px; margin: 0 auto; padding: 1px 2px; }
   .center { text-align: center; }
+  .right { text-align: right; }
   .bold { font-weight: bold; }
-  .hdr { text-align: center; line-height: 1.1; }
-  .ftr { text-align: center; margin-top: 1px; line-height: 1.1; }
-  .dash { border-top: 1px dashed #000; margin: 1px 0; }
-  .row { display:flex; justify-content:space-between; line-height: 1.15; }
-  .row-stack { line-height: 1.15; }
-  .label { font-weight:bold; flex: 0 0 auto; }
-  .val { text-align: right; word-break: break-word; }
-  .title { text-align: center; font-weight: bold; font-size: 13px; padding: 1px 0; }
-  .qr { text-align:center; margin: 1px 0; }
-  .qr svg { width: 80px; height: 80px; }
+  .title { text-align: center; font-weight: bold; font-size: 13px; }
+  .border { border-top: 2px solid #000; border-bottom: 2px solid #000; height: 0; margin: 1px 0; }
+  .sep { border-top: 1px dashed #000; margin: 1px 0; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .lbl { font-weight: bold; flex: 0 0 auto; }
+  .ml { margin-left: 8px; }
+  .val { text-align: right; }
+  .small { font-size: 9px; text-align: center; }
+  .cut { text-align: center; font-size: 9px; margin: 2px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
 </style></head><body>
-  ${headerHtml}
-  <div class="center bold" style="font-size:14px;">SBTA TRANSPORT</div>
-  <div class="center">${escapeHtml(stationName ?? 'Gare')}</div>
-  ${phoneHtml}
-  <div class="dash"></div>
-  <div class="title">RECU BAGAGE</div>
-  <div class="dash"></div>
-  <div class="row"><span class="label">N°:</span><span>${escapeHtml(bagage.bagage_number)}</span></div>
-  ${bagage.with_ticket && bagage.ticket_number ? `<div class="row"><span class="label">Ticket:</span><span>${escapeHtml(bagage.ticket_number)}</span></div>` : ''}
-  ${destLong
-    ? `<div class="row-stack"><span class="label">DESTINATION</span><div>${destFull}</div></div>`
-    : `<div class="row"><span class="label">Dest:</span><span>${destFull}</span></div>`}
-  <div class="row"><span class="label">Prix:</span><span>${bagage.price} FCFA</span></div>
-  <div class="row"><span class="label">Car:</span><span>${escapeHtml(bagage.car_plate || depart.bus_plate || '-')}</span></div>
-  ${bagage.owner_name ? `<div class="row"><span class="label">Nom:</span><span>${escapeHtml(bagage.owner_name)}</span></div>` : ''}
-  ${bagage.owner_phone ? `<div class="row"><span class="label">Tel:</span><span>${escapeHtml(bagage.owner_phone)}</span></div>` : ''}
-  ${bagage.description ? `<div class="row"><span class="label">Desc:</span><span>${escapeHtml(bagage.description)}</span></div>` : ''}
-  <div class="dash"></div>
-  <div class="row"><span class="label">Date:</span><span>${formatDateTime(bagage.created_at)}</span></div>
-  <div class="row"><span class="label">Dep:</span><span>${depart.route_number} ${escapeHtml(depart.route_name ?? '')}</span></div>
-  <div class="dash"></div>
-  <div class="qr">${makeQRText(bagage.bagage_number)}</div>
-  ${footerHtml}
+  ${ticketBlock(false)}
+  <div class="cut">DECOUPER ICI</div>
+  ${ticketBlock(true)}
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
 }

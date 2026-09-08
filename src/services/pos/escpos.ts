@@ -227,65 +227,71 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 }
 
 export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 42 : 32;
+  const w = 42;
+  const innerW = w - 2;
   const { bagage, depart, stationName } = data;
   const parts: Uint8Array[] = [init()];
-  const line = (value = '') => [text(value.slice(0, w)), lineFeed()];
-  const separator = () => line(dashLine(w));
   const value = (input: string | number | null | undefined) => String(input ?? '-').trim() || '-';
-  const fitRight = (label: string, input: string | number | null | undefined) => {
-    const right = value(input).slice(0, w - label.length - 1);
-    return `${label}${' '.repeat(Math.max(1, w - label.length - right.length))}${right}`;
-  };
-  const fitPair = (leftLabel: string, leftValue: string, rightLabel: string, rightValue: string) => {
-    const left = `${leftLabel} ${leftValue}`;
-    const right = `${rightLabel} ${rightValue}`;
-    if (left.length + right.length + 1 <= w) return `${left}${' '.repeat(w - left.length - right.length)}${right}`;
-    return `${left.slice(0, Math.floor(w / 2))}${' '.repeat(Math.max(1, w - Math.floor(w / 2) - right.length))}${right}`.slice(0, w);
-  };
+  const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
   const date = formatDateTime(bagage.created_at);
   const [datePart, timePart] = date.split(' ');
+  const departure = `${value(depart.route_number)} ${value(depart.route_name).toUpperCase()}`;
   const destination = value(bagage.destination).toUpperCase();
   const owner = value(bagage.owner_name).toUpperCase();
-  const contact = value(bagage.owner_phone);
   const description = value(bagage.description).toUpperCase();
-  const departure = `${value(depart.route_number)} ${value(depart.route_name).toUpperCase()}`;
-  const mode = bagage.with_ticket ? 'AVEC TICKET' : 'SANS SIEGE';
   const car = value(bagage.car_plate || depart.bus_plate);
+  const mode = bagage.with_ticket ? 'AVEC TICKET' : 'SANS SIEGE';
+  const station = value(stationName || 'Gare');
+  const line = (input = '') => [text(input.slice(0, w)), lineFeed()];
+  const boxedRaw = (content: string) => `|${content.padEnd(innerW, ' ').slice(0, innerW)}|`;
+  const boxed = (input = '') => line(boxedRaw(input.slice(0, innerW)));
+  const boxedRight = (input: string) => { const s = input.slice(0, innerW); return line(boxedRaw(' '.repeat(Math.max(0, innerW - s.length)) + s)); };
+  const border = () => line('='.repeat(w));
+  const separator = () => line(boxedRaw('-'.repeat(innerW)));
+  const row = (label: string, input: string | number) => {
+    const right = value(input).slice(0, Math.max(1, innerW - label.length - 1));
+    return boxed(`${label}${' '.repeat(Math.max(1, innerW - label.length - right.length))}${right}`);
+  };
+  const dateRow = () => {
+    const left = `DATE    ${datePart}`;
+    const right = `HEURE       ${timePart}`;
+    return boxed(`${left}${' '.repeat(Math.max(1, innerW - left.length - right.length))}${right}`);
+  };
 
   const renderTicket = (isSouche: boolean): void => {
     parts.push(setAlign('left'));
-    parts.push(...line(dashLine(w)));
-    parts.push(setAlign('right'), setBold(true), ...line('SBTA'), setBold(false));
-    parts.push(setAlign('right'), ...line("Societe Bonkoungou Transport de L'Agneby"));
-    parts.push(setAlign('right'), ...line(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`));
-    parts.push(setAlign('left'), ...line(dashLine(w)));
-    parts.push(setAlign('center'), setBold(true), ...line(isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'), ...line(mode), setBold(false));
+    parts.push(...border());
+    parts.push(setBold(true), ...boxedRight('SBTA'), setBold(false));
+    parts.push(...boxedRight("Societe Bonkoungou Transport de L'Agneby"));
+    parts.push(...boxedRight(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`));
+    parts.push(...separator());
+    parts.push(setAlign('center'), setBold(true), ...boxed(isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'), ...boxed(mode), setBold(false));
     parts.push(setAlign('left'), ...separator());
-    parts.push(...line(fitRight('N BAGAGE', bagage.bagage_number)));
+    parts.push(...row('N BAGAGE', bagage.bagage_number));
+    if (bagage.with_ticket && bagage.ticket_number) parts.push(...separator(), ...row('TICKET', bagage.ticket_number));
     parts.push(...separator());
-    parts.push(...line(fitRight('DEPART', departure)));
+    parts.push(...row('DEPART', departure));
     parts.push(...separator());
-    parts.push(...line(fitRight('DESTINATION', destination)));
+    parts.push(...row('PRIX', price));
     parts.push(...separator());
-    parts.push(...line(fitRight('PRIX', `${bagage.price} F`)));
+    parts.push(...row('CAR', car));
     parts.push(...separator());
-    parts.push(...line(fitRight('CAR', car)));
+    parts.push(...dateRow());
     parts.push(...separator());
-    parts.push(...line(fitPair('DATE', datePart, 'HEURE', timePart)));
+    parts.push(...row('PROPRIETAIRE', owner));
+    parts.push(...row('CONTACT', value(bagage.owner_phone)));
     parts.push(...separator());
-    parts.push(...line(fitRight('PROPRIETAIRE', owner)));
-    parts.push(...line(fitRight('CONTACT', contact)));
+    parts.push(...boxed('DESCRIPTION'));
+    parts.push(...boxed(description));
     parts.push(...separator());
-    parts.push(...line('DESCRIPTION'));
-    parts.push(...line(description));
-    parts.push(...separator());
-    parts.push(setAlign('center'), setBold(true), ...line('OK'), setBold(false));
-    parts.push(...line(value(stationName || 'Gare')));
-    parts.push(...line('AUCUN REMBOURSEMENT N EST POSSIBLE APRES ENCAISSEMENT'));
-    parts.push(...line('NB: PASSE UN DELAI DE 14 JOURS, SBTA N EST PAS RESPONSABLE EN CAS DE'));
-    parts.push(...line('PERTE DE COLIS.'));
-    parts.push(setAlign('left'), ...line(dashLine(w)));
+    parts.push(setAlign('center'), setBold(true), ...boxed('OK'), setBold(false));
+    parts.push(...boxed(station));
+    if (!isSouche) {
+      parts.push(...boxed('AUCUN REMBOURSEMENT N EST POSSIBLE APRES ENCAISSEMENT'));
+      parts.push(...boxed('NB: PASSE UN DELAI DE 14 JOURS, SBTA N EST PAS RESPONSABLE EN CAS DE'));
+      parts.push(...boxed('PERTE DE COLIS.'));
+    }
+    parts.push(setAlign('left'), ...border());
   };
 
   renderTicket(false);
