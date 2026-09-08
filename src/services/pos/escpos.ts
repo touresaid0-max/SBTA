@@ -101,12 +101,13 @@ void padLeft;
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return `--/--/---- 00H00`;
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
   const hh = String(d.getHours()).padStart(2, '0');
   const mi = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  return `${dd}/${mm}/${yyyy} ${hh}H${mi}`;
 }
 
 export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings): Uint8Array {
@@ -245,8 +246,12 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const line = (input = '') => [text(input.slice(0, w)), lineFeed()];
   const boxedRaw = (content: string) => `|${content.padEnd(innerW, ' ').slice(0, innerW)}|`;
   const boxed = (input = '') => line(boxedRaw(input.slice(0, innerW)));
-  const boxedRight = (input: string) => { const s = input.slice(0, innerW); return line(boxedRaw(' '.repeat(Math.max(0, innerW - s.length)) + s)); };
-  const border = () => line('='.repeat(w));
+  const boxedCenter = (input: string) => {
+    const s = input.slice(0, innerW);
+    const left = Math.floor((innerW - s.length) / 2);
+    return line(boxedRaw(' '.repeat(Math.max(0, left)) + s));
+  };
+  const border = () => line(`+${'-'.repeat(innerW)}+`);
   const separator = () => line(boxedRaw('-'.repeat(innerW)));
   const row = (label: string, input: string | number) => {
     const right = value(input).slice(0, Math.max(1, innerW - label.length - 1));
@@ -254,16 +259,16 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   };
   const dateRow = () => {
     const left = `DATE    ${datePart}`;
-    const right = `HEURE       ${timePart}`;
+    const right = `HEURE       ${timePart || '00H00'}`;
     return boxed(`${left}${' '.repeat(Math.max(1, innerW - left.length - right.length))}${right}`);
   };
 
   const renderTicket = (isSouche: boolean): void => {
     parts.push(setAlign('left'));
     parts.push(...border());
-    parts.push(setBold(true), ...boxedRight('SBTA'), setBold(false));
-    parts.push(...boxedRight("Societe Bonkoungou Transport de L'Agneby"));
-    parts.push(...boxedRight(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`));
+    parts.push(setAlign('center'), setDouble(true), setBold(true), ...boxedCenter('SBTA'), setNormal());
+    parts.push(setBold(false), ...boxedCenter("Societe Bonkoungou Transport de L'Agneby"));
+    parts.push(...boxedCenter(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`));
     parts.push(...separator());
     parts.push(setAlign('center'), setBold(true), ...boxed(isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'), ...boxed(mode), setBold(false));
     parts.push(setAlign('left'), ...separator());

@@ -310,10 +310,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
     const rows: string[] = [];
     const row = (label: string, val: string) =>
       `<div class="row"><span class="lbl">${label}</span><span class="val">${v(val)}</span></div>`;
-    rows.push(`<div class="border"></div>`);
-    rows.push(`<div class="right bold">SBTA</div>`);
-    rows.push(`<div class="right">Societe Bonkoungou Transport de L'Agneby</div>`);
-    rows.push(`<div class="right">Tel ${v(phone)}</div>`);
+    rows.push(`<div class="ticket-header"><img src="/logo-sbta.JPG" alt="SBTA"/><div class="brand bold">SBTA</div><div class="company">Societe Bonkoungou Transport de L'Agneby</div><div class="phone">Tel ${v(phone)}</div></div>`);
     rows.push(`<div class="sep"></div>`);
     rows.push(`<div class="title">${isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'}</div>`);
     rows.push(`<div class="title">${mode}</div>`);
@@ -327,7 +324,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
     rows.push(`<div class="sep"></div>`);
     rows.push(row('CAR', car));
     rows.push(`<div class="sep"></div>`);
-    rows.push(`<div class="row"><span class="lbl">DATE</span><span class="val">${v(datePart)}</span><span class="lbl ml">HEURE</span><span class="val">${v(timePart)}</span></div>`);
+    rows.push(`<div class="row"><span class="lbl">DATE</span><span class="val">${v(datePart)}</span><span class="lbl ml">HEURE</span><span class="val">${v(timePart || '00H00')}</span></div>`);
     rows.push(`<div class="sep"></div>`);
     rows.push(row('PROPRIETAIRE', owner));
     rows.push(row('CONTACT', bagage.owner_phone));
@@ -353,19 +350,27 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .center { text-align: center; }
   .right { text-align: right; }
   .bold { font-weight: bold; }
+  .ticket-header { text-align: center; padding: 3px 0 4px; border-bottom: 1px solid #000; }
+  .ticket-header img { display: block; width: 72px; height: auto; margin: 0 auto 2px; }
+  .brand { font-size: 16px; }
+  .company { font-size: 8px; }
+  .phone { font-size: 9px; }
   .title { text-align: center; font-weight: bold; font-size: 13px; }
-  .border { border-top: 2px solid #000; border-bottom: 2px solid #000; height: 0; margin: 1px 0; }
+  .border { height: 0; margin: 0; }
   .sep { border-top: 1px dashed #000; margin: 1px 0; }
   .row { display: flex; justify-content: space-between; align-items: baseline; }
   .lbl { font-weight: bold; flex: 0 0 auto; }
   .ml { margin-left: 8px; }
   .val { text-align: right; }
   .small { font-size: 9px; text-align: center; }
-  .cut { text-align: center; font-size: 9px; margin: 2px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
+  .cut { text-align: center; font-size: 9px; margin: 2px 0; }
+  .ticket-frame { border: 1px solid #000; }
 </style></head><body>
+  <div class="ticket-frame">
   ${ticketBlock(false)}
   <div class="cut">DECOUPER ICI</div>
   ${ticketBlock(true)}
+  </div>
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
 }
@@ -376,12 +381,13 @@ function escapeHtml(s: string): string {
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return `--/--/---- 00H00`;
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
   const hh = String(d.getHours()).padStart(2, '0');
   const mi = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  return `${dd}/${mm}/${yyyy} ${hh}H${mi}`;
 }
 
 function makeQRText(data: string): string {
