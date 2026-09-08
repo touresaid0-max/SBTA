@@ -228,57 +228,79 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 
 export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings): Uint8Array {
   const w = settings.width_mm === 80 ? 42 : 32;
+  const lblW = 11;
   const { bagage, depart, stationName } = data;
 
   const parts: Uint8Array[] = [init()];
 
-  // Header
+  // Header — compact: SBTA + station on same line when possible
   for (const line of settings.header_lines) {
     parts.push(setAlign('center'), text(line), lineFeed());
   }
-  parts.push(setAlign('center'), setBold(true), text('SBTA TRANSPORT'), lineFeed());
-  parts.push(setBold(false), text(stationName ?? 'Gare'), lineFeed());
+  parts.push(setAlign('center'), setBold(true), text('SBTA TRANSPORT'), lineFeed(), setBold(false));
+  parts.push(text(stationName ?? 'Gare'), lineFeed());
+  if (data.phoneLine) {
+    parts.push(setBold(true), text(`Tel ${data.phoneLine}`), lineFeed(), setBold(false));
+  }
   parts.push(text(dashLine(w)), lineFeed());
 
-  // Body
-  parts.push(setAlign('left'), setBold(true), text('RECU BAGAGE'), lineFeed(), setBold(false));
+  // Title
+  parts.push(setAlign('center'), setBold(true), text('RECU BAGAGE'), lineFeed(), setBold(false));
 
-  parts.push(text(`${padRight('N° Bagage:', 14)}${bagage.bagage_number}`), lineFeed());
+  // Body — combine fields on same lines to reduce length
+  parts.push(setAlign('left'));
+
+  const bagNum = bagage.bagage_number ?? '-';
+  const bagLine = `${padRight('N°:', lblW)}${bagNum}`;
+  const priceStr = `${bagage.price} F`;
+  if (bagLine.length + priceStr.length + 1 <= w) {
+    parts.push(text(`${padRight(bagLine, w - priceStr.length)}${priceStr}`), lineFeed());
+  } else {
+    parts.push(text(bagLine.slice(0, w)), lineFeed());
+    parts.push(text(padRight(priceStr, w)), lineFeed());
+  }
 
   if (bagage.with_ticket && bagage.ticket_number) {
-    parts.push(text(`${padRight('Ticket lié:', 14)}${bagage.ticket_number}`), lineFeed());
+    parts.push(text(`${padRight('Ticket:', lblW)}${bagage.ticket_number}`.slice(0, w)), lineFeed());
   }
 
-  parts.push(text(`${padRight('Destination:', 14)}${bagage.destination}`), lineFeed());
-  parts.push(text(`${padRight('Prix:', 14)}${bagage.price} FCFA`), lineFeed());
-  parts.push(text(`${padRight('Car:', 14)}${bagage.car_plate || depart.bus_plate || '-'}`), lineFeed());
-
-  if (bagage.description) {
-    parts.push(text(`${padRight('Description:', 14)}${bagage.description}`), lineFeed());
+  // Destination — label on its own short line, city on next line if too long
+  const destFull = bagage.destination ?? '-';
+  const destLine = `${padRight('Dest:', lblW)}${destFull}`;
+  if (destLine.length <= w) {
+    parts.push(text(destLine), lineFeed());
+  } else {
+    parts.push(text(padRight('Destination:', w)), lineFeed());
+    parts.push(text(destFull.slice(0, w)), lineFeed());
   }
+
+  const carStr = (bagage.car_plate || depart.bus_plate || '-').slice(0, w - lblW);
+  parts.push(text(`${padRight('Car:', lblW)}${carStr}`), lineFeed());
+
   if (bagage.owner_name) {
-    parts.push(text(`${padRight('Nom:', 14)}${bagage.owner_name}`), lineFeed());
+    parts.push(text(`${padRight('Nom:', lblW)}${bagage.owner_name}`.slice(0, w)), lineFeed());
   }
   if (bagage.owner_phone) {
-    parts.push(text(`${padRight('Contact:', 14)}${bagage.owner_phone}`), lineFeed());
+    parts.push(text(`${padRight('Tel:', lblW)}${bagage.owner_phone}`.slice(0, w)), lineFeed());
+  }
+  if (bagage.description) {
+    parts.push(text(`${padRight('Desc:', lblW)}${bagage.description}`.slice(0, w)), lineFeed());
   }
 
   parts.push(text(dashLine(w)), lineFeed());
-  parts.push(text(`${padRight('Date:', 14)}${formatDateTime(bagage.created_at)}`), lineFeed());
-  parts.push(text(`${padRight('Départ N°:', 14)}${depart.route_number} (${depart.route_name ?? ''})`), lineFeed());
+  parts.push(text(`${padRight('Date:', lblW)}${formatDateTime(bagage.created_at)}`), lineFeed());
+  parts.push(text(`${padRight('Dep:', lblW)}${depart.route_number} ${depart.route_name ?? ''}`.slice(0, w)), lineFeed());
 
-  parts.push(text(dashLine(w)), lineFeed());
-
-  // QR with bagage number
+  // QR compact
   parts.push(qrCode(bagage.bagage_number), lineFeed());
 
-  // Footer
+  // Footer — single feed
   parts.push(setAlign('center'));
   for (const line of settings.footer_lines) {
     parts.push(text(line), lineFeed());
   }
 
-  parts.push(lineFeed(2));
+  parts.push(lineFeed(1));
   if (settings.auto_cut) parts.push(cutPaper());
 
   return concat(...parts);

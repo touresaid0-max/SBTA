@@ -295,39 +295,47 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const widthPx = settings.width_mm === 80 ? 320 : 224;
   const headerHtml = settings.header_lines.map(l => `<div class="hdr">${escapeHtml(l)}</div>`).join('');
   const footerHtml = settings.footer_lines.map(l => `<div class="ftr">${escapeHtml(l)}</div>`).join('');
-  const phoneHtml = phoneLine ? `<div class="center">Tel ${escapeHtml(phoneLine)}</div>` : '';
+  const phoneHtml = phoneLine ? `<div class="center bold">Tel ${escapeHtml(phoneLine)}</div>` : '';
+  const destFull = escapeHtml(bagage.destination ?? '-');
+  const destLong = (bagage.destination ?? '-').length > 12;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 12px; }
-  body { width: ${widthPx}px; margin: 0 auto; padding: 4px; }
+  * { font-family: 'Courier New', monospace; font-size: 11px; margin: 0; padding: 0; }
+  body { width: ${widthPx}px; margin: 0 auto; padding: 1px 2px; }
   .center { text-align: center; }
   .bold { font-weight: bold; }
-  .hdr { text-align: center; }
-  .ftr { text-align: center; margin-top: 4px; }
-  .dash { border-top: 1px dashed #000; margin: 4px 0; text-align:center; }
-  .row { display:flex; justify-content:space-between; }
-  .label { font-weight:bold; }
-  .qr { text-align:center; margin: 4px 0; }
+  .hdr { text-align: center; line-height: 1.1; }
+  .ftr { text-align: center; margin-top: 1px; line-height: 1.1; }
+  .dash { border-top: 1px dashed #000; margin: 1px 0; }
+  .row { display:flex; justify-content:space-between; line-height: 1.15; }
+  .row-stack { line-height: 1.15; }
+  .label { font-weight:bold; flex: 0 0 auto; }
+  .val { text-align: right; word-break: break-word; }
+  .title { text-align: center; font-weight: bold; font-size: 13px; padding: 1px 0; }
+  .qr { text-align:center; margin: 1px 0; }
+  .qr svg { width: 80px; height: 80px; }
 </style></head><body>
   ${headerHtml}
-  <div class="center bold">SBTA TRANSPORT</div>
+  <div class="center bold" style="font-size:14px;">SBTA TRANSPORT</div>
   <div class="center">${escapeHtml(stationName ?? 'Gare')}</div>
   ${phoneHtml}
-  <div class="dash">-</div>
-  <div class="center bold">RECU BAGAGE</div>
-  <div class="dash">-</div>
-  <div class="row"><span class="label">N° Bagage:</span><span>${escapeHtml(bagage.bagage_number)}</span></div>
-  ${bagage.with_ticket && bagage.ticket_number ? `<div class="row"><span class="label">Ticket lié:</span><span>${escapeHtml(bagage.ticket_number)}</span></div>` : ''}
-  <div class="row"><span class="label">Destination:</span><span>${escapeHtml(bagage.destination)}</span></div>
+  <div class="dash"></div>
+  <div class="title">RECU BAGAGE</div>
+  <div class="dash"></div>
+  <div class="row"><span class="label">N°:</span><span>${escapeHtml(bagage.bagage_number)}</span></div>
+  ${bagage.with_ticket && bagage.ticket_number ? `<div class="row"><span class="label">Ticket:</span><span>${escapeHtml(bagage.ticket_number)}</span></div>` : ''}
+  ${destLong
+    ? `<div class="row-stack"><span class="label">DESTINATION</span><div>${destFull}</div></div>`
+    : `<div class="row"><span class="label">Dest:</span><span>${destFull}</span></div>`}
   <div class="row"><span class="label">Prix:</span><span>${bagage.price} FCFA</span></div>
   <div class="row"><span class="label">Car:</span><span>${escapeHtml(bagage.car_plate || depart.bus_plate || '-')}</span></div>
-  ${bagage.description ? `<div class="row"><span class="label">Description:</span><span>${escapeHtml(bagage.description)}</span></div>` : ''}
   ${bagage.owner_name ? `<div class="row"><span class="label">Nom:</span><span>${escapeHtml(bagage.owner_name)}</span></div>` : ''}
-  ${bagage.owner_phone ? `<div class="row"><span class="label">Contact:</span><span>${escapeHtml(bagage.owner_phone)}</span></div>` : ''}
-  <div class="dash">-</div>
+  ${bagage.owner_phone ? `<div class="row"><span class="label">Tel:</span><span>${escapeHtml(bagage.owner_phone)}</span></div>` : ''}
+  ${bagage.description ? `<div class="row"><span class="label">Desc:</span><span>${escapeHtml(bagage.description)}</span></div>` : ''}
+  <div class="dash"></div>
   <div class="row"><span class="label">Date:</span><span>${formatDateTime(bagage.created_at)}</span></div>
-  <div class="row"><span class="label">Départ N°:</span><span>${depart.route_number} (${escapeHtml(depart.route_name ?? '')})</span></div>
-  <div class="dash">-</div>
+  <div class="row"><span class="label">Dep:</span><span>${depart.route_number} ${escapeHtml(depart.route_name ?? '')}</span></div>
+  <div class="dash"></div>
   <div class="qr">${makeQRText(bagage.bagage_number)}</div>
   ${footerHtml}
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
@@ -450,6 +458,17 @@ export const PrintService = {
       escposData = buildBagageESCPOS({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
     } else {
       return false;
+    }
+
+    // For bagage, always try ESC/POS thermal printers first (regardless of backend setting)
+    if (payload.type === 'bagage') {
+      const ok = await sendWebSerial(escposData);
+      if (ok) return true;
+      const okUsb = await sendWebUSB(escposData);
+      if (okUsb) return true;
+      const okQz = await sendQzTray(escposData, settings);
+      if (okQz) return true;
+      return printBrowser(payload, settings);
     }
 
     // Try backends in order of preference
