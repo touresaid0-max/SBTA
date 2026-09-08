@@ -234,7 +234,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const parts: Uint8Array[] = [init()];
   const value = (input: string | number | null | undefined) => String(input ?? '-').trim() || '-';
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
-  const date = formatDateTime(bagage.created_at);
+  const date = formatDateTime(new Date().toISOString());
   const [datePart, timePart] = date.split(' ');
   const departure = `${value(depart.route_number)} ${value(depart.route_name).toUpperCase()}`;
   const destination = value(bagage.destination).toUpperCase();

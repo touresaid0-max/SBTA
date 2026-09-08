@@ -294,7 +294,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const { bagage, depart, stationName, phoneLine } = data;
   const widthPx = settings.width_mm === 80 ? 320 : 224;
   const phone = phoneLine || '01 14 34 60 / 01 14 34 87';
-  const dt = formatDateTime(bagage.created_at);
+  const dt = formatDateTime(new Date().toISOString());
   const [datePart, timePart] = dt.split(' ');
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
   const departure = `${depart.route_number ?? '-'} ${(depart.route_name ?? '-').toUpperCase()}`;
