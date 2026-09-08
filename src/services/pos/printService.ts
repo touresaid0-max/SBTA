@@ -213,7 +213,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   </div>
 </div>`;
 
-  const innerW = mm === 80 ? 320 : 224;
+  const innerW = mm === 80 ? 328 : 232;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
   @page { size: ${mm}mm auto; margin: 0; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
