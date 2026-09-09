@@ -353,8 +353,8 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .ticket-header { text-align: center; padding: 3px 0 4px; border-bottom: 1px solid #000; }
   .ticket-header img { display: block; width: 72px; height: auto; margin: 0 auto 2px; }
   .brand { font-size: 16px; }
-  .company { font-size: 8px; }
-  .phone { font-size: 9px; }
+  .company { font-size: 10px; font-weight: 700; }
+  .phone { font-size: 11px; font-weight: 700; }
   .title { text-align: center; font-weight: bold; font-size: 13px; }
   .border { height: 0; margin: 0; }
   .sep { border-top: 1px dashed #000; margin: 1px 0; }

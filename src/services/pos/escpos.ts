@@ -271,8 +271,8 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
     parts.push(setAlign('left'));
     parts.push(...border());
     parts.push(setAlign('center'), setDouble(true), setBold(true), ...boxedCenter('SBTA'), setNormal());
-    parts.push(setBold(false), ...boxedCenter("Societe Bonkoungou Transport de L'Agneby"));
-    parts.push(...boxedCenter(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`));
+    parts.push(setBold(true), ...boxedCenter("Societe Bonkoungou Transport de L'Agneby"));
+    parts.push(setBold(true), ...boxedCenter(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
     parts.push(...separator());
     parts.push(setAlign('center'), setBold(true), ...boxed(isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'), ...boxed(mode), setBold(false));
     parts.push(setAlign('left'), ...separator());
