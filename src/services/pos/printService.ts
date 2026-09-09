@@ -345,7 +345,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 11px; margin: 0; padding: 0; line-height: 1.2; }
+  * { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 600; margin: 0; padding: 0; line-height: 1.3; }
   body { width: ${widthPx}px; margin: 0 auto; padding: 1px 2px; }
   .center { text-align: center; }
   .right { text-align: right; }
@@ -358,13 +358,13 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .title { text-align: center; font-weight: bold; font-size: 13px; }
   .border { height: 0; margin: 0; }
   .sep { border-top: 1px dashed #000; margin: 1px 0; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; }
-  .lbl { font-weight: bold; flex: 0 0 auto; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; min-width: 0; }
+  .lbl { font-weight: 800; flex: 0 0 auto; }
   .ml { margin-left: 8px; }
-  .val { text-align: right; }
-  .small { font-size: 9px; text-align: center; }
+  .val { min-width: 0; text-align: right; font-weight: 700; overflow-wrap: anywhere; }
+  .small { font-size: 10px; text-align: center; line-height: 1.3; }
   .cut { text-align: center; font-size: 9px; margin: 2px 0; }
-  .ticket-frame { border: 1px solid #000; }
+  .ticket-frame { border: 1px solid #000; padding: 0 4px; }
 </style></head><body>
   <div class="ticket-frame">
   ${ticketBlock(false)}

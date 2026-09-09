@@ -63,6 +63,10 @@ function setNormal(): Uint8Array {
   return cmd(ESC, 0x21, 0x00);
 }
 
+function setLineSpacing(spacing: number): Uint8Array {
+  return cmd(ESC, 0x33, spacing);
+}
+
 function lineFeed(n = 1): Uint8Array {
   return cmd(LF, ...Array(n - 1).fill(0x0a));
 }
@@ -231,7 +235,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const w = 42;
   const innerW = w - 2;
   const { bagage, depart, stationName } = data;
-  const parts: Uint8Array[] = [init()];
+  const parts: Uint8Array[] = [init(), setLineSpacing(32)];
   const value = (input: string | number | null | undefined) => String(input ?? '-').trim() || '-';
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
   const date = formatDateTime(new Date().toISOString());
@@ -255,12 +259,12 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const separator = () => line(boxedRaw('-'.repeat(innerW)));
   const row = (label: string, input: string | number) => {
     const right = value(input).slice(0, Math.max(1, innerW - label.length - 1));
-    return boxed(`${label}${' '.repeat(Math.max(1, innerW - label.length - right.length))}${right}`);
+    return [setBold(true), ...boxed(`${label}${' '.repeat(Math.max(1, innerW - label.length - right.length))}${right}`), setBold(false)];
   };
   const dateRow = () => {
     const left = `DATE    ${datePart}`;
     const right = `HEURE       ${timePart || '00H00'}`;
-    return boxed(`${left}${' '.repeat(Math.max(1, innerW - left.length - right.length))}${right}`);
+    return [setBold(true), ...boxed(`${left}${' '.repeat(Math.max(1, innerW - left.length - right.length))}${right}`), setBold(false)];
   };
 
   const renderTicket = (isSouche: boolean): void => {
@@ -286,8 +290,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
     parts.push(...row('PROPRIETAIRE', owner));
     parts.push(...row('CONTACT', value(bagage.owner_phone)));
     parts.push(...separator());
-    parts.push(...boxed('DESCRIPTION'));
-    parts.push(...boxed(description));
+    parts.push(setBold(true), ...boxed('DESCRIPTION'), ...boxed(description), setBold(false));
     parts.push(...separator());
     parts.push(setAlign('center'), setBold(true), ...boxed('OK'), setBold(false));
     parts.push(...boxed(station));
