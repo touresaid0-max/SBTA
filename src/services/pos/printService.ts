@@ -345,7 +345,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 600; margin: 0; padding: 0; line-height: 1.15; }
+  * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', Arial, sans-serif; font-stretch: condensed; font-size: 12px; font-weight: 600; margin: 0; padding: 0; line-height: 1.15; }
   body { width: ${widthPx}px; margin: 0 auto; padding: 1px 2px; }
   .center { text-align: center; }
   .right { text-align: right; }

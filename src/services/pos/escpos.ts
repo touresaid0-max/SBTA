@@ -55,6 +55,14 @@ function setBold(on: boolean): Uint8Array {
   return cmd(ESC, 0x45, on ? 1 : 0);
 }
 
+function setFontB(): Uint8Array {
+  return cmd(ESC, 0x21, 0x01);
+}
+
+function setDoubleFontB(): Uint8Array {
+  return cmd(ESC, 0x21, 0x31);
+}
+
 function setDouble(on: boolean): Uint8Array {
   return cmd(ESC, 0x21, on ? 0x30 : 0x00);
 }
@@ -235,7 +243,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const w = settings.width_mm === 80 ? 56 : 48;
   const innerW = w - 2;
   const { bagage, depart, stationName } = data;
-  const parts: Uint8Array[] = [init(), setLineSpacing(28)];
+  const parts: Uint8Array[] = [init(), setLineSpacing(28), setFontB()];
   const value = (input: string | number | null | undefined) => String(input ?? '-').trim() || '-';
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
   const date = formatDateTime(new Date().toISOString());
@@ -270,7 +278,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const renderTicket = (isSouche: boolean): void => {
     parts.push(setAlign('left'));
     parts.push(...border());
-    parts.push(setAlign('center'), setDouble(true), setBold(true), ...boxedCenter('SBTA'), setNormal());
+    parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...boxedCenter('SBTA'), setNormal(), setFontB());
     parts.push(setBold(true), ...boxedCenter("Societe Bonkoungou Transport de L'Agneby"));
     parts.push(setBold(true), ...boxedCenter(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
     parts.push(...separator());
