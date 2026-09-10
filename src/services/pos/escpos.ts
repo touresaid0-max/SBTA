@@ -232,10 +232,10 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 }
 
 export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings): Uint8Array {
-  const w = 42;
+  const w = settings.width_mm === 80 ? 56 : 48;
   const innerW = w - 2;
   const { bagage, depart, stationName } = data;
-  const parts: Uint8Array[] = [init(), setLineSpacing(32)];
+  const parts: Uint8Array[] = [init(), setLineSpacing(28)];
   const value = (input: string | number | null | undefined) => String(input ?? '-').trim() || '-';
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
   const date = formatDateTime(new Date().toISOString());

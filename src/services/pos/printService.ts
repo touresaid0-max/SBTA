@@ -292,7 +292,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
 function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string {
   const { bagage, depart, stationName, phoneLine } = data;
-  const widthPx = settings.width_mm === 80 ? 320 : 224;
+  const widthPx = settings.width_mm === 80 ? 384 : 284;
   const phone = phoneLine || '01 14 34 60 / 01 14 34 87';
   const dt = formatDateTime(new Date().toISOString());
   const [datePart, timePart] = dt.split(' ');
@@ -345,26 +345,26 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 600; margin: 0; padding: 0; line-height: 1.3; }
+  * { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 600; margin: 0; padding: 0; line-height: 1.15; }
   body { width: ${widthPx}px; margin: 0 auto; padding: 1px 2px; }
   .center { text-align: center; }
   .right { text-align: right; }
   .bold { font-weight: bold; }
-  .ticket-header { text-align: center; padding: 3px 0 4px; border-bottom: 1px solid #000; }
+  .ticket-header { text-align: center; padding: 2px 0 3px; border-bottom: 1px solid #000; }
   .ticket-header img { display: block; width: 72px; height: auto; margin: 0 auto 2px; }
   .brand { font-size: 16px; }
   .company { font-size: 10px; font-weight: 700; }
   .phone { font-size: 11px; font-weight: 700; }
   .title { text-align: center; font-weight: bold; font-size: 13px; }
   .border { height: 0; margin: 0; }
-  .sep { border-top: 1px dashed #000; margin: 1px 0; }
+  .sep { border-top: 1px dashed #000; margin: 0; }
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; min-width: 0; }
   .lbl { font-weight: 800; flex: 0 0 auto; }
   .ml { margin-left: 8px; }
   .val { min-width: 0; text-align: right; font-weight: 700; overflow-wrap: anywhere; }
   .small { font-size: 10px; text-align: center; line-height: 1.3; }
   .cut { text-align: center; font-size: 9px; margin: 2px 0; }
-  .ticket-frame { border: 1px solid #000; padding: 0 4px; }
+  .ticket-frame { border: 1px solid #000; padding: 0 5px; }
 </style></head><body>
   <div class="ticket-frame">
   ${ticketBlock(false)}
