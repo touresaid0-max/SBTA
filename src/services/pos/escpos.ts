@@ -340,7 +340,8 @@ export interface PrintRecettesData {
 }
 
 export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 52 : 44;
+  const w = settings.width_mm === 80 ? 52 : 42;
+  const leftMargin = settings.width_mm === 80 ? '' : ' ';
   const { data: bordereau, phoneLine } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
 
@@ -348,7 +349,7 @@ export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSett
     Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   const fmt = (n: number): string => fmtNum(n) + ' F';
 
-  const line = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  const line = (s = '') => [text(leftMargin + s.slice(0, w)), lineFeed()];
   const center = (s: string) => {
     const t = s.slice(0, w);
     const pad = Math.max(0, Math.floor((w - t.length) / 2));
@@ -378,13 +379,14 @@ export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSett
   parts.push(...separator());
 
   // ── TABLEAU ───────────────────────────────────────────────────────
-  // 44 chars for 58mm. Column layout:
-  // IMMAT(9) | N°(3) | SIEGE(4) | MT TICKET(9) | DEPENSE(8) | SOLDE(7) | BAGAGE(4)
-  // Total = 9+3+4+9+8+7+4 = 44
-  const C_IMMAT = 9;
+  // 42 chars for 58mm (1-char left margin added by line()). Column layout:
+  // IMMAT(8) | N°(3) | SIEGE(4) | MT TICKET(8) | DEPENSE(8) | SOLDE(7) | BAGAGE(4)
+  // Total = 8+3+4+8+8+7+4 = 42
+  const is58 = settings.width_mm !== 80;
+  const C_IMMAT = is58 ? 8 : 9;
   const C_NUM = 3;
   const C_SIEGE = 4;
-  const C_TICKET = 9;
+  const C_TICKET = is58 ? 8 : 9;
   const C_DEPENSE = 8;
   const C_SOLDE = 7;
   const C_BAGAGE = 4;
