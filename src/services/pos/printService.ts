@@ -292,7 +292,6 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
 function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string {
   const { bagage, depart, stationName, phoneLine } = data;
-  const widthPx = settings.width_mm === 80 ? 360 : 280;
   const phone = phoneLine || '01 14 34 60 / 01 14 34 87';
   const nowIso = new Date().toISOString();
   const printed = formatDateTime(nowIso).replace('H', ':');
@@ -341,29 +340,30 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
   * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif; font-stretch: condensed; margin: 0; padding: 0; box-sizing: border-box; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { width: ${widthPx}px; margin: 0 auto; padding: 2px 2px; font-size: 11px; font-weight: 600; line-height: 1.15; }
+  html, body { background: #fff; }
+  body { width: calc(${settings.width_mm}mm - 6mm); margin: 0 auto; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
   .hdr { display: flex; align-items: center; gap: 3px; padding: 2px 0 3px; }
-  .hdr-logo { flex: 0 0 auto; width: 40px; }
+  .hdr-logo { flex: 0 0 auto; width: 38px; }
   .hdr-logo img { width: 100%; height: auto; display: block; }
   .hdr-brand { flex: 1 1 auto; text-align: center; line-height: 1.05; min-width: 0; }
-  .brand-name { font-size: 22px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
-  .brand-sub { font-size: 9px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .brand-sub.phone { font-size: 10px; font-weight: 800; margin-top: 1px; }
-  .title { text-align: center; font-size: 16px; font-weight: 900; letter-spacing: 1px; padding: 3px 0 2px; }
-  .souche { text-align: center; font-size: 15px; font-weight: 900; font-style: italic; letter-spacing: 1px; padding: 3px 0; }
+  .brand-name { font-size: 20px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
+  .brand-sub { font-size: 8.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand-sub.phone { font-size: 9.5px; font-weight: 800; margin-top: 1px; }
+  .title { text-align: center; font-size: 15px; font-weight: 900; letter-spacing: 1px; padding: 3px 0 2px; }
+  .souche { text-align: center; font-size: 14px; font-weight: 900; font-style: italic; letter-spacing: 1px; padding: 3px 0; }
   .sep { border-top: 1px dashed #000; margin: 2px 0; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; padding: 2px 0; font-size: 11px; font-weight: 700; min-width: 0; white-space: nowrap; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; padding: 2px 0; font-size: 10.5px; font-weight: 700; min-width: 0; white-space: nowrap; }
   .row.single { justify-content: flex-start; }
   .row .lbl { flex: 0 0 auto; white-space: nowrap; }
   .row .val { flex: 1 1 auto; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .row b { font-weight: 900; }
-  .route { text-align: center; font-size: 13px; font-weight: 900; padding: 2px 0; letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .route { text-align: center; font-size: 12px; font-weight: 900; padding: 2px 0; letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .route .arrow { font-weight: 900; margin: 0 3px; }
-  .printed { text-align: center; font-size: 9px; font-weight: 700; padding: 2px 0; white-space: nowrap; }
-  .tear { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 3px 0; font-size: 9px; font-weight: 800; letter-spacing: 2px; }
+  .printed { text-align: center; font-size: 8.5px; font-weight: 700; padding: 2px 0; white-space: nowrap; }
+  .tear { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 3px 0; font-size: 8.5px; font-weight: 800; letter-spacing: 2px; }
   .tear::before, .tear::after { content: ''; flex: 1 1 auto; border-top: 1px dashed #000; height: 0; }
-  .ticket-frame { border: 1px solid #000; padding: 4px 6px; }
-  @media print { body { margin: 0; padding: 2px 2px; background: #fff; } }
+  .ticket-frame { border: 1px solid #000; padding: 4px 5px; }
+  @media print { body { margin: 0 auto; padding: 0; background: #fff; } }
 </style></head><body>
   <div class="ticket-frame">
     ${ticketBlock(false)}
