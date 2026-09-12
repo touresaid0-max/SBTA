@@ -340,8 +340,8 @@ export interface PrintRecettesData {
 }
 
 export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 52 : 42;
-  const leftMargin = settings.width_mm === 80 ? '' : ' ';
+  const w = settings.width_mm === 80 ? 52 : 38;
+  const leftMargin = settings.width_mm === 80 ? '' : '  ';
   const { data: bordereau, phoneLine } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
 
@@ -379,15 +379,15 @@ export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSett
   parts.push(...separator());
 
   // ── TABLEAU ───────────────────────────────────────────────────────
-  // 42 chars for 58mm (1-char left margin added by line()). Column layout:
-  // IMMAT(8) | N°(3) | SIEGE(4) | MT TICKET(8) | DEPENSE(8) | SOLDE(7) | BAGAGE(4)
-  // Total = 8+3+4+8+8+7+4 = 42
+  // 38 chars for the 58mm content area, with a 2-char left margin added by line().
+  // IMMAT(7) | N°(3) | SIEGE(4) | MT TICKET(7) | DEPENSE(6) | SOLDE(7) | BAGAGE(4)
+  // Total = 7+3+4+7+6+7+4 = 38
   const is58 = settings.width_mm !== 80;
-  const C_IMMAT = is58 ? 8 : 9;
+  const C_IMMAT = is58 ? 7 : 9;
   const C_NUM = 3;
   const C_SIEGE = 4;
-  const C_TICKET = is58 ? 8 : 9;
-  const C_DEPENSE = 8;
+  const C_TICKET = is58 ? 7 : 9;
+  const C_DEPENSE = is58 ? 6 : 8;
   const C_SOLDE = 7;
   const C_BAGAGE = 4;
 
