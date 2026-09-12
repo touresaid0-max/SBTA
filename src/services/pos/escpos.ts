@@ -143,7 +143,11 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 
   // Body — compact: combine fields on the same line to halve ticket length
   parts.push(setAlign('left'));
-  const routeNameFull = (depart.route_name ?? '-');
+  const stripStationLabelTicket = (s: string) => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
+  const routePartsTicket = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
+  const originCityTicket = stripStationLabelTicket((stationName || depart.station_name || routePartsTicket[0] || '').toUpperCase().trim()) || '-';
+  const destCityTicket = stripStationLabelTicket(((routePartsTicket[routePartsTicket.length - 1] ?? ticket.destination) || '').toUpperCase().trim()) || '-';
+  const routeNameFull = `${originCityTicket} => ${destCityTicket}`;
   const routeName = routeNameFull.slice(0, innerW - 8);
   parts.push(setBold(true), text(vLine(`${padRight('Ligne:', 8)}${routeName}`)), lineFeed(), setBold(false));
   if (routeNameFull.length > innerW - 8) {
