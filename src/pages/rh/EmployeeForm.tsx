@@ -85,6 +85,7 @@ const ROLE_OPTIONS: { value: SBTARole; label: string; group: string }[] = [
   { value: 'gerant_principal',  label: 'Gérant Principal',     group: 'Direction' },
   { value: 'responsable_assurance', label: 'Responsable Service Assurance', group: 'Direction' },
   { value: 'responsable_logistique', label: 'Responsable Logistique', group: 'Direction' },
+  { value: 'logistique', label: 'Logistique', group: 'Direction' },
   { value: 'agent_qhse',          label: 'Agent QHSE',             group: 'Direction' },
   { value: 'gestion_agboville',   label: 'Gestion Agboville',      group: 'Direction' },
   { value: 'chauffeur',         label: 'Chauffeur',           group: 'Opérationnel' },

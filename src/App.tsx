@@ -511,20 +511,20 @@ function App() {
             <Route path="assurance/insurers/:id/edit"  element={<ProtectedRoute roles={['responsable_assurance', 'admin']}><AssuranceInsurerForm /></ProtectedRoute>} />
             <Route path="assurance/reports"            element={<ProtectedRoute roles={['responsable_assurance', 'admin']}><AssuranceReports /></ProtectedRoute>} />
 
-            <Route path="logistique/dashboard"         element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDashboard /></ProtectedRoute>} />
-            <Route path="logistique/vehicles"          element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueVehiclesList /></ProtectedRoute>} />
-            <Route path="logistique/vehicles/:id"      element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueVehicleDetail /></ProtectedRoute>} />
-            <Route path="logistique/drivers"          element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDriversPage /></ProtectedRoute>} />
-            <Route path="logistique/documents"         element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDocumentsList /></ProtectedRoute>} />
-            <Route path="logistique/providers"         element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueProviders /></ProtectedRoute>} />
-            <Route path="logistique/service-types"     element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueServiceTypes /></ProtectedRoute>} />
-            <Route path="logistique/reports"           element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueReports /></ProtectedRoute>} />
-            <Route path="logistique/bus-synthesis"     element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueBusSynthesis /></ProtectedRoute>} />
-            <Route path="logistique/bilan"            element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueFleetBilan /></ProtectedRoute>} />
-            <Route path="logistique/driver-report"    element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueDriverReport /></ProtectedRoute>} />
-            <Route path="logistique/reparations"      element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueReparations /></ProtectedRoute>} />
-            <Route path="logistique/rapport-reparations" element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueRapportReparations /></ProtectedRoute>} />
-            <Route path="logistique/baggage-report" element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueBaggageReportDashboard /></ProtectedRoute>} />
+            <Route path="logistique/dashboard"         element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueDashboard /></ProtectedRoute>} />
+            <Route path="logistique/vehicles"          element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueVehiclesList /></ProtectedRoute>} />
+            <Route path="logistique/vehicles/:id"      element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueVehicleDetail /></ProtectedRoute>} />
+            <Route path="logistique/drivers"          element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueDriversPage /></ProtectedRoute>} />
+            <Route path="logistique/documents"         element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueDocumentsList /></ProtectedRoute>} />
+            <Route path="logistique/providers"         element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueProviders /></ProtectedRoute>} />
+            <Route path="logistique/service-types"     element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueServiceTypes /></ProtectedRoute>} />
+            <Route path="logistique/reports"           element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueReports /></ProtectedRoute>} />
+            <Route path="logistique/bus-synthesis"     element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueBusSynthesis /></ProtectedRoute>} />
+            <Route path="logistique/bilan"            element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueFleetBilan /></ProtectedRoute>} />
+            <Route path="logistique/driver-report"    element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueDriverReport /></ProtectedRoute>} />
+            <Route path="logistique/reparations"      element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueReparations /></ProtectedRoute>} />
+            <Route path="logistique/rapport-reparations" element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueRapportReparations /></ProtectedRoute>} />
+            <Route path="logistique/baggage-report" element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueBaggageReportDashboard /></ProtectedRoute>} />
 
             <Route path="agent-reservation/dashboard"  element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationDashboard /></ProtectedRoute>} />
             <Route path="agent-reservation/users"      element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationUsers /></ProtectedRoute>} />

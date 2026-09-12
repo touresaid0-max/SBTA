@@ -13,6 +13,7 @@ export type SBTARole =
   | 'carburant' | 'gerant_principal'
   | 'responsable_assurance'
   | 'responsable_logistique'
+  | 'logistique'
   | 'agent_qhse'
   | 'gestion_agboville'
   | 'client';
@@ -473,6 +474,7 @@ export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   gerant_principal: '/gerant-principal/dashboard',
   responsable_assurance: '/assurance/dashboard',
   responsable_logistique: '/logistique/dashboard',
+  logistique: '/logistique/dashboard',
   agent_qhse: '/rh/dashboard',
   gestion_agboville: '/gestion-agboville/dashboard',
   client: '/client/search',

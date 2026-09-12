@@ -21,6 +21,7 @@ export type UserRole =
   | 'gerant_principal'
   | 'responsable_assurance'
   | 'responsable_logistique'
+  | 'logistique'
   | 'agent_qhse'
   | 'gestion_agboville'
   | 'client';
