@@ -249,8 +249,9 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const printed = formatDateTime(nowIso);
   const departDate = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departDate.split(' ');
-  const originCity = (stationName || depart.station_name || '').toUpperCase().trim();
-  const destCity = (bagage.destination || '').toUpperCase().trim();
+  const stripStationLabel = (s: string) => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
+  const originCity = stripStationLabel((stationName || depart.station_name || '').toUpperCase().trim());
+  const destCity = stripStationLabel((bagage.destination || '').toUpperCase().trim());
   const departNum = value(depart.route_number) || value(depart.departure_number);
   const owner = value(bagage.owner_name).toUpperCase();
   const contact = value(bagage.owner_phone);

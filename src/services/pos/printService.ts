@@ -298,8 +298,9 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const departFmt = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departFmt.split(' ');
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
-  const originCity = (stationName || depart.station_name || '').toUpperCase().trim();
-  const destCity = (bagage.destination || '').toUpperCase().trim();
+  const stripStationLabel = (s: string) => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
+  const originCity = stripStationLabel((stationName || depart.station_name || '').toUpperCase().trim());
+  const destCity = stripStationLabel((bagage.destination || '').toUpperCase().trim());
   const departNum = String(depart.route_number ?? depart.departure_number ?? '');
   const owner = (bagage.owner_name ?? '').toUpperCase();
   const contact = bagage.owner_phone ?? '';
