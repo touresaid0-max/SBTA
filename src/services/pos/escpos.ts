@@ -1,5 +1,6 @@
 import type { TicketRecord, BagageRecord, DepartRecord } from './db';
 import type { PrintSettings } from './db';
+import type { BordereauRecettesData } from '@/types/counter.types';
 
 export interface PrintTicketData {
   ticket: TicketRecord;
@@ -328,4 +329,151 @@ export function buildESCPOS(
 ): Uint8Array {
   if (type === 'ticket') return buildTicketESCPOS(data as PrintTicketData, settings);
   return buildBagageESCPOS(data as PrintBagageData, settings);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  BORDEREAU DETAILLE DES RECETTES  (ESC/POS 58 mm)
+// ═══════════════════════════════════════════════════════════════════
+export interface PrintRecettesData {
+  data: BordereauRecettesData;
+  phoneLine?: string;
+}
+
+export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSettings): Uint8Array {
+  const w = settings.width_mm === 80 ? 52 : 44;
+  const { data: bordereau, phoneLine } = data;
+  const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
+
+  const fmtNum = (n: number): string =>
+    Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const fmt = (n: number): string => fmtNum(n) + ' F';
+
+  const line = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  const center = (s: string) => {
+    const t = s.slice(0, w);
+    const pad = Math.max(0, Math.floor((w - t.length) / 2));
+    return line(' '.repeat(pad) + t);
+  };
+  const separator = () => line('-'.repeat(w));
+  const doubleSep = () => line('='.repeat(w));
+
+  // ── EN-TÊTE ──────────────────────────────────────────────────────
+  parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  parts.push(setBold(true), ...center("Soc. Bonkoungou Transport de L'Agneby"), setBold(false));
+  parts.push(setBold(true), ...center(`Tel ${phoneLine || '07 69 94 88 03 / 07 99 68 60 03'}`), setBold(false));
+  parts.push(...doubleSep());
+  parts.push(setAlign('center'), setBold(true), ...line('BORDEREAU DETAILLE'), setBold(false));
+  parts.push(setAlign('center'), setBold(true), ...line('DES RECETTES'), setBold(false));
+  parts.push(...doubleSep());
+
+  // ── INFOS GUICHET / DU / AU ───────────────────────────────────────
+  parts.push(setAlign('left'));
+  const padR = (s: string, n: number) => s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);
+  const dateRange = bordereau.date_from === bordereau.date_to
+    ? bordereau.date_from
+    : `${bordereau.date_from} au ${bordereau.date_to}`;
+  parts.push(setBold(true), ...line(`${padR('GUICHET:', 10)}${(bordereau.station_name || '').slice(0, w - 10)}`), setBold(false));
+  parts.push(setBold(true), ...line(`${padR('DU:', 10)}${(bordereau.date_from || '').slice(0, w - 10)}`), setBold(false));
+  parts.push(setBold(true), ...line(`${padR('AU:', 10)}${(bordereau.date_to || '').slice(0, w - 10)}`), setBold(false));
+  parts.push(...separator());
+
+  // ── TABLEAU ───────────────────────────────────────────────────────
+  // 44 chars for 58mm. Column layout:
+  // IMMAT(9) | N°(3) | SIEGE(4) | MT TICKET(9) | DEPENSE(8) | SOLDE(7) | BAGAGE(4)
+  // Total = 9+3+4+9+8+7+4 = 44
+  const C_IMMAT = 9;
+  const C_NUM = 3;
+  const C_SIEGE = 4;
+  const C_TICKET = 9;
+  const C_DEPENSE = 8;
+  const C_SOLDE = 7;
+  const C_BAGAGE = 4;
+
+  const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max) : s;
+  const rightAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : ' '.repeat(max - s.length) + s;
+  const leftAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : s + ' '.repeat(max - s.length);
+
+  // Header row
+  const headerRow =
+    leftAlign('IMMAT', C_IMMAT) +
+    leftAlign('N°', C_NUM) +
+    leftAlign('SIEG', C_SIEGE) +
+    rightAlign('MT TIC', C_TICKET) +
+    rightAlign('DEP R/P', C_DEPENSE) +
+    rightAlign('SOLDE', C_SOLDE) +
+    rightAlign('BAG', C_BAGAGE);
+  parts.push(setBold(true), ...line(headerRow.slice(0, w)), setBold(false));
+  parts.push(...separator());
+
+  // Data rows
+  for (const row of bordereau.rows) {
+    const immat = truncate((row.registration_number || '').toUpperCase(), C_IMMAT);
+    const num = truncate(String(row.departure_number || ''), C_NUM);
+    const siege = truncate(fmtNum(row.seats_sold), C_SIEGE);
+    const ticket = rightAlign(fmtNum(row.total_ticket), C_TICKET);
+    const depense = rightAlign(fmtNum(row.total_charges), C_DEPENSE);
+    const solde = rightAlign(fmtNum(row.solde_ticket), C_SOLDE);
+    const bagage = rightAlign(fmtNum(row.total_baggage), C_BAGAGE);
+
+    const dataLine =
+      leftAlign(immat, C_IMMAT) +
+      leftAlign(num, C_NUM) +
+      leftAlign(siege, C_SIEGE) +
+      ticket +
+      depense +
+      solde +
+      bagage;
+    parts.push(...line(dataLine.slice(0, w)));
+  }
+
+  parts.push(...separator());
+
+  // TOTAUX row
+  const totRow =
+    leftAlign('TOTAUX', C_IMMAT) +
+    leftAlign(String(bordereau.totals.departures), C_NUM) +
+    leftAlign(fmtNum(bordereau.totals.seats_sold), C_SIEGE) +
+    rightAlign(fmtNum(bordereau.totals.total_ticket), C_TICKET) +
+    rightAlign(fmtNum(bordereau.totals.total_charges), C_DEPENSE) +
+    rightAlign(fmtNum(bordereau.totals.solde_ticket), C_SOLDE) +
+    rightAlign(fmtNum(bordereau.totals.total_baggage), C_BAGAGE);
+  parts.push(setBold(true), ...line(totRow.slice(0, w)), setBold(false));
+
+  parts.push(...doubleSep());
+
+  // ── RÉCAPITULATIF ─────────────────────────────────────────────────
+  parts.push(setAlign('left'));
+  const recap = (label: string, val: string, bold = false) => {
+    const v = truncate(val, w - label.length - 1);
+    const gap = Math.max(1, w - label.length - v.length);
+    if (bold) parts.push(setBold(true));
+    parts.push(...line(`${label}${' '.repeat(gap)}${v}`));
+    if (bold) parts.push(setBold(false));
+  };
+
+  recap('TOTAL TICKETS:', fmt(bordereau.totals.total_ticket), true);
+  if (bordereau.totals.total_rations > 0)
+    recap('  RATIONS:', fmt(bordereau.totals.total_rations));
+  if (bordereau.totals.total_carburant > 0)
+    recap('  CARBURANT:', fmt(bordereau.totals.total_carburant));
+  if (bordereau.totals.total_peages > 0)
+    recap('  PEAGES:', fmt(bordereau.totals.total_peages));
+  if (bordereau.totals.total_autres > 0)
+    recap('  AUTRES:', fmt(bordereau.totals.total_autres));
+  parts.push(...separator());
+  recap('TOTAL DEPENSES:', fmt(bordereau.totals.total_charges), true);
+  recap('SOLDE TICKET:', fmt(bordereau.totals.solde_ticket), true);
+  recap('TOTAL BAGAGE:', fmt(bordereau.totals.total_baggage));
+  recap('NB VEHICULES:', String(bordereau.totals.departures));
+  recap('NB SIEGES:', fmtNum(bordereau.totals.seats_sold));
+
+  parts.push(...doubleSep());
+
+  // ── PIED ──────────────────────────────────────────────────────────
+  parts.push(setAlign('center'));
+  parts.push(...line(`Imprime le ${bordereau.print_date} a ${bordereau.print_time}`));
+
+  parts.push(lineFeed(2));
+  if (settings.auto_cut) parts.push(cutPaper());
+  return concat(...parts);
 }

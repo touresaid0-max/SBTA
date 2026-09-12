@@ -1,8 +1,8 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, type PrintTicketData, type PrintBagageData } from './escpos';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData } from './escpos';
 import { getPrintCustomization } from '../printCustomization';
 
-export type { PrintTicketData, PrintBagageData };
+export type { PrintTicketData, PrintBagageData, PrintRecettesData };
 
 const SETTINGS_ID = 'default';
 const DEFAULT_SETTINGS: PrintSettings = {
@@ -771,6 +771,169 @@ export async function printRamassageBordereau(data: PrintRamassageData): Promise
   const settings = await getPrintSettings();
   const html = buildHTMLRamassageBordereau(data, settings);
 
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  return new Promise((resolve) => {
+    const cw = iframe.contentWindow;
+    const doc = cw?.document;
+    if (!doc) { iframe.remove(); resolve(false); return; }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      setTimeout(() => iframe.remove(), 1500);
+      resolve(ok);
+    };
+
+    if (cw) {
+      cw.addEventListener('afterprint', () => finish(true), { once: true });
+    }
+    setTimeout(() => {
+      try {
+        cw?.focus();
+        cw?.print();
+      } catch {
+        finish(false);
+        return;
+      }
+      setTimeout(() => finish(true), 2000);
+    }, 300);
+  });
+}
+
+function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSettings): string {
+  const { data: bordereau, phoneLine } = data;
+  const mm = settings.width_mm;
+  const fmtNum = (n: number): string =>
+    Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const fmt = (n: number): string => fmtNum(n) + ' F';
+
+  const rowsHtml = bordereau.rows.map(row => {
+    const immat = escapeHtml((row.registration_number || '').toUpperCase().slice(0, 9));
+    const num = escapeHtml(String(row.departure_number || '').slice(0, 3));
+    const siege = escapeHtml(fmtNum(row.seats_sold).slice(0, 4));
+    const ticket = escapeHtml(fmtNum(row.total_ticket));
+    const depense = escapeHtml(fmtNum(row.total_charges));
+    const solde = escapeHtml(fmtNum(row.solde_ticket));
+    const bagage = escapeHtml(fmtNum(row.total_baggage));
+    return `<tr>
+      <td class="l">${immat}</td>
+      <td class="l">${num}</td>
+      <td class="l">${siege}</td>
+      <td class="r">${ticket}</td>
+      <td class="r">${depense}</td>
+      <td class="r">${solde}</td>
+      <td class="r">${bagage}</td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+  @page { size: ${mm}mm auto; margin: 0; }
+  * { font-family: 'Courier New', monospace; font-size: 8px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { background: #fff; }
+  body { width: ${mm}mm; margin: 0 auto; padding: 2px; font-weight: 600; }
+  .hdr { text-align: center; }
+  .brand { font-size: 16px; font-weight: 900; }
+  .sub { font-size: 8px; }
+  .phone { font-size: 9px; font-weight: 700; }
+  .title { text-align: center; font-size: 11px; font-weight: 900; margin: 2px 0; }
+  .dsep { border-top: 2px solid #000; margin: 2px 0; }
+  .sep { border-top: 1px solid #000; margin: 1px 0; }
+  .info { display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; padding: 1px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 7px; font-weight: 900; padding: 1px 0; border-bottom: 1px solid #000; }
+  th.l { text-align: left; }
+  th.r { text-align: right; }
+  td { font-size: 8px; padding: 1px 0; }
+  td.l { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  td.r { text-align: right; white-space: nowrap; }
+  .tot { font-weight: 900; border-top: 1px solid #000; }
+  .recap { font-size: 9px; font-weight: 700; padding: 1px 2px; }
+  .recap-row { display: flex; justify-content: space-between; padding: 1px 0; }
+  .recap-bold { font-weight: 900; }
+  .printed { text-align: center; font-size: 8px; font-weight: 700; padding: 2px 0; }
+  @media print { body { margin: 0 auto; } }
+</style></head><body>
+  <div class="hdr">
+    <div class="brand">SBTA</div>
+    <div class="sub">Soc. Bonkoungou Transport de L'Agneby</div>
+    <div class="phone">Tel ${escapeHtml(phoneLine || '07 69 94 88 03 / 07 99 68 60 03')}</div>
+  </div>
+  <div class="dsep"></div>
+  <div class="title">BORDEREAU DETAILLE DES RECETTES</div>
+  <div class="dsep"></div>
+  <div class="info"><span>GUICHET:</span><span>${escapeHtml(bordereau.station_name)}</span></div>
+  <div class="info"><span>DU:</span><span>${escapeHtml(bordereau.date_from)}</span></div>
+  <div class="info"><span>AU:</span><span>${escapeHtml(bordereau.date_to)}</span></div>
+  <div class="sep"></div>
+  <table>
+    <thead>
+      <tr>
+        <th class="l">IMMAT</th>
+        <th class="l">N°</th>
+        <th class="l">SIEG</th>
+        <th class="r">MT TIC</th>
+        <th class="r">DEP R/P</th>
+        <th class="r">SOLDE</th>
+        <th class="r">BAG</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+      <tr class="tot">
+        <td class="l">TOTAUX</td>
+        <td class="l">${bordereau.totals.departures}</td>
+        <td class="l">${fmtNum(bordereau.totals.seats_sold)}</td>
+        <td class="r">${fmtNum(bordereau.totals.total_ticket)}</td>
+        <td class="r">${fmtNum(bordereau.totals.total_charges)}</td>
+        <td class="r">${fmtNum(bordereau.totals.solde_ticket)}</td>
+        <td class="r">${fmtNum(bordereau.totals.total_baggage)}</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="dsep"></div>
+  <div class="recap">
+    <div class="recap-row recap-bold"><span>TOTAL TICKETS:</span><span>${fmt(bordereau.totals.total_ticket)}</span></div>
+    ${bordereau.totals.total_rations > 0 ? `<div class="recap-row"><span>  RATIONS:</span><span>${fmt(bordereau.totals.total_rations)}</span></div>` : ''}
+    ${bordereau.totals.total_carburant > 0 ? `<div class="recap-row"><span>  CARBURANT:</span><span>${fmt(bordereau.totals.total_carburant)}</span></div>` : ''}
+    ${bordereau.totals.total_peages > 0 ? `<div class="recap-row"><span>  PEAGES:</span><span>${fmt(bordereau.totals.total_peages)}</span></div>` : ''}
+    ${bordereau.totals.total_autres > 0 ? `<div class="recap-row"><span>  AUTRES:</span><span>${fmt(bordereau.totals.total_autres)}</span></div>` : ''}
+    <div class="sep"></div>
+    <div class="recap-row recap-bold"><span>TOTAL DEPENSES:</span><span>${fmt(bordereau.totals.total_charges)}</span></div>
+    <div class="recap-row recap-bold"><span>SOLDE TICKET:</span><span>${fmt(bordereau.totals.solde_ticket)}</span></div>
+    <div class="recap-row"><span>TOTAL BAGAGE:</span><span>${fmt(bordereau.totals.total_baggage)}</span></div>
+    <div class="recap-row"><span>NB VEHICULES:</span><span>${bordereau.totals.departures}</span></div>
+    <div class="recap-row"><span>NB SIEGES:</span><span>${fmtNum(bordereau.totals.seats_sold)}</span></div>
+  </div>
+  <div class="dsep"></div>
+  <div class="printed">Imprime le ${escapeHtml(bordereau.print_date)} a ${escapeHtml(bordereau.print_time)}</div>
+  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
+</body></html>`;
+}
+
+export async function printRecettesBordereau(data: PrintRecettesData): Promise<boolean> {
+  const settings = await getPrintSettings();
+  const escposData = buildRecettesESCPOS(data, settings);
+
+  const okSerial = await sendWebSerial(escposData);
+  if (okSerial) return true;
+  const okUsb = await sendWebUSB(escposData);
+  if (okUsb) return true;
+  const okQz = await sendQzTray(escposData, settings);
+  if (okQz) return true;
+
+  const html = buildHTMLRecettesBordereau(data, settings);
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';

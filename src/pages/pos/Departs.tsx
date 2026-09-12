@@ -18,7 +18,8 @@ import { supabase } from '@/services/supabase';
 import { getDepensesForDepart } from '@/services/pos/depenseService';
 import { getBagagesForDepart } from '@/services/pos/bagageService';
 import type { TicketRecord, BagageRecord, DepenseRecord } from '@/services/pos/db';
-import { printBorderauDepart, printBorderauRecettes } from '@/utils/printBordereau';
+import { printBorderauDepart } from '@/utils/printBordereau';
+import { printRecettesBordereau } from '@/services/pos/printService';
 import type { BordereauDepartData, BordereauDestinationGroup, BordereauRecettesData } from '@/types/counter.types';
 import { executeFullTransfer, getPendingTransfersForStation } from '@/services/pos/transferService';
 import type { DepartSummary } from '@/services/pos/posReportService';
@@ -406,7 +407,7 @@ export default function POSDeparts() {
         rows,
         totals,
       };
-      printBorderauRecettes(data);
+      printRecettesBordereau({ data, phoneLine: session?.station_name });
     } catch {
       // non-critical
     } finally {
