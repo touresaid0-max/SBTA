@@ -52,6 +52,7 @@ export async function registerBagage(params: RegisterBagageParams): Promise<Baga
     bagage_number: bagageNumber,
     ticket_id: linkedTicket?.id,
     ticket_number: linkedTicket?.ticket_number ?? params.ticketNumber,
+    linked_seat_number: linkedTicket?.seat_number,
     with_ticket: params.withTicket,
     with_ticket_report: params.withTicketReport,
     price: params.price,

@@ -25,6 +25,7 @@ export async function printBaggageTicket(data: BaggageTicketData) {
     with_ticket: data.mode_label?.toLowerCase().includes('ticket') ?? false,
     with_ticket_report: data.mode_label?.toLowerCase().includes('reporte') ?? false,
     ticket_number: data.seat_number ?? undefined,
+    linked_seat_number: data.seat_number ?? undefined,
     price: data.price,
     destination: data.destination,
     description: data.description ?? '',

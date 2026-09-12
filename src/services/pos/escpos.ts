@@ -257,7 +257,8 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const contact = value(bagage.owner_phone);
   const car = value(bagage.car_plate || depart.bus_plate).toUpperCase();
   const bagNum = value(bagage.bagage_number);
-  const seat = '0';
+  const seatRaw = bagage.with_ticket ? value(bagage.linked_seat_number) : '';
+  const seat = seatRaw !== '' ? seatRaw : '0';
 
   const line = (s = '') => [text(s.slice(0, w)), lineFeed()];
   const center = (s: string) => {
@@ -270,6 +271,12 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
     const rightStr = right.slice(0, Math.max(0, w - left.length - 1));
     const gap = Math.max(1, w - left.length - rightStr.length);
     return line(`${left}${' '.repeat(gap)}${rightStr}`);
+  };
+  const pairOrStack = (left: string, right: string) => {
+    if (left.length + 1 + right.length <= w) {
+      return pair(left, right);
+    }
+    return [...line(left), ...line(right)];
   };
 
   const renderBlock = (isSouche: boolean): void => {
@@ -289,7 +296,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
     parts.push(...separator());
     parts.push(setBold(true), ...pair(`SIEGE : ${seat}`, `PRIX : ${price}`), setBold(false));
     parts.push(...separator());
-    parts.push(setBold(true), ...pair(`CAR : ${car}`, `N°BAG : ${bagNum}`), setBold(false));
+    parts.push(setBold(true), ...pairOrStack(`CAR : ${car}`, `N°BAG : ${bagNum}`), setBold(false));
     parts.push(...separator());
     parts.push(setBold(true), ...pair(`DATE : ${dDate}`, `HEURE : ${dTime || ':'}`), setBold(false));
     parts.push(...separator());

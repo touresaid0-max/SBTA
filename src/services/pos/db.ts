@@ -102,6 +102,7 @@ export interface BagageRecord {
   bagage_number: string;
   ticket_id?: string;
   ticket_number?: string;
+  linked_seat_number?: number | string;
   with_ticket: boolean;
   with_ticket_report: boolean;
   price: number;

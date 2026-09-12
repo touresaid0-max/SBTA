@@ -306,6 +306,8 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const contact = bagage.owner_phone ?? '';
   const car = (bagage.car_plate || depart.bus_plate || '').toUpperCase();
   const bagNum = bagage.bagage_number ?? '';
+  const seatRaw = bagage.with_ticket ? (bagage.linked_seat_number ?? '') : '';
+  const seatStr = seatRaw !== '' && seatRaw !== null && seatRaw !== undefined ? String(seatRaw) : '0';
   const v = (s: string | number | null | undefined) => escapeHtml(String(s ?? ''));
 
   const ticketBlock = (isSouche: boolean) => `
@@ -326,9 +328,9 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
     <div class="row"><span class="lbl">DEPART :</span><span class="val">N° ${v(departNum)}</span></div>
     <div class="route">${v(originCity)} <span class="arrow">=&gt;</span> ${v(destCity)}</div>
     <div class="sep"></div>
-    <div class="row"><span class="lbl">SIEGE : <b>0</b></span><span class="val"><span class="lbl">PRIX :</span> <b>${v(price)}</b></span></div>
+    <div class="row"><span class="lbl">SIEGE : <b>${v(seatStr)}</b></span><span class="val"><span class="lbl">PRIX :</span> <b>${v(price)}</b></span></div>
     <div class="sep"></div>
-    <div class="row"><span class="lbl">CAR : <b>${v(car)}</b></span><span class="val"><span class="lbl">N°BAG :</span> <b>${v(bagNum)}</b></span></div>
+    <div class="row car-row"><span class="lbl">CAR : <b>${v(car)}</b></span><span class="val"><span class="lbl">N°BAG :</span> <b>${v(bagNum)}</b></span></div>
     <div class="sep"></div>
     <div class="row"><span class="lbl">DATE : <b>${v(dDate)}</b></span><span class="val"><span class="lbl">HEURE :</span> <b>${v(dTime || ':')}</b></span></div>
     <div class="sep"></div>
@@ -357,6 +359,8 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .row.single { justify-content: flex-start; }
   .row .lbl { flex: 0 0 auto; white-space: nowrap; }
   .row .val { flex: 1 1 auto; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .row.car-row { font-size: 8.8px; letter-spacing: -0.2px; gap: 2px; }
+  .row.car-row .lbl, .row.car-row .val { white-space: nowrap; overflow: visible; text-overflow: clip; }
   .row b { font-weight: 900; }
   .route { text-align: center; font-size: 12px; font-weight: 900; padding: 2px 0; letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .route .arrow { font-weight: 900; margin: 0 3px; }
