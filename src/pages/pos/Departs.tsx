@@ -407,7 +407,7 @@ export default function POSDeparts() {
         rows,
         totals,
       };
-      printRecettesBordereau({ data, phoneLine: session?.station_name });
+      printRecettesBordereau({ data });
     } catch {
       // non-critical
     } finally {
