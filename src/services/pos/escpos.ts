@@ -241,79 +241,71 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 
 export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings): Uint8Array {
   const w = settings.width_mm === 80 ? 56 : 48;
-  const innerW = w - 2;
   const { bagage, depart, stationName } = data;
-  const parts: Uint8Array[] = [init(), setLineSpacing(28), setFontB()];
-  const value = (input: string | number | null | undefined) => String(input ?? '-').trim() || '-';
+  const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
+  const value = (input: string | number | null | undefined) => String(input ?? '').trim();
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
-  const date = formatDateTime(new Date().toISOString());
-  const [datePart, timePart] = date.split(' ');
-  const departure = `${value(depart.route_number)} ${value(depart.route_name).toUpperCase()}`;
-  const destination = value(bagage.destination).toUpperCase();
+  const nowIso = new Date().toISOString();
+  const printed = formatDateTime(nowIso);
+  const departDate = formatDateTime(depart.departure_datetime || nowIso);
+  const [dDate, dTime] = departDate.split(' ');
+  const routeParts = (depart.route_name ?? '').split(/\s*[-–—>=]+\s*/).filter(Boolean);
+  const originCity = (routeParts[0] || stationName || '').toUpperCase();
+  const destCity = (routeParts[routeParts.length - 1] || bagage.destination || '').toUpperCase();
+  const departNum = value(depart.route_number) || value(depart.departure_number);
   const owner = value(bagage.owner_name).toUpperCase();
-  const description = value(bagage.description).toUpperCase();
-  const car = value(bagage.car_plate || depart.bus_plate);
-  const mode = bagage.with_ticket ? 'AVEC TICKET' : 'SANS SIEGE';
-  const station = value(stationName || 'Gare');
-  const line = (input = '') => [text(input.slice(0, w)), lineFeed()];
-  const boxedRaw = (content: string) => `|${content.padEnd(innerW, ' ').slice(0, innerW)}|`;
-  const boxed = (input = '') => line(boxedRaw(input.slice(0, innerW)));
-  const boxedCenter = (input: string) => {
-    const s = input.slice(0, innerW);
-    const left = Math.floor((innerW - s.length) / 2);
-    return line(boxedRaw(' '.repeat(Math.max(0, left)) + s));
+  const contact = value(bagage.owner_phone);
+  const car = value(bagage.car_plate || depart.bus_plate).toUpperCase();
+  const bagNum = value(bagage.bagage_number);
+  const seat = '0';
+
+  const line = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  const center = (s: string) => {
+    const t = s.slice(0, w);
+    const pad = Math.max(0, Math.floor((w - t.length) / 2));
+    return line(' '.repeat(pad) + t);
   };
-  const border = () => line(`+${'-'.repeat(innerW)}+`);
-  const separator = () => line(boxedRaw('-'.repeat(innerW)));
-  const row = (label: string, input: string | number) => {
-    const right = value(input).slice(0, Math.max(1, innerW - label.length - 1));
-    return [setBold(true), ...boxed(`${label}${' '.repeat(Math.max(1, innerW - label.length - right.length))}${right}`), setBold(false)];
-  };
-  const dateRow = () => {
-    const left = `DATE    ${datePart}`;
-    const right = `HEURE       ${timePart || '00H00'}`;
-    return [setBold(true), ...boxed(`${left}${' '.repeat(Math.max(1, innerW - left.length - right.length))}${right}`), setBold(false)];
+  const separator = () => line('-'.repeat(w));
+  const pair = (left: string, right: string) => {
+    const rightStr = right.slice(0, Math.max(0, w - left.length - 1));
+    const gap = Math.max(1, w - left.length - rightStr.length);
+    return line(`${left}${' '.repeat(gap)}${rightStr}`);
   };
 
-  const renderTicket = (isSouche: boolean): void => {
+  const renderBlock = (isSouche: boolean): void => {
     parts.push(setAlign('left'));
-    parts.push(...border());
-    parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...boxedCenter('SBTA'), setNormal(), setFontB());
-    parts.push(setBold(true), ...boxedCenter("Societe Bonkoungou Transport de L'Agneby"));
-    parts.push(setBold(true), ...boxedCenter(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
+    parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+    parts.push(setBold(true), ...center("Societe Bonkoungou Transport de L'Agneby"), setBold(false));
+    parts.push(setBold(true), ...center(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
     parts.push(...separator());
-    parts.push(setAlign('center'), setBold(true), ...boxed(isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'), ...boxed(mode), setBold(false));
-    parts.push(setAlign('left'), ...separator());
-    parts.push(...row('N BAGAGE', bagage.bagage_number));
-    if (bagage.with_ticket && bagage.ticket_number) parts.push(...separator(), ...row('TICKET', bagage.ticket_number));
-    parts.push(...separator());
-    parts.push(...row('DEPART', departure));
-    parts.push(...separator());
-    parts.push(...row('PRIX', price));
-    parts.push(...separator());
-    parts.push(...row('CAR', car));
-    parts.push(...separator());
-    parts.push(...dateRow());
-    parts.push(...separator());
-    parts.push(...row('PROPRIETAIRE', owner));
-    parts.push(...row('CONTACT', value(bagage.owner_phone)));
-    parts.push(...separator());
-    parts.push(setBold(true), ...boxed('DESCRIPTION'), ...boxed(description), setBold(false));
-    parts.push(...separator());
-    parts.push(setAlign('center'), setBold(true), ...boxed('OK'), setBold(false));
-    parts.push(...boxed(station));
-    if (!isSouche) {
-      parts.push(...boxed('AUCUN REMBOURSEMENT N EST POSSIBLE APRES ENCAISSEMENT'));
-      parts.push(...boxed('NB: PASSE UN DELAI DE 14 JOURS, SBTA N EST PAS RESPONSABLE EN CAS DE'));
-      parts.push(...boxed('PERTE DE COLIS.'));
+    if (isSouche) {
+      parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SOUCHE'), setNormal(), setFontB(), setBold(false));
+    } else {
+      parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('TICKET BAGAGE'), setNormal(), setFontB(), setBold(false));
     }
-    parts.push(setAlign('left'), ...border());
+    parts.push(setAlign('left'), ...separator());
+    parts.push(setBold(true), ...pair('DEPART :', `N° ${departNum}`), setBold(false));
+    parts.push(setBold(true), ...center(`${originCity} => ${destCity}`), setBold(false));
+    parts.push(...separator());
+    parts.push(setBold(true), ...pair(`SIEGE : ${seat}`, `PRIX : ${price}`), setBold(false));
+    parts.push(...separator());
+    parts.push(setBold(true), ...pair(`CAR : ${car}`, `N°BAGAGE : ${bagNum}`), setBold(false));
+    parts.push(...separator());
+    parts.push(setBold(true), ...pair(`DATE : ${dDate}`, `HEURE : ${dTime || ':'}`), setBold(false));
+    parts.push(...separator());
+    parts.push(setBold(true), ...line(`PROPRIETAIRE : ${owner}`), setBold(false));
+    parts.push(setBold(true), ...line(`CONTACT : ${contact}`), setBold(false));
+    parts.push(...separator());
+    parts.push(setAlign('center'), ...line(`Imprime le : ${printed}`), setAlign('left'));
   };
 
-  renderTicket(false);
-  parts.push(setAlign('center'), ...line('DECOUPER ICI'));
-  renderTicket(true);
-  parts.push(lineFeed(1));
+  renderBlock(false);
+  parts.push(setAlign('center'));
+  parts.push(...line('- - - - - - - - - - - - - - - - - - - - - - - - '.slice(0, w)));
+  parts.push(setBold(true), ...line('DECOUPER ICI'), setBold(false));
+  parts.push(...line('- - - - - - - - - - - - - - - - - - - - - - - - '.slice(0, w)));
+  renderBlock(true);
+  parts.push(lineFeed(2));
   if (settings.auto_cut) parts.push(cutPaper());
   return concat(...parts);
 }

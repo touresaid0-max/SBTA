@@ -292,85 +292,82 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
 function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string {
   const { bagage, depart, stationName, phoneLine } = data;
-  const widthPx = settings.width_mm === 80 ? 384 : 284;
+  const widthPx = settings.width_mm === 80 ? 384 : 300;
   const phone = phoneLine || '01 14 34 60 / 01 14 34 87';
-  const dt = formatDateTime(new Date().toISOString());
-  const [datePart, timePart] = dt.split(' ');
+  const nowIso = new Date().toISOString();
+  const printed = formatDateTime(nowIso).replace('H', ':');
+  const departFmt = formatDateTime(depart.departure_datetime || nowIso);
+  const [dDate, dTime] = departFmt.split(' ');
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
-  const departure = `${depart.route_number ?? '-'} ${(depart.route_name ?? '-').toUpperCase()}`;
-  const destination = (bagage.destination ?? '-').toUpperCase();
-  const owner = (bagage.owner_name ?? '-').toUpperCase();
-  const description = (bagage.description ?? '-').toUpperCase();
-  const car = bagage.car_plate || depart.bus_plate || '-';
-  const mode = bagage.with_ticket ? 'AVEC TICKET' : 'SANS SIEGE';
-  const station = (stationName ?? 'Gare').toUpperCase();
-  const v = (s: string | number | null | undefined) => escapeHtml(String(s ?? '-').trim() || '-');
+  const routeParts = (depart.route_name ?? '').split(/\s*[-–—>=]+\s*/).filter(Boolean);
+  const originCity = (routeParts[0] || stationName || '').toUpperCase();
+  const destCity = (routeParts[routeParts.length - 1] || bagage.destination || '').toUpperCase();
+  const departNum = String(depart.route_number ?? depart.departure_number ?? '');
+  const owner = (bagage.owner_name ?? '').toUpperCase();
+  const contact = bagage.owner_phone ?? '';
+  const car = (bagage.car_plate || depart.bus_plate || '').toUpperCase();
+  const bagNum = bagage.bagage_number ?? '';
+  const v = (s: string | number | null | undefined) => escapeHtml(String(s ?? ''));
 
-  const ticketBlock = (isSouche: boolean) => {
-    const rows: string[] = [];
-    const row = (label: string, val: string) =>
-      `<div class="row"><span class="lbl">${label}</span><span class="val">${v(val)}</span></div>`;
-    rows.push(`<div class="ticket-header"><img src="/logo-sbta.JPG" alt="SBTA"/><div class="brand bold">SBTA</div><div class="company">Societe Bonkoungou Transport de L'Agneby</div><div class="phone">Tel ${v(phone)}</div></div>`);
-    rows.push(`<div class="sep"></div>`);
-    rows.push(`<div class="title">${isSouche ? 'SOUCHE BAGAGE' : 'TICKET BAGAGE'}</div>`);
-    rows.push(`<div class="title">${mode}</div>`);
-    rows.push(`<div class="sep"></div>`);
-    rows.push(row('N BAGAGE', bagage.bagage_number));
-    if (bagage.with_ticket && bagage.ticket_number) { rows.push(`<div class="sep"></div>`); rows.push(row('TICKET', bagage.ticket_number)); }
-    rows.push(`<div class="sep"></div>`);
-    rows.push(row('DEPART', departure));
-    rows.push(`<div class="sep"></div>`);
-    rows.push(row('PRIX', price));
-    rows.push(`<div class="sep"></div>`);
-    rows.push(row('CAR', car));
-    rows.push(`<div class="sep"></div>`);
-    rows.push(`<div class="row"><span class="lbl">DATE</span><span class="val">${v(datePart)}</span><span class="lbl ml">HEURE</span><span class="val">${v(timePart || '00H00')}</span></div>`);
-    rows.push(`<div class="sep"></div>`);
-    rows.push(row('PROPRIETAIRE', owner));
-    rows.push(row('CONTACT', bagage.owner_phone));
-    rows.push(`<div class="sep"></div>`);
-    rows.push(`<div class="lbl">DESCRIPTION</div>`);
-    rows.push(`<div>${v(description)}</div>`);
-    rows.push(`<div class="sep"></div>`);
-    rows.push(`<div class="center bold">OK</div>`);
-    rows.push(`<div class="center">${v(station)}</div>`);
-    if (!isSouche) {
-      rows.push(`<div class="small">AUCUN REMBOURSEMENT N EST POSSIBLE APRES ENCAISSEMENT</div>`);
-      rows.push(`<div class="small">NB: PASSE UN DELAI DE 14 JOURS, SBTA N EST PAS RESPONSABLE EN CAS DE</div>`);
-      rows.push(`<div class="small">PERTE DE COLIS.</div>`);
-    }
-    rows.push(`<div class="border"></div>`);
-    return rows.join('');
-  };
+  const ticketBlock = (isSouche: boolean) => `
+    ${!isSouche ? `
+    <div class="hdr">
+      <div class="hdr-logo"><img src="/LOGO_SBTA_-1.png" alt="SBTA"/></div>
+      <div class="hdr-brand">
+        <div class="brand-name">SBTA</div>
+        <div class="brand-sub">Société Bonkoungou Transport de L'Agneby</div>
+        <div class="brand-sub phone">Tel ${v(phone)}</div>
+      </div>
+    </div>
+    <div class="title">TICKET BAGAGE</div>
+    ` : `
+    <div class="souche">SOUCHE</div>
+    `}
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">DEPART :</span><span class="val">N° ${v(departNum)}</span></div>
+    <div class="route">${v(originCity)} <span class="arrow">=&gt;</span> ${v(destCity)}</div>
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">SIEGE : <b>0</b></span><span class="val"><span class="lbl">PRIX :</span> <b>${v(price)}</b></span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">CAR : <b>${v(car)}</b></span><span class="val"><span class="lbl">N°BAGAGE :</span> <b>${v(bagNum)}</b></span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">DATE : <b>${v(dDate)}</b></span><span class="val"><span class="lbl">HEURE :</span> <b>${v(dTime || ':')}</b></span></div>
+    <div class="sep"></div>
+    <div class="row single"><span class="lbl">PROPRIETAIRE : <b>${v(owner)}</b></span></div>
+    <div class="row single"><span class="lbl">CONTACT : <b>${v(contact)}</b></span></div>
+    <div class="sep"></div>
+    <div class="printed">Imprimé le : ${v(printed)}</div>
+  `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', Arial, sans-serif; font-stretch: condensed; font-size: 12px; font-weight: 600; margin: 0; padding: 0; line-height: 1.15; }
-  body { width: ${widthPx}px; margin: 0 auto; padding: 1px 2px; }
-  .center { text-align: center; }
-  .right { text-align: right; }
-  .bold { font-weight: bold; }
-  .ticket-header { text-align: center; padding: 2px 0 3px; border-bottom: 1px solid #000; }
-  .ticket-header img { display: block; width: 72px; height: auto; margin: 0 auto 2px; }
-  .brand { font-size: 16px; }
-  .company { font-size: 10px; font-weight: 700; }
-  .phone { font-size: 11px; font-weight: 700; }
-  .title { text-align: center; font-weight: bold; font-size: 13px; }
-  .border { height: 0; margin: 0; }
-  .sep { border-top: 1px dashed #000; margin: 0; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; min-width: 0; }
-  .lbl { font-weight: 800; flex: 0 0 auto; }
-  .ml { margin-left: 8px; }
-  .val { min-width: 0; text-align: right; font-weight: 700; overflow-wrap: anywhere; }
-  .small { font-size: 10px; text-align: center; line-height: 1.3; }
-  .cut { text-align: center; font-size: 9px; margin: 2px 0; }
-  .ticket-frame { border: 1px solid #000; padding: 0 5px; }
+  * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif; font-stretch: condensed; margin: 0; padding: 0; box-sizing: border-box; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { width: ${widthPx}px; margin: 0 auto; padding: 2px 3px; font-size: 12px; font-weight: 600; line-height: 1.2; }
+  .hdr { display: flex; align-items: center; gap: 4px; padding: 2px 0 4px; }
+  .hdr-logo { flex: 0 0 auto; width: 46px; }
+  .hdr-logo img { width: 100%; height: auto; display: block; }
+  .hdr-brand { flex: 1 1 auto; text-align: center; line-height: 1.1; min-width: 0; }
+  .brand-name { font-size: 26px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
+  .brand-sub { font-size: 10px; font-weight: 700; white-space: normal; word-break: break-word; }
+  .brand-sub.phone { font-size: 11px; font-weight: 800; margin-top: 1px; }
+  .title { text-align: center; font-size: 18px; font-weight: 900; letter-spacing: 1px; padding: 3px 0 2px; }
+  .souche { text-align: center; font-size: 17px; font-weight: 900; font-style: italic; letter-spacing: 1px; padding: 3px 0; }
+  .sep { border-top: 1px dashed #000; margin: 2px 0; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 2px 0; font-size: 12px; font-weight: 700; min-width: 0; }
+  .row.single { justify-content: flex-start; }
+  .row .lbl { flex: 0 0 auto; white-space: nowrap; }
+  .row .val { flex: 1 1 auto; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row b { font-weight: 900; }
+  .route { text-align: center; font-size: 14px; font-weight: 900; padding: 2px 0; letter-spacing: 0.5px; }
+  .route .arrow { font-weight: 900; margin: 0 4px; }
+  .printed { text-align: center; font-size: 10px; font-weight: 700; padding: 2px 0; }
+  .tear { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 4px 0; font-size: 10px; font-weight: 800; letter-spacing: 2px; }
+  .tear::before, .tear::after { content: ''; flex: 1 1 auto; border-top: 1px dashed #000; height: 0; }
+  @media print { body { margin: 0; padding: 2px 3px; background: #fff; } }
 </style></head><body>
-  <div class="ticket-frame">
   ${ticketBlock(false)}
-  <div class="cut">DECOUPER ICI</div>
+  <div class="tear">DECOUPER ICI</div>
   ${ticketBlock(true)}
-  </div>
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
 }
