@@ -486,9 +486,9 @@ export interface PrintBordereauDepartData {
 }
 
 export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 52 : 44;
+  const w = settings.width_mm === 80 ? 52 : 48;
   const { data: bord, phoneLine } = data;
-  const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
+  const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
 
   const fmtNum = (n: number): string =>
     Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -502,10 +502,15 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
   };
   const separator = () => line('-'.repeat(w));
   const doubleSep = () => line('='.repeat(w));
+  const topBorder = () => line('+' + '-'.repeat(w - 2) + '+');
+  const bottomBorder = () => line('+' + '-'.repeat(w - 2) + '+');
 
   const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max) : s;
   const rightAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : ' '.repeat(max - s.length) + s;
   const leftAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : s + ' '.repeat(max - s.length);
+
+  // ── CONTOUR SUPÉRIEUR ─────────────────────────────────────────────
+  parts.push(setAlign('center'), ...topBorder());
 
   // ── EN-TÊTE ──────────────────────────────────────────────────────
   parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
@@ -561,12 +566,12 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
     pair('MT TOTAL BAGAGE:', fmt(bord.total_baggage));
   } else {
     // Normal: sales table by destination
-    // Column layout for 44 chars:
-    // DEST(14) | SIEG(4) | TARIF(10) | MONTANT(10) = 38, leaves room
-    const C_DEST = 14;
+    // Column layout for 48 chars:
+    // DEST(18) | SIEG(4) | TARIF(12) | MONTANT(12) = 46, fits in 48
+    const C_DEST = 18;
     const C_SIEG = 4;
-    const C_TARIF = 10;
-    const C_MONTANT = 10;
+    const C_TARIF = 12;
+    const C_MONTANT = 12;
 
     const headerRow =
       leftAlign('DESTINATION', C_DEST) +
@@ -621,6 +626,9 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
   // ── PIED ──────────────────────────────────────────────────────────
   parts.push(setAlign('center'));
   parts.push(...line(`Imprime le ${bord.print_date} a ${bord.print_time}`));
+
+  // ── CONTOUR INFÉRIEUR ─────────────────────────────────────────────
+  parts.push(...bottomBorder());
 
   parts.push(lineFeed(2));
   if (settings.auto_cut) parts.push(cutPaper());

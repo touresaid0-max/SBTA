@@ -990,7 +990,7 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
     : [{ destination: bord.destination, seats_sold: bord.seats_sold, unit_price: bord.unit_price, amount: bord.total_ticket_amount, seat_numbers: bord.sold_seat_numbers }];
 
   const rowsHtml = groups.map(g => {
-    const dest = escapeHtml(g.destination.slice(0, 14));
+    const dest = escapeHtml(g.destination.slice(0, 18));
     const sieg = escapeHtml(fmtNum(g.seats_sold));
     const tarif = escapeHtml(fmtNum(g.unit_price));
     const montant = escapeHtml(fmtNum(g.amount));
@@ -1051,32 +1051,34 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 8px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  * { font-family: 'Courier New', monospace; font-size: 9px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: ${mm}mm; margin: 0 auto; padding: 2px; font-weight: 600; }
+  body { width: ${mm}mm; margin: 0 auto; padding: 3px; font-weight: 600; }
+  .border-box { border: 2px solid #000; padding: 3px; }
   .hdr { text-align: center; }
-  .brand { font-size: 16px; font-weight: 900; }
-  .sub { font-size: 8px; }
-  .phone { font-size: 9px; font-weight: 700; }
-  .title { text-align: center; font-size: 11px; font-weight: 900; margin: 2px 0; }
-  .dsep { border-top: 2px solid #000; margin: 2px 0; }
-  .sep { border-top: 1px solid #000; margin: 1px 0; }
-  .info { display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; padding: 1px 0; }
-  .convoy-badge { text-align: center; font-size: 10px; font-weight: 900; padding: 2px 0; }
+  .brand { font-size: 18px; font-weight: 900; }
+  .sub { font-size: 9px; }
+  .phone { font-size: 10px; font-weight: 700; }
+  .title { text-align: center; font-size: 12px; font-weight: 900; margin: 3px 0; }
+  .dsep { border-top: 2px solid #000; margin: 3px 0; }
+  .sep { border-top: 1px solid #000; margin: 2px 0; }
+  .info { display: flex; justify-content: space-between; font-size: 10px; font-weight: 700; padding: 2px 0; }
+  .convoy-badge { text-align: center; font-size: 11px; font-weight: 900; padding: 3px 0; }
   table { width: 100%; border-collapse: collapse; }
-  th { font-size: 7px; font-weight: 900; padding: 1px 0; border-bottom: 1px solid #000; }
+  th { font-size: 8px; font-weight: 900; padding: 2px 0; border-bottom: 1px solid #000; }
   th.l { text-align: left; }
   th.r { text-align: right; }
-  td { font-size: 8px; padding: 1px 0; }
+  td { font-size: 9px; padding: 2px 0; }
   td.l { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
   td.r { text-align: right; white-space: nowrap; }
-  .seats { font-size: 7px; font-style: italic; padding: 0 0 1px 2px; color: #333; }
-  .recap { font-size: 9px; font-weight: 700; padding: 1px 2px; }
-  .recap-row { display: flex; justify-content: space-between; padding: 1px 0; }
+  .seats { font-size: 8px; font-style: italic; padding: 0 0 2px 2px; color: #333; }
+  .recap { font-size: 10px; font-weight: 700; padding: 2px 2px; }
+  .recap-row { display: flex; justify-content: space-between; padding: 2px 0; }
   .recap-bold { font-weight: 900; }
-  .printed { text-align: center; font-size: 8px; font-weight: 700; padding: 2px 0; }
+  .printed { text-align: center; font-size: 9px; font-weight: 700; padding: 3px 0; }
   @media print { body { margin: 0 auto; } }
 </style></head><body>
+  <div class="border-box">
   <div class="hdr">
     <div class="brand">SBTA</div>
     <div class="sub">Soc. Bonkoungou Transport de L'Agneby</div>
@@ -1105,6 +1107,7 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   </div>
   <div class="dsep"></div>
   <div class="printed">Imprime le ${escapeHtml(bord.print_date)} a ${escapeHtml(bord.print_time)}</div>
+  </div>
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
 }
