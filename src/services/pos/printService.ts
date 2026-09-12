@@ -994,15 +994,12 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
     const sieg = escapeHtml(fmtNum(g.seats_sold));
     const tarif = escapeHtml(fmtNum(g.unit_price));
     const montant = escapeHtml(fmtNum(g.amount));
-    const seats = g.seat_numbers.length > 0
-      ? `<div class="seats">${escapeHtml(g.seat_numbers.join('-'))}</div>`
-      : '';
     return `<tr>
       <td class="l">${dest}</td>
       <td class="l">${sieg}</td>
       <td class="r">${tarif}</td>
       <td class="r">${montant}</td>
-    </tr>${seats}`;
+    </tr>`;
   }).join('');
 
   const convoySection = bord.is_convoy

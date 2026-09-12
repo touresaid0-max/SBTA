@@ -486,7 +486,7 @@ export interface PrintBordereauDepartData {
 }
 
 export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 60 : 56;
+  const w = settings.width_mm === 80 ? 68 : 64;
   const { data: bord, phoneLine } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
 
@@ -494,16 +494,20 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
     Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   const fmt = (n: number): string => fmtNum(n) + ' F';
 
-  const line = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  const rawLine = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  const line = (s = '') => {
+    const inner = s.slice(0, w - 2).padEnd(w - 2);
+    return [text(`|${inner}|`), lineFeed()];
+  };
   const center = (s: string) => {
-    const t = s.slice(0, w);
-    const pad = Math.max(0, Math.floor((w - t.length) / 2));
+    const t = s.slice(0, w - 2);
+    const pad = Math.max(0, Math.floor((w - 2 - t.length) / 2));
     return line(' '.repeat(pad) + t);
   };
-  const separator = () => line('-'.repeat(w));
-  const doubleSep = () => line('='.repeat(w));
-  const topBorder = () => line('+' + '-'.repeat(w - 2) + '+');
-  const bottomBorder = () => line('+' + '-'.repeat(w - 2) + '+');
+  const separator = () => line('-'.repeat(w - 2));
+  const doubleSep = () => line('='.repeat(w - 2));
+  const topBorder = () => rawLine('+' + '-'.repeat(w - 2) + '+');
+  const bottomBorder = () => rawLine('+' + '-'.repeat(w - 2) + '+');
 
   const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max) : s;
   const rightAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : ' '.repeat(max - s.length) + s;
@@ -566,12 +570,12 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
     pair('MT TOTAL BAGAGE:', fmt(bord.total_baggage));
   } else {
     // Normal: sales table by destination
-    // Column layout for 56 chars:
-    // DEST(22) | SIEG(4) | TARIF(14) | MONTANT(14) = 54, fits in 56
-    const C_DEST = 22;
+    // Column layout for 62 inner chars:
+    // DEST(26) | SIEG(4) | TARIF(16) | MONTANT(16) = 62
+    const C_DEST = 26;
     const C_SIEG = 4;
-    const C_TARIF = 14;
-    const C_MONTANT = 14;
+    const C_TARIF = 16;
+    const C_MONTANT = 16;
 
     const headerRow =
       leftAlign('DESTINATION', C_DEST) +
@@ -592,14 +596,6 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
       const montant = rightAlign(fmtNum(group.amount), C_MONTANT);
       parts.push(...line(`${leftAlign(destLabel, C_DEST)}${sieg}${tarif}${montant}`));
 
-      // Seat numbers on the next line
-      if (group.seat_numbers.length > 0) {
-        const seatsStr = group.seat_numbers.join('-');
-        const perRow = w - 2;
-        for (let i = 0; i < seatsStr.length; i += perRow) {
-          parts.push(...line('  ' + seatsStr.slice(i, i + perRow)));
-        }
-      }
     }
     parts.push(...separator());
 
