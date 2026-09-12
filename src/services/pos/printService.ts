@@ -140,7 +140,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   const stripStationLabel = (s: string) => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
   const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
   const originCity = stripStationLabel((stationName || depart.station_name || routeParts[0] || 'ABIDJAN').toUpperCase().trim());
-  const destCity   = stripStationLabel(((ticket.destination || routeParts[routeParts.length - 1] || '') || '').toUpperCase().trim());
+  const destCity   = stripStationLabel(((routeParts[routeParts.length - 1] ?? ticket.destination) || '').toUpperCase().trim());
   const seatStr    = ticket.seat_number ? String(ticket.seat_number) : '—';
   const tarifStr   = ticket.price.toLocaleString('fr-FR') + ' f';
   const carPlate   = escapeHtml(depart.bus_plate ?? '—').toUpperCase();
