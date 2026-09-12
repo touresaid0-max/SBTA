@@ -146,7 +146,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   parts.push(setAlign('left'));
   const routePartsTicket = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
   const originCityTicket = (routePartsTicket[0] ?? '').toUpperCase().trim() || '-';
-  const destCityTicket = ((routePartsTicket[routePartsTicket.length - 1] ?? ticket.destination) || '').toUpperCase().trim() || '-';
+  const destCityTicket = (ticket.destination || routePartsTicket[routePartsTicket.length - 1] || '').toUpperCase().trim() || '-';
   const routeNameFull = `${originCityTicket} => ${destCityTicket}`;
   const routeName = routeNameFull.slice(0, innerW - 8);
   parts.push(setBold(true), text(vLine(`${padRight('Ligne:', 8)}${routeName}`)), lineFeed(), setBold(false));

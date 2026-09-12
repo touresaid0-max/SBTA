@@ -139,7 +139,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
   const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
   const originCity = (routeParts[0] ?? 'ABIDJAN').toUpperCase().trim();
-  const destCity   = ((routeParts[routeParts.length - 1] ?? ticket.destination) || '').toUpperCase().trim();
+  const destCity   = (ticket.destination || routeParts[routeParts.length - 1] || '').toUpperCase().trim();
   const seatStr    = ticket.seat_number ? String(ticket.seat_number) : '—';
   const tarifStr   = ticket.price.toLocaleString('fr-FR') + ' f';
   const carPlate   = escapeHtml(depart.bus_plate ?? '—').toUpperCase();
