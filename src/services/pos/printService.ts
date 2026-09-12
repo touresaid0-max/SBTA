@@ -990,7 +990,7 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
     : [{ destination: bord.destination, seats_sold: bord.seats_sold, unit_price: bord.unit_price, amount: bord.total_ticket_amount, seat_numbers: bord.sold_seat_numbers }];
 
   const rowsHtml = groups.map(g => {
-    const dest = escapeHtml(g.destination.slice(0, 18));
+    const dest = escapeHtml(g.destination.slice(0, 22));
     const sieg = escapeHtml(fmtNum(g.seats_sold));
     const tarif = escapeHtml(fmtNum(g.unit_price));
     const montant = escapeHtml(fmtNum(g.amount));

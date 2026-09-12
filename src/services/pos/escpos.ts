@@ -486,7 +486,7 @@ export interface PrintBordereauDepartData {
 }
 
 export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 52 : 48;
+  const w = settings.width_mm === 80 ? 60 : 56;
   const { data: bord, phoneLine } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
 
@@ -566,12 +566,12 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
     pair('MT TOTAL BAGAGE:', fmt(bord.total_baggage));
   } else {
     // Normal: sales table by destination
-    // Column layout for 48 chars:
-    // DEST(18) | SIEG(4) | TARIF(12) | MONTANT(12) = 46, fits in 48
-    const C_DEST = 18;
+    // Column layout for 56 chars:
+    // DEST(22) | SIEG(4) | TARIF(14) | MONTANT(14) = 54, fits in 56
+    const C_DEST = 22;
     const C_SIEG = 4;
-    const C_TARIF = 12;
-    const C_MONTANT = 12;
+    const C_TARIF = 14;
+    const C_MONTANT = 14;
 
     const headerRow =
       leftAlign('DESTINATION', C_DEST) +
