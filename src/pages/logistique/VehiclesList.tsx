@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bus, Plus, Search, ArrowRight, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '@/store/authStore'
 import {
   fetchVehicles, createVehicle, fetchBuses, fetchCompanies, PLATE_STATUS_LABELS,
 } from '@/services/logistics.service'
@@ -25,6 +26,8 @@ const EMPTY: VehicleInput = {
 
 export default function VehiclesList() {
   const navigate = useNavigate()
+  const { user } = useAuthStore()
+  const isReadOnly = user?.role === 'logistique'
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [buses, setBuses] = useState<LogisticsBus[]>([])
   const [companies, setCompanies] = useState<LogisticsCompany[]>([])
@@ -87,9 +90,11 @@ export default function VehiclesList() {
             <p className="text-sm text-[#6B7280]">Fiches bus & immatriculations</p>
           </div>
         </div>
-        <button onClick={() => { setForm(EMPTY); setModalOpen(true) }} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2f] transition-colors">
-          <Plus className="w-4 h-4" /> Nouvelle fiche
-        </button>
+        {!isReadOnly && (
+          <button onClick={() => { setForm(EMPTY); setModalOpen(true) }} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2f] transition-colors">
+            <Plus className="w-4 h-4" /> Nouvelle fiche
+          </button>
+        )}
       </div>
 
       <div className="relative max-w-sm">

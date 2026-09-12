@@ -5,6 +5,7 @@ import {
   ExternalLink, History, Upload, X, ShieldCheck,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '@/store/authStore'
 import { formatCurrency } from '@/utils/formatCurrency'
 import {
   fetchVehicle, updateVehicle, fetchVehicleDocuments, fetchVehiclePlates,
@@ -31,6 +32,8 @@ const inputCls = 'w-full px-3 py-2 rounded-lg border border-[#E2EAE5] text-sm te
 export default function VehicleDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useAuthStore()
+  const isReadOnly = user?.role === 'logistique'
   const [vehicle, setVehicle] = useState<Vehicle | null>(null)
   const [documents, setDocuments] = useState<VehicleDocument[]>([])
   const [plates, setPlates] = useState<VehiclePlate[]>([])
@@ -95,9 +98,11 @@ export default function VehicleDetail() {
             </div>
           </div>
         </div>
-        <button onClick={() => setEditFiche(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E2EAE5] text-[#4A6B55] text-sm font-medium hover:bg-[#F8FAF8]">
-          <Edit2 className="w-4 h-4" /> Modifier la fiche
-        </button>
+        {!isReadOnly && (
+          <button onClick={() => setEditFiche(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#E2EAE5] text-[#4A6B55] text-sm font-medium hover:bg-[#F8FAF8]">
+            <Edit2 className="w-4 h-4" /> Modifier la fiche
+          </button>
+        )}
       </div>
 
       {/* Fiche info */}
@@ -115,14 +120,16 @@ export default function VehicleDetail() {
       <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2EAE5]">
           <div className="flex items-center gap-2"><Tag className="w-5 h-5 text-[#0B7439]" /><h2 className="font-semibold text-[#1A2E22]">Plaques & immatriculation</h2></div>
-          <div className="flex gap-2">
-            <button onClick={() => setProvModal(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FEF3C7] text-[#B45309] text-sm font-medium hover:bg-[#FDE68A]">
-              <Plus className="w-4 h-4" /> Plaque provisoire
-            </button>
-            <button onClick={() => setDefModal(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2f]">
-              <RefreshCw className="w-4 h-4" /> Remplacer par définitive
-            </button>
-          </div>
+          {!isReadOnly && (
+            <div className="flex gap-2">
+              <button onClick={() => setProvModal(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FEF3C7] text-[#B45309] text-sm font-medium hover:bg-[#FDE68A]">
+                <Plus className="w-4 h-4" /> Plaque provisoire
+              </button>
+              <button onClick={() => setDefModal(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2f]">
+                <RefreshCw className="w-4 h-4" /> Remplacer par définitive
+              </button>
+            </div>
+          )}
         </div>
 
         {activePlate && (
@@ -185,9 +192,11 @@ export default function VehicleDetail() {
       <div className="bg-white rounded-2xl border border-[#E2EAE5] overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2EAE5]">
           <div className="flex items-center gap-2"><FileText className="w-5 h-5 text-[#0B7439]" /><h2 className="font-semibold text-[#1A2E22]">Documents rattachés</h2></div>
-          <button onClick={() => setDocModal({ mode: 'create', doc: null })} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2f]">
-            <Plus className="w-4 h-4" /> Ajouter
-          </button>
+          {!isReadOnly && (
+            <button onClick={() => setDocModal({ mode: 'create', doc: null })} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2f]">
+              <Plus className="w-4 h-4" /> Ajouter
+            </button>
+          )}
         </div>
         {documents.length === 0 ? (
           <div className="text-center py-12 text-[#6B7280]"><ShieldCheck className="w-9 h-9 text-[#9CA3AF] mx-auto mb-2" />Aucun document.</div>
@@ -224,8 +233,8 @@ export default function VehicleDetail() {
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
                           {d.document_url && <a href={d.document_url} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-[#F3F4F6] text-[#4A6B55]"><ExternalLink className="w-4 h-4" /></a>}
-                          {d.is_current && <button onClick={() => setDocModal({ mode: 'renew', doc: d })} className="p-2 rounded-lg hover:bg-[#DBEAFE] text-[#1D4ED8]" title="Renouveler"><RefreshCw className="w-4 h-4" /></button>}
-                          {d.is_current && <button onClick={() => setDocModal({ mode: 'edit', doc: d })} className="p-2 rounded-lg hover:bg-[#E7F6EC] text-[#0B7439]"><Edit2 className="w-4 h-4" /></button>}
+                          {!isReadOnly && d.is_current && <button onClick={() => setDocModal({ mode: 'renew', doc: d })} className="p-2 rounded-lg hover:bg-[#DBEAFE] text-[#1D4ED8]" title="Renouveler"><RefreshCw className="w-4 h-4" /></button>}
+                          {!isReadOnly && d.is_current && <button onClick={() => setDocModal({ mode: 'edit', doc: d })} className="p-2 rounded-lg hover:bg-[#E7F6EC] text-[#0B7439]"><Edit2 className="w-4 h-4" /></button>}
                         </div>
                       </td>
                     </tr>
