@@ -341,7 +341,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
   * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif; font-stretch: condensed; margin: 0; padding: 0; box-sizing: border-box; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: calc(${settings.width_mm}mm - 6mm); margin: 0 auto; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
+  body { width: ${settings.width_mm}mm; margin: 0; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
   .hdr { display: flex; align-items: center; gap: 3px; padding: 2px 0 3px; }
   .hdr-logo { flex: 0 0 auto; width: 38px; }
   .hdr-logo img { width: 100%; height: auto; display: block; }
