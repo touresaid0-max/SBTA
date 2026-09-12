@@ -240,7 +240,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 }
 
 export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 56 : 48;
+  const w = settings.width_mm === 80 ? 52 : 44;
   const { bagage, depart, stationName } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
   const value = (input: string | number | null | undefined) => String(input ?? '').trim();
@@ -249,9 +249,8 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const printed = formatDateTime(nowIso);
   const departDate = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departDate.split(' ');
-  const routeParts = (depart.route_name ?? '').split(/\s*[-–—>=]+\s*/).filter(Boolean);
-  const originCity = (routeParts[0] || stationName || '').toUpperCase();
-  const destCity = (routeParts[routeParts.length - 1] || bagage.destination || '').toUpperCase();
+  const originCity = (stationName || depart.station_name || '').toUpperCase().trim();
+  const destCity = (bagage.destination || '').toUpperCase().trim();
   const departNum = value(depart.route_number) || value(depart.departure_number);
   const owner = value(bagage.owner_name).toUpperCase();
   const contact = value(bagage.owner_phone);
@@ -289,7 +288,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
     parts.push(...separator());
     parts.push(setBold(true), ...pair(`SIEGE : ${seat}`, `PRIX : ${price}`), setBold(false));
     parts.push(...separator());
-    parts.push(setBold(true), ...pair(`CAR : ${car}`, `N°BAGAGE : ${bagNum}`), setBold(false));
+    parts.push(setBold(true), ...pair(`CAR : ${car}`, `N°BAG : ${bagNum}`), setBold(false));
     parts.push(...separator());
     parts.push(setBold(true), ...pair(`DATE : ${dDate}`, `HEURE : ${dTime || ':'}`), setBold(false));
     parts.push(...separator());
