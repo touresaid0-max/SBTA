@@ -208,9 +208,12 @@ export default function POSVente() {
     );
   };
 
-  // Auto-select destination and compute tarif when depart/stations/lignes load
+  // Auto-select destination only on initial load — never override a user-selected destination
+  const destAutoSelectedRef = useRef(false);
+  useEffect(() => { destAutoSelectedRef.current = false; setDestination(''); }, [departId]);
   useEffect(() => {
     if (!depart || stations.length === 0) return;
+    if (destAutoSelectedRef.current) return;
     const ligne = lignes.find(l => l.id === depart.route_id);
     let destStationId = '';
     if (ligne?.destination_station_id) {
@@ -239,6 +242,7 @@ export default function POSVente() {
     if (destStationId && destStationId !== depart.station_id) {
       setDestination(destStationId);
     }
+    destAutoSelectedRef.current = true;
   }, [depart, stations, lignes]);
 
   // Intermediate city stops for the current route
