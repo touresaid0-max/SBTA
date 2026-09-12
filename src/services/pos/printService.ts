@@ -842,7 +842,7 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   @page { size: ${mm}mm auto; margin: 0; }
   * { font-family: 'Courier New', monospace; font-size: 9px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: 100%; margin: 0; padding: 2px 3px; font-weight: 600; }
+  body { width: calc(100% - 3mm); margin: 0 auto; padding: 2px 0; font-weight: 600; }
   .hdr { text-align: center; }
   .brand { font-size: 18px; font-weight: 900; }
   .sub { font-size: 9px; }
