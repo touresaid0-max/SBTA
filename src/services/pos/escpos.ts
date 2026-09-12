@@ -1,6 +1,6 @@
 import type { TicketRecord, BagageRecord, DepartRecord } from './db';
 import type { PrintSettings } from './db';
-import type { BordereauRecettesData } from '@/types/counter.types';
+import type { BordereauRecettesData, BordereauDepartData } from '@/types/counter.types';
 
 export interface PrintTicketData {
   ticket: TicketRecord;
@@ -471,6 +471,156 @@ export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSett
   // ── PIED ──────────────────────────────────────────────────────────
   parts.push(setAlign('center'));
   parts.push(...line(`Imprime le ${bordereau.print_date} a ${bordereau.print_time}`));
+
+  parts.push(lineFeed(2));
+  if (settings.auto_cut) parts.push(cutPaper());
+  return concat(...parts);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  BORDEREAU DE DÉPART  (ESC/POS 58 mm)
+// ═══════════════════════════════════════════════════════════════════
+export interface PrintBordereauDepartData {
+  data: BordereauDepartData;
+  phoneLine?: string;
+}
+
+export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, settings: PrintSettings): Uint8Array {
+  const w = settings.width_mm === 80 ? 52 : 44;
+  const { data: bord, phoneLine } = data;
+  const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
+
+  const fmtNum = (n: number): string =>
+    Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const fmt = (n: number): string => fmtNum(n) + ' F';
+
+  const line = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  const center = (s: string) => {
+    const t = s.slice(0, w);
+    const pad = Math.max(0, Math.floor((w - t.length) / 2));
+    return line(' '.repeat(pad) + t);
+  };
+  const separator = () => line('-'.repeat(w));
+  const doubleSep = () => line('='.repeat(w));
+
+  const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max) : s;
+  const rightAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : ' '.repeat(max - s.length) + s;
+  const leftAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : s + ' '.repeat(max - s.length);
+
+  // ── EN-TÊTE ──────────────────────────────────────────────────────
+  parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  parts.push(setBold(true), ...center("Soc. Bonkoungou Transport de L'Agneby"), setBold(false));
+  parts.push(setBold(true), ...center(`Tel ${phoneLine || '07 69 94 88 03 / 07 99 68 60 03'}`), setBold(false));
+  parts.push(...doubleSep());
+  parts.push(setAlign('center'), setBold(true), ...line('BORDEREAU DE DEPART'), setBold(false));
+  parts.push(...doubleSep());
+
+  // ── INFOS GUICHET / TRAJET ───────────────────────────────────────
+  parts.push(setAlign('left'));
+  const padR = (s: string, n: number) => s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);
+  const pair = (label: string, value: string, bold = false) => {
+    const v = truncate(value, w - label.length);
+    if (bold) parts.push(setBold(true));
+    parts.push(...line(`${padR(label, w - v.length > 0 ? w - v.length : label.length)}${v}`));
+    if (bold) parts.push(setBold(false));
+  };
+  pair('GUICHET:', bord.station_name);
+  pair('DEP N°:', String(bord.departure_number));
+  pair('LIGNE:', bord.route_name);
+  pair('DATE:', bord.departure_date);
+  pair('HEURE:', bord.departure_time);
+  parts.push(...separator());
+
+  // ── BUS & CHAUFFEUR ──────────────────────────────────────────────
+  pair('CAR:', bord.registration_number);
+  pair('CHAUFFEUR:', bord.driver_name);
+  parts.push(...separator());
+
+  // ── CONVOI ──────────────────────────────────────────────────────
+  if (bord.is_convoy) {
+    parts.push(setAlign('center'), setBold(true), ...line('** DEPART EN CONVOI **'), setBold(false));
+    parts.push(setAlign('left'));
+    parts.push(...separator());
+  }
+
+  // ── CAPACITÉ ────────────────────────────────────────────────────
+  pair('NBRE PLACE', fmtNum(bord.total_seats));
+  pair('VENDU(S)', fmtNum(bord.seats_sold));
+  pair('RESTANT(S)', fmtNum(bord.seats_remaining));
+  parts.push(...separator());
+
+  if (bord.is_convoy) {
+    // Convoy: simplified financial section
+    pair('MONTANT CONVOI:', fmt(bord.convoy_amount), true);
+    if (bord.total_rations > 0)     pair('RATIONS:', fmt(bord.total_rations));
+    if (bord.total_carburant > 0)   pair('CARBURANT COMPL.:', fmt(bord.total_carburant));
+    if (bord.total_peages > 0)      pair('PEAGES:', fmt(bord.total_peages));
+    if (bord.total_autres > 0)      pair('AUTRES:', fmt(bord.total_autres));
+    pair('MT TOTAL DEPENSES:', fmt(bord.total_charges));
+    pair('SOLDE CONVOI:', fmt(bord.convoy_amount - bord.total_charges), true);
+    pair('MT TOTAL BAGAGE:', fmt(bord.total_baggage));
+  } else {
+    // Normal: sales table by destination
+    // Column layout for 44 chars:
+    // DEST(14) | SIEG(4) | TARIF(10) | MONTANT(10) = 38, leaves room
+    const C_DEST = 14;
+    const C_SIEG = 4;
+    const C_TARIF = 10;
+    const C_MONTANT = 10;
+
+    const headerRow =
+      leftAlign('DESTINATION', C_DEST) +
+      leftAlign('SIEG', C_SIEG) +
+      rightAlign('TARIF', C_TARIF) +
+      rightAlign('MONTANT', C_MONTANT);
+    parts.push(setBold(true), ...line(headerRow.slice(0, w)), setBold(false));
+    parts.push(...separator());
+
+    const groups = bord.destination_groups && bord.destination_groups.length > 0
+      ? bord.destination_groups
+      : [{ destination: bord.destination, seats_sold: bord.seats_sold, unit_price: bord.unit_price, amount: bord.total_ticket_amount, seat_numbers: bord.sold_seat_numbers }];
+
+    for (const group of groups) {
+      const destLabel = truncate(group.destination, C_DEST);
+      const sieg = leftAlign(fmtNum(group.seats_sold), C_SIEG);
+      const tarif = rightAlign(fmtNum(group.unit_price), C_TARIF);
+      const montant = rightAlign(fmtNum(group.amount), C_MONTANT);
+      parts.push(...line(`${leftAlign(destLabel, C_DEST)}${sieg}${tarif}${montant}`));
+
+      // Seat numbers on the next line
+      if (group.seat_numbers.length > 0) {
+        const seatsStr = group.seat_numbers.join('-');
+        const perRow = w - 2;
+        for (let i = 0; i < seatsStr.length; i += perRow) {
+          parts.push(...line('  ' + seatsStr.slice(i, i + perRow)));
+        }
+      }
+    }
+    parts.push(...separator());
+
+    // ── RÉCAPITULATIF FINANCIER ─────────────────────────────────────
+    const recap = (label: string, val: string, bold = false) => {
+      const v = truncate(val, w - label.length - 1);
+      const gap = Math.max(1, w - label.length - v.length);
+      if (bold) parts.push(setBold(true));
+      parts.push(...line(`${label}${' '.repeat(gap)}${v}`));
+      if (bold) parts.push(setBold(false));
+    };
+    recap('MT TOTAL TICKET:', fmt(bord.total_ticket_amount), true);
+    if (bord.total_rations > 0)     recap('  RATIONS:', fmt(bord.total_rations));
+    if (bord.total_carburant > 0)   recap('  CARBURANT:', fmt(bord.total_carburant));
+    if (bord.total_peages > 0)      recap('  PEAGES:', fmt(bord.total_peages));
+    if (bord.total_autres > 0)      recap('  AUTRES:', fmt(bord.total_autres));
+    recap('MT TOTAL DEPENSES:', fmt(bord.total_charges));
+    recap('SOLDE TICKETS:', fmt(bord.solde_ticket), true);
+    recap('MT TOTAL BAGAGE:', fmt(bord.total_baggage));
+  }
+
+  parts.push(...doubleSep());
+
+  // ── PIED ──────────────────────────────────────────────────────────
+  parts.push(setAlign('center'));
+  parts.push(...line(`Imprime le ${bord.print_date} a ${bord.print_time}`));
 
   parts.push(lineFeed(2));
   if (settings.auto_cut) parts.push(cutPaper());

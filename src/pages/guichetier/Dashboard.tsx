@@ -15,7 +15,8 @@ import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { formatCurrency } from '@/utils/formatCurrency'
 import { fetchBorderauDepartData, fetchBorderauRecettesData } from '@/services/counter.service'
-import { printBorderauDepart, printBorderauRecettes } from '@/utils/printBordereau'
+import { printBorderauRecettes } from '@/utils/printBordereau'
+import { printBordereauDepartThermal } from '@/services/pos/printService'
 import type { ScheduleReceiptSummary } from '@/types/counter.types'
 import ChargesModal from '@/components/guichetier/ChargesModal'
 
@@ -337,7 +338,7 @@ export default function GuichetierDashboard() {
     setPrintingId(scheduleId)
     try {
       const data = await fetchBorderauDepartData(scheduleId)
-      printBorderauDepart(data)
+      printBordereauDepartThermal({ data })
     } catch (err: any) {
       console.error(err)
       toast.error('Erreur génération bordereau')
