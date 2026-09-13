@@ -97,13 +97,21 @@ export default function GarageStockPage() {
     finally { setSortieCorrectSaving(false) }
   }
 
+  const [correctionsError, setCorrectionsError] = useState<string | null>(null)
+
   const openCorrectionsHistory = async (sortieId: string) => {
     setShowCorrections(true)
     setCorrectionsLoading(true)
+    setCorrections([])
+    setCorrectionsError(null)
     try {
       const data = await fetchSortieCorrections(sortieId)
       setCorrections(data)
-    } catch { toast.error('Impossible de charger l\'historique') }
+    } catch (err: unknown) {
+      const msg = (err as Error).message || 'Erreur inconnue'
+      setCorrectionsError(msg)
+      toast.error('Impossible de charger l\'historique : ' + msg)
+    }
     finally { setCorrectionsLoading(false) }
   }
 
@@ -388,6 +396,11 @@ export default function GarageStockPage() {
               {correctionsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="w-6 h-6 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : correctionsError ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-[#AF3029] mb-2">Erreur lors du chargement</p>
+                  <p className="text-xs text-[#6B7280] font-mono">{correctionsError}</p>
                 </div>
               ) : corrections.length === 0 ? (
                 <p className="text-center text-sm text-[#6B7280] py-8">Aucune correction enregistrée pour cette sortie.</p>
