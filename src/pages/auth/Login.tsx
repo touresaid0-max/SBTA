@@ -24,7 +24,7 @@ export default function Login() {
       const user = useAuthStore.getState().user;
 
       if (user?.role) {
-        const redirectPath = ROLE_REDIRECTS[user.role] ?? '/';
+        const redirectPath = user.assistance_gp ? '/gerant-principal/stock' : (ROLE_REDIRECTS[user.role] ?? '/');
         toast.success('Connexion réussie');
         navigate(redirectPath, { replace: true });
       } else {

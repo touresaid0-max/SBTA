@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { employee_id, email, password, assigned_route_ids } = await req.json();
+    const { employee_id, email, password, assigned_route_ids, assistance_gp } = await req.json();
 
     if (!employee_id) throw new Error("employee_id requis");
     if (!password) throw new Error("Mot de passe requis");
@@ -140,6 +140,7 @@ Deno.serve(async (req: Request) => {
       last_name:     employee.last_name,
       phone:         employee.phone ?? null,
       role:          employee.role,
+      assistance_gp: assistance_gp === true,
       company_id:    employee.company_id ?? null,
       station_id:    employee.station_id ?? null,
       employee_id:   employee.employee_id ?? null,

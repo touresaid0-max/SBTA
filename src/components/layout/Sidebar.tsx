@@ -393,8 +393,12 @@ export default function Sidebar({ open, collapsed, onClose, onToggleCollapse }: 
   const colisDir = user.colis_direction ?? null;
   const canSortant = !colisDir || colisDir.length === 0 || colisDir.includes('sortant');
   const isEntrantOnly = user.role === 'agent_colis' && !canSortant;
+  const isAssistanceGp = user.role === 'gerant_principal' && user.assistance_gp === true;
+  const assistanceGpPaths = ['/gerant-principal/reparations', '/gerant-principal/stock'];
   const filteredMenuItems = isEntrantOnly
     ? menuItems.filter((item: any) => !item.children && item.path !== '/agent-colis/new' && item.path !== '/agent-colis/sms-fees')
+    : isAssistanceGp
+    ? menuItems.filter((item: any) => !item.children && assistanceGpPaths.includes(item.path))
     : menuItems;
 
   const matchPath = (path: string) => {

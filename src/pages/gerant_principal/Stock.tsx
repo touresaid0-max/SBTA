@@ -294,9 +294,11 @@ export default function GarageStockPage() {
           ]}
           rowActions={(s: GarageSortiePiece) => (
             <div className="flex items-center justify-center gap-1">
-              <button onClick={() => openCorrectSortie(s)} className="p-1.5 rounded-lg hover:bg-[#FEF3C7] text-[#D97706]" title="Corriger la sortie">
-                <Edit3 className="w-4 h-4" />
-              </button>
+              {!(user?.assistance_gp) && (
+                <button onClick={() => openCorrectSortie(s)} className="p-1.5 rounded-lg hover:bg-[#FEF3C7] text-[#D97706]" title="Corriger la sortie">
+                  <Edit3 className="w-4 h-4" />
+                </button>
+              )}
               <button onClick={() => openCorrectionsHistory(s.id)} className="p-1.5 rounded-lg hover:bg-[#E0F2FE] text-[#0E7490]" title="Historique des corrections">
                 <History className="w-4 h-4" />
               </button>

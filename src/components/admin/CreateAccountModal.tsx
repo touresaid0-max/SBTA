@@ -70,8 +70,10 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
   const [routeSearch, setRouteSearch] = useState('');
   const [routeOpen, setRouteOpen] = useState(false);
+  const [assistanceGp, setAssistanceGp] = useState(false);
 
   const isGuichetier = employee.role === 'guichetier';
+  const isGerantPrincipal = employee.role === 'gerant_principal';
 
   useEffect(() => {
     if (!isGuichetier) return;
@@ -106,6 +108,7 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
         password,
         send_welcome_email: sendWelcomeEmail,
         ...(isGuichetier ? { assigned_route_ids: selectedRouteIds } : {}),
+        ...(isGerantPrincipal ? { assistance_gp: assistanceGp } : {}),
       });
       toast.success(`Compte créé pour ${employee.first_name} ${employee.last_name}`);
       onSuccess();
@@ -235,6 +238,30 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
                       )}
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Option Assistance Gérant Principal (gerant_principal only) */}
+          {isGerantPrincipal && (
+            <div className="rounded-xl p-3 border" style={{ backgroundColor: '#F0FAF4', borderColor: '#0B7439' }}>
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="assistance_gp"
+                  checked={assistanceGp}
+                  onChange={(e) => setAssistanceGp(e.target.checked)}
+                  className="w-4 h-4 rounded mt-0.5"
+                  style={{ accentColor: '#0B7439' }}
+                />
+                <div>
+                  <label htmlFor="assistance_gp" className="text-sm font-medium cursor-pointer" style={{ color: '#1A2E22' }}>
+                    Assistance Gérant Principal
+                  </label>
+                  <p className="text-xs mt-0.5" style={{ color: '#4A6B55' }}>
+                    Accès restreint : Gestion des réparations et Gestion du stock uniquement. Ne peut pas effectuer de corrections de sortie.
+                  </p>
                 </div>
               </div>
             </div>

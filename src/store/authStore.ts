@@ -45,6 +45,7 @@ export interface UserProfile {
   driver_average_rating?: number;
   driver_performance_level?: string;
   is_active?: boolean;
+  assistance_gp?: boolean;
 }
 
 interface AuthState {
@@ -472,6 +473,7 @@ export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   agent_reservation: '/agent-reservation/dashboard',
   carburant: '/carburant/dashboard',
   gerant_principal: '/gerant-principal/dashboard',
+  // assistance_gp users land on stock; handled in login flow via user.assistance_gp
   responsable_assurance: '/assurance/dashboard',
   responsable_logistique: '/logistique/dashboard',
   logistique: '/logistique/vehicles',

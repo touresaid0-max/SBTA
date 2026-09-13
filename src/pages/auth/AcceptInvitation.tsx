@@ -53,7 +53,7 @@ export default function AcceptInvitation() {
         const user = useAuthStore.getState().user;
         toast.success('Invitation acceptée! Bienvenue sur SBTA');
         if (user) {
-          navigate(ROLE_REDIRECTS[user.role]);
+          navigate(user.assistance_gp ? '/gerant-principal/stock' : ROLE_REDIRECTS[user.role]);
         } else {
           navigate('/login');
         }
