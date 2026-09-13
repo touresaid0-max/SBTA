@@ -59,6 +59,7 @@ const ROLES: { value: UserRole; label: string; color: string; group: string }[] 
   { value: 'gerant_principal',        label: 'Gérant Principal',             color: '#0B7439', group: 'Direction' },
   { value: 'responsable_assurance',   label: 'Responsable Service Assurance',color: '#0B7439', group: 'Direction' },
   { value: 'responsable_logistique',  label: 'Responsable Logistique',       color: '#0B7439', group: 'Direction' },
+  { value: 'logistique',              label: 'Logistique',                   color: '#0B7439', group: 'Direction' },
   { value: 'agent_qhse',              label: 'Agent QHSE',                   color: '#0B7439', group: 'Direction' },
   { value: 'gestion_agboville',       label: 'Gestion Agboville',            color: '#0B7439', group: 'Direction' },
   { value: 'chauffeur',               label: 'Chauffeur',                    color: '#1D6FA4', group: 'Opérationnel' },
