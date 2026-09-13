@@ -124,7 +124,12 @@ export default function SuperviseurParcelDetail() {
   async function handlePrint() {
     if (!parcel) return
     const agentInfo = await fetchParcelAgentInfo(parcel.origin_station_id, parcel.destination_station_id).catch(() => null)
-    await printParcelTicket(buildReceiptData(parcel, parcel.origin_station_name, '', null, null, agentInfo))
+    const { data: stationData } = await supabase
+      .from('stations')
+      .select('courier_qr_enabled')
+      .eq('id', parcel.origin_station_id)
+      .maybeSingle()
+    await printParcelTicket(buildReceiptData(parcel, parcel.origin_station_name, '', null, null, agentInfo, stationData?.courier_qr_enabled ?? true))
   }
 
   if (loading) {

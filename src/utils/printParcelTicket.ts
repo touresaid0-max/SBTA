@@ -48,7 +48,7 @@ function escHtml(s: string): string {
 
 export async function printParcelTicket(data: ParcelReceiptData) {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
-  const qrDataUrl = await generateQRDataUrl(data.parcel_code, 100)
+  const qrDataUrl = data.courier_qr_enabled ? await generateQRDataUrl(data.parcel_code, 100) : ''
   const logoUrl = window.location.origin + '/logo-sbta.JPG'
   const customization = await getPrintCustomization()
   const customNotes = customization.parcel_notes
@@ -337,11 +337,12 @@ ${[1, 2].map(copyNum => `
     ${notesHtml}
   </div>
 
+  ${data.courier_qr_enabled ? `
   <div class="qr-section">
     <img src="${qrDataUrl}" width="100" height="100" alt="QR" style="display:block;margin:0 auto 2mm auto;">
     <div class="qr-label">Scannez pour confirmer la reception</div>
     <div class="qr-code-text">${escHtml(data.parcel_code)}</div>
-  </div>
+  </div>` : ''}
 
   <div class="footer">
     Merci de votre confiance !
@@ -406,6 +407,7 @@ export function buildReceiptData(
   selectedBus?: ScheduledBus | null,
   driverNameOverride?: string | null,
   agentInfo?: ParcelAgentInfo | null,
+  courierQrEnabled?: boolean,
 ): ParcelReceiptData {
   const busReg  = selectedBus?.registration_number ?? parcel.bus_registration ?? null
   const driver  = driverNameOverride ?? selectedBus?.driver_name ?? null
@@ -441,5 +443,6 @@ export function buildReceiptData(
     supervisor_name:         agentInfo?.supervisor_name         ?? null,
     supervisor_email:        agentInfo?.supervisor_email        ?? null,
     supervisor_phone:        agentInfo?.supervisor_phone        ?? null,
+    courier_qr_enabled:      courierQrEnabled ?? true,
   }
 }

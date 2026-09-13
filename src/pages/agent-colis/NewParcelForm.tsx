@@ -177,6 +177,12 @@ export default function NewParcelForm() {
         // Print ticket with local data
         try {
           const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
+          let courierQrEnabled = true
+          const cachedStationsForQr = await getReferentiel<{ id: string; courier_qr_enabled?: boolean }>('stations_all')
+          if (cachedStationsForQr) {
+            const myStationData = cachedStationsForQr.find(s => s.id === myStation.id)
+            if (myStationData?.courier_qr_enabled !== undefined) courierQrEnabled = myStationData.courier_qr_enabled
+          }
           await printParcelTicket(buildReceiptData(
             { ...localParcel, origin_station_name: myStation.name, parcel_code: localParcel.parcel_code } as Parcel,
             myStation.name,
@@ -184,6 +190,7 @@ export default function NewParcelForm() {
             null,
             null,
             agentInfo,
+            courierQrEnabled,
           ))
           await localInsertParcel({ ...localParcel, ticket_printed: true } as any)
         } catch { /* printing failure must not block */ }
@@ -242,6 +249,11 @@ export default function NewParcelForm() {
       toast.success('Courrier enregistré avec succès !')
 
       const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
+      const { data: myStationQr } = await supabase
+        .from('stations')
+        .select('courier_qr_enabled')
+        .eq('id', myStation.id)
+        .maybeSingle()
       await printParcelTicket(buildReceiptData(
         { ...parcel, origin_station_name: myStation.name } as Parcel,
         myStation.name,
@@ -249,6 +261,7 @@ export default function NewParcelForm() {
         null,
         null,
         agentInfo,
+        myStationQr?.courier_qr_enabled ?? true,
       ))
       await markTicketPrinted(parcel.id)
 

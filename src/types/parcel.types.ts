@@ -96,6 +96,8 @@ export interface ParcelReceiptData {
   supervisor_name:  string | null
   supervisor_email: string | null
   supervisor_phone: string | null
+  // QR code toggle — when false, QR section is omitted from printed ticket
+  courier_qr_enabled: boolean
 }
 
 export interface ParcelAgencyStat {

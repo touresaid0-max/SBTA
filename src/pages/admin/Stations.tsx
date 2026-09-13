@@ -42,6 +42,7 @@ interface Station {
   };
   display_screen_enabled: boolean;
   courrier_enabled: boolean;
+  courier_qr_enabled: boolean;
   is_active: boolean;
   station_manager_id?: string | null;
   agency_code?: string | null;
@@ -119,6 +120,7 @@ export default function Stations() {
     },
     display_screen_enabled: false,
     courrier_enabled: false,
+    courier_qr_enabled: false,
     is_active: true,
     station_manager_id: '',
     agency_code: '',
@@ -309,6 +311,7 @@ export default function Stations() {
         facilities: formData.facilities,
         display_screen_enabled: formData.display_screen_enabled,
         courrier_enabled: formData.courrier_enabled,
+        courier_qr_enabled: formData.courier_qr_enabled,
         is_active: formData.is_active,
         station_manager_id: primaryManagerId || null,
         agency_code: formData.agency_code || null,
@@ -531,6 +534,7 @@ export default function Stations() {
       },
       display_screen_enabled: station.display_screen_enabled || false,
       courrier_enabled: (station as any).courrier_enabled || false,
+      courier_qr_enabled: (station as any).courier_qr_enabled || false,
       is_active: station.is_active,
       station_manager_id: station.station_manager_id || '',
       agency_code: station.agency_code || '',
@@ -579,6 +583,7 @@ export default function Stations() {
       },
       display_screen_enabled: false,
       courrier_enabled: false,
+      courier_qr_enabled: false,
       is_active: true,
       station_manager_id: '',
       agency_code: '',
@@ -1215,6 +1220,22 @@ export default function Stations() {
                   </label>
                   <p className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
                     Active la carte Courrier pour tous les guichets de cette gare
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 p-4 border rounded-lg" style={{ backgroundColor: 'var(--neutral-50)' }}>
+                  <input
+                    type="checkbox"
+                    id="courier_qr_enabled"
+                    checked={formData.courier_qr_enabled}
+                    onChange={(e) => setFormData({ ...formData, courier_qr_enabled: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="courier_qr_enabled" className="font-medium">
+                    QR Code Courrier
+                  </label>
+                  <p className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                    Affiche le QR code sur les tickets courrier imprimés de cette gare
                   </p>
                 </div>
 
