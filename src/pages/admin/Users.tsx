@@ -112,6 +112,7 @@ const emptyForm = () => ({
   status: 'active',
   colis_direction: [] as string[],
   assigned_route_ids: [] as string[],
+  assistance_gp: false,
 });
 
 type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
@@ -293,6 +294,9 @@ export default function Users() {
         if (formData.role === 'guichetier') {
           payload.assigned_route_ids = formData.assigned_route_ids;
         }
+        if (formData.role === 'gerant_principal') {
+          payload.assistance_gp = formData.assistance_gp;
+        }
 
         const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
           method: 'POST',
@@ -350,6 +354,11 @@ export default function Users() {
         } else {
           updateData.colis_direction = null;
         }
+        if (formData.role === 'gerant_principal') {
+          updateData.assistance_gp = formData.assistance_gp;
+        } else {
+          updateData.assistance_gp = false;
+        }
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
         // assigned_route_ids is stored on employees; its database trigger syncs counter_routes.
@@ -400,6 +409,7 @@ export default function Users() {
       technician_type_id: user.technician_type_id || '',
       colis_direction: user.colis_direction ?? [],
       assigned_route_ids: [],
+      assistance_gp: (user as any).assistance_gp ?? false,
       password: '',
       send_invitation: false,
       status: user.status || 'active',
@@ -1084,6 +1094,25 @@ export default function Users() {
                   <input type="text" value={formData.employee_id} onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })} className="w-full px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border)' }} placeholder="EMP-001" />
                 </div>
               </div>
+              {formData.role === 'gerant_principal' && (
+                <div className="p-4 rounded-lg" style={{ backgroundColor: '#f0faf4', border: '1px solid #0B7439' }}>
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.assistance_gp}
+                      onChange={(e) => setFormData({ ...formData, assistance_gp: e.target.checked })}
+                      className="w-4 h-4 mt-0.5 rounded"
+                      style={{ accentColor: '#0B7439' }}
+                    />
+                    <span className="text-sm" style={{ color: '#0B7439' }}>
+                      <span className="font-medium">Assistance Gérant Principal</span>
+                      <span className="block text-xs mt-1" style={{ color: '#4A6B55' }}>
+                        Accès limité à la Gestion des réparations et à la Gestion du stock. Ce profil ne peut pas effectuer de correction de sortie de stock.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
               {editingUser && (
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Statut</label>

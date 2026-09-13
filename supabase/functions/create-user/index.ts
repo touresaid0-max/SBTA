@@ -82,6 +82,7 @@ Deno.serve(async (req: Request) => {
       colis_direction,
       assigned_route_ids,
       send_invitation,
+      assistance_gp,
     } = body;
 
     if (!role) {
@@ -208,6 +209,7 @@ Deno.serve(async (req: Request) => {
       employee_id: employee_id || null,
       status: send_invitation ? "pending_confirmation" : "active",
       is_active: !send_invitation,
+      assistance_gp: role === "gerant_principal" && assistance_gp === true,
       is_self_registered: false,
       created_by: caller.id,
       invitation_token: invitationToken,
