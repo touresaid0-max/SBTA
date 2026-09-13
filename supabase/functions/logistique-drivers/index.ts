@@ -9,11 +9,14 @@ const corsHeaders = {
 
 const ALLOWED_ROLES = [
   "responsable_logistique",
+  "logistique",
   "rh",
   "admin",
   "gestionnaire",
   "daf",
 ];
+
+const READ_ONLY_ROLES = ["logistique"];
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), {
@@ -58,6 +61,11 @@ Deno.serve(async (req: Request) => {
         `Accès refusé — ${ALLOWED_ROLES.filter(r => r !== "daf").join(", ")} uniquement`,
         403,
       );
+    }
+
+    const isReadOnly = READ_ONLY_ROLES.includes(callerRole);
+    if (isReadOnly && req.method !== "GET") {
+      return err("Accès refusé — profil en lecture seule", 403);
     }
 
     // Gestionnaire scope: must have a company
