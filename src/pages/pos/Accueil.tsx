@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   PlusCircle, Ticket, Receipt, Lock,
-  Settings as SettingsIcon, LogOut, Bus, Truck, Wallet,
+  Settings as SettingsIcon, LogOut, Bus, Truck, Wallet, Package,
 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
@@ -18,20 +18,11 @@ interface TileConfig {
   bgColor: string;
 }
 
-const tiles: TileConfig[] = [
-  { label: 'Nouveau départ', icon: PlusCircle, path: '/guichet/depart/nouveau', color: '#0B7439', bgColor: '#d4edda' },
-  { label: 'Vente des tickets', icon: Ticket, path: '/guichet/departs', color: '#1D6FA4', bgColor: '#DBEAFE' },
-  { label: 'Recette bagage', icon: Wallet, path: '/guichet/recette-bagage', color: '#047857', bgColor: '#D1FAE5' },
-  { label: 'Nouvelles dépenses', icon: Receipt, path: '/guichet/depenses', color: '#AF3029', bgColor: '#f8d7d5' },
-  { label: 'Ramassage', icon: Bus, path: '/guichet/ramassage', color: '#0EA5E9', bgColor: '#E0F2FE' },
-  { label: 'Convoi', icon: Truck, path: '/guichet/convois', color: '#D97706', bgColor: '#FEF3C7' },
-  { label: 'Clôture', icon: Lock, path: '/guichet/cloture', color: '#4A6B55', bgColor: '#E2EAE5' },
-];
-
 export default function POSAccueil() {
   const navigate = useNavigate();
   const { session, logout } = usePOSSession();
   const [pendingRamassage, setPendingRamassage] = useState(0);
+  const [courrierEnabled, setCourrierEnabled] = useState(false);
   useAutoSync(session?.station_id);
 
   useEffect(() => {
@@ -57,6 +48,33 @@ export default function POSAccueil() {
       .subscribe();
     return () => { cancelled = true; supabase.removeChannel(ch); };
   }, [session?.station_id]);
+
+  useEffect(() => {
+    if (!session?.station_id) { setCourrierEnabled(false); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('stations')
+        .select('courrier_enabled')
+        .eq('id', session.station_id)
+        .maybeSingle();
+      if (!cancelled) setCourrierEnabled(!!(data as any)?.courrier_enabled);
+    })();
+    return () => { cancelled = true; };
+  }, [session?.station_id]);
+
+  const allTiles: TileConfig[] = [
+    { label: 'Nouveau départ', icon: PlusCircle, path: '/guichet/depart/nouveau', color: '#0B7439', bgColor: '#d4edda' },
+    { label: 'Vente des tickets', icon: Ticket, path: '/guichet/departs', color: '#1D6FA4', bgColor: '#DBEAFE' },
+    { label: 'Recette bagage', icon: Wallet, path: '/guichet/recette-bagage', color: '#047857', bgColor: '#D1FAE5' },
+    { label: 'Nouvelles dépenses', icon: Receipt, path: '/guichet/depenses', color: '#AF3029', bgColor: '#f8d7d5' },
+    { label: 'Ramassage', icon: Bus, path: '/guichet/ramassage', color: '#0EA5E9', bgColor: '#E0F2FE' },
+    { label: 'Convoi', icon: Truck, path: '/guichet/convois', color: '#D97706', bgColor: '#FEF3C7' },
+    ...(courrierEnabled
+      ? [{ label: 'COURRIER', icon: Package, path: '/guichet/courrier', color: '#7C3AED', bgColor: '#EDE9FE' }]
+      : []),
+    { label: 'Clôture', icon: Lock, path: '/guichet/cloture', color: '#4A6B55', bgColor: '#E2EAE5' },
+  ];
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--bg-subtle)' }}>
@@ -100,7 +118,7 @@ export default function POSAccueil() {
         </h2>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-          {tiles.map(tile => {
+          {allTiles.map(tile => {
             const Icon = tile.icon;
             return (
               <button

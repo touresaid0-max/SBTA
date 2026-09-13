@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
@@ -37,6 +37,8 @@ const PRIORITY_OPTIONS: { value: ParcelPriority; label: string }[] = [
 export default function NewParcelForm() {
   const { user } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const basePath = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
 
   const myStation: Station | null = user?.station_id
     ? { id: user.station_id, name: user.station_name ?? '' }
@@ -187,7 +189,7 @@ export default function NewParcelForm() {
         } catch { /* printing failure must not block */ }
 
         conn.setPendingCount(await getPendingCount())
-        navigate('/agent-colis/dashboard')
+        navigate(`${basePath}/dashboard`)
         return
       }
 
@@ -264,7 +266,7 @@ export default function NewParcelForm() {
         }
       } catch { /* SMS failure must not block */ }
 
-      navigate('/agent-colis/dashboard')
+      navigate(`${basePath}/dashboard`)
     } catch (e: any) {
       toast.error(e.message ?? 'Erreur lors de l\'enregistrement')
     } finally {
@@ -306,7 +308,7 @@ export default function NewParcelForm() {
           <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
             Votre compte est configuré pour la gestion des courriers entrants uniquement. Vous ne pouvez pas enregistrer de nouveaux courriers sortants.
           </p>
-          <button onClick={() => navigate('/agent-colis/dashboard')} className="mt-4 px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#0B7439', color: '#fff' }}>
+          <button onClick={() => navigate(`${basePath}/dashboard`)} className="mt-4 px-4 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: '#0B7439', color: '#fff' }}>
             Retour au tableau de bord
           </button>
         </div>

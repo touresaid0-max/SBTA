@@ -607,6 +607,11 @@ function App() {
             <Route path="ramassage/nouveau" element={<POSRamassageNouveau />} />
             <Route path="convois" element={<POSConvois />} />
             <Route path="parametres" element={<POSParametres />} />
+            {/* ── Courrier accessible from POS guichet when station has courrier_enabled ── */}
+            <Route path="courrier" element={<CourrierConnectionProvider><AgentColisDashboard /></CourrierConnectionProvider>} />
+            <Route path="courrier/new" element={<CourrierConnectionProvider><NewParcelForm /></CourrierConnectionProvider>} />
+            <Route path="courrier/parcels/:id" element={<CourrierConnectionProvider><ParcelDetail /></CourrierConnectionProvider>} />
+            <Route path="courrier/scan" element={<CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   Package, PackagePlus, ArrowDownToLine, Banknote, CheckCircle2,
   Printer, Eye, ArrowRight, RefreshCw, Bell, X, Truck, FileText, ChevronDown,
@@ -79,6 +79,8 @@ const INCOMING_STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 export default function AgentColisDashboard() {
   const { user } = useAuthStore()
   const navigate  = useNavigate()
+  const location = useLocation()
+  const basePath = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
   const conn = useConnection()
   useAutoSync(user?.station_id ?? undefined)
   const [showSyncQueue, setShowSyncQueue] = useState(false)
@@ -694,7 +696,7 @@ export default function AgentColisDashboard() {
             <span className="hidden sm:inline">Bordereau</span>
           </button>
           <Link
-            to="/agent-colis/new"
+            to={`${basePath}/new`}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap"
             style={{ backgroundColor: '#0B7439', color: '#fff' }}
           >
@@ -727,7 +729,7 @@ export default function AgentColisDashboard() {
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <button
-                  onClick={() => { navigate(`/agent-colis/parcels/${alert.id}`); setNewAlerts(prev => prev.filter((_, i) => i !== idx)) }}
+                  onClick={() => { navigate(`${basePath}/parcels/${alert.id}`); setNewAlerts(prev => prev.filter((_, i) => i !== idx)) }}
                   className="text-xs font-semibold px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg"
                   style={{ backgroundColor: '#EA580C', color: '#fff' }}
                 >
@@ -868,7 +870,7 @@ export default function AgentColisDashboard() {
           {/* Bouton Scanner QR Code — onglet entrants uniquement */}
           {tab === 'entrants' && (
             <button
-              onClick={() => navigate('/agent-colis/scan')}
+              onClick={() => navigate(`${basePath}/scan`)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ml-auto flex-shrink-0"
               style={{ backgroundColor: '#0B7439', color: '#fff' }}
             >
@@ -1037,7 +1039,7 @@ export default function AgentColisDashboard() {
                     {group.parcels.slice(0, 8).map(p => (
                       <button
                         key={p.id}
-                        onClick={() => navigate(`/agent-colis/parcels/${p.id}`)}
+                        onClick={() => navigate(`${basePath}/parcels/${p.id}`)}
                         className="px-1.5 py-0.5 rounded text-xs font-mono hover:opacity-80 transition-opacity"
                         style={{
                           backgroundColor: STATUS_CONFIG[p.status]?.bg ?? '#F3F4F6',
@@ -1137,7 +1139,7 @@ export default function AgentColisDashboard() {
                     </div>
                     <div className="flex items-center gap-2 pt-1">
                       <button
-                        onClick={() => navigate(`/agent-colis/parcels/${parcel.id}`)}
+                        onClick={() => navigate(`${basePath}/parcels/${parcel.id}`)}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-medium"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
                       >
@@ -1232,7 +1234,7 @@ export default function AgentColisDashboard() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
                             <button
-                              onClick={() => navigate(`/agent-colis/parcels/${parcel.id}`)}
+                              onClick={() => navigate(`${basePath}/parcels/${parcel.id}`)}
                               className="p-1.5 rounded hover:bg-gray-100" title="Voir détail"
                             >
                               <Eye className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />

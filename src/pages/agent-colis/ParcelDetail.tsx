@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Package, User, MapPin, Clock, MessageCircle, AlertTriangle, Bus, Navigation, Camera, ZoomIn, X, Pencil, Check, Loader2 as Loader2Icon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
@@ -31,6 +31,8 @@ const STATUS_CONFIG: Record<ParcelStatus, { label: string; color: string; bg: st
 export default function ParcelDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const basePath = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
   const { user } = useAuthStore()
   const conn = useConnection()
 
@@ -349,7 +351,7 @@ export default function ParcelDetail() {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
-            onClick={() => navigate('/agent-colis/dashboard')}
+            onClick={() => navigate(`${basePath}/dashboard`)}
             className="flex items-center gap-1.5 p-2 rounded-lg hover:bg-gray-100 flex-shrink-0"
             title="Retour à l'accueil"
           >

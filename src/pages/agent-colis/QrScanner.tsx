@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { QrCode, CheckCircle2, AlertTriangle, ArrowLeft, RefreshCw, Loader2, CameraOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
@@ -23,6 +23,8 @@ declare class BarcodeDetector {
 
 export default function QrScanner() {
   const navigate   = useNavigate()
+  const location   = useLocation()
+  const basePath   = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
   const { user }   = useAuthStore()
   const stationId  = user?.station_id ?? null
 
@@ -187,7 +189,7 @@ export default function QrScanner() {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-4 border-b" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
         <button
-          onClick={() => { stopCamera(); navigate('/agent-colis/dashboard') }}
+          onClick={() => { stopCamera(); navigate(`${basePath}/dashboard`) }}
           className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
@@ -235,7 +237,7 @@ export default function QrScanner() {
               Utilisez Chrome ou Edge sur Android/PC pour cette fonctionnalité.
             </p>
             <button
-              onClick={() => navigate('/agent-colis/dashboard')}
+              onClick={() => navigate(`${basePath}/dashboard`)}
               className="px-4 py-2 rounded-lg text-sm font-medium"
               style={{ backgroundColor: '#D97706', color: '#fff' }}
             >
@@ -336,7 +338,7 @@ export default function QrScanner() {
             <div className="w-full flex flex-col gap-2">
               {scanResult.parcel_id && (
                 <button
-                  onClick={() => { stopCamera(); navigate(`/agent-colis/parcels/${scanResult.parcel_id}`) }}
+                  onClick={() => { stopCamera(); navigate(`${basePath}/parcels/${scanResult.parcel_id}`) }}
                   className="w-full py-3 rounded-xl font-semibold text-sm"
                   style={{ backgroundColor: '#0B7439', color: '#fff' }}
                 >
@@ -374,7 +376,7 @@ export default function QrScanner() {
             <div className="w-full flex flex-col gap-2">
               {scanResult.parcel_id && (
                 <button
-                  onClick={() => { stopCamera(); navigate(`/agent-colis/parcels/${scanResult.parcel_id}`) }}
+                  onClick={() => { stopCamera(); navigate(`${basePath}/parcels/${scanResult.parcel_id}`) }}
                   className="w-full py-3 rounded-xl font-semibold text-sm"
                   style={{ backgroundColor: 'var(--bg-subtle)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
                 >

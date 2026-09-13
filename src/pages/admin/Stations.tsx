@@ -41,6 +41,7 @@ interface Station {
     salle_attente?: boolean;
   };
   display_screen_enabled: boolean;
+  courrier_enabled: boolean;
   is_active: boolean;
   station_manager_id?: string | null;
   agency_code?: string | null;
@@ -117,6 +118,7 @@ export default function Stations() {
       salle_attente: false
     },
     display_screen_enabled: false,
+    courrier_enabled: false,
     is_active: true,
     station_manager_id: '',
     agency_code: '',
@@ -306,6 +308,7 @@ export default function Stations() {
         longitude: formData.longitude || null,
         facilities: formData.facilities,
         display_screen_enabled: formData.display_screen_enabled,
+        courrier_enabled: formData.courrier_enabled,
         is_active: formData.is_active,
         station_manager_id: primaryManagerId || null,
         agency_code: formData.agency_code || null,
@@ -527,6 +530,7 @@ export default function Stations() {
         salle_attente: false
       },
       display_screen_enabled: station.display_screen_enabled || false,
+      courrier_enabled: (station as any).courrier_enabled || false,
       is_active: station.is_active,
       station_manager_id: station.station_manager_id || '',
       agency_code: station.agency_code || '',
@@ -574,6 +578,7 @@ export default function Stations() {
         salle_attente: false
       },
       display_screen_enabled: false,
+      courrier_enabled: false,
       is_active: true,
       station_manager_id: '',
       agency_code: '',
@@ -1195,6 +1200,22 @@ export default function Stations() {
                   <label htmlFor="display_screen" className="font-medium">
                     Activer l'écran d'affichage aéroport
                   </label>
+                </div>
+
+                <div className="flex items-center gap-2 p-4 border rounded-lg" style={{ backgroundColor: 'var(--neutral-50)' }}>
+                  <input
+                    type="checkbox"
+                    id="courrier_enabled"
+                    checked={formData.courrier_enabled}
+                    onChange={(e) => setFormData({ ...formData, courrier_enabled: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="courrier_enabled" className="font-medium">
+                    COURRIER
+                  </label>
+                  <p className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                    Active la carte Courrier pour tous les guichets de cette gare
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
