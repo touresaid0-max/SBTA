@@ -1251,28 +1251,28 @@ export default function Stations() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full">
+      <div className="bg-white rounded-xl border overflow-x-auto">
+        <table className="w-full min-w-max">
           <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
             <tr>
-              <th className="text-left p-4 font-semibold">Gare</th>
-              <th className="text-left p-4 font-semibold">Ville</th>
-              <th className="text-left p-4 font-semibold">Chef de gare</th>
-              <th className="text-left p-4 font-semibold">Agents courrier</th>
-              <th className="text-left p-4 font-semibold">Bagagistes</th>
-              <th className="text-left p-4 font-semibold">Code agence</th>
-              <th className="text-left p-4 font-semibold">Contact</th>
-              <th className="text-left p-4 font-semibold">Équipements</th>
-              <th className="text-left p-4 font-semibold">Affichage</th>
-              <th className="text-left p-4 font-semibold">Statut</th>
-              <th className="text-left p-4 font-semibold">Actions</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Gare</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Ville</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Chef de gare</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Agents courrier</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Bagagistes</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Code agence</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Contact</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Équipements</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Affichage</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Statut</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap sticky right-0" style={{ backgroundColor: 'var(--neutral-100)' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((station) => {
               const agents = stationAgentsMap[station.id] ?? [];
               return (
-                <tr key={station.id} className="border-t hover:bg-gray-50">
+                <tr key={station.id} className="border-t group hover:bg-gray-50">
                   <td className="p-4">
                     <div className="flex items-center gap-2">
                       <Building2 className="w-4 h-4" style={{ color: 'var(--primary)' }} />
@@ -1432,7 +1432,7 @@ export default function Stations() {
                       {station.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td className="p-4">
+                  <td className="p-4 sticky right-0 bg-white group-hover:bg-gray-50">
                     <div className="flex gap-2">
                       <button
                         onClick={() => navigate(`/admin/stations/${station.id}`)}
