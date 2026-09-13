@@ -285,8 +285,9 @@ export async function fetchSortieCorrections(sortieId?: string): Promise<GarageS
     .from('garage_sorties_corrections')
     .select('*, piece:garage_pieces(id, nom, reference)')
     .order('created_at', { ascending: false })
+    .limit(200)
   if (sortieId) q = q.eq('sortie_id', sortieId)
-  const { data, error } = q.limit(200)
+  const { data, error } = await q
   if (error) throw error
   return (data ?? []) as GarageSortieCorrection[]
 }
