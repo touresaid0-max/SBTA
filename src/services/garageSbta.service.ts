@@ -5,7 +5,7 @@ import type {
   GarageEntreeStock, GarageSortiePiece, GarageReparation,
   GarageCommandePiece, GaragePneu, GarageSetting,
   ReparationStatut, GarageHistoriqueStatut, GarageReparationNotification,
-  GarageCarDisponible,
+  GarageCarDisponible, GarageSortieCorrection,
 } from '@/types/garage.types'
 
 // ── Groupes ──────────────────────────────────────────────────
@@ -261,6 +261,34 @@ export async function createSorties(rows: Array<{
 }>): Promise<void> {
   const { error } = await supabase.from('garage_sorties_pieces').insert(rows)
   if (error) throw error
+}
+
+// ── Correction de sortie (avec traçabilité) ───────────────────
+export async function correctSortie(
+  sortieId: string,
+  nouvelleQuantite: number,
+  motif: string,
+  modifieParNom: string,
+): Promise<{ success: boolean; ancienne_quantite: number; nouvelle_quantite: number; difference: number }> {
+  const { data, error } = await supabase.rpc('garage_correct_sortie', {
+    p_sortie_id: sortieId,
+    p_nouvelle_quantite: nouvelleQuantite,
+    p_motif: motif,
+    p_modifie_par_nom: modifieParNom,
+  })
+  if (error) throw error
+  return data as { success: boolean; ancienne_quantite: number; nouvelle_quantite: number; difference: number }
+}
+
+export async function fetchSortieCorrections(sortieId?: string): Promise<GarageSortieCorrection[]> {
+  let q = supabase
+    .from('garage_sorties_corrections')
+    .select('*, piece:garage_pieces(id, nom, reference)')
+    .order('created_at', { ascending: false })
+  if (sortieId) q = q.eq('sortie_id', sortieId)
+  const { data, error } = q.limit(200)
+  if (error) throw error
+  return (data ?? []) as GarageSortieCorrection[]
 }
 
 // ── Réparations ──────────────────────────────────────────────

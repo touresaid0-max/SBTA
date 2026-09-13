@@ -107,6 +107,20 @@ export interface GarageSortiePiece {
   groupe?: { id: string; name: string } | null
 }
 
+export interface GarageSortieCorrection {
+  id: string
+  sortie_id: string
+  piece_id: string
+  ancienne_quantite: number
+  nouvelle_quantite: number
+  difference: number
+  motif: string
+  modifie_par: string | null
+  modifie_par_nom: string
+  created_at: string
+  piece?: { id: string; nom: string; reference: string } | null
+}
+
 export type ReparationStatut = 'BROUILLON' | 'EN RÉPARATION' | 'LIBÉRÉ'
 
 export interface GarageReparation {

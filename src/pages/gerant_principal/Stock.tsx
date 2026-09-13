@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Pencil, AlertTriangle, ArrowDownToLine, ArrowUpCircle, Wrench, Plus, Trash2, X, Search } from 'lucide-react'
+import { Pencil, AlertTriangle, ArrowDownToLine, ArrowUpCircle, Wrench, Plus, Trash2, X, Search, History, Edit3 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
-import { fetchStock, correctStock, fetchEntrees, fetchSorties, createEntree, createSortie, createSorties, fetchPieces, fetchFournisseurs, fetchBusesForGarage, fetchCompaniesForGarage, fetchCarsDisponibles } from '@/services/garageSbta.service'
-import type { GarageStock, GaragePiece, GarageFournisseur, GarageBus, GarageCompany, GarageEntreeStock, GarageSortiePiece } from '@/types/garage.types'
+import { fetchStock, correctStock, fetchEntrees, fetchSorties, createEntree, createSortie, createSorties, fetchPieces, fetchFournisseurs, fetchBusesForGarage, fetchCompaniesForGarage, fetchCarsDisponibles, correctSortie, fetchSortieCorrections } from '@/services/garageSbta.service'
+import type { GarageStock, GaragePiece, GarageFournisseur, GarageBus, GarageCompany, GarageEntreeStock, GarageSortiePiece, GarageSortieCorrection } from '@/types/garage.types'
 import { formatDate, formatFCFA } from '@/components/garage/reportHelpers'
 import { useAuthStore } from '@/store/authStore'
 
@@ -24,6 +24,13 @@ export default function GarageStockPage() {
   const [correctQty, setCorrectQty] = useState(0)
   const [showEntry, setShowEntry] = useState(false)
   const [showExit, setShowExit] = useState(false)
+  const [correctingSortie, setCorrectingSortie] = useState<GarageSortiePiece | null>(null)
+  const [sortieCorrectQty, setSortieCorrectQty] = useState(0)
+  const [sortieCorrectMotif, setSortieCorrectMotif] = useState('')
+  const [sortieCorrectSaving, setSortieCorrectSaving] = useState(false)
+  const [showCorrections, setShowCorrections] = useState(false)
+  const [corrections, setCorrections] = useState<GarageSortieCorrection[]>([])
+  const [correctionsLoading, setCorrectionsLoading] = useState(false)
   const { user } = useAuthStore()
 
   const [entryForm, setEntryForm] = useState({ piece_id: '', quantite: 1, date: new Date().toISOString().slice(0, 10), fournisseur_id: '', effectue_par: '' })
@@ -67,6 +74,37 @@ export default function GarageStockPage() {
     if (!correcting) return
     try { await correctStock(correcting.piece_id, correctQty); toast.success('Stock corrigé'); setCorrecting(null); load() }
     catch (err: unknown) { toast.error((err as Error).message || 'Erreur') }
+  }
+
+  const openCorrectSortie = (s: GarageSortiePiece) => {
+    setCorrectingSortie(s)
+    setSortieCorrectQty(s.quantite)
+    setSortieCorrectMotif('')
+  }
+
+  const handleCorrectSortie = async () => {
+    if (!correctingSortie) return
+    if (sortieCorrectQty <= 0) { toast.error('La quantité doit être supérieure à 0'); return }
+    if (sortieCorrectQty === correctingSortie.quantite) { toast.error('La nouvelle quantité est identique à l\'ancienne'); return }
+    if (!sortieCorrectMotif.trim()) { toast.error('Le motif de correction est obligatoire'); return }
+    setSortieCorrectSaving(true)
+    try {
+      const result = await correctSortie(correctingSortie.id, sortieCorrectQty, sortieCorrectMotif.trim(), user?.full_name || '')
+      toast.success(`Sortie corrigée : ${result.ancienne_quantite} → ${result.nouvelle_quantite} (diff: ${result.difference > 0 ? '+' : ''}${result.difference})`)
+      setCorrectingSortie(null)
+      load()
+    } catch (err: unknown) { toast.error((err as Error).message || 'Erreur lors de la correction') }
+    finally { setSortieCorrectSaving(false) }
+  }
+
+  const openCorrectionsHistory = async (sortieId: string) => {
+    setShowCorrections(true)
+    setCorrectionsLoading(true)
+    try {
+      const data = await fetchSortieCorrections(sortieId)
+      setCorrections(data)
+    } catch { toast.error('Impossible de charger l\'historique') }
+    finally { setCorrectionsLoading(false) }
   }
 
   const selectEntryPiece = (pieceId: string) => {
@@ -246,6 +284,16 @@ export default function GarageStockPage() {
             { key: 'montant', label: 'Montant', className: 'text-right', render: (s: GarageSortiePiece) => <span className="font-bold text-[#1A2E22]">{formatFCFA(s.montant)}</span> },
             { key: 'demandeur', label: 'Demandeur' },
           ]}
+          rowActions={(s: GarageSortiePiece) => (
+            <div className="flex items-center justify-center gap-1">
+              <button onClick={() => openCorrectSortie(s)} className="p-1.5 rounded-lg hover:bg-[#FEF3C7] text-[#D97706]" title="Corriger la sortie">
+                <Edit3 className="w-4 h-4" />
+              </button>
+              <button onClick={() => openCorrectionsHistory(s.id)} className="p-1.5 rounded-lg hover:bg-[#E0F2FE] text-[#0E7490]" title="Historique des corrections">
+                <History className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         />
       )}
 
@@ -268,6 +316,114 @@ export default function GarageStockPage() {
             <div className="flex justify-end gap-3 p-6 border-t border-[#E2EAE5]">
               <button onClick={() => setCorrecting(null)} className="px-4 py-2.5 rounded-xl border border-[#E2EAE5] text-sm font-medium text-[#4A6B55] hover:bg-[#F8FAF8]">Annuler</button>
               <button onClick={handleCorrect} className="px-6 py-2.5 rounded-xl bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2e]">Corriger</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Correct sortie modal */}
+      {correctingSortie && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-[#E2EAE5]">
+              <h2 className="text-lg font-bold text-[#1A2E22]">Corriger la sortie</h2>
+              <button onClick={() => setCorrectingSortie(null)} className="p-1 rounded-lg hover:bg-[#F4F7F5]"><X className="w-5 h-5 text-[#6B7280]" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
+                <p className="text-sm text-[#4A6B55]">Pièce : <span className="font-medium text-[#1A2E22]">{correctingSortie.piece?.nom} ({correctingSortie.piece?.reference})</span></p>
+                <p className="text-sm text-[#4A6B55]">Date : <span className="font-medium text-[#1A2E22]">{formatDate(correctingSortie.date)}</span></p>
+                {correctingSortie.car?.registration_number && <p className="text-sm text-[#4A6B55]">Car : <span className="font-mono text-[#0B7439]">{correctingSortie.car.registration_number}</span></p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#4A6B55] mb-1">Qté enregistrée</label>
+                  <div className="px-3 py-2.5 rounded-xl bg-[#FEF2F2] text-sm font-bold text-[#AF3029] text-center">{correctingSortie.quantite}</div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#4A6B55] mb-1">Qté réelle contrôlée *</label>
+                  <input type="number" min={1} value={sortieCorrectQty} onChange={e => setSortieCorrectQty(Number(e.target.value))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
+                </div>
+              </div>
+
+              {sortieCorrectQty !== correctingSortie.quantite && (
+                <div className={`rounded-xl p-3 flex items-center justify-between ${sortieCorrectQty < correctingSortie.quantite ? 'bg-[#ECFDF5] border border-[#A7F3D0]' : 'bg-[#FEF3C7] border border-[#FDE68A]'}`}>
+                  <span className="text-sm text-[#4A6B55]">Différence</span>
+                  <span className={`text-sm font-bold ${sortieCorrectQty < correctingSortie.quantite ? 'text-[#0B7439]' : 'text-[#D97706]'}`}>
+                    {sortieCorrectQty - correctingSortie.quantite > 0 ? '+' : ''}{sortieCorrectQty - correctingSortie.quantite}
+                    {sortieCorrectQty < correctingSortie.quantite ? ' (stock récupéré)' : ' (stock supplémentaire retiré)'}
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Motif de la correction *</label>
+                <textarea value={sortieCorrectMotif} onChange={e => setSortieCorrectMotif(e.target.value)} rows={3} placeholder="Ex : Contrôle physique, 3 pneus sortis au lieu de 4 saisis..."
+                  className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20 resize-none" />
+              </div>
+
+              <p className="text-xs text-[#6B7280]">La sortie initiale est conservée. La correction et son motif sont enregistrés dans l'historique des corrections avec traçabilité complète.</p>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-[#E2EAE5]">
+              <button onClick={() => setCorrectingSortie(null)} className="px-4 py-2.5 rounded-xl border border-[#E2EAE5] text-sm font-medium text-[#4A6B55] hover:bg-[#F8FAF8]">Annuler</button>
+              <button onClick={handleCorrectSortie} disabled={sortieCorrectSaving} className="px-6 py-2.5 rounded-xl bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2e] disabled:opacity-50">
+                {sortieCorrectSaving ? 'Validation...' : 'Valider la correction'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Corrections history modal */}
+      {showCorrections && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-[#E2EAE5] sticky top-0 bg-white z-10">
+              <h2 className="text-lg font-bold text-[#1A2E22]">Historique des corrections</h2>
+              <button onClick={() => setShowCorrections(false)} className="p-1 rounded-lg hover:bg-[#F4F7F5]"><X className="w-5 h-5 text-[#6B7280]" /></button>
+            </div>
+            <div className="p-6">
+              {correctionsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-6 h-6 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : corrections.length === 0 ? (
+                <p className="text-center text-sm text-[#6B7280] py-8">Aucune correction enregistrée pour cette sortie.</p>
+              ) : (
+                <div className="space-y-3">
+                  {corrections.map(c => (
+                    <div key={c.id} className="border border-[#E2EAE5] rounded-xl p-4 bg-[#F8FAF8]">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                        <div>
+                          <p className="text-xs text-[#6B7280]">Ancienne qté</p>
+                          <p className="text-sm font-bold text-[#AF3029]">{c.ancienne_quantite}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#6B7280]">Nouvelle qté</p>
+                          <p className="text-sm font-bold text-[#0B7439]">{c.nouvelle_quantite}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#6B7280]">Différence</p>
+                          <p className={`text-sm font-bold ${c.difference < 0 ? 'text-[#0B7439]' : 'text-[#D97706]'}`}>
+                            {c.difference > 0 ? '+' : ''}{c.difference}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#6B7280]">Date</p>
+                          <p className="text-sm font-medium text-[#1A2E22]">{formatDate(c.created_at)}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-[#6B7280]">Motif</p>
+                        <p className="text-sm text-[#1A2E22]">{c.motif}</p>
+                        <p className="text-xs text-[#6B7280] pt-1">Modifié par : <span className="font-medium text-[#4A6B55]">{c.modifie_par_nom || '—'}</span></p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
