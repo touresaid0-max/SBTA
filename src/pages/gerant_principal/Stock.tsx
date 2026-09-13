@@ -255,9 +255,11 @@ export default function GarageStockPage() {
           rowActions={(s: GarageStock) => (
             <div className="flex items-center justify-center gap-1">
               {s.quantite <= (s.piece?.seuil_alerte ?? 0) && <AlertTriangle className="w-4 h-4 text-[#AF3029]" />}
-              <button onClick={() => openCorrect(s)} className="p-1.5 rounded-lg hover:bg-[#FEF3C7] text-[#D97706]" title="Corriger le stock">
-                <Pencil className="w-4 h-4" />
-              </button>
+              {!(user?.assistance_gp) && (
+                <button onClick={() => openCorrect(s)} className="p-1.5 rounded-lg hover:bg-[#FEF3C7] text-[#D97706]" title="Corriger le stock">
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
             </div>
           )}
         />
@@ -510,7 +512,7 @@ export default function GarageStockPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#4A6B55] mb-1">Effectué par</label>
-                <input value={entryForm.effectue_par || user?.full_name || ''} onChange={e => setEntryForm({ ...entryForm, effectue_par: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm" />
+                <input value={entryForm.effectue_par || user?.full_name || ''} onChange={e => setEntryForm({ ...entryForm, effectue_par: e.target.value })} readOnly={!!user?.assistance_gp} className={`w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm ${user?.assistance_gp ? 'bg-[#F0F4F1] text-[#6B7280] cursor-not-allowed' : ''}`} />
               </div>
             </div>
             <div className="flex justify-end gap-3 p-6 border-t border-[#E2EAE5]">
@@ -544,8 +546,8 @@ export default function GarageStockPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#4A6B55] mb-1">Effectué par</label>
-                  <input value={exitEffectuePar || user?.full_name || ''} onChange={e => setExitEffectuePar(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
+                  <input value={exitEffectuePar || user?.full_name || ''} onChange={e => setExitEffectuePar(e.target.value)} readOnly={!!user?.assistance_gp}
+                    className={`w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20 ${user?.assistance_gp ? 'bg-[#F0F4F1] text-[#6B7280] cursor-not-allowed' : ''}`} />
                 </div>
               </div>
 
