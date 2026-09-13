@@ -621,7 +621,7 @@ export default function AgentColisDashboard() {
   }
 
   function handlePrintAllGroups() {
-    // Print one PDF per group sequentially with small delay so browser handles download
+    // Print one bordereau per group sequentially with small delay
     bordereauGroups.forEach((g, i) => {
       setTimeout(() => handlePrintGroup(g), i * 400)
     })

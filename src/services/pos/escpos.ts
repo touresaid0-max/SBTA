@@ -1,6 +1,7 @@
 import type { TicketRecord, BagageRecord, DepartRecord } from './db';
 import type { PrintSettings } from './db';
 import type { BordereauRecettesData, BordereauDepartData } from '@/types/counter.types';
+import type { BordereauCourrierData } from '@/utils/printBordereau';
 
 export interface PrintTicketData {
   ticket: TicketRecord;
@@ -624,6 +625,106 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
   parts.push(...line(`Imprime le ${bord.print_date} a ${bord.print_time}`));
 
   // ── CONTOUR INFÉRIEUR ─────────────────────────────────────────────
+  parts.push(...bottomBorder());
+
+  parts.push(lineFeed(2));
+  if (settings.auto_cut) parts.push(cutPaper());
+  return concat(...parts);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  BORDEREAU COURRIER  (ESC/POS 58 mm)
+// ═══════════════════════════════════════════════════════════════════
+const COURRIER_NATURE_LABELS: Record<string, string> = {
+  autre:          'AUTRE',
+  electronique:   'ELEC.',
+  vetement:       'VET.',
+  document:       'DOC.',
+  alimentaire:    'ALIM.',
+  medicament:     'MEDIC.',
+  electromenager: 'ELECTR',
+  fragile:        'FRAGILE',
+};
+
+export function buildBordereauCourrierESCPOS(data: BordereauCourrierData, settings: PrintSettings): Uint8Array {
+  const w = settings.width_mm === 80 ? 68 : 64;
+  const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
+
+  const rawLine = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  const line = (s = '') => {
+    const inner = s.slice(0, w - 2).padEnd(w - 2);
+    return [text(`|${inner}|`), lineFeed()];
+  };
+  const center = (s: string) => {
+    const t = s.slice(0, w - 2);
+    const pad = Math.max(0, Math.floor((w - 2 - t.length) / 2));
+    return line(' '.repeat(pad) + t);
+  };
+  const separator = () => line('-'.repeat(w - 2));
+  const doubleSep = () => line('='.repeat(w - 2));
+  const topBorder = () => rawLine('+' + '-'.repeat(w - 2) + '+');
+  const bottomBorder = () => rawLine('+' + '-'.repeat(w - 2) + '+');
+
+  const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max) : s;
+  const padR = (s: string, n: number) => s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);
+
+  parts.push(setAlign('center'), ...topBorder());
+
+  parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  parts.push(setBold(true), ...center(data.station_name.toUpperCase()), setBold(false));
+  if (data.station_phone) {
+    parts.push(setBold(true), ...center(`Tel ${data.station_phone}`), setBold(false));
+  }
+  parts.push(...doubleSep());
+  parts.push(setAlign('center'), setBold(true), ...line('BORDEREAU COURRIER'), setBold(false));
+  parts.push(...doubleSep());
+
+  parts.push(setAlign('left'));
+  const pair = (label: string, value: string, bold = false) => {
+    const v = truncate(value, w - label.length);
+    if (bold) parts.push(setBold(true));
+    parts.push(...line(`${padR(label, w - v.length > 0 ? w - v.length : label.length)}${v}`));
+    if (bold) parts.push(setBold(false));
+  };
+  pair('DESTINATION:', data.destination.toUpperCase());
+  pair('DATE:', data.date);
+  pair('MATRICULE:', (data.bus_registration || '—').toUpperCase());
+  parts.push(...separator());
+
+  parts.push(setAlign('center'), setBold(true), ...line('CHAUFFEUR'), setBold(false));
+  parts.push(setAlign('center'), setBold(true), ...line((data.driver_name || '—').toUpperCase()), setBold(false));
+  parts.push(setAlign('left'));
+  parts.push(...doubleSep());
+
+  parts.push(setAlign('center'), setBold(true), ...line('LISTE COLIS'), setBold(false));
+  parts.push(setAlign('left'));
+
+  const C_CODE = 16;
+  const C_NAT = 10;
+  const C_DES = w - 2 - C_CODE - C_NAT;
+
+  const headerRow =
+    padR('CODE', C_CODE) +
+    padR('NATURE', C_NAT) +
+    padR('DESIGNATION', C_DES);
+  parts.push(setBold(true), ...line(headerRow.slice(0, w)), setBold(false));
+  parts.push(...separator());
+
+  for (const p of data.parcels) {
+    const code = truncate(p.parcel_code || '', C_CODE);
+    const nat = truncate((COURRIER_NATURE_LABELS[p.nature] ?? 'AUTRE').toUpperCase(), C_NAT);
+    const des = truncate((p.content_description || '').toUpperCase(), C_DES);
+    parts.push(...line(`${padR(code, C_CODE)}${padR(nat, C_NAT)}${padR(des, C_DES)}`));
+  }
+
+  parts.push(...separator());
+
+  parts.push(setBold(true), ...line(`TOTAL COLIS : ${data.parcels.length}`), setBold(false));
+  parts.push(...doubleSep());
+
+  parts.push(setAlign('center'));
+  parts.push(...line(`Imprime le ${data.print_date} a ${data.print_time}`));
+
   parts.push(...bottomBorder());
 
   parts.push(lineFeed(2));

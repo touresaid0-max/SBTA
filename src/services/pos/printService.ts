@@ -1,7 +1,8 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData } from './escpos';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData } from './escpos';
 import { getPrintCustomization } from '../printCustomization';
 import type { BordereauDepartData } from '@/types/counter.types';
+import type { BordereauCourrierData } from '@/utils/printBordereau';
 
 export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData };
 
@@ -1107,6 +1108,102 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   </div>
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
+}
+
+export async function printBordereauCourrierThermal(data: BordereauCourrierData): Promise<boolean> {
+  const settings = await getPrintSettings();
+  const escposData = buildBordereauCourrierESCPOS(data, settings);
+
+  const okSerial = await sendWebSerial(escposData);
+  if (okSerial) return true;
+  const okUsb = await sendWebUSB(escposData);
+  if (okUsb) return true;
+  const okQz = await sendQzTray(escposData, settings);
+  if (okQz) return true;
+
+  const w = settings.width_mm === 80 ? 280 : 220;
+  const headerRow = `<tr><th>CODE</th><th>NATURE</th><th>DESIGNATION</th></tr>`;
+  const dataRows = data.parcels.map(p => {
+    const nat = ({autre:'AUTRE',electronique:'ELEC.',vetement:'VET.',document:'DOC.',alimentaire:'ALIM.',medicament:'MEDIC.',electromenager:'ELECTR',fragile:'FRAGILE'} as Record<string,string>)[p.nature] ?? 'AUTRE';
+    return `<tr><td>${(p.parcel_code||'').toUpperCase()}</td><td>${nat}</td><td>${(p.content_description||'').toUpperCase()}</td></tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau Courrier</title><style>
+  @page { size: ${settings.width_mm}mm auto; margin: 0; }
+  * { font-family: 'Courier New', monospace; font-size: 9px; color: #000; margin: 0; padding: 0; }
+  body { width: ${w}px; margin: 0 auto; }
+  h1 { font-size: 12px; text-align: center; font-weight: bold; }
+  h2 { font-size: 10px; text-align: center; font-weight: bold; }
+  .info { font-size: 9px; }
+  .info b { font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #000; padding: 1px 2px; font-size: 8px; text-align: left; }
+  th { font-weight: bold; }
+  .sep { border-top: 1px solid #000; margin: 2px 0; }
+  .total { font-weight: bold; font-size: 10px; }
+  .footer { text-align: center; font-size: 8px; }
+</style></head><body>
+  <h1>SBTA</h1>
+  <h2>${data.station_name.toUpperCase()}</h2>
+  ${data.station_phone ? `<div class="footer">Tel ${data.station_phone}</div>` : ''}
+  <div class="sep"></div>
+  <h1>BORDEREAU COURRIER</h1>
+  <div class="sep"></div>
+  <div class="info"><b>DESTINATION:</b> ${data.destination.toUpperCase()}</div>
+  <div class="info"><b>DATE:</b> ${data.date}</div>
+  <div class="info"><b>MATRICULE:</b> ${(data.bus_registration || '—').toUpperCase()}</div>
+  <div class="sep"></div>
+  <h2>CHAUFFEUR</h2>
+  <h2>${(data.driver_name || '—').toUpperCase()}</h2>
+  <div class="sep"></div>
+  <h2>LISTE COLIS</h2>
+  <table><thead>${headerRow}</thead><tbody>${dataRows}</tbody></table>
+  <div class="sep"></div>
+  <div class="total">TOTAL COLIS : ${data.parcels.length}</div>
+  <div class="sep"></div>
+  <div class="footer">Imprime le ${data.print_date} a ${data.print_time}</div>
+  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
+</body></html>`;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  return new Promise((resolve) => {
+    const cw = iframe.contentWindow;
+    const doc = cw?.document;
+    if (!doc) { iframe.remove(); resolve(false); return; }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      setTimeout(() => iframe.remove(), 1500);
+      resolve(ok);
+    };
+
+    if (cw) {
+      cw.addEventListener('afterprint', () => finish(true), { once: true });
+    }
+    setTimeout(() => {
+      try {
+        cw?.focus();
+        cw?.print();
+      } catch {
+        finish(false);
+        return;
+      }
+      setTimeout(() => finish(true), 2000);
+    }, 300);
+  });
 }
 
 export async function printBordereauDepartThermal(data: PrintBordereauDepartData): Promise<boolean> {
