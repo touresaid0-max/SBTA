@@ -71,7 +71,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     font-family: Arial, Helvetica, sans-serif;
     font-size: 11px;
     width: 80mm;
-    padding: 3mm 4mm;
+    padding: 2mm 4mm;
     color: #000;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
@@ -79,7 +79,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   .header {
     display: flex;
     align-items: center;
-    margin-bottom: 3mm;
+    margin-bottom: 1.5mm;
   }
   .logo-container {
     display: flex;
@@ -92,7 +92,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     width: 22mm;
     height: auto;
     object-fit: contain;
-    margin-bottom: 1mm;
+    margin-bottom: 0.5mm;
   }
   .header .logo-text {
     font-size: 18px;
@@ -110,7 +110,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   .header-right .value { font-weight: bold; font-size: 13px; }
   .station-row {
     text-align: center;
-    margin-bottom: 2mm;
+    margin-bottom: 1mm;
   }
   .station-name { font-weight: bold; font-size: 13px; }
   .station-date { font-size: 10px; margin-left: 4mm; }
@@ -118,8 +118,8 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     text-align: center;
     font-weight: bold;
     font-size: 20px;
-    margin: 3mm 0;
-    padding: 2mm 0;
+    margin: 1mm 0;
+    padding: 1mm 0;
     border-bottom: 1px solid #000;
   }
   .dest-row {
@@ -127,19 +127,19 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 2mm 3mm;
-    margin-bottom: 2mm;
+    padding: 1mm 3mm;
+    margin-bottom: 1mm;
   }
   .dest-row .label { font-size: 10px; }
   .dest-row .value { font-weight: bold; font-size: 14px; }
   .info-grid {
     display: flex;
     border: 1px solid #000;
-    margin-bottom: 2mm;
+    margin-bottom: 1mm;
   }
   .info-grid .cell {
     flex: 1;
-    padding: 2mm 3mm;
+    padding: 1mm 3mm;
   }
   .info-grid .cell + .cell {
     border-left: 1px solid #000;
@@ -160,11 +160,11 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   .person-grid {
     display: flex;
     border: 1px solid #000;
-    margin-bottom: 3mm;
+    margin-bottom: 1.5mm;
   }
   .person-grid .cell {
     flex: 1;
-    padding: 2mm 3mm;
+    padding: 1mm 3mm;
   }
   .person-grid .cell + .cell {
     border-left: 1px solid #000;
@@ -183,7 +183,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    padding: 1mm 0;
+    padding: 0.5mm 0;
     font-size: 11px;
     border-bottom: 1px dotted #999;
   }
@@ -191,23 +191,23 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   .total-row {
     border-top: 2px solid #000;
     border-bottom: 2px solid #000;
-    padding: 2mm 0;
+    padding: 1mm 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 2mm 0 3mm 0;
+    margin: 1mm 0 1.5mm 0;
   }
   .total-row .label { font-weight: bold; font-size: 13px; }
   .total-row .value { font-weight: bold; font-size: 16px; }
   .nature-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 3mm;
+    margin-bottom: 1.5mm;
     font-size: 10px;
   }
   .nature-table th, .nature-table td {
     border: 1px solid #000;
-    padding: 2mm 3mm;
+    padding: 1mm 3mm;
     text-align: left;
   }
   .nature-table th {
@@ -217,14 +217,14 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   }
   .notes-box {
     border: 1px solid #000;
-    padding: 2mm 3mm;
+    padding: 1mm 3mm;
     font-size: 8px;
-    margin-bottom: 3mm;
-    line-height: 1.6;
+    margin-bottom: 1.5mm;
+    line-height: 1.4;
   }
   .qr-section {
     text-align: center;
-    padding: 3mm 0;
+    padding: 1.5mm 0;
     border-top: 1px solid #000;
   }
   .qr-section canvas {
@@ -234,7 +234,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   .qr-label {
     font-size: 8px;
     font-style: italic;
-    margin-bottom: 1mm;
+    margin-bottom: 0.5mm;
   }
   .qr-code-text {
     font-weight: bold;
@@ -242,27 +242,27 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   }
   .footer {
     border-top: 1px solid #000;
-    padding-top: 2mm;
-    margin-top: 2mm;
+    padding-top: 1mm;
+    margin-top: 1mm;
     text-align: center;
     font-weight: bold;
     font-size: 11px;
   }
   .footer .supervisor {
-    margin-top: 2mm;
+    margin-top: 1mm;
     font-size: 10px;
     font-weight: bold;
   }
   .ticket-copy + .ticket-copy {
     border-top: 2px dashed #000;
-    padding-top: 4mm;
-    margin-top: 4mm;
+    padding-top: 2mm;
+    margin-top: 2mm;
   }
   .copy-label {
     text-align: center;
     font-size: 8px;
     font-weight: bold;
-    margin-bottom: 2mm;
+    margin-bottom: 1mm;
     letter-spacing: 1px;
   }
   @media print {
@@ -339,7 +339,7 @@ ${[1, 2].map(copyNum => `
 
   ${data.courier_qr_enabled ? `
   <div class="qr-section">
-    <img src="${qrDataUrl}" width="100" height="100" alt="QR" style="display:block;margin:0 auto 2mm auto;">
+    <img src="${qrDataUrl}" width="100" height="100" alt="QR" style="display:block;margin:0 auto 1mm auto;">
     <div class="qr-label">Scannez pour confirmer la reception</div>
     <div class="qr-code-text">${escHtml(data.parcel_code)}</div>
   </div>` : ''}
