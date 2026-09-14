@@ -234,6 +234,31 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
     }
 
     const todayStr = new Date().toISOString().slice(0, 10);
+
+    // Auto-close locally cached departs from past days that are still open.
+    // The server RPC already closed them in Supabase, but local IndexedDB may
+    // still have stale rows with cloture=false. We only pull today+ schedules
+    // below, so past-day rows would never get their cloture flag updated.
+    try {
+      const allLocal = await (db.departs as any).toArray();
+      const toClose = allLocal.filter(
+        (d: Record<string, unknown>) =>
+          (d as any).departure_date < todayStr &&
+          !(d as any).cloture &&
+          !(d as any).cancelled,
+      );
+      for (const d of toClose) {
+        await (db.departs as any).put({
+          ...d,
+          cloture: true,
+          cloture_at: new Date().toISOString(),
+          status: 'termine',
+          updated_at: new Date().toISOString(),
+          synced: true,
+        });
+      }
+    } catch { /* non-critical */ }
+
     let scheduleQuery = supabase
       .from('schedules')
       .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate')

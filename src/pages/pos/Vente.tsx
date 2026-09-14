@@ -399,6 +399,8 @@ export default function POSVente() {
     if (!depart || !departId) return;
     if (depart.cancelled) { setError('Ce départ est annulé — vente impossible'); return; }
     if (depart.cloture) { setError('Ce départ est clôturé — vente impossible'); return; }
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (depart.departure_date < todayStr) { setError('Ce départ appartient à une journée antérieure — vente impossible'); return; }
     if (depart.status === 'panne') { setError('Ce départ est en panne — vente impossible'); return; }
     setError(''); setSuccess('');
     if (selectedSeats.length === 0) { setError('Veuillez sélectionner au moins un siège'); return; }
@@ -534,6 +536,8 @@ export default function POSVente() {
     if (!depart || !departId || !bagMode) return;
     if (depart.cancelled) { setBagError('Ce départ est annulé — opération impossible'); return; }
     if (depart.cloture) { setBagError('Ce départ est clôturé — opération impossible'); return; }
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (depart.departure_date < todayStr) { setBagError('Ce départ appartient à une journée antérieure — opération impossible'); return; }
     if (depart.status === 'panne') { setBagError('Ce départ est en panne — opération impossible'); return; }
     setBagError(''); setBagSuccess('');
 
@@ -638,6 +642,11 @@ export default function POSVente() {
         {!depart.cancelled && depart.cloture && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
             <Lock className="w-4 h-4" /> Ce départ est clôturé — vente verrouillée
+          </div>
+        )}
+        {!depart.cancelled && !depart.cloture && depart.departure_date < new Date().toISOString().slice(0, 10) && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+            <Lock className="w-4 h-4" /> Ce départ appartient à une journée antérieure — vente verrouillée
           </div>
         )}
         {!depart.cancelled && !depart.cloture && depart.status === 'panne' && (
@@ -1263,7 +1272,7 @@ export default function POSVente() {
               )}
               <button
                 onClick={handleSell}
-                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne'}
+                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < new Date().toISOString().slice(0, 10)}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
               >
@@ -1525,7 +1534,7 @@ export default function POSVente() {
               {bagMode && (
                 <button
                   onClick={handleSellBagage}
-                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && !seatNumber)}
+                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < new Date().toISOString().slice(0, 10) || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && !seatNumber)}
                   className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                   style={{ backgroundColor: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)' }}
                 >
