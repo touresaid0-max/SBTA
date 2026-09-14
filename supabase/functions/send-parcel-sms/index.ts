@@ -85,7 +85,30 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Insert a PENDING log entry
+    // ── Look up the parcel's origin station to get per-station SMS config ──
+    const { data: parcel } = await supabase
+      .from("parcels")
+      .select("origin_station_id")
+      .eq("id", parcel_id)
+      .maybeSingle();
+
+    let stationId: string | null = null;
+    let stationApiKey: string | null = null;
+
+    if (parcel?.origin_station_id) {
+      stationId = parcel.origin_station_id;
+      const { data: station } = await supabase
+        .from("stations")
+        .select("sms_api_key, sms_credit")
+        .eq("id", stationId)
+        .maybeSingle();
+
+      if (station?.sms_api_key) {
+        stationApiKey = station.sms_api_key;
+      }
+    }
+
+    // Insert a PENDING log entry with station_id
     const { data: logEntry, error: logErr } = await supabase
       .from("sms_logs")
       .insert({
@@ -96,6 +119,7 @@ Deno.serve(async (req: Request) => {
         provider: "EMISMS",
         status: "PENDING",
         created_by: user.id,
+        station_id: stationId,
       })
       .select("id")
       .single();
@@ -117,10 +141,10 @@ Deno.serve(async (req: Request) => {
     const logId = logEntry.id;
 
     // ── EMISMS API ──
-    // Format: GET https://app.emisms.com/sms/api?action=send-sms&api_key=XXX&to=PHONE&from=SENDER&sms=MESSAGE
+    // Use station-specific API key if available, otherwise fall back to global env var
     const apiUrl =
       Deno.env.get("API_URL_EMISMS") ?? "https://app.emisms.com/sms/api";
-    const apiKey = Deno.env.get("API_KEY_EMISMS");
+    const apiKey = stationApiKey ?? Deno.env.get("API_KEY_EMISMS");
     const senderId = Deno.env.get("SENDER_ID") ?? "SBTA";
 
     let apiResponse: Record<string, unknown> = {};
@@ -136,7 +160,7 @@ Deno.serve(async (req: Request) => {
         url.searchParams.set("sms", message);
 
         console.log(
-          `[send-parcel-sms] Calling EMISMS: to=${recipient_phone}, from=${senderId}`
+          `[send-parcel-sms] Calling EMISMS: to=${recipient_phone}, from=${senderId}, station=${stationId ?? "global"}`
         );
 
         const resp = await fetch(url.toString(), { method: "GET" });
@@ -189,9 +213,9 @@ Deno.serve(async (req: Request) => {
       }
     } else {
       console.log(
-        `[send-parcel-sms] API_KEY_EMISMS not configured. SMS not sent to ${recipient_phone}`
+        `[send-parcel-sms] No API key configured (station=${stationId ?? "none"}, global not set). SMS not sent to ${recipient_phone}`
       );
-      apiResponse = { info: "API_KEY_EMISMS not configured" };
+      apiResponse = { info: "No API key configured" };
       sent = false;
     }
 
@@ -206,12 +230,20 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", logId);
 
+    // ── Decrement station SMS credit on successful send ──
+    if (sent && stationId) {
+      await supabase.rpc("decrement_station_sms_credit", {
+        p_station_id: stationId,
+      });
+    }
+
     return new Response(
       JSON.stringify({
         success: sent,
         status: finalStatus,
         log_id: logId,
         api_response: apiResponse,
+        station_id: stationId,
       }),
       {
         status: 200,

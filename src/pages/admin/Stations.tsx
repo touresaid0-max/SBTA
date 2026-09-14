@@ -46,6 +46,8 @@ interface Station {
   is_active: boolean;
   station_manager_id?: string | null;
   agency_code?: string | null;
+  sms_api_key?: string | null;
+  sms_credit?: number;
   cities?: { name: string; region: string };
   manager?: { id: string; full_name: string } | null;
 }
@@ -124,6 +126,8 @@ export default function Stations() {
     is_active: true,
     station_manager_id: '',
     agency_code: '',
+    sms_api_key: '',
+    sms_credit: 0,
   });
 
   useEffect(() => {
@@ -315,6 +319,8 @@ export default function Stations() {
         is_active: formData.is_active,
         station_manager_id: primaryManagerId || null,
         agency_code: formData.agency_code || null,
+        sms_api_key: formData.sms_api_key || null,
+        sms_credit: formData.sms_credit ?? 0,
       };
 
       let savedStationId = editingId;
@@ -538,6 +544,8 @@ export default function Stations() {
       is_active: station.is_active,
       station_manager_id: station.station_manager_id || '',
       agency_code: station.agency_code || '',
+      sms_api_key: (station as any).sms_api_key || '',
+      sms_credit: (station as any).sms_credit ?? 0,
     });
     setSelectedAgentIds(ids);
     setPrimaryAgentId(primary?.agent_id ?? (ids[0] || null));
@@ -587,6 +595,8 @@ export default function Stations() {
       is_active: true,
       station_manager_id: '',
       agency_code: '',
+      sms_api_key: '',
+      sms_credit: 0,
     });
     setSelectedAgentIds([]);
     setPrimaryAgentId(null);
@@ -969,6 +979,35 @@ export default function Stations() {
                   </p>
                 </div>
 
+                <div>
+                  <label className="block mb-2 font-medium">Cle API SMS</label>
+                  <input
+                    type="text"
+                    value={formData.sms_api_key}
+                    onChange={(e) => setFormData({ ...formData, sms_api_key: e.target.value })}
+                    className="w-full p-3 border rounded-lg"
+                    placeholder="Cle API EMISMS de cette gare"
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Cle API EMISMS propre a cette gare. Si vide, la cle globale du systeme est utilisee.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block mb-2 font-medium">Credit SMS</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.sms_credit}
+                    onChange={(e) => setFormData({ ...formData, sms_credit: parseInt(e.target.value) || 0 })}
+                    className="w-full p-3 border rounded-lg"
+                    placeholder="0"
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Credit SMS de cette gare. Chaque SMS envoye par un agent courrier de cette gare decremente le credit de 1.
+                  </p>
+                </div>
+
                 {/* ── Codes agence par destination ── */}
                 <div className="p-4 rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--neutral-50)' }}>
                   <div className="flex items-center justify-between mb-2">
@@ -1282,6 +1321,7 @@ export default function Stations() {
               <th className="text-left p-4 font-semibold whitespace-nowrap">Agents courrier</th>
               <th className="text-left p-4 font-semibold whitespace-nowrap">Bagagistes</th>
               <th className="text-left p-4 font-semibold whitespace-nowrap">Code agence</th>
+              <th className="text-left p-4 font-semibold whitespace-nowrap">Credit SMS</th>
               <th className="text-left p-4 font-semibold whitespace-nowrap">Contact</th>
               <th className="text-left p-4 font-semibold whitespace-nowrap">Équipements</th>
               <th className="text-left p-4 font-semibold whitespace-nowrap">Affichage</th>
@@ -1384,6 +1424,22 @@ export default function Stations() {
                       </span>
                     ) : (
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Non defini</span>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    <span
+                      className="px-3 py-1 rounded-full text-xs font-bold"
+                      style={{
+                        backgroundColor: (station.sms_credit ?? 0) > 0 ? 'var(--success-light)' : 'var(--neutral-200)',
+                        color: (station.sms_credit ?? 0) > 0 ? 'var(--success)' : 'var(--neutral-600)',
+                      }}
+                    >
+                      {station.sms_credit ?? 0}
+                    </span>
+                    {station.sms_api_key && (
+                      <span className="block text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                        Cle propre
+                      </span>
                     )}
                   </td>
                   <td className="p-4">
