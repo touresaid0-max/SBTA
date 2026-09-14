@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   Package, PackagePlus, ArrowDownToLine, Banknote, CheckCircle2,
-  Printer, Eye, ArrowRight, RefreshCw, Bell, X, Truck, FileText, ChevronDown,
+  Printer, Eye, ArrowRight, ArrowLeft, RefreshCw, Bell, X, Truck, FileText, ChevronDown,
   Filter, MapPin, Bus, User, Loader2, QrCode, Layers, PackageCheck, Send, Search,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -669,13 +669,24 @@ export default function AgentColisDashboard() {
 
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <h1 className="text-lg sm:text-xl lg:text-2xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>
-            Gestion des Courriers
-          </h1>
-          <p className="text-xs sm:text-sm mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-            {stationName || 'Gare'} — {today}
-          </p>
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            onClick={() => navigate('/guichet/accueil')}
+            className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap border flex-shrink-0"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', backgroundColor: 'var(--surface)' }}
+            title="Retour à l'accueil"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Précédent</span>
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl lg:text-2xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>
+              Gestion des Courriers
+            </h1>
+            <p className="text-xs sm:text-sm mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+              {stationName || 'Gare'} — {today}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
