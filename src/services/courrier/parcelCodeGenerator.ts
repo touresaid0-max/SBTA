@@ -1,6 +1,6 @@
 import { db } from './db'
 
-const APP_TRACKING_URL = 'https://sbta-pink.vercel.app'
+const APP_TRACKING_URL = 'https://sbta-gestion.cloud'
 
 function pad(num: number, len: number): string {
   return num.toString().padStart(len, '0')

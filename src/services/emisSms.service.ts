@@ -50,7 +50,7 @@ async function callSmsEdgeFunction(payload: {
 const APP_BASE_URL = 'https://sbta-gestion.cloud'
 
 function buildTrackingUrl(parcelCode: string, rawUrl?: string): string {
-  if (rawUrl && (rawUrl.includes('sbta-gestion.cloud') || rawUrl.includes('vercel.app'))) return rawUrl
+  if (rawUrl && rawUrl.includes('sbta-gestion.cloud')) return rawUrl
   return `${APP_BASE_URL}/track/${parcelCode}`
 }
 
