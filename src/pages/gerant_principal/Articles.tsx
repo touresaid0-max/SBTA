@@ -31,9 +31,21 @@ export default function GaragePieces() {
 
   useEffect(() => { load() }, [])
 
+  const computeNextReference = (list: GaragePiece[]): string => {
+    let max = 0
+    for (const p of list) {
+      const m = /^RF(\d+)$/i.exec((p.reference ?? '').trim())
+      if (m) {
+        const n = parseInt(m[1], 10)
+        if (!Number.isNaN(n) && n > max) max = n
+      }
+    }
+    return 'RF' + String(max + 1).padStart(3, '0')
+  }
+
   const openCreate = () => {
     setEditing(null)
-    setForm({ reference: '', nom: '', modele_serie: '', marque: '', seuil_alerte: 5, famille_id: '', sous_famille_id: '', prix_unitaire: 0 })
+    setForm({ reference: computeNextReference(pieces), nom: '', modele_serie: '', marque: '', seuil_alerte: 5, famille_id: '', sous_famille_id: '', prix_unitaire: 0 })
     setShowModal(true)
   }
   const openEdit = (p: GaragePiece) => {
@@ -119,9 +131,10 @@ export default function GaragePieces() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#4A6B55] mb-1">Référence *</label>
-                  <input value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })}
+                  <input value={form.reference} readOnly disabled
                     placeholder="ex: RF433"
-                    className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
+                    title={editing ? 'Référence non modifiable' : 'Référence générée automatiquement'}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] bg-[#F4F7F5] text-sm font-mono font-medium text-[#0B7439] cursor-not-allowed focus:outline-none" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#4A6B55] mb-1">Nom *</label>
