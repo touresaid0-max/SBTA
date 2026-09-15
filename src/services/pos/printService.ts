@@ -1044,32 +1044,32 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 9px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  * { font-family: 'Courier New', monospace; font-size: 10px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: ${mm}mm; margin: 0 auto; padding: 3px; font-weight: 600; }
-  .border-box { border: 2px solid #000; padding: 3px; }
+  body { width: ${mm}mm; margin: 0 auto; padding: 0; font-weight: 600; }
+  .border-box { border: 0; padding: 0 1mm; width: ${mm}mm; }
   .hdr { text-align: center; }
-  .brand { font-size: 18px; font-weight: 900; }
-  .sub { font-size: 9px; }
-  .phone { font-size: 10px; font-weight: 700; }
-  .title { text-align: center; font-size: 12px; font-weight: 900; margin: 3px 0; }
+  .brand { font-size: 19px; font-weight: 900; }
+  .sub { font-size: 10px; }
+  .phone { font-size: 11px; font-weight: 700; }
+  .title { text-align: center; font-size: 13px; font-weight: 900; margin: 3px 0; }
   .dsep { border-top: 2px solid #000; margin: 3px 0; }
   .sep { border-top: 1px solid #000; margin: 2px 0; }
-  .info { display: flex; justify-content: space-between; font-size: 10px; font-weight: 700; padding: 2px 0; }
-  .convoy-badge { text-align: center; font-size: 11px; font-weight: 900; padding: 3px 0; }
+  .info { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; padding: 2px 0; }
+  .convoy-badge { text-align: center; font-size: 12px; font-weight: 900; padding: 3px 0; }
   table { width: 100%; border-collapse: collapse; }
-  th { font-size: 8px; font-weight: 900; padding: 2px 0; border-bottom: 1px solid #000; }
+  th { font-size: 9px; font-weight: 900; padding: 2px 0; border-bottom: 1px solid #000; }
   th.l { text-align: left; }
   th.r { text-align: right; }
-  td { font-size: 9px; padding: 2px 0; }
+  td { font-size: 10px; padding: 2px 0; }
   td.l { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
   td.r { text-align: right; white-space: nowrap; }
-  .seats { font-size: 8px; font-style: italic; padding: 0 0 2px 2px; color: #333; }
-  .recap { font-size: 10px; font-weight: 700; padding: 2px 2px; }
+  .seats { font-size: 9px; font-style: italic; padding: 0 0 2px 2px; color: #333; }
+  .recap { font-size: 11px; font-weight: 700; padding: 2px 2px; }
   .recap-row { display: flex; justify-content: space-between; padding: 2px 0; }
   .recap-bold { font-weight: 900; }
-  .printed { text-align: center; font-size: 9px; font-weight: 700; padding: 3px 0; }
-  @media print { body { margin: 0 auto; } }
+  .printed { text-align: center; font-size: 10px; font-weight: 700; padding: 3px 0; }
+  @media print { body { margin: 0 auto; width: ${mm}mm !important; padding: 0 !important; } .border-box { border: 0 !important; width: ${mm}mm !important; } }
 </style></head><body>
   <div class="border-box">
   <div class="hdr">
