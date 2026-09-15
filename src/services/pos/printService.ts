@@ -215,17 +215,14 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   </div>
 </div>`;
 
-  const innerW = mm === 80 ? 328 : 232;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
   @page { size: ${mm}mm auto; margin: 0; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
   body { margin: 0; padding: 0; }
-  .ticket-container { width: ${innerW}px; margin: 0 auto; padding: 0; }
+  .ticket-container { width: ${mm}mm; margin: 0 auto; padding: 0; }
 
-  .ticket-block { width: 100%; border-left: 1px solid #000; border-right: 1px solid #000; overflow: hidden; }
-  .ticket-block.first { border-top: 1px solid #000; }
-  .ticket-block.last { border-bottom: 1px solid #000; }
+  .ticket-block { width: 100%; overflow: hidden; }
 
   .header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 3px; gap: 4px; }
   .logo { flex: 0 0 auto; width: 44px; }
@@ -268,8 +265,6 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
     background: repeating-linear-gradient(135deg, #d0d0d0 0, #d0d0d0 3px, #f5f5f5 3px, #f5f5f5 6px);
     border-top: 1px dashed #000;
     border-bottom: 1px dashed #000;
-    border-left: 1px solid #000;
-    border-right: 1px solid #000;
     text-align: center;
     font-size: 8px;
     color: #888;
@@ -279,7 +274,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
   @media print {
     body { margin: 0; padding: 0; background: #fff; }
-    .ticket-container { width: ${innerW}px !important; margin: 0 auto !important; padding: 0; }
+    .ticket-container { width: ${mm}mm !important; margin: 0 auto !important; padding: 0; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style></head><body>
