@@ -1050,8 +1050,8 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   .border-box { border: 0; padding: 0 1mm; width: ${mm}mm; }
   .hdr { text-align: center; }
   .brand { font-size: 19px; font-weight: 900; }
-  .sub { font-size: 10px; }
-  .phone { font-size: 11px; font-weight: 700; }
+  .sub { font-size: 9px; white-space: nowrap; letter-spacing: -0.2px; }
+  .phone { font-size: 10px; font-weight: 700; white-space: nowrap; letter-spacing: -0.2px; }
   .title { text-align: center; font-size: 13px; font-weight: 900; margin: 3px 0; }
   .dsep { border-top: 2px solid #000; margin: 3px 0; }
   .sep { border-top: 1px solid #000; margin: 2px 0; }
