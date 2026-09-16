@@ -14,9 +14,10 @@ const ALLOWED_ROLES = [
   "admin",
   "gestionnaire",
   "daf",
+  "dg",
 ];
 
-const READ_ONLY_ROLES = ["logistique"];
+const READ_ONLY_ROLES = ["logistique", "dg"];
 
 function ok(data: unknown) {
   return new Response(JSON.stringify(data), {
