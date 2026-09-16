@@ -75,6 +75,11 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: "Demandes d'autorisation", path: '/dg/change-requests', icon: <Shield className="w-5 h-5" /> },
     { label: "Journal d'audit", path: '/dg/audit', icon: <ScrollText className="w-5 h-5" /> },
     { label: 'Rapport RH',     path: '/rh/reports', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Rapport Bagage',  path: '/logistique/baggage-report', icon: <Package className="w-5 h-5" /> },
+    { label: 'Rapport Conducteur', path: '/logistique/driver-report', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Rapport Réparations', path: '/logistique/rapport-reparations', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Bilan',          path: '/logistique/bilan',         icon: <ClipboardList className="w-5 h-5" /> },
+    { label: 'Synthèse Bus',   path: '/logistique/bus-synthesis', icon: <Bus className="w-5 h-5" /> },
   ],
   comptable: [
     { label: 'Dashboard',        path: '/comptable/dashboard',        icon: <LayoutDashboard className="w-5 h-5" /> },

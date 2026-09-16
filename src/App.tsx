@@ -519,12 +519,12 @@ function App() {
             <Route path="logistique/providers"         element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueProviders /></ProtectedRoute>} />
             <Route path="logistique/service-types"     element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueServiceTypes /></ProtectedRoute>} />
             <Route path="logistique/reports"           element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueReports /></ProtectedRoute>} />
-            <Route path="logistique/bus-synthesis"     element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueBusSynthesis /></ProtectedRoute>} />
-            <Route path="logistique/bilan"            element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueFleetBilan /></ProtectedRoute>} />
-            <Route path="logistique/driver-report"    element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin']}><LogistiqueDriverReport /></ProtectedRoute>} />
+            <Route path="logistique/bus-synthesis"     element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin', 'dg']}><LogistiqueBusSynthesis /></ProtectedRoute>} />
+            <Route path="logistique/bilan"            element={<ProtectedRoute roles={['responsable_logistique', 'admin', 'dg']}><LogistiqueFleetBilan /></ProtectedRoute>} />
+            <Route path="logistique/driver-report"    element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'admin', 'dg']}><LogistiqueDriverReport /></ProtectedRoute>} />
             <Route path="logistique/reparations"      element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueReparations /></ProtectedRoute>} />
-            <Route path="logistique/rapport-reparations" element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueRapportReparations /></ProtectedRoute>} />
-            <Route path="logistique/baggage-report" element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueBaggageReportDashboard /></ProtectedRoute>} />
+            <Route path="logistique/rapport-reparations" element={<ProtectedRoute roles={['responsable_logistique', 'admin', 'dg']}><LogistiqueRapportReparations /></ProtectedRoute>} />
+            <Route path="logistique/baggage-report" element={<ProtectedRoute roles={['responsable_logistique', 'admin', 'dg']}><LogistiqueBaggageReportDashboard /></ProtectedRoute>} />
 
             <Route path="agent-reservation/dashboard"  element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationDashboard /></ProtectedRoute>} />
             <Route path="agent-reservation/users"      element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationUsers /></ProtectedRoute>} />
