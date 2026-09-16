@@ -484,7 +484,7 @@ function App() {
             <Route path="rh/employees/:id/edit"     element={<ProtectedRoute roles={['rh', 'admin']}><EmployeeForm /></ProtectedRoute>} />
             <Route path="rh/drivers"                element={<ProtectedRoute roles={['rh', 'admin']}><DriversPage /></ProtectedRoute>} />
             <Route path="rh/payroll"                element={<ProtectedRoute roles={['rh', 'admin']}><PayrollPage /></ProtectedRoute>} />
-            <Route path="rh/reports"                element={<ProtectedRoute roles={['rh', 'admin', 'daf']}><RHReportsPage /></ProtectedRoute>} />
+            <Route path="rh/reports"                element={<ProtectedRoute roles={['rh', 'admin', 'daf', 'dg']}><RHReportsPage /></ProtectedRoute>} />
             <Route path="rh/contractual-pay"        element={<ProtectedRoute roles={['rh', 'admin']}><ContractualPayPage /></ProtectedRoute>} />
             <Route path="rh/daily-rates"            element={<ProtectedRoute roles={['rh', 'admin']}><DailyRatesPage /></ProtectedRoute>} />
             <Route path="rh/pay-slips"              element={<ProtectedRoute roles={['rh', 'admin']}><PaySlipsPage /></ProtectedRoute>} />

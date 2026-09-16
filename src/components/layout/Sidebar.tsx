@@ -74,6 +74,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Performance bus',    path: '/daf/bus-performance',    icon: <TrendingUp className="w-5 h-5" /> },
     { label: "Demandes d'autorisation", path: '/dg/change-requests', icon: <Shield className="w-5 h-5" /> },
     { label: "Journal d'audit", path: '/dg/audit', icon: <ScrollText className="w-5 h-5" /> },
+    { label: 'Rapport RH',     path: '/rh/reports', icon: <FileText className="w-5 h-5" /> },
   ],
   comptable: [
     { label: 'Dashboard',        path: '/comptable/dashboard',        icon: <LayoutDashboard className="w-5 h-5" /> },
