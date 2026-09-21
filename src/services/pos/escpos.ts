@@ -85,10 +85,6 @@ function cutPaper(): Uint8Array {
   return cmd(GS, 0x56, 0x00);
 }
 
-function partialCut(): Uint8Array {
-  return cmd(GS, 0x56, 0x01);
-}
-
 function dashLine(width: number): string {
   return '-'.repeat(width);
 }
@@ -637,134 +633,8 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  RECU COURRIER (parcel receipt) — 2 copies + auto-cut
+//  BORDEREAU COURRIER  (ESC/POS 58 mm)
 // ═══════════════════════════════════════════════════════════════════
-export interface PrintParcelReceiptData {
-  agency_name: string;
-  print_date: string;
-  receipt_type: string;
-  destination: string;
-  declared_value: number;
-  delivery_fee: number;
-  parcel_code: string;
-  reference: string;
-  sms_tracking_fee: number;
-  sender_name: string;
-  recipient_name: string;
-  nature: string;
-  designation: string;
-  legal_note_1: string;
-  legal_note_2: string;
-  origin_agent_phone: string | null;
-  destination_agent_phone: string | null;
-  supervisor_phone: string | null;
-  courier_qr_enabled: boolean;
-  custom_notes?: string[];
-}
-
-export function buildParcelReceiptESCPOS(data: PrintParcelReceiptData, settings: PrintSettings): Uint8Array {
-  const w = settings.width_mm === 80 ? 48 : 32;
-  const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
-
-  const fmt = (n: number): string =>
-    Math.round(Number(n) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' F';
-  const rawLine = (s = '') => [text(s.slice(0, w)), lineFeed()];
-  const centerLine = (s: string) => {
-    const t = s.slice(0, w);
-    const pad = Math.max(0, Math.floor((w - t.length) / 2));
-    return rawLine(' '.repeat(pad) + t);
-  };
-  const sep = () => rawLine('-'.repeat(w));
-  const dsep = () => rawLine('='.repeat(w));
-  const dashCut = () => rawLine('- - '.repeat(Math.floor(w / 4)).slice(0, w));
-  const pair = (left: string, right: string) => {
-    const l = left.slice(0, w);
-    const r = right.slice(0, Math.max(0, w - l.length - 1));
-    const gap = Math.max(1, w - l.length - r.length);
-    return rawLine(`${l}${' '.repeat(gap)}${r}`);
-  };
-
-  const notes = (data.custom_notes && data.custom_notes.length > 0)
-    ? data.custom_notes
-    : [data.legal_note_1, `NB: ${data.legal_note_2}`];
-
-  const renderCopy = (label: 'CLIENT' | 'AGENCE') => {
-    parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...rawLine('SBTA'), setNormal(), setFontB(), setBold(false));
-    parts.push(setBold(true), ...centerLine(`EXEMPLAIRE ${label}`), setBold(false));
-    if (data.origin_agent_phone) {
-      parts.push(setAlign('left'), ...pair('VILLE EXP :', data.origin_agent_phone));
-    }
-    if (data.destination_agent_phone) {
-      parts.push(setAlign('left'), ...pair('VILLE DES :', data.destination_agent_phone));
-    }
-    parts.push(setAlign('center'), setBold(true), ...centerLine(data.agency_name), setBold(false));
-    parts.push(...centerLine(data.print_date));
-    parts.push(...dsep());
-    parts.push(setDoubleFontB(), setBold(true), ...centerLine(data.receipt_type), setNormal(), setFontB(), setBold(false));
-    parts.push(...dsep());
-    parts.push(setAlign('left'));
-    parts.push(setBold(true), ...pair('DESTINATION :', data.destination.toUpperCase()), setBold(false));
-    parts.push(...sep());
-    parts.push(setBold(true), ...pair('CODE :', data.parcel_code), setBold(false));
-    parts.push(...pair('REFERENCE :', data.reference));
-    parts.push(...sep());
-    parts.push(...pair('EXPEDITEUR :', data.sender_name.toUpperCase()));
-    parts.push(...pair('DESTINATAIRE :', data.recipient_name.toUpperCase()));
-    parts.push(...sep());
-    parts.push(...pair('Valeur declaree :', fmt(data.declared_value)));
-    parts.push(...pair('Frais :', fmt(data.delivery_fee)));
-    parts.push(...pair('Frais suivi SMS :', fmt(data.sms_tracking_fee)));
-    parts.push(...dsep());
-    parts.push(setDoubleFontB(), setBold(true), ...pair('TOTAL RECU', fmt(data.delivery_fee + data.sms_tracking_fee)), setNormal(), setFontB(), setBold(false));
-    parts.push(...dsep());
-    parts.push(...pair('NATURE :', data.nature.toUpperCase()));
-    parts.push(...pair('DESIGNATION :', data.designation.toUpperCase()));
-    parts.push(...sep());
-    parts.push(setAlign('center'));
-    for (const n of notes) {
-      const t = n.slice(0, w * 2);
-      if (t.length <= w) {
-        parts.push(...rawLine(t));
-      } else {
-        // wrap simple
-        for (let i = 0; i < t.length; i += w) {
-          parts.push(...rawLine(t.slice(i, i + w)));
-        }
-      }
-    }
-    if (data.courier_qr_enabled) {
-      parts.push(...sep());
-      parts.push(setAlign('center'), qrCode(data.parcel_code));
-      parts.push(setBold(true), ...centerLine(data.parcel_code), setBold(false));
-    }
-    parts.push(...sep());
-    parts.push(setAlign('center'), setBold(true), ...centerLine('Merci de votre confiance !'), setBold(false));
-    if (data.supervisor_phone) {
-      parts.push(...centerLine(`Superviseur : ${data.supervisor_phone}`));
-    }
-  };
-
-  // Copy 1 — CLIENT
-  renderCopy('CLIENT');
-  parts.push(lineFeed(1));
-  // Dashed separator between copies (no cut here — both copies print
-  // continuously on the same roll so the agent can tear at the dotted line)
-  parts.push(setAlign('center'), ...dashCut());
-  parts.push(setBold(true), ...centerLine('--- DECOUPER ICI ---'), setBold(false));
-  parts.push(...dashCut());
-  parts.push(lineFeed(1));
-
-  // Copy 2 — AGENCE
-  renderCopy('AGENCE');
-  parts.push(lineFeed(2));
-  // Single full cut after the second copy so the printer delivers both
-  // copies as one continuous strip
-  if (settings.auto_cut) parts.push(cutPaper());
-
-  return concat(...parts);
-}
-
-
 const COURRIER_NATURE_LABELS: Record<string, string> = {
   autre:          'AUTRE',
   electronique:   'ELEC.',
