@@ -372,7 +372,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
     <div class="tear">DECOUPER ICI</div>
     ${ticketBlock(true)}
   </div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
+  <script>window.onload=function(){window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},500);});}</script>
 </body></html>`;
 }
 
