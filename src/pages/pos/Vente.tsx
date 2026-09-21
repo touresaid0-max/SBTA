@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getDepartById } from '@/services/pos/departService';
-import { syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
+import { syncDepartsAndTicketsFromServer, localUpdate } from '@/services/pos/offlineStore';
 import {
   sellTicket, sellTickets, getTicketsForDepart, getSoldSeats,
   calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
@@ -485,6 +485,16 @@ export default function POSVente() {
         failed.push(ticket);
       }
     }
+    // Mark successfully printed tickets as printed
+    const succeeded = ticketsToPrint.filter(t => !failed.some(f => f.id === t.id));
+    for (const ticket of succeeded) {
+      await localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: new Date().toISOString() });
+    }
+    // Reload tickets to reflect printed status
+    if (departId) {
+      const t = await getTicketsForDepart(departId);
+      setTickets(t);
+    }
     setPrinting(false);
     if (failed.length > 0) {
       setPendingReprint(failed);
@@ -495,12 +505,15 @@ export default function POSVente() {
   const handleReprintResume = async () => {
     if (pendingReprint.length === 0 || !depart) return;
     setPrintError('');
-    await printTicketsSequentially(pendingReprint, depart, session?.station_name);
+    // Only retry tickets that haven't been successfully printed yet
+    const unprinted = pendingReprint.filter(t => !t.printed);
+    if (unprinted.length === 0) {
+      setPendingReprint([]);
+      return;
+    }
+    await printTicketsSequentially(unprinted, depart, session?.station_name);
   };
 
-  const handlePrintTicket = (ticket: TicketRecord) => {
-    if (depart) PrintService.printTicket({ ticket, depart, stationName: session?.station_name, phoneLine: ticketPhoneLine });
-  };
   void handlePrintTicket;
 
   const handleTransferSeats = async () => {
@@ -898,6 +911,7 @@ export default function POSVente() {
                         <th className="px-2 py-1.5 text-xs font-bold text-right">Tarif</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-center">N°Siège</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-center">Report</th>
+                        <th className="px-2 py-1.5 text-xs font-bold text-center">Imp.</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-right">Date</th>
                         <th className="px-2 py-1.5 text-xs font-bold text-center">Action</th>
                       </tr>
@@ -909,6 +923,15 @@ export default function POSVente() {
                           <td className="px-2 py-2 text-xs text-right" style={{ color: 'var(--text-primary)' }}>{formatCurrency(t.price)}</td>
                           <td className="px-2 py-2 text-xs text-center" style={{ fontWeight: 700, color: 'var(--info)' }}>{t.seat_number}</td>
                           <td className="px-2 py-2 text-xs text-center">{t.is_reported ? 'R' : ''}</td>
+                          <td className="px-2 py-2 text-xs text-center">
+                            {t.printed ? (
+                              <span className="inline-flex items-center gap-0.5" style={{ color: 'var(--success)' }} title="Ticket imprimé">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }} title="Non imprimé">—</span>
+                            )}
+                          </td>
                           <td className="px-2 py-2 text-xs text-right" style={{ color: 'var(--text-muted)' }}>{t.created_at.slice(5, 10)}</td>
                           <td className="px-2 py-2 text-center">
                             <ChangeRequestButton
@@ -929,7 +952,7 @@ export default function POSVente() {
                       <tr style={{ borderTop: '2px solid var(--border)' }}>
                         <td className="px-2 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Somme tickets</td>
                         <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(ticketTotal)}</td>
-                        <td colSpan={4} className="px-2 py-2"></td>
+                        <td colSpan={5} className="px-2 py-2"></td>
                       </tr>
                     </tfoot>
                   </table>

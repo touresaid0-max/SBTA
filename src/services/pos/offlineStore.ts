@@ -22,6 +22,7 @@ const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'is_ac', 'seats_from', 'seat_allocations', 'station_name',
   'counter_id', 'other_station_id', 'other_station_name',
   'synced', 'updated_at', 'id',
+  'printed', 'printed_at',
 ]);
 
 function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknown>): boolean {

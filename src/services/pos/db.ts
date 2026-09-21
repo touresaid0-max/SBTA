@@ -89,6 +89,8 @@ export interface TicketRecord {
   print_ticket: boolean;
   payment_method: string;
   status: string;
+  printed?: boolean;
+  printed_at?: string;
   loyalty_card_number?: string;
   loyalty_name?: string;
   created_at: string;
