@@ -373,10 +373,15 @@ export async function printParcelTicket(data: ParcelReceiptData) {
     font-size: 10px;
     font-weight: bold;
   }
+  .ticket-copy {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
   .ticket-copy + .ticket-copy {
     border-top: 2px dashed #000;
     padding-top: 2mm;
     margin-top: 2mm;
+    page-break-before: auto;
   }
   .copy-label {
     text-align: center;

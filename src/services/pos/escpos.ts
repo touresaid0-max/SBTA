@@ -747,19 +747,18 @@ export function buildParcelReceiptESCPOS(data: PrintParcelReceiptData, settings:
   // Copy 1 — CLIENT
   renderCopy('CLIENT');
   parts.push(lineFeed(1));
-  // Dashed separator + partial cut so the agent can hand over the client copy
+  // Dashed separator between copies (no cut here — both copies print
+  // continuously on the same roll so the agent can tear at the dotted line)
   parts.push(setAlign('center'), ...dashCut());
-  parts.push(setBold(true), ...centerLine('DECOUPER ICI'), setBold(false));
+  parts.push(setBold(true), ...centerLine('--- DECOUPER ICI ---'), setBold(false));
   parts.push(...dashCut());
   parts.push(lineFeed(1));
-  if (settings.auto_cut) parts.push(partialCut());
 
   // Copy 2 — AGENCE
   renderCopy('AGENCE');
   parts.push(lineFeed(2));
-  // Final dashed marker + full cut after the second copy
-  parts.push(setAlign('center'), ...dashCut());
-  parts.push(lineFeed(1));
+  // Single full cut after the second copy so the printer delivers both
+  // copies as one continuous strip
   if (settings.auto_cut) parts.push(cutPaper());
 
   return concat(...parts);
