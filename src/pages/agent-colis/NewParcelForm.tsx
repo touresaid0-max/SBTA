@@ -164,6 +164,8 @@ export default function NewParcelForm() {
       return
     }
 
+    const fullRecipientPhone = '225' + form.recipient_phone.replace(/\D/g, '')
+
     setLoading(true)
     try {
       // Offline path: save locally, queue for sync, skip server-only features
@@ -193,7 +195,7 @@ export default function NewParcelForm() {
           sender_phone: form.sender_phone,
           sender_address: null,
           recipient_name: form.recipient_name,
-          recipient_phone: form.recipient_phone,
+          recipient_phone: fullRecipientPhone,
           recipient_city: form.recipient_city,
           recipient_address: null,
           origin_station_id: myStation.id,
@@ -274,7 +276,7 @@ export default function NewParcelForm() {
         sender_phone:           form.sender_phone,
         sender_address:         null,
         recipient_name:         form.recipient_name,
-        recipient_phone:        form.recipient_phone,
+        recipient_phone:        fullRecipientPhone,
         recipient_city:         form.recipient_city,
         recipient_address:      null,
         origin_station_id:      myStation.id,
@@ -456,7 +458,29 @@ export default function NewParcelForm() {
             </div>
             <div>
               <label className={labelCls} style={labelStyle}>Téléphone (SMS/WhatsApp) *</label>
-              <input className={inputCls} style={inputStyle} value={form.recipient_phone} onChange={e => set('recipient_phone', e.target.value)} required />
+              <div className="flex">
+                <span
+                  className="inline-flex items-center px-3 rounded-l-lg border-r-0 text-sm font-semibold select-none"
+                  style={{
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--bg-subtle)',
+                    color: 'var(--text-secondary)',
+                    minWidth: '3.5rem',
+                    justifyContent: 'center',
+                  }}
+                >225</span>
+                <input
+                  className={inputCls + ' rounded-l-none'}
+                  style={inputStyle}
+                  type="tel"
+                  pattern="[0-9]{10}"
+                  maxLength={10}
+                  placeholder="0759818155"
+                  value={form.recipient_phone}
+                  onChange={e => set('recipient_phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  required
+                />
+              </div>
             </div>
             <div>
               <label className={labelCls} style={labelStyle}>Gare d'arrivée *</label>
