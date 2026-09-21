@@ -514,8 +514,6 @@ export default function POSVente() {
     await printTicketsSequentially(unprinted, depart, session?.station_name);
   };
 
-  void handlePrintTicket;
-
   const handleTransferSeats = async () => {
     if (!depart || !departId || !session?.station_id) return;
     setTransferError('');
