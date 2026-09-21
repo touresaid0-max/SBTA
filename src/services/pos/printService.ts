@@ -283,7 +283,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
     <div class="tear-zone">✂ ✂ ✂</div>
     ${block(true, false)}
   </div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
+  <script>window.onload=function(){window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},600);});}</script>
 </body></html>`;
 }
 
