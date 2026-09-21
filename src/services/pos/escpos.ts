@@ -85,6 +85,10 @@ function cutPaper(): Uint8Array {
   return cmd(GS, 0x56, 0x00);
 }
 
+function partialCutPaper(): Uint8Array {
+  return cmd(GS, 0x56, 0x01);
+}
+
 function dashLine(width: number): string {
   return '-'.repeat(width);
 }
@@ -291,9 +295,11 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
     parts.push(setBold(true), ...center(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
     parts.push(...separator());
     if (isSouche) {
-      parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SOUCHE'), setNormal(), setFontB(), setBold(false));
+      parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('EXEMPLAIRE AGENCE'), setNormal(), setFontB(), setBold(false));
+      parts.push(setAlign('center'), setBold(true), ...line('SOUCHE'), setBold(false));
     } else {
       parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('TICKET BAGAGE'), setNormal(), setFontB(), setBold(false));
+      parts.push(setAlign('center'), setBold(true), ...line('EXEMPLAIRE CLIENT'), setBold(false));
     }
     parts.push(setAlign('left'), ...separator());
     parts.push(setBold(true), ...pair('DEPART :', `N° ${departNum}`), setBold(false));
@@ -316,6 +322,8 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   parts.push(...line('- - - - - - - - - - - - - - - - - - - - - - - - '.slice(0, w)));
   parts.push(setBold(true), ...line('DECOUPER ICI'), setBold(false));
   parts.push(...line('- - - - - - - - - - - - - - - - - - - - - - - - '.slice(0, w)));
+  parts.push(lineFeed(1));
+  if (settings.auto_cut) parts.push(partialCutPaper());
   renderBlock(true);
   parts.push(lineFeed(2));
   if (settings.auto_cut) parts.push(cutPaper());
