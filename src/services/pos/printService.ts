@@ -222,7 +222,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   body { margin: 0; padding: 0; }
   .ticket-container { width: ${mm}mm; margin: 0 auto; padding: 0; }
 
-  .ticket-block { width: 100%; overflow: hidden; }
+  .ticket-block { width: 100%; overflow: visible; }
 
   .header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 3px; gap: 4px; }
   .logo { flex: 0 0 auto; width: 44px; }
@@ -252,12 +252,12 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; white-space: normal; word-break: break-word; }
   .val-strong { font-weight: 900; font-size: 11px; }
 
-  .notes { padding: 2px 4px; }
-  .note { text-align: center; font-size: 9px; white-space: normal; word-break: break-word; }
+  .notes { padding: 3px 4px; overflow: visible; }
+  .note { text-align: center; font-family: Arial, Helvetica, sans-serif; font-size: 8.5px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
 
-  .badge { text-align: center; font-weight: bold; padding: 2px 4px; font-size: 10px; white-space: normal; word-break: break-word; border-bottom: 1px dashed #000; }
+  .badge { text-align: center; font-weight: bold; padding: 3px 4px; font-size: 10px; white-space: normal; overflow-wrap: anywhere; word-break: normal; border-bottom: 1px dashed #000; }
 
-  .footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 1px; font-size: 8px; white-space: normal; word-break: break-word; }
+  .footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 1px; font-size: 8px; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
 
   .tear-zone {
     margin: 0;
