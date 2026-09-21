@@ -46,7 +46,7 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-export async function printParcelTicket(data: ParcelReceiptData) {
+export async function printParcelTicket(data: ParcelReceiptData, copyType: 'client' | 'agency' | 'both' = 'both') {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
   const qrDataUrl = data.courier_qr_enabled ? await generateQRDataUrl(data.parcel_code, 100) : ''
   const logoUrl = window.location.origin + '/logo-sbta.JPG'
@@ -55,6 +55,8 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   const notesHtml = customNotes.length > 0
     ? customNotes.map(n => escHtml(n)).join('<br>')
     : `${escHtml(data.legal_note_1)}<br>\n    NB: ${escHtml(data.legal_note_2)}`
+
+  const copies = copyType === 'both' ? [1, 2] : copyType === 'client' ? [1] : [2]
 
   const html = `<!DOCTYPE html>
 <html>
@@ -271,7 +273,7 @@ export async function printParcelTicket(data: ParcelReceiptData) {
 </style>
 </head>
 <body>
-${[1, 2].map(copyNum => `
+${copies.map(copyNum => `
   <div class="ticket-copy">
   <div class="copy-label">${copyNum === 1 ? 'EXEMPLAIRE CLIENT' : 'EXEMPLAIRE AGENCE'}</div>
   <div class="header">

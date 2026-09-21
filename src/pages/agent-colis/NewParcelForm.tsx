@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
@@ -13,7 +13,7 @@ import { useConnection } from '@/services/courrier/ConnectionContext'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
-import type { ParcelNature, ParcelPriority, Parcel } from '@/types/parcel.types'
+import type { ParcelNature, ParcelPriority, Parcel, ParcelReceiptData } from '@/types/parcel.types'
 
 interface Station { id: string; name: string; city_name?: string }
 
@@ -100,6 +100,62 @@ export default function NewParcelForm() {
 
   const conn = useConnection()
 
+  const [printModal, setPrintModal] = useState<{
+    data: ParcelReceiptData
+    parcelId: string
+    isOffline: boolean
+    localParcel?: any
+    smsData?: { id: string; parcel_code: string; recipient_name: string; recipient_phone: string; recipient_city: string; tracking_url: string }
+  } | null>(null)
+  const [printCopy, setPrintCopy] = useState<'client' | 'agency'>('client')
+  const [printLoading, setPrintLoading] = useState(false)
+
+  async function handlePrintCopy() {
+    if (!printModal) return
+    setPrintLoading(true)
+    try {
+      await printParcelTicket(printModal.data, printCopy)
+      if (printCopy === 'client') {
+        try {
+          if (printModal.isOffline && printModal.localParcel) {
+            await localInsertParcel({ ...printModal.localParcel, ticket_printed: true } as any)
+          } else {
+            await markTicketPrinted(printModal.parcelId)
+          }
+        } catch { /* must not block */ }
+        setPrintCopy('agency')
+      } else {
+        await finalizeParcel()
+      }
+    } catch {
+      if (printCopy === 'client') setPrintCopy('agency')
+    } finally {
+      setPrintLoading(false)
+    }
+  }
+
+  async function finalizeParcel() {
+    if (!printModal) return
+    const m = printModal
+    setPrintModal(null)
+    setPrintCopy('client')
+
+    if (!m.isOffline && m.smsData) {
+      try {
+        const smsResult = await sendCourierCreatedSms(m.smsData)
+        if (!smsResult.success && !smsResult.duplicate) {
+          toast('Courrier enregistre, mais SMS non envoye.', { icon: '⚠️' })
+        }
+      } catch { /* SMS failure must not block */ }
+    }
+
+    if (m.isOffline) {
+      conn.setPendingCount(await getPendingCount())
+    }
+
+    navigate(`${basePath}/dashboard`)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!myStation) { toast.error('Aucune gare associée à votre compte'); return }
@@ -174,7 +230,6 @@ export default function NewParcelForm() {
 
         toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
 
-        // Print ticket with local data
         try {
           const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
           let courierQrEnabled = true
@@ -183,7 +238,7 @@ export default function NewParcelForm() {
             const myStationData = cachedStationsForQr.find(s => s.id === myStation.id)
             if (myStationData?.courier_qr_enabled !== undefined) courierQrEnabled = myStationData.courier_qr_enabled
           }
-          await printParcelTicket(buildReceiptData(
+          const receiptData = buildReceiptData(
             { ...localParcel, origin_station_name: myStation.name, parcel_code: localParcel.parcel_code } as Parcel,
             myStation.name,
             stationPhone,
@@ -191,12 +246,13 @@ export default function NewParcelForm() {
             null,
             agentInfo,
             courierQrEnabled,
-          ))
-          await localInsertParcel({ ...localParcel, ticket_printed: true } as any)
-        } catch { /* printing failure must not block */ }
-
-        conn.setPendingCount(await getPendingCount())
-        navigate(`${basePath}/dashboard`)
+          )
+          setPrintModal({ data: receiptData, parcelId: localParcel.id, isOffline: true, localParcel })
+          setPrintCopy('client')
+        } catch {
+          conn.setPendingCount(await getPendingCount())
+          navigate(`${basePath}/dashboard`)
+        }
         return
       }
 
@@ -248,38 +304,52 @@ export default function NewParcelForm() {
 
       toast.success('Courrier enregistré avec succès !')
 
-      const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
-      const { data: myStationQr } = await supabase
-        .from('stations')
-        .select('courier_qr_enabled')
-        .eq('id', myStation.id)
-        .maybeSingle()
-      await printParcelTicket(buildReceiptData(
-        { ...parcel, origin_station_name: myStation.name } as Parcel,
-        myStation.name,
-        stationPhone,
-        null,
-        null,
-        agentInfo,
-        myStationQr?.courier_qr_enabled ?? true,
-      ))
-      await markTicketPrinted(parcel.id)
-
       try {
-        const smsResult = await sendCourierCreatedSms({
-          id: parcel.id,
-          parcel_code: parcel.parcel_code,
-          recipient_name: parcel.recipient_name,
-          recipient_phone: parcel.recipient_phone,
-          recipient_city: parcel.recipient_city ?? form.recipient_city,
-          tracking_url: parcel.tracking_url ?? '',
+        const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
+        const { data: myStationQr } = await supabase
+          .from('stations')
+          .select('courier_qr_enabled')
+          .eq('id', myStation.id)
+          .maybeSingle()
+        const receiptData = buildReceiptData(
+          { ...parcel, origin_station_name: myStation.name } as Parcel,
+          myStation.name,
+          stationPhone,
+          null,
+          null,
+          agentInfo,
+          myStationQr?.courier_qr_enabled ?? true,
+        )
+        setPrintModal({
+          data: receiptData,
+          parcelId: parcel.id,
+          isOffline: false,
+          smsData: {
+            id: parcel.id,
+            parcel_code: parcel.parcel_code,
+            recipient_name: parcel.recipient_name,
+            recipient_phone: parcel.recipient_phone,
+            recipient_city: parcel.recipient_city ?? form.recipient_city,
+            tracking_url: parcel.tracking_url ?? '',
+          },
         })
-        if (!smsResult.success && !smsResult.duplicate) {
-          toast('Courrier enregistre, mais SMS non envoye.', { icon: '⚠️' })
-        }
-      } catch { /* SMS failure must not block */ }
-
-      navigate(`${basePath}/dashboard`)
+        setPrintCopy('client')
+      } catch {
+        try {
+          const smsResult = await sendCourierCreatedSms({
+            id: parcel.id,
+            parcel_code: parcel.parcel_code,
+            recipient_name: parcel.recipient_name,
+            recipient_phone: parcel.recipient_phone,
+            recipient_city: parcel.recipient_city ?? form.recipient_city,
+            tracking_url: parcel.tracking_url ?? '',
+          })
+          if (!smsResult.success && !smsResult.duplicate) {
+            toast('Courrier enregistre, mais SMS non envoye.', { icon: '⚠️' })
+          }
+        } catch { /* SMS failure must not block */ }
+        navigate(`${basePath}/dashboard`)
+      }
     } catch (e: any) {
       toast.error(e.message ?? 'Erreur lors de l\'enregistrement')
     } finally {
@@ -509,6 +579,69 @@ export default function NewParcelForm() {
           {loading ? 'Enregistrement...' : 'Enregistrer + Imprimer'}
         </button>
       </div>
+
+      {/* Print modal — two-step printing (CLIENT then AGENCE) */}
+      {printModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl shadow-2xl p-5 space-y-4"
+            style={{ backgroundColor: 'var(--surface)' }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#d4edda', color: '#0B7439' }}>
+                <Printer className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                  Impression du recu
+                </h3>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {printCopy === 'client' ? '1er exemplaire : Client' : '2e exemplaire : Agence'}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg px-3 py-2.5 space-y-1.5" style={{ backgroundColor: '#f0faf4', border: '1px solid #BBF7D0' }}>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: printCopy === 'agency' ? '#0B7439' : '#D1D5DB' }} />
+                <span className="text-xs font-medium" style={{ color: printCopy === 'agency' ? '#0B7439' : 'var(--text-muted)' }}>
+                  Exemplaire Client {printCopy === 'agency' ? '(imprime)' : ''}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: '#D1D5DB' }} />
+                <span className="text-xs font-medium" style={{ color: printCopy === 'agency' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  Exemplaire Agence {printCopy === 'agency' ? '(a imprimer)' : '(en attente)'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={finalizeParcel}
+                disabled={printLoading}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border disabled:opacity-50"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              >
+                Passer
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintCopy}
+                disabled={printLoading}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#0B7439', color: '#fff' }}
+              >
+                {printLoading ? 'Impression...' : (<><Printer className="w-4 h-4" /> Imprimer ({printCopy === 'client' ? 'Client' : 'Agence'})</>)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
