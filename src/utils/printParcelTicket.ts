@@ -7,6 +7,8 @@ import type { ParcelReceiptData, Parcel } from '@/types/parcel.types'
 import type { ScheduledBus } from '@/components/parcel/BusSelector'
 import { setPrintingGuard } from '@/store/authStore'
 import { getPrintCustomization } from '@/services/printCustomization'
+import { getPrintSettings } from '@/services/pos/printService'
+import { buildParcelReceiptESCPOS } from '@/services/pos/escpos'
 
 function generateQRDataUrl(value: string, size = 100): Promise<string> {
   return new Promise((resolve) => {
@@ -46,6 +48,88 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+async function sendThermalESCPOS(
+  data: Uint8Array,
+  settings: { backend: string; qz_host: string; qz_port: number; printer_name?: string },
+): Promise<boolean> {
+  const nav = navigator as any
+
+  // 1) WebSerial — reuse already-authorized ports only (no picker)
+  if (nav.serial) {
+    try {
+      const ports = await nav.serial.getPorts()
+      for (const port of ports) {
+        try {
+          if (!port.writable || port.writable.locked) continue
+          const wasOpen = Boolean(port.opened)
+          if (!wasOpen) await port.open({ baudRate: 9600 })
+          const writer = port.writable?.getWriter()
+          if (!writer) {
+            if (!wasOpen) await port.close()
+            continue
+          }
+          try {
+            await writer.write(data)
+            return true
+          } finally {
+            writer.releaseLock()
+            if (!wasOpen) await port.close()
+          }
+        } catch {
+          // try next port
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2) WebUSB — reuse already-authorized devices only
+  if (nav.usb) {
+    try {
+      const devices = await nav.usb.getDevices()
+      for (const device of devices) {
+        try {
+          if (!device.opened) await device.open()
+          if (device.configuration === null) await device.selectConfiguration(1)
+          await device.claimInterface(0)
+          await device.transferOut(1, data)
+          await device.close()
+          return true
+        } catch {
+          // try next device
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3) QZ Tray — optional local WebSocket bridge
+  try {
+    const ok = await new Promise<boolean>((resolve) => {
+      try {
+        const ws = new WebSocket(`ws://${settings.qz_host}:${settings.qz_port}`)
+        const timeout = setTimeout(() => { ws.close(); resolve(false) }, 2000)
+        ws.onopen = () => {
+          clearTimeout(timeout)
+          const b64 = btoa(String.fromCharCode(...data))
+          ws.send(JSON.stringify({ type: 'print', data: b64, printer: settings.printer_name }))
+          setTimeout(() => { ws.close(); resolve(true) }, 400)
+        }
+        ws.onerror = () => { clearTimeout(timeout); resolve(false) }
+      } catch {
+        resolve(false)
+      }
+    })
+    if (ok) return true
+  } catch {
+    // ignore
+  }
+
+  return false
+}
+
 export async function printParcelTicket(data: ParcelReceiptData) {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
   const qrDataUrl = data.courier_qr_enabled ? await generateQRDataUrl(data.parcel_code, 100) : ''
@@ -55,6 +139,42 @@ export async function printParcelTicket(data: ParcelReceiptData) {
   const notesHtml = customNotes.length > 0
     ? customNotes.map(n => escHtml(n)).join('<br>')
     : `${escHtml(data.legal_note_1)}<br>\n    NB: ${escHtml(data.legal_note_2)}`
+
+  // Try thermal ESC/POS first so the printer performs an automatic paper cut
+  // between the two copies (partial cut) and after the second copy (full cut).
+  // Falls back silently to the HTML browser print below if no thermal printer
+  // is reachable.
+  try {
+    const settings = await getPrintSettings()
+    const escposBytes = buildParcelReceiptESCPOS({
+      agency_name: data.agency_name,
+      print_date: data.print_date,
+      receipt_type: data.receipt_type,
+      destination: data.destination,
+      declared_value: data.declared_value,
+      delivery_fee: data.delivery_fee,
+      parcel_code: data.parcel_code,
+      reference: data.reference,
+      sms_tracking_fee: data.sms_tracking_fee,
+      sender_name: data.sender_name,
+      recipient_name: data.recipient_name,
+      nature: data.nature,
+      designation: data.designation,
+      legal_note_1: data.legal_note_1,
+      legal_note_2: data.legal_note_2,
+      origin_agent_phone: data.origin_agent_phone,
+      destination_agent_phone: data.destination_agent_phone,
+      supervisor_phone: data.supervisor_phone,
+      courier_qr_enabled: data.courier_qr_enabled,
+      custom_notes: customNotes.length > 0 ? customNotes : undefined,
+    }, settings)
+
+    if (await sendThermalESCPOS(escposBytes, settings)) {
+      return
+    }
+  } catch {
+    // Ignore and fall back to browser print
+  }
 
   const html = `<!DOCTYPE html>
 <html>
