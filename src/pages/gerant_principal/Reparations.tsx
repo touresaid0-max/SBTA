@@ -585,12 +585,12 @@ export default function GarageReparations() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-6 border-b border-[#E2EAE5]">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 flex items-center justify-between p-6 border-b border-[#E2EAE5]">
               <h2 className="text-lg font-bold text-[#1A2E22] flex items-center gap-2"><Wrench className="w-5 h-5 text-[#0B7439]" />{editing ? 'Modifier la réparation' : 'Nouvelle réparation'}</h2>
               <button onClick={() => setShowModal(false)} className="p-1 rounded-lg hover:bg-[#F4F7F5]"><X className="w-5 h-5 text-[#6B7280]" /></button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#4A6B55] mb-1">Car *</label>
@@ -656,7 +656,7 @@ export default function GarageReparations() {
                 <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} className={`${inputCls} resize-none`} />
               </div>
             </div>
-            <div className="flex justify-end gap-3 p-6 border-t border-[#E2EAE5]">
+            <div className="flex-shrink-0 flex justify-end gap-3 p-6 border-t border-[#E2EAE5] bg-white">
               <button onClick={() => setShowModal(false)} className="px-4 py-2.5 rounded-xl border border-[#E2EAE5] text-sm font-medium text-[#4A6B55] hover:bg-[#F8FAF8]">Annuler</button>
               <button onClick={handleSave} className="px-6 py-2.5 rounded-xl bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2e]">{editing ? 'Mettre à jour' : 'Enregistrer'}</button>
             </div>
