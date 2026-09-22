@@ -449,7 +449,7 @@ export default function GarageReparations() {
     Promise.all([fetchReparations(), fetchBusesForGarage(), fetchTypesTechniciens(), fetchTechniciens(), fetchPieces()])
       .then(([r, b, t, techs, p]) => {
         const sorted = [...r].sort((a, b2) => {
-          return a.date.localeCompare(b2.date)
+          return b2.date.localeCompare(a.date)
         })
         setReparations(sorted); setBuses(b); setTypesTech(t); setTechniciens(techs); setPieces(p)
       })
