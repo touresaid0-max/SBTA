@@ -554,28 +554,40 @@ export default function GarageReparations() {
     return typesTech.find(t => t.id === form.type_technicien_id)?.nom ?? null
   }, [form.type_technicien_id, typesTech])
 
-  const filteredReparations = useMemo(() => {
-    return reparations.filter(r => {
-      if (statutFilter !== 'all' && r.statut !== statutFilter) return false
-      if (periodFilter !== 'all') {
-        const visible = filterPiecesByPeriod(r.reparation_pieces ?? [], periodFilter)
-        if (visible.length === 0) return false
-      }
-      return true
-    })
-  }, [reparations, periodFilter, statutFilter])
-
-  const visiblePiecesFor = useCallback(
+  const periodPiecesFor = useCallback(
     (r: GarageReparation) => filterPiecesByPeriod(r.reparation_pieces ?? [], periodFilter),
     [periodFilter],
   )
 
   const displayDateFor = useCallback((r: GarageReparation) => {
-    const visible = visiblePiecesFor(r)
+    const visible = periodPiecesFor(r)
     const dates = visible.map(p => p.date_sortie).filter((d): d is string => Boolean(d))
     if (dates.length > 0) return dates.reduce((latest, d) => d > latest ? d : latest, dates[0])
     return getLatestSortieDate(r)
-  }, [visiblePiecesFor])
+  }, [periodPiecesFor])
+
+  const visiblePiecesFor = useCallback(
+    (r: GarageReparation) => {
+      const periodPieces = periodPiecesFor(r)
+      const displayDate = displayDateFor(r)
+      const dateMatch = periodPieces.filter(rp => rp.date_sortie === displayDate)
+      return dateMatch.length > 0 ? dateMatch : periodPieces
+    },
+    [periodPiecesFor, displayDateFor],
+  )
+
+  const filteredReparations = useMemo(() => {
+    return reparations
+      .filter(r => {
+        if (statutFilter !== 'all' && r.statut !== statutFilter) return false
+        if (periodFilter !== 'all') {
+          const visible = filterPiecesByPeriod(r.reparation_pieces ?? [], periodFilter)
+          if (visible.length === 0) return false
+        }
+        return true
+      })
+      .sort((a, b) => displayDateFor(b).localeCompare(displayDateFor(a)))
+  }, [reparations, periodFilter, statutFilter, displayDateFor])
 
   const statutCounts = useMemo(() => {
     const counts = { BROUILLON: 0, 'EN RÉPARATION': 0, LIBÉRÉ: 0 }
