@@ -89,6 +89,9 @@ export default function POSVente() {
   const [bagSelling, setBagSelling] = useState(false);
   const [bagError, setBagError] = useState('');
   const [bagSuccess, setBagSuccess] = useState('');
+  // Independent seat override for bagage "avec ticket" — does NOT create a bus ticket
+  const [bagSeatOverride, setBagSeatOverride] = useState('');
+  const [bagStructureMode, setBagStructureMode] = useState(false);
 
   // Seat transfer state (between stations)
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -285,8 +288,33 @@ export default function POSVente() {
       setBagOwnerPhone('');
       setBagError('');
       setBagSuccess('');
+      setBagSeatOverride('');
+      setBagStructureMode(false);
     }
   }, [bagMode]);
+
+  // Fetch seat map for bagage structure picker (independent from ticket structureMode)
+  useEffect(() => {
+    if (!bagStructureMode || !departId) { return; }
+    if (seatMap || seatMapError) return; // already loaded by ticket structureMode
+    let cancelled = false;
+    fetchScheduleSeatMap(departId)
+      .then(data => { if (!cancelled) setSeatMap(data); })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : 'Erreur';
+        setSeatMapError(msg === '__NO_BUS__' ? 'Aucun bus assigné à ce départ — structure indisponible' : msg);
+        setSeatMap(null);
+      });
+    return () => { cancelled = true; };
+  }, [bagStructureMode, departId, seatMap, seatMapError]);
+
+  const toggleBagStructSeat = (seat: StructSeat) => {
+    const n = parseInt(seat.label, 10);
+    if (Number.isNaN(n)) return;
+    setBagSeatOverride(String(n));
+    setBagStructureMode(false);
+  };
 
   const allowedSeatRange = useMemo(() => {
     if (!depart || !session?.station_id) return null;
@@ -375,8 +403,10 @@ export default function POSVente() {
     return (s?.city || s?.name) ?? depart?.route_name ?? '';
   }, [stations, destination, depart, currentRouteStops]);
 
-  // Derived single seat string for baggage compatibility
-  const seatNumber = selectedSeats.length > 0 ? String(selectedSeats[0]) : '';
+  // Derived single seat string for baggage compatibility — falls back to bagSeatOverride
+  const seatNumber = selectedSeats.length > 0
+    ? String(selectedSeats[0])
+    : bagSeatOverride || '';
 
   // Close seat dropdown on outside click
   useEffect(() => {
@@ -554,7 +584,13 @@ export default function POSVente() {
 
     if (bagPrice <= 0) { setBagError('Veuillez saisir un prix de bagage valide'); return; }
     if (bagMode === 'avec' && !seatNumber) {
-      setBagError('Veuillez sélectionner un siège dans le formulaire de ticket ci-dessus'); return;
+      setBagError('Veuillez sélectionner ou saisir un numéro de siège'); return;
+    }
+    if (bagMode === 'avec' && seatNumber) {
+      const n = parseInt(seatNumber, 10);
+      if (Number.isNaN(n) || n < depart.seats_from || n > depart.seats_total) {
+        setBagError(`Le siège n°${seatNumber} est hors de la plage autorisée (${depart.seats_from}–${depart.seats_total})`); return;
+      }
     }
     if (bagMode === 'sans') {
       if (!bagOwnerName.trim()) { setBagError('Veuillez saisir le nom du propriétaire'); return; }
@@ -605,6 +641,7 @@ export default function POSVente() {
       setBagSuccess(`Bagage enregistré — N° ${bagage.bagage_number}`);
       setBagPrice(0); setBagDescription('');
       setBagOwnerName(''); setBagOwnerPhone('');
+      setBagSeatOverride('');
       setTimeout(() => setBagSuccess(''), 4000);
     } catch (err: any) {
       setBagError(err?.message ?? 'Erreur lors de l\'enregistrement du bagage');
@@ -1375,13 +1412,35 @@ export default function POSVente() {
                       </div>
                       <div>
                         <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Siège</label>
-                        <input
-                          type="text"
-                          value={seatNumber || '—'}
-                          disabled
-                          className={fieldInput}
-                          style={{ ...fieldStyle, opacity: 0.6 }}
-                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            value={seatNumber || ''}
+                            onChange={e => setBagSeatOverride(e.target.value)}
+                            placeholder="Saisir…"
+                            min={depart.seats_from}
+                            max={depart.seats_total}
+                            className={fieldInput}
+                            style={{ ...fieldStyle, borderColor: bagSeatOverride ? 'var(--info)' : 'var(--border)' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setBagStructureMode(o => !o)}
+                            className="px-3 py-2.5 rounded-lg border-2 text-xs font-bold whitespace-nowrap flex items-center gap-1.5"
+                            style={{
+                              borderColor: bagStructureMode ? 'var(--info)' : 'var(--border)',
+                              color: bagStructureMode ? 'var(--info)' : 'var(--text-secondary)',
+                              backgroundColor: bagStructureMode ? 'var(--info-light)' : 'var(--surface)',
+                            }}
+                          >
+                            <Armchair className="w-3.5 h-3.5" /> Structure
+                          </button>
+                        </div>
+                        {selectedSeats.length > 0 && (
+                          <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                            Siège du ticket vendu repris automatiquement — modifiable ci-dessus
+                          </p>
+                        )}
                       </div>
                       <div>
                         <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Destination</label>
@@ -1415,6 +1474,97 @@ export default function POSVente() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Structure seat picker for bagage (independent from ticket sale) */}
+                  {bagStructureMode && (
+                    <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--info)' }}>
+                      <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                        <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--info)' }}>
+                          <Armchair className="w-3.5 h-3.5" /> Sélectionner un siège pour le bagage
+                        </span>
+                        <button type="button" onClick={() => setBagStructureMode(false)} className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Fermer</button>
+                      </div>
+                      {seatMapError ? (
+                        <div className="px-3 py-2 text-xs" style={{ color: 'var(--danger)' }}>{seatMapError}</div>
+                      ) : !seatMap ? (
+                        <div className="px-3 py-4 flex items-center justify-center">
+                          <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--info)' }} />
+                        </div>
+                      ) : (
+                        <div className="p-3 overflow-x-auto max-h-[280px] overflow-y-auto">
+                          <div className="flex flex-col gap-1.5">
+                            {seatMap.enriched_layout.filter(r => r.seats.some(s => s.side !== 'back')).map((row) => {
+                              const leftSeats = row.seats.filter(s => s.side === 'left');
+                              const rightSeats = row.seats.filter(s => s.side === 'right');
+                              const renderBagSeat = (seat: StructSeat) => {
+                                const n = parseInt(seat.label, 10);
+                                const isSelected = bagSeatOverride === seat.label;
+                                const isSold = !Number.isNaN(n) && soldSeats.includes(n);
+                                const disabledSeat = isSold || seat.status === 'out_of_service' || seat.status === 'locked';
+                                const seatColor = isSelected
+                                  ? 'bg-[#0EA5E9] border-[#0284C7] text-white'
+                                  : isSold
+                                    ? 'bg-red-500 border-red-600 text-white cursor-not-allowed'
+                                    : seat.status === 'online_reserved' || seat.status === 'boarding'
+                                      ? 'bg-[#FCD34D] border-[#D97706] text-[#78350F] cursor-not-allowed'
+                                      : 'bg-white border-slate-300 text-slate-700 hover:bg-sky-50 hover:border-[#0EA5E9] hover:text-[#0EA5E9] cursor-pointer';
+                                return (
+                                  <button
+                                    key={seat.id}
+                                    type="button"
+                                    disabled={disabledSeat}
+                                    onClick={() => !disabledSeat && toggleBagStructSeat(seat)}
+                                    title={`Siège ${seat.label}${isSold ? ' — Vendu' : ''}`}
+                                    className={`flex flex-col items-center justify-center rounded-lg border-2 select-none transition-all w-[34px] h-[36px] flex-shrink-0 ${seatColor}`}
+                                  >
+                                    <span className="text-[11px] font-bold leading-none">{seat.label}</span>
+                                  </button>
+                                );
+                              };
+                              const leftCols = seatMap.config.columns_left ?? 2;
+                              const leftW = leftCols * 34 + Math.max(0, leftCols - 1) * 6;
+                              return (
+                                <div key={`bag-row-${row.row}`} className="flex items-center gap-2">
+                                  <span className="text-[10px] text-slate-400 font-medium text-right flex-shrink-0" style={{ width: 18 }}>{row.row}</span>
+                                  <div className="flex items-center gap-[6px]" style={{ width: leftW }}>
+                                    {leftSeats.map(renderBagSeat)}
+                                  </div>
+                                  <div className="flex items-center justify-center flex-shrink-0" style={{ width: 20 }}><div className="w-px h-6 bg-slate-200" /></div>
+                                  <div className="flex items-center gap-[6px]">
+                                    {rightSeats.map(renderBagSeat)}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {seatMap.enriched_layout.some(r => r.seats.every(s => s.side === 'back')) && (
+                              <>
+                                <div className="flex items-center gap-2 my-0.5"><div className="flex-1 border-t border-dashed border-slate-200" /></div>
+                                {seatMap.enriched_layout.filter(r => r.seats.every(s => s.side === 'back')).map((row) => (
+                                  <div key={`bag-back-${row.row}`} className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-400 flex-shrink-0" style={{ width: 18 }}>—</span>
+                                    <div className="flex gap-[6px]">
+                                      {row.seats.filter(s => s.side === 'back').map(seat => {
+                                        const isSelected = bagSeatOverride === seat.label;
+                                        const n = parseInt(seat.label, 10);
+                                        const isSold = !Number.isNaN(n) && soldSeats.includes(n);
+                                        const disabledSeat = isSold || seat.status === 'out_of_service' || seat.status === 'locked';
+                                        const seatColor = isSelected ? 'bg-[#0EA5E9] border-[#0284C7] text-white' : isSold ? 'bg-red-500 border-red-600 text-white cursor-not-allowed' : 'bg-white border-slate-300 text-slate-700 hover:bg-sky-50 hover:border-[#0EA5E9] hover:text-[#0EA5E9] cursor-pointer';
+                                        return (
+                                          <button key={seat.id} type="button" disabled={disabledSeat} onClick={() => !disabledSeat && toggleBagStructSeat(seat)} title={`Siège ${seat.label}`} className={`flex flex-col items-center justify-center rounded-lg border-2 select-none transition-all w-[34px] h-[36px] flex-shrink-0 ${seatColor}`}>
+                                            <span className="text-[11px] font-bold leading-none">{seat.label}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Editable fields */}
                   <div className="grid grid-cols-2 gap-3">
