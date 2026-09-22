@@ -9,6 +9,7 @@ import {
 import { supabase } from '@/services/supabase'
 import type { GarageReparation, GarageReparationPiece, GarageTypeTechnicien, GarageBus, GaragePiece, ReparationStatut } from '@/types/garage.types'
 import { formatDate } from '@/components/garage/reportHelpers'
+import { formatCurrency } from '@/utils/formatCurrency'
 
 const STATUT_COLORS: Record<ReparationStatut, { bg: string; text: string; label: string }> = {
   BROUILLON:     { bg: 'bg-[#E5E7EB]', text: 'text-[#6B7280]', label: 'BROUILLON' },
@@ -533,10 +534,14 @@ export default function GarageReparations() {
     return reparations.filter(r => {
       if (statutFilter !== 'all' && r.statut !== statutFilter) return false
       if (periodFilter !== 'all') {
-        const rDate = new Date(r.date)
-        if (periodFilter === 'day' && rDate < today) return false
-        if (periodFilter === 'week' && rDate < startOfWeek) return false
-        if (periodFilter === 'month' && rDate < startOfMonth) return false
+        const dates = [new Date(r.date)]
+        for (const rp of (r.reparation_pieces ?? [])) {
+          if (rp.date_sortie) dates.push(new Date(rp.date_sortie))
+        }
+        const latestDate = new Date(Math.max(...dates.map(d => d.getTime())))
+        if (periodFilter === 'day' && latestDate < today) return false
+        if (periodFilter === 'week' && latestDate < startOfWeek) return false
+        if (periodFilter === 'month' && latestDate < startOfMonth) return false
       }
       return true
     })
@@ -673,7 +678,8 @@ export default function GarageReparations() {
                   {linked.map((rp, i) => (
                     <div key={rp.id} className="line-clamp-1">
                       {rp.date_sortie && <span className="text-xs text-[#6B7280] mr-1">{formatDate(rp.date_sortie)}</span>}
-                      {rp.piece?.nom ?? '—'} — Qté : {rp.quantite}
+                      {rp.piece?.reference && <span className="text-xs text-[#0B7439] font-mono mr-1">{rp.piece.reference}</span>}
+                      {rp.piece?.nom ?? '—'} — Qté : {rp.quantite} — {rp.montant ? formatCurrency(rp.montant) : ''}
                     </div>
                   ))}
                 </div>
@@ -692,7 +698,7 @@ export default function GarageReparations() {
             if (linked.length > 0) {
               return (
                 <div className="text-[#4A6B55] text-xs max-w-xs whitespace-pre-line">
-                  {linked.map(rp => `${rp.date_sortie ? formatDate(rp.date_sortie) + ' — ' : ''}${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`).join('\n')}
+                  {linked.map(rp => `${rp.date_sortie ? formatDate(rp.date_sortie) + ' — ' : ''}${rp.piece?.reference ?? ''} ${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}${rp.montant ? ' — ' + formatCurrency(rp.montant) : ''}`).join('\n')}
                 </div>
               )
             }
