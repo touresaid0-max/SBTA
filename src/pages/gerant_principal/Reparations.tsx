@@ -442,7 +442,15 @@ export default function GarageReparations() {
   const load = useCallback(() => {
     setLoading(true)
     Promise.all([fetchReparations(), fetchBusesForGarage(), fetchTypesTechniciens(), fetchTechniciens(), fetchPieces()])
-      .then(([r, b, t, techs, p]) => { setReparations(r); setBuses(b); setTypesTech(t); setTechniciens(techs); setPieces(p) })
+      .then(([r, b, t, techs, p]) => {
+        const sorted = [...r].sort((a, b2) => {
+          const regA = a.bus?.registration_number ?? a.car?.immatriculation ?? ''
+          const regB = b2.bus?.registration_number ?? b2.car?.immatriculation ?? ''
+          if (regA !== regB) return regA.localeCompare(regB)
+          return b2.date.localeCompare(a.date)
+        })
+        setReparations(sorted); setBuses(b); setTypesTech(t); setTechniciens(techs); setPieces(p)
+      })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
   }, [])
