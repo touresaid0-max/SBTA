@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { X, Pencil, Info, Wrench, Trash2, Search, ChevronDown } from 'lucide-react'
+import { X, Pencil, Info, Wrench, Trash2, Search, ChevronDown, Calendar, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
 import {
@@ -423,6 +423,9 @@ function BusAutocomplete({
   )
 }
 
+type PeriodFilter = 'all' | 'day' | 'week' | 'month'
+type StatutFilter = 'all' | ReparationStatut
+
 export default function GarageReparations() {
   const [reparations, setReparations] = useState<GarageReparation[]>([])
   const [buses, setBuses] = useState<GarageBus[]>([])
@@ -433,6 +436,8 @@ export default function GarageReparations() {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<GarageReparation | null>(null)
   const [detail, setDetail] = useState<GarageReparation | null>(null)
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all')
+  const [statutFilter, setStatutFilter] = useState<StatutFilter>('all')
 
   const [form, setForm] = useState<FormState>({
     bus_id: '', date: new Date().toISOString().slice(0, 10),
@@ -444,10 +449,7 @@ export default function GarageReparations() {
     Promise.all([fetchReparations(), fetchBusesForGarage(), fetchTypesTechniciens(), fetchTechniciens(), fetchPieces()])
       .then(([r, b, t, techs, p]) => {
         const sorted = [...r].sort((a, b2) => {
-          const regA = a.bus?.registration_number ?? a.car?.immatriculation ?? ''
-          const regB = b2.bus?.registration_number ?? b2.car?.immatriculation ?? ''
-          if (regA !== regB) return regA.localeCompare(regB)
-          return b2.date.localeCompare(a.date)
+          return a.date.localeCompare(b2.date)
         })
         setReparations(sorted); setBuses(b); setTypesTech(t); setTechniciens(techs); setPieces(p)
       })
@@ -521,12 +523,136 @@ export default function GarageReparations() {
     return typesTech.find(t => t.id === form.type_technicien_id)?.nom ?? null
   }, [form.type_technicien_id, typesTech])
 
+  const filteredReparations = useMemo(() => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const startOfWeek = new Date(today)
+    startOfWeek.setDate(today.getDate() - today.getDay() + 1)
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    return reparations.filter(r => {
+      if (statutFilter !== 'all' && r.statut !== statutFilter) return false
+      if (periodFilter !== 'all') {
+        const rDate = new Date(r.date)
+        if (periodFilter === 'day' && rDate < today) return false
+        if (periodFilter === 'week' && rDate < startOfWeek) return false
+        if (periodFilter === 'month' && rDate < startOfMonth) return false
+      }
+      return true
+    })
+  }, [reparations, periodFilter, statutFilter])
+
+  const statutCounts = useMemo(() => {
+    const counts = { BROUILLON: 0, 'EN RÉPARATION': 0, LIBÉRÉ: 0 }
+    const busIds = { BROUILLON: new Set<string>(), 'EN RÉPARATION': new Set<string>(), LIBÉRÉ: new Set<string>() }
+    for (const r of filteredReparations) {
+      if (r.statut in counts) {
+        counts[r.statut]++
+        const busId = r.bus_id ?? r.car_id
+        if (busId) busIds[r.statut].add(busId)
+      }
+    }
+    return {
+      BROUILLON: { total: counts.BROUILLON, buses: busIds.BROUILLON.size },
+      'EN RÉPARATION': { total: counts['EN RÉPARATION'], buses: busIds['EN RÉPARATION'].size },
+      LIBÉRÉ: { total: counts.LIBÉRÉ, buses: busIds.LIBÉRÉ.size },
+    }
+  }, [filteredReparations])
+
+  const longRepairs = useMemo(() => {
+    const now = new Date()
+    const alerts: { registration: string; days: number; date: string }[] = []
+    const seenBusIds = new Set<string>()
+    for (const r of filteredReparations) {
+      if (r.statut !== 'EN RÉPARATION') continue
+      const busId = r.bus_id ?? r.car_id
+      if (busId && seenBusIds.has(busId)) continue
+      if (busId) seenBusIds.add(busId)
+      const rDate = new Date(r.date)
+      const diffMs = now.getTime() - rDate.getTime()
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+      if (days > 10) {
+        alerts.push({
+          registration: r.bus?.registration_number ?? r.car?.immatriculation ?? '—',
+          days,
+          date: r.date,
+        })
+      }
+    }
+    return alerts.sort((a, b) => b.days - a.days)
+  }, [filteredReparations])
+
+  const periodBtnCls = (active: boolean) => `px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${active ? 'bg-[#0B7439] text-white' : 'bg-[#F4F7F5] text-[#4A6B55] hover:bg-[#E3F0F9]'}`
+  const statutBtnCls = (active: boolean) => `px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${active ? 'bg-[#0B7439] text-white' : 'bg-[#F4F7F5] text-[#4A6B55] hover:bg-[#E3F0F9]'}`
+
   return (
     <>
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-[#6B7280]" />
+            <span className="text-xs font-medium text-[#4A6B55]">Période :</span>
+            <button className={periodBtnCls(periodFilter === 'all')} onClick={() => setPeriodFilter('all')}>Toutes</button>
+            <button className={periodBtnCls(periodFilter === 'day')} onClick={() => setPeriodFilter('day')}>Jour</button>
+            <button className={periodBtnCls(periodFilter === 'week')} onClick={() => setPeriodFilter('week')}>Semaine</button>
+            <button className={periodBtnCls(periodFilter === 'month')} onClick={() => setPeriodFilter('month')}>Mois</button>
+          </div>
+          <div className="w-px h-5 bg-[#E2EAE5]" />
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-[#4A6B55]">Statut :</span>
+            <button className={statutBtnCls(statutFilter === 'all')} onClick={() => setStatutFilter('all')}>Tous</button>
+            <button className={statutBtnCls(statutFilter === 'BROUILLON')} onClick={() => setStatutFilter('BROUILLON')}>Brouillon</button>
+            <button className={statutBtnCls(statutFilter === 'EN RÉPARATION')} onClick={() => setStatutFilter('EN RÉPARATION')}>En réparation</button>
+            <button className={statutBtnCls(statutFilter === 'LIBÉRÉ')} onClick={() => setStatutFilter('LIBÉRÉ')}>Libéré</button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-white rounded-xl border border-[#E2EAE5] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-[#6B7280]">Brouillon</span>
+              <span className="text-lg font-bold text-[#6B7280]">{statutCounts.BROUILLON.total}</span>
+            </div>
+            <div className="text-xs text-[#9CA3AF] mt-0.5">{statutCounts.BROUILLON.buses} bus</div>
+          </div>
+          <div className="bg-white rounded-xl border border-[#FEE2E2] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-[#DC2626]">En réparation</span>
+              <span className="text-lg font-bold text-[#DC2626]">{statutCounts['EN RÉPARATION'].total}</span>
+            </div>
+            <div className="text-xs text-[#DC2626]/70 mt-0.5">{statutCounts['EN RÉPARATION'].buses} bus</div>
+          </div>
+          <div className="bg-white rounded-xl border border-[#E8F5EC] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-[#0B7439]">Libéré</span>
+              <span className="text-lg font-bold text-[#0B7439]">{statutCounts.LIBÉRÉ.total}</span>
+            </div>
+            <div className="text-xs text-[#0B7439]/70 mt-0.5">{statutCounts.LIBÉRÉ.buses} bus</div>
+          </div>
+        </div>
+
+        {longRepairs.length > 0 && (
+          <div className="bg-[#FFF7ED] border border-[#FDBA74] rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-4 h-4 text-[#D97706]" />
+              <span className="text-sm font-semibold text-[#D97706]">Bus en réparation depuis plus de 10 jours</span>
+            </div>
+            <div className="space-y-1.5">
+              {longRepairs.map(a => (
+                <div key={a.registration + a.date} className="flex items-center justify-between text-sm">
+                  <span className="font-mono font-medium text-[#1A2E22]">{a.registration}</span>
+                  <span className="text-[#D97706] font-medium">{a.days} jour(s) — depuis le {formatDate(a.date)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <ListPage
         title="Gestion des réparations"
-        subtitle={`${reparations.length} réparation(s) enregistrée(s)`}
-        data={reparations}
+        subtitle={`${filteredReparations.length} réparation(s) affichée(s)`}
+        data={filteredReparations}
         loading={loading}
         searchFields={['description', 'bus.registration_number', 'car.immatriculation', 'type_technicien.nom', 'piece.nom', 'piece.reference']}
         onCreate={openCreate}
