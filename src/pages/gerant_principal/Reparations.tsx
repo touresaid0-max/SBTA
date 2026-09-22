@@ -657,6 +657,7 @@ export default function GarageReparations() {
         searchFields={['description', 'bus.registration_number', 'car.immatriculation', 'type_technicien.nom', 'piece.nom', 'piece.reference']}
         onCreate={openCreate}
         createLabel="Créer une réparation"
+        pageSize={50}
         columns={[
           { key: 'date', label: 'Date', render: (r: GarageReparation) => formatDate(r.date) },
           { key: 'bus', label: 'N° Car', render: (r: GarageReparation) => (
@@ -668,16 +669,13 @@ export default function GarageReparations() {
             const linked = r.reparation_pieces ?? []
             if (linked.length > 0) {
               return (
-                <div className="text-sm text-[#1A2E22] max-w-[200px]">
-                  {linked.slice(0, 2).map((rp, i) => (
+                <div className="text-sm text-[#1A2E22] max-w-[250px]">
+                  {linked.map((rp, i) => (
                     <div key={rp.id} className="line-clamp-1">
                       {rp.date_sortie && <span className="text-xs text-[#6B7280] mr-1">{formatDate(rp.date_sortie)}</span>}
                       {rp.piece?.nom ?? '—'} — Qté : {rp.quantite}
                     </div>
                   ))}
-                  {linked.length > 2 && (
-                    <div className="text-xs text-[#6B7280]">+{linked.length - 2} autre(s)</div>
-                  )}
                 </div>
               )
             }
@@ -693,7 +691,7 @@ export default function GarageReparations() {
             const linked = r.reparation_pieces ?? []
             if (linked.length > 0) {
               return (
-                <div className="text-[#4A6B55] text-xs max-w-xs whitespace-pre-line line-clamp-3">
+                <div className="text-[#4A6B55] text-xs max-w-xs whitespace-pre-line">
                   {linked.map(rp => `${rp.date_sortie ? formatDate(rp.date_sortie) + ' — ' : ''}${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`).join('\n')}
                 </div>
               )
