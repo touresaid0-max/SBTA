@@ -39,6 +39,13 @@ interface FormState {
   description: string
 }
 
+function getLatestSortieDate(reparation: GarageReparation): string {
+  return (reparation.reparation_pieces ?? [])
+    .map(piece => piece.date_sortie)
+    .filter((date): date is string => Boolean(date))
+    .reduce((latest, date) => date > latest ? date : latest, reparation.date)
+}
+
 function PieceAutocomplete({
   pieces,
   value,
@@ -534,11 +541,7 @@ export default function GarageReparations() {
     return reparations.filter(r => {
       if (statutFilter !== 'all' && r.statut !== statutFilter) return false
       if (periodFilter !== 'all') {
-        const dates = [new Date(r.date)]
-        for (const rp of (r.reparation_pieces ?? [])) {
-          if (rp.date_sortie) dates.push(new Date(rp.date_sortie))
-        }
-        const latestDate = new Date(Math.max(...dates.map(d => d.getTime())))
+        const latestDate = new Date(getLatestSortieDate(r))
         if (periodFilter === 'day' && latestDate < today) return false
         if (periodFilter === 'week' && latestDate < startOfWeek) return false
         if (periodFilter === 'month' && latestDate < startOfMonth) return false
@@ -664,7 +667,7 @@ export default function GarageReparations() {
         createLabel="Créer une réparation"
         pageSize={50}
         columns={[
-          { key: 'date', label: 'Date', render: (r: GarageReparation) => formatDate(r.date) },
+          { key: 'date', label: 'Date', render: (r: GarageReparation) => formatDate(getLatestSortieDate(r)) },
           { key: 'bus', label: 'N° Car', render: (r: GarageReparation) => (
             <span className="font-mono font-medium text-[#0B7439]">
               {r.bus?.registration_number ?? r.car?.immatriculation ?? '—'}
