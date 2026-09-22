@@ -500,11 +500,6 @@ export default function GarageReparations() {
     return () => { supabase.removeChannel(channel) }
   }, [load])
 
-  const openCreate = () => {
-    setEditing(null)
-    setForm({ bus_id: '', date: new Date().toISOString().slice(0, 10), statut: 'BROUILLON', technicien_id: '', type_technicien_id: '', piece_id: '', description: '' })
-    setShowModal(true)
-  }
   const openEdit = (r: GarageReparation) => {
     setEditing(r)
     setForm({
@@ -702,8 +697,6 @@ export default function GarageReparations() {
         data={filteredReparations}
         loading={loading}
         searchFields={['description', 'bus.registration_number', 'car.immatriculation', 'type_technicien.nom', 'piece.nom', 'piece.reference']}
-        onCreate={openCreate}
-        createLabel="Créer une réparation"
         pageSize={50}
         columns={[
           { key: 'date', label: 'Date', render: (r: GarageReparation) => formatDate(displayDateFor(r)) },
@@ -783,12 +776,12 @@ export default function GarageReparations() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#4A6B55] mb-1">Pièce</label>
-                <PieceAutocomplete
-                  pieces={pieces}
-                  value={form.piece_id}
-                  onChange={(id) => setForm({ ...form, piece_id: id })}
-                  inputCls={inputCls}
-                />
+                <div className={`${inputCls} bg-[#F4F7F5] flex items-center ${form.piece_id ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}`}>
+                  {(() => {
+                    const p = pieces.find(x => x.id === form.piece_id)
+                    return p ? `${p.nom}${p.reference ? ` (${p.reference})` : ''}` : 'Aucune pièce associée'
+                  })()}
+                </div>
               </div>
               {(editing?.reparation_pieces ?? []).length > 0 && (
                 <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
