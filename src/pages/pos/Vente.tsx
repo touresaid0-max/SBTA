@@ -161,7 +161,11 @@ export default function POSVente() {
 
   // Fetch seat map when structure mode is enabled
   useEffect(() => {
-    if (!structureMode || !departId) { setSeatMap(null); setSeatMapError(''); return; }
+    if (!structureMode || !departId) {
+      // Don't clear the seat map if bagage structure mode is using it
+      if (!bagStructureMode) { setSeatMap(null); setSeatMapError(''); }
+      return;
+    }
     let cancelled = false;
     setSeatMapError('');
     fetchScheduleSeatMap(departId)
@@ -177,7 +181,7 @@ export default function POSVente() {
         setSeatMap(null);
       })
     return () => { cancelled = true; };
-  }, [structureMode, departId, lastSyncedAt]);
+  }, [structureMode, departId]); // lastSyncedAt removed — prevents periodic re-fetch that resets bagage seat selection
 
   // Sync structure-selected seats → existing selectedSeats (number[])
   useEffect(() => {
@@ -315,6 +319,20 @@ export default function POSVente() {
     setBagSeatOverride(String(n));
     setBagStructureMode(false);
   };
+
+  // Silent refresh of the seat map for bagage structure — does NOT reset selection
+  const [bagSeatMapRefreshing, setBagSeatMapRefreshing] = useState(false);
+  const refreshBagSeatMap = useCallback(() => {
+    if (!departId) return;
+    setBagSeatMapRefreshing(true);
+    fetchScheduleSeatMap(departId)
+      .then(data => { setSeatMap(data); setSeatMapError(''); })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Erreur';
+        if (msg !== '__NO_BUS__') setSeatMapError(msg);
+      })
+      .finally(() => setBagSeatMapRefreshing(false));
+  }, [departId]);
 
   const allowedSeatRange = useMemo(() => {
     if (!depart || !session?.station_id) return null;
@@ -1493,7 +1511,19 @@ export default function POSVente() {
                         <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--info)' }}>
                           <Armchair className="w-3.5 h-3.5" /> Sélectionner un siège pour le bagage
                         </span>
-                        <button type="button" onClick={() => setBagStructureMode(false)} className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Fermer</button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={refreshBagSeatMap}
+                            disabled={bagSeatMapRefreshing}
+                            className="text-xs font-bold flex items-center gap-1 disabled:opacity-50"
+                            style={{ color: 'var(--text-secondary)' }}
+                            title="Actualiser la structure"
+                          >
+                            <RotateCw className={`w-3 h-3 ${bagSeatMapRefreshing ? 'animate-spin' : ''}`} /> Actualiser
+                          </button>
+                          <button type="button" onClick={() => setBagStructureMode(false)} className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Fermer</button>
+                        </div>
                       </div>
                       {seatMapError ? (
                         <div className="px-3 py-2 text-xs" style={{ color: 'var(--danger)' }}>{seatMapError}</div>
