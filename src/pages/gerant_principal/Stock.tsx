@@ -36,12 +36,11 @@ export default function GarageStockPage() {
   const [entryForm, setEntryForm] = useState({ piece_id: '', quantite: 1, date: new Date().toISOString().slice(0, 10), fournisseur_id: '', effectue_par: '' })
   const [entryPieceSearch, setEntryPieceSearch] = useState('')
   const [showEntryPieceList, setShowEntryPieceList] = useState(false)
-  const [exitRows, setExitRows] = useState<Array<{
-    piece_id: string; quantite: number; prix_unitaire: number; car_id: string; groupe_id: string;
-    pieceSearch: string; carSearch: string;
-  }>>([{
-    piece_id: '', quantite: 1, prix_unitaire: 0, car_id: '', groupe_id: '',
-    pieceSearch: '', carSearch: '',
+  type ExitPieceRow = { piece_id: string; quantite: number; prix_unitaire: number; pieceSearch: string }
+  type ExitGroup = { id: string; car_id: string; groupe_id: string; carSearch: string; rows: ExitPieceRow[] }
+  const [exitGroups, setExitGroups] = useState<ExitGroup[]>([{
+    id: 'group-1', car_id: '', groupe_id: '', carSearch: '',
+    rows: [{ piece_id: '', quantite: 1, prix_unitaire: 0, pieceSearch: '' }],
   }])
   const [exitDate, setExitDate] = useState(new Date().toISOString().slice(0, 10))
   const [exitDemandeur, setExitDemandeur] = useState('')
@@ -131,7 +130,9 @@ export default function GarageStockPage() {
   }
 
   const handleExit = async () => {
-    const validRows = exitRows.filter(r => r.piece_id && r.quantite > 0)
+    const validRows = exitGroups.flatMap(group => group.rows
+      .filter(row => row.piece_id && row.quantite > 0)
+      .map(row => ({ ...row, car_id: group.car_id, groupe_id: group.groupe_id })))
     if (validRows.length === 0) { toast.error('Au moins une ligne avec pièce et quantité est requise'); return }
     try {
       const rows = validRows.map(r => ({
@@ -153,7 +154,7 @@ export default function GarageStockPage() {
   }
 
   const resetExitForm = () => {
-    setExitRows([{ piece_id: '', quantite: 1, prix_unitaire: 0, car_id: '', groupe_id: '', pieceSearch: '', carSearch: '' }])
+    setExitGroups([{ id: 'group-1', car_id: '', groupe_id: '', carSearch: '', rows: [{ piece_id: '', quantite: 1, prix_unitaire: 0, pieceSearch: '' }] }])
     setExitDate(new Date().toISOString().slice(0, 10))
     setExitDemandeur('')
     setExitEffectuePar('')
@@ -164,38 +165,57 @@ export default function GarageStockPage() {
     setShowExit(true)
   }
 
-  const addExitRow = () => {
-    setExitRows([...exitRows, { piece_id: '', quantite: 1, prix_unitaire: 0, car_id: '', groupe_id: '', pieceSearch: '', carSearch: '' }])
+  const addExitPiece = (groupId: string) => {
+    setExitGroups(groups => groups.map(group => group.id === groupId ? {
+      ...group,
+      rows: [...group.rows, { piece_id: '', quantite: 1, prix_unitaire: 0, pieceSearch: '' }],
+    } : group))
   }
 
-  const removeExitRow = (idx: number) => {
-    if (exitRows.length === 1) return
-    setExitRows(exitRows.filter((_, i) => i !== idx))
+  const addExitGroup = () => {
+    setExitGroups(groups => [...groups, {
+      id: `group-${Date.now()}-${groups.length}`,
+      car_id: '', groupe_id: '', carSearch: '',
+      rows: [{ piece_id: '', quantite: 1, prix_unitaire: 0, pieceSearch: '' }],
+    }])
   }
 
-  const updateExitRow = (idx: number, patch: Partial<typeof exitRows[0]>) => {
-    setExitRows(exitRows.map((r, i) => i === idx ? { ...r, ...patch } : r))
+  const removeExitPiece = (groupId: string, rowIdx: number) => {
+    setExitGroups(groups => groups.map(group => group.id === groupId && group.rows.length > 1 ? {
+      ...group, rows: group.rows.filter((_, idx) => idx !== rowIdx),
+    } : group))
   }
 
-  const selectPieceForRow = (idx: number, pieceId: string) => {
-    const p = pieces.find(p => p.id === pieceId)
-    updateExitRow(idx, {
+  const updateExitPiece = (groupId: string, rowIdx: number, patch: Partial<ExitPieceRow>) => {
+    setExitGroups(groups => groups.map(group => group.id === groupId ? {
+      ...group,
+      rows: group.rows.map((row, idx) => idx === rowIdx ? { ...row, ...patch } : row),
+    } : group))
+  }
+
+  const selectPieceForRow = (groupId: string, rowIdx: number, pieceId: string) => {
+    const p = pieces.find(piece => piece.id === pieceId)
+    updateExitPiece(groupId, rowIdx, {
       piece_id: pieceId,
       pieceSearch: p ? `${p.reference} — ${p.nom}` : '',
       prix_unitaire: p ? Number(p.prix_unitaire) : 0,
     })
   }
 
-  const selectCarForRow = (idx: number, carId: string) => {
-    const c = cars.find(c => c.id === carId)
-    updateExitRow(idx, {
+  const updateExitGroup = (groupId: string, patch: Partial<ExitGroup>) => {
+    setExitGroups(groups => groups.map(group => group.id === groupId ? { ...group, ...patch } : group))
+  }
+
+  const selectCarForGroup = (groupId: string, carId: string) => {
+    const c = cars.find(car => car.id === carId)
+    updateExitGroup(groupId, {
       car_id: carId,
       carSearch: c?.immatriculation ?? '',
       groupe_id: c?.company_id ?? '',
     })
   }
 
-  const exitTotal = exitRows.reduce((sum, r) => sum + (r.piece_id ? r.quantite * r.prix_unitaire : 0), 0)
+  const exitTotal = exitGroups.reduce((sum, group) => sum + group.rows.reduce((groupSum, row) => groupSum + (row.piece_id ? row.quantite * row.prix_unitaire : 0), 0), 0)
 
   const lowStockCount = stock.filter(s => s.quantite <= (s.piece?.seuil_alerte ?? 0)).length
 
@@ -551,39 +571,43 @@ export default function GarageStockPage() {
                 </div>
               </div>
 
-              {/* Multi-line exit rows */}
-              <div className="space-y-3">
+              {/* Grouped exit rows: bus → pieces */}
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#4A6B55]">Pièces à sortir</h3>
                   <span className="text-sm font-bold text-[#0B7439]">Total : {formatFCFA(exitTotal)}</span>
                 </div>
 
-                {exitRows.map((row, idx) => (
-                  <ExitRow
-                    key={idx}
-                    row={row}
+                {exitGroups.map((group, gIdx) => (
+                  <BusGroup
+                    key={group.id}
+                    group={group}
+                    groupIndex={gIdx}
                     pieces={pieces}
                     cars={cars}
                     carsLoading={carsLoading}
                     groupes={groupes}
-                    onChange={(patch) => updateExitRow(idx, patch)}
-                    onSelectPiece={(pieceId) => selectPieceForRow(idx, pieceId)}
-                    onSelectCar={(carId) => selectCarForRow(idx, carId)}
-                    onRemove={() => removeExitRow(idx)}
-                    canRemove={exitRows.length > 1}
+                    onAddPiece={() => addExitPiece(group.id)}
+                    onRemovePiece={(rowIdx) => removeExitPiece(group.id, rowIdx)}
+                    onUpdatePiece={(rowIdx, patch) => updateExitPiece(group.id, rowIdx, patch)}
+                    onSelectPiece={(rowIdx, pieceId) => selectPieceForRow(group.id, rowIdx, pieceId)}
+                    onUpdateGroup={(patch) => updateExitGroup(group.id, patch)}
+                    onSelectCar={(carId) => selectCarForGroup(group.id, carId)}
+                    canRemoveGroup={exitGroups.length > 1}
+                    onRemoveGroup={() => setExitGroups(gs => gs.filter(g => g.id !== group.id))}
                   />
                 ))}
 
-                <button onClick={addExitRow}
-                  className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-[#0B7439]/30 rounded-xl text-sm font-medium text-[#0B7439] hover:bg-[#0B7439]/5 transition-colors w-full justify-center">
-                  <Plus className="w-4 h-4" /> Ajouter une pièce
+                <button onClick={addExitGroup}
+                  className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-[#0E7490]/40 rounded-xl text-sm font-medium text-[#0E7490] hover:bg-[#0E7490]/5 transition-colors w-full justify-center">
+                  <Plus className="w-4 h-4" /> Ajouter Pièce à sortir
                 </button>
               </div>
             </div>
             <div className="flex justify-end gap-3 p-6 border-t border-[#E2EAE5] sticky bottom-0 bg-white">
               <button onClick={() => setShowExit(false)} className="px-4 py-2.5 rounded-xl border border-[#E2EAE5] text-sm font-medium text-[#4A6B55] hover:bg-[#F8FAF8]">Annuler</button>
               <button onClick={handleExit} className="px-6 py-2.5 rounded-xl bg-[#0B7439] text-white text-sm font-medium hover:bg-[#095e2e]">
-                Enregistrer ({exitRows.filter(r => r.piece_id && r.quantite > 0).length} ligne(s))
+                Enregistrer ({exitGroups.flatMap(g => g.rows).filter(r => r.piece_id && r.quantite > 0).length} ligne(s))
               </button>
             </div>
           </div>
@@ -593,23 +617,143 @@ export default function GarageStockPage() {
   )
 }
 
-// ── Autocomplete exit row ────────────────────────────────────
-function ExitRow({
-  row, pieces, cars, carsLoading, groupes, onChange, onSelectPiece, onSelectCar, onRemove, canRemove,
+// ── Bus group (bus selector + piece rows) ────────────────────
+function BusGroup({
+  group, groupIndex, pieces, cars, carsLoading, groupes,
+  onAddPiece, onRemovePiece, onUpdatePiece, onSelectPiece,
+  onUpdateGroup, onSelectCar, canRemoveGroup, onRemoveGroup,
 }: {
-  row: { piece_id: string; quantite: number; prix_unitaire: number; car_id: string; groupe_id: string; pieceSearch: string; carSearch: string }
+  group: { id: string; car_id: string; groupe_id: string; carSearch: string; rows: { piece_id: string; quantite: number; prix_unitaire: number; pieceSearch: string }[] }
+  groupIndex: number
   pieces: GaragePiece[]
   cars: GarageBus[]
   carsLoading: boolean
   groupes: GarageCompany[]
+  onAddPiece: () => void
+  onRemovePiece: (rowIdx: number) => void
+  onUpdatePiece: (rowIdx: number, patch: Partial<{ piece_id: string; quantite: number; prix_unitaire: number; pieceSearch: string }>) => void
+  onSelectPiece: (rowIdx: number, pieceId: string) => void
+  onUpdateGroup: (patch: Partial<{ car_id: string; groupe_id: string; carSearch: string }>) => void
+  onSelectCar: (carId: string) => void
+  canRemoveGroup: boolean
+  onRemoveGroup: () => void
+}) {
+  const [showCarList, setShowCarList] = useState(false)
+
+  const carQuery = group.carSearch.trim().toLowerCase()
+  const filteredCars = carQuery
+    ? cars.filter(c =>
+        c.immatriculation.toLowerCase().includes(carQuery) ||
+        (c.company?.name ?? '').toLowerCase().includes(carQuery)
+      ).slice(0, 20)
+    : cars.slice(0, 20)
+
+  const selectedBus = cars.find(c => c.id === group.car_id)
+  const selectedGroupe = groupes.find(g => g.id === group.groupe_id)
+  const groupTotal = group.rows.reduce((sum, row) => sum + (row.piece_id ? row.quantite * row.prix_unitaire : 0), 0)
+
+  return (
+    <div className="border-2 border-[#0B7439]/20 rounded-xl overflow-hidden bg-white">
+      {/* Bus selector header */}
+      <div className="bg-[#0B7439]/5 px-4 py-3 border-b border-[#E2EAE5]">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-bold text-[#0B7439] uppercase tracking-wide">Sortie {groupIndex + 1} — Bus</span>
+          {canRemoveGroup && (
+            <button onClick={onRemoveGroup} className="p-1 rounded-lg hover:bg-[#FEF2F2] text-[#AF3029]" title="Supprimer ce groupe">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="relative">
+            <label className="block text-xs font-medium text-[#4A6B55] mb-1">Matricule du bus *</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+              <input
+                value={group.carSearch}
+                onChange={e => { onUpdateGroup({ carSearch: e.target.value, car_id: '', groupe_id: '' }); setShowCarList(true) }}
+                onFocus={() => setShowCarList(true)}
+                onBlur={() => setTimeout(() => setShowCarList(false), 200)}
+                placeholder="Rechercher un matricule..."
+                className="w-full pl-8 pr-3 py-2 rounded-lg border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20"
+              />
+              {carsLoading && (
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                  <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+            {showCarList && (
+              <div className="absolute z-20 mt-1 w-full bg-white border border-[#E2EAE5] rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                {carsLoading ? (
+                  <div className="px-3 py-4 text-sm text-[#6B7280] flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+                    Chargement des cars...
+                  </div>
+                ) : filteredCars.length > 0 ? (
+                  filteredCars.map(c => (
+                    <button
+                      key={c.id}
+                      onMouseDown={() => onSelectCar(c.id)}
+                      className="w-full text-left px-3 py-2 hover:bg-[#F0F7F2] border-b border-[#F0F4F1] last:border-0"
+                    >
+                      <div className="text-sm font-medium text-[#1A2E22]">{c.immatriculation}</div>
+                      <div className="text-xs text-[#6B7280]">{c.company?.name ?? '—'}</div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-4 text-sm text-[#6B7280]">Aucun car trouvé</div>
+                )}
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[#4A6B55] mb-1">Groupe / Société</label>
+            <div className="px-3 py-2 rounded-lg bg-[#F0F4F1] text-sm text-[#1A2E22] border border-[#E2EAE5]">
+              {selectedGroupe?.name ?? selectedBus?.company?.name ?? '—'}
+            </div>
+          </div>
+          <div className="flex items-end justify-end">
+            <span className="text-sm font-bold text-[#1A2E22]">Sous-total : {formatFCFA(groupTotal)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Piece rows for this bus */}
+      <div className="p-4 space-y-3">
+        {group.rows.map((row, rowIdx) => (
+          <PieceRow
+            key={rowIdx}
+            row={row}
+            pieces={pieces}
+            onChange={(patch) => onUpdatePiece(rowIdx, patch)}
+            onSelectPiece={(pieceId) => onSelectPiece(rowIdx, pieceId)}
+            onRemove={() => onRemovePiece(rowIdx)}
+            canRemove={group.rows.length > 1}
+          />
+        ))}
+
+        <button onClick={onAddPiece}
+          className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-[#0B7439]/30 rounded-xl text-sm font-medium text-[#0B7439] hover:bg-[#0B7439]/5 transition-colors w-full justify-center">
+          <Plus className="w-4 h-4" /> Ajouter une pièce
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Single piece row (inside a bus group) ────────────────────
+function PieceRow({
+  row, pieces, onChange, onSelectPiece, onRemove, canRemove,
+}: {
+  row: { piece_id: string; quantite: number; prix_unitaire: number; pieceSearch: string }
+  pieces: GaragePiece[]
   onChange: (patch: Partial<typeof row>) => void
   onSelectPiece: (pieceId: string) => void
-  onSelectCar: (carId: string) => void
   onRemove: () => void
   canRemove: boolean
 }) {
   const [showPieceList, setShowPieceList] = useState(false)
-  const [showCarList, setShowCarList] = useState(false)
 
   const filteredPieces = row.pieceSearch.trim()
     ? pieces.filter(p => {
@@ -621,31 +765,21 @@ function ExitRow({
       }).slice(0, 10)
     : pieces.slice(0, 10)
 
-  const carQuery = row.carSearch.trim().toLowerCase()
-  const filteredCars = carQuery
-    ? cars.filter(c =>
-        c.immatriculation.toLowerCase().includes(carQuery) ||
-        (c.company?.name ?? '').toLowerCase().includes(carQuery)
-      ).slice(0, 20)
-    : cars.slice(0, 20)
-
   const selectedPiece = pieces.find(p => p.id === row.piece_id)
-  const selectedBus = cars.find(c => c.id === row.car_id)
-  const selectedGroupe = groupes.find(g => g.id === row.groupe_id)
   const lineTotal = row.piece_id ? row.quantite * row.prix_unitaire : 0
 
   return (
     <div className="border border-[#E2EAE5] rounded-xl p-4 space-y-3 bg-[#F8FAF8]">
       <div className="flex items-start justify-between">
-        <span className="text-xs font-medium text-[#6B7280]">Ligne</span>
+        <span className="text-xs font-medium text-[#6B7280]">Pièce</span>
         {canRemove && (
-          <button onClick={onRemove} className="p-1 rounded-lg hover:bg-[#FEF2F2] text-[#AF3029]" title="Supprimer cette ligne">
+          <button onClick={onRemove} className="p-1 rounded-lg hover:bg-[#FEF2F2] text-[#AF3029]" title="Supprimer cette pièce">
             <Trash2 className="w-4 h-4" />
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Pièce autocomplete */}
         <div className="lg:col-span-2 relative">
           <label className="block text-xs font-medium text-[#4A6B55] mb-1">Pièce</label>
@@ -700,72 +834,13 @@ function ExitRow({
             onChange={e => onChange({ prix_unitaire: Number(e.target.value) })}
             className="w-full px-3 py-2 rounded-lg border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20" />
         </div>
+      </div>
 
-        {/* Montant ligne */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div />
         <div>
           <label className="block text-xs font-medium text-[#4A6B55] mb-1">Montant</label>
           <div className="px-3 py-2 rounded-lg bg-[#E8F5EC] text-sm font-bold text-[#0B7439] text-right">
-            {formatFCFA(lineTotal)}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {/* Car autocomplete */}
-        <div className="relative">
-          <label className="block text-xs font-medium text-[#4A6B55] mb-1">Car</label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
-            <input
-              value={row.carSearch}
-              onChange={e => { onChange({ carSearch: e.target.value, car_id: '', groupe_id: '' }); setShowCarList(true) }}
-              onFocus={() => setShowCarList(true)}
-              onBlur={() => setTimeout(() => setShowCarList(false), 200)}
-              placeholder="Matricule ou société..."
-              className="w-full pl-8 pr-3 py-2 rounded-lg border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20"
-            />
-            {carsLoading && (
-              <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
-              </div>
-            )}
-          </div>
-          {showCarList && (
-            <div className="absolute z-20 mt-1 w-full bg-white border border-[#E2EAE5] rounded-xl shadow-lg max-h-56 overflow-y-auto">
-              {carsLoading ? (
-                <div className="px-3 py-4 text-sm text-[#6B7280] flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
-                  Chargement des cars...
-                </div>
-              ) : filteredCars.length > 0 ? (
-                filteredCars.map(c => (
-                  <button
-                    key={c.id}
-                    onMouseDown={() => onSelectCar(c.id)}
-                    className="w-full text-left px-3 py-2 hover:bg-[#F0F7F2] border-b border-[#F0F4F1] last:border-0"
-                  >
-                    <div className="text-sm font-medium text-[#1A2E22]">{c.immatriculation}</div>
-                    <div className="text-xs text-[#6B7280]">{c.company?.name ?? '—'}</div>
-                  </button>
-                ))
-              ) : (
-                <div className="px-3 py-4 text-sm text-[#6B7280]">Aucun car trouvé</div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Groupe auto-filled */}
-        <div>
-          <label className="block text-xs font-medium text-[#4A6B55] mb-1">Groupe / Société</label>
-          <div className="px-3 py-2 rounded-lg bg-[#F0F4F1] text-sm text-[#1A2E22] border border-[#E2EAE5]">
-            {selectedGroupe?.name ?? selectedBus?.company?.name ?? '—'}
-          </div>
-        </div>
-
-        {/* Line total display */}
-        <div className="flex items-end">
-          <div className="w-full text-right text-sm font-bold text-[#1A2E22]">
             {formatFCFA(lineTotal)}
           </div>
         </div>
