@@ -408,6 +408,14 @@ export default function POSVente() {
     ? String(selectedSeats[0])
     : bagSeatOverride || '';
 
+  // Find the actual BUS ticket sold for the selected seat (for bagage "avec ticket" linking)
+  const linkedBusTicket = useMemo(() => {
+    if (!seatNumber) return null;
+    const n = parseInt(seatNumber, 10);
+    if (Number.isNaN(n)) return null;
+    return scopedTickets.find(t => t.seat_number === n && t.status !== 'cancelled') ?? null;
+  }, [seatNumber, scopedTickets]);
+
   // Close seat dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -591,6 +599,9 @@ export default function POSVente() {
       if (Number.isNaN(n) || n < depart.seats_from || n > depart.seats_total) {
         setBagError(`Le siège n°${seatNumber} est hors de la plage autorisée (${depart.seats_from}–${depart.seats_total})`); return;
       }
+      if (!linkedBusTicket) {
+        setBagError(`Aucun ticket BUS vendu pour le siège n°${seatNumber} — vente impossible en mode « Avec ticket »`); return;
+      }
     }
     if (bagMode === 'sans') {
       if (!bagOwnerName.trim()) { setBagError('Veuillez saisir le nom du propriétaire'); return; }
@@ -605,7 +616,7 @@ export default function POSVente() {
         departId,
         withTicket: bagMode === 'avec',
         withTicketReport: false,
-        ticketNumber: bagMode === 'avec' ? ticketPreview : undefined,
+        ticketNumber: bagMode === 'avec' ? (linkedBusTicket?.ticket_number ?? undefined) : undefined,
         price: bagPrice,
         destination: destStationName,
         description: bagDescription,
@@ -1401,13 +1412,13 @@ export default function POSVente() {
                     <p className="text-xs font-bold mb-2" style={{ color: 'var(--text-muted)' }}>Informations du billet lié</p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket (auto)</label>
+                        <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>N° Ticket BUS</label>
                         <input
                           type="text"
-                          value={ticketPreview || '...'}
+                          value={linkedBusTicket?.ticket_number ?? (seatNumber ? 'Aucun ticket vendu' : '— Sélectionner un siège —')}
                           disabled
                           className={fieldInput}
-                          style={{ ...fieldStyle, opacity: 0.6 }}
+                          style={{ ...fieldStyle, opacity: 0.6, color: linkedBusTicket ? 'var(--info)' : 'var(--danger)' }}
                         />
                       </div>
                       <div>
@@ -1705,7 +1716,7 @@ export default function POSVente() {
               {bagMode && (
                 <button
                   onClick={handleSellBagage}
-                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < new Date().toISOString().slice(0, 10) || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && !seatNumber)}
+                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < new Date().toISOString().slice(0, 10) || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && (!seatNumber || !linkedBusTicket))}
                   className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                   style={{ backgroundColor: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)' }}
                 >
