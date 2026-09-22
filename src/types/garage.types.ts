@@ -141,6 +141,20 @@ export interface GarageReparation {
   piece?: GaragePiece | null
   type_technicien?: GarageTypeTechnicien | null
   technicien?: { id: string; first_name: string | null; last_name: string | null; full_name: string | null } | null
+  reparation_pieces?: GarageReparationPiece[] | null
+}
+
+export interface GarageReparationPiece {
+  id: string
+  reparation_id: string
+  piece_id: string | null
+  sortie_id: string | null
+  quantite: number
+  prix_unitaire: number | null
+  montant: number | null
+  date_sortie: string | null
+  created_at: string
+  piece?: GaragePiece | null
 }
 
 export interface GarageHistoriqueStatut {

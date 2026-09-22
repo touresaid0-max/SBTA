@@ -7,7 +7,7 @@ import {
   fetchTypesTechniciens, fetchTechniciens, fetchBusesForGarage, fetchPieces,
 } from '@/services/garageSbta.service'
 import { supabase } from '@/services/supabase'
-import type { GarageReparation, GarageTypeTechnicien, GarageBus, GaragePiece, ReparationStatut } from '@/types/garage.types'
+import type { GarageReparation, GarageReparationPiece, GarageTypeTechnicien, GarageBus, GaragePiece, ReparationStatut } from '@/types/garage.types'
 import { formatDate } from '@/components/garage/reportHelpers'
 
 const STATUT_COLORS: Record<ReparationStatut, { bg: string; text: string; label: string }> = {
@@ -457,11 +457,12 @@ export default function GarageReparations() {
 
   useEffect(() => { load() }, [load])
 
-  // Realtime: recharger quand une réparation change
+  // Realtime: recharger quand une réparation ou pièce liée change
   useEffect(() => {
     const channel = supabase
       .channel('garage-reparations-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'garage_reparations' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'garage_reparation_pieces' }, () => load())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [load])
@@ -537,20 +538,41 @@ export default function GarageReparations() {
               {r.bus?.registration_number ?? r.car?.immatriculation ?? '—'}
             </span>
           )},
-          { key: 'piece', label: 'Pièce', render: (r: GarageReparation) => (
-            <span className="text-sm text-[#1A2E22] line-clamp-1 max-w-[140px]">
-              {r.piece?.nom ?? '—'}
-            </span>
-          )},
+          { key: 'piece', label: 'Pièces', render: (r: GarageReparation) => {
+            const linked = r.reparation_pieces ?? []
+            if (linked.length > 0) {
+              return (
+                <div className="text-sm text-[#1A2E22] max-w-[200px]">
+                  {linked.slice(0, 2).map((rp, i) => (
+                    <div key={rp.id} className="line-clamp-1">
+                      {rp.piece?.nom ?? '—'} — Qté : {rp.quantite}
+                    </div>
+                  ))}
+                  {linked.length > 2 && (
+                    <div className="text-xs text-[#6B7280]">+{linked.length - 2} autre(s)</div>
+                  )}
+                </div>
+              )
+            }
+            return <span className="text-sm text-[#1A2E22]">{r.piece?.nom ?? '—'}</span>
+          }},
           { key: 'statut', label: 'Statut', render: (r: GarageReparation) => <ReparationStatusBadge statut={r.statut} /> },
           { key: 'technicien', label: 'Technicien', render: (r: GarageReparation) => {
             const tech = techniciens.find(t => t.id === r.technicien_id)
             return <span>{tech?.full_name || '—'}</span>
           }},
           { key: 'type_technicien', label: 'Type technicien', render: (r: GarageReparation) => r.type_technicien?.nom ?? '—' },
-          { key: 'description', label: 'Description', render: (r: GarageReparation) => (
-            <span className="text-[#4A6B55] line-clamp-1 max-w-xs">{r.description || '—'}</span>
-          )},
+          { key: 'description', label: 'Description', render: (r: GarageReparation) => {
+            const linked = r.reparation_pieces ?? []
+            if (linked.length > 0) {
+              return (
+                <div className="text-[#4A6B55] text-xs max-w-xs whitespace-pre-line line-clamp-3">
+                  {linked.map(rp => `${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`).join('\n')}
+                </div>
+              )
+            }
+            return <span className="text-[#4A6B55] line-clamp-1 max-w-xs">{r.description || '—'}</span>
+          }},
         ]}
         rowActions={(r: GarageReparation) => (
           <div className="flex items-center justify-center gap-1">
@@ -593,6 +615,19 @@ export default function GarageReparations() {
                   inputCls={inputCls}
                 />
               </div>
+              {(editing?.reparation_pieces ?? []).length > 0 && (
+                <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
+                  <label className="block text-sm font-semibold text-[#4A6B55]">Pièces sorties pour ce car</label>
+                  <div className="space-y-1.5">
+                    {(editing.reparation_pieces ?? []).map((rp: GarageReparationPiece) => (
+                      <div key={rp.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
+                        <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                        <span className="text-[#4A6B55]">Qté : {rp.quantite}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-[#4A6B55] mb-1">Statut</label>
                 <select value={form.statut} onChange={e => setForm({ ...form, statut: e.target.value as ReparationStatut })} className={inputCls}>
@@ -640,6 +675,19 @@ export default function GarageReparations() {
               <div className="flex justify-between"><span className="text-[#6B7280]">Date</span><span className="text-[#1A2E22]">{formatDate(detail.date)}</span></div>
               <div className="flex justify-between"><span className="text-[#6B7280]">Car</span><span className="font-mono font-medium text-[#0B7439]">{detail.bus?.registration_number ?? detail.car?.immatriculation ?? '—'}</span></div>
               <div className="flex justify-between"><span className="text-[#6B7280]">Pièce</span><span className="text-[#1A2E22]">{detail.piece?.nom ?? (detail.piece?.reference ? `(${detail.piece.reference})` : '—')}</span></div>
+              {(detail.reparation_pieces ?? []).length > 0 && (
+                <div className="pt-2 border-t border-[#E2EAE5]">
+                  <span className="text-[#6B7280] block mb-2">Pièces sorties pour ce car</span>
+                  <div className="space-y-1.5">
+                    {(detail.reparation_pieces ?? []).map(rp => (
+                      <div key={rp.id} className="flex justify-between items-center text-sm bg-[#F8FAF8] rounded-lg px-3 py-2">
+                        <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                        <span className="text-[#4A6B55]">Qté : {rp.quantite}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex justify-between items-center"><span className="text-[#6B7280]">Statut</span><ReparationStatusBadge statut={detail.statut} /></div>
               <div className="flex justify-between"><span className="text-[#6B7280]">Technicien</span><span className="text-[#1A2E22]">{techniciens.find(t => t.id === detail.technicien_id)?.full_name ?? '—'}</span></div>
               <div className="flex justify-between"><span className="text-[#6B7280]">Type technicien</span><span className="text-[#1A2E22]">{detail.type_technicien?.nom ?? '—'}</span></div>

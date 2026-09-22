@@ -5,7 +5,7 @@ import type {
   GarageEntreeStock, GarageSortiePiece, GarageReparation,
   GarageCommandePiece, GaragePneu, GarageSetting,
   ReparationStatut, GarageHistoriqueStatut, GarageReparationNotification,
-  GarageCarDisponible, GarageSortieCorrection,
+  GarageCarDisponible, GarageSortieCorrection, GarageReparationPiece,
 } from '@/types/garage.types'
 
 // ── Groupes ──────────────────────────────────────────────────
@@ -293,13 +293,37 @@ export async function fetchSortieCorrections(sortieId?: string): Promise<GarageS
 }
 
 // ── Réparations ──────────────────────────────────────────────
+export async function fetchReparationPieces(reparationIds: string[]): Promise<GarageReparationPiece[]> {
+  if (reparationIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('garage_reparation_pieces')
+    .select('*, piece:garage_pieces(*)')
+    .in('reparation_id', reparationIds)
+    .order('date_sortie', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
 export async function fetchReparations(): Promise<GarageReparation[]> {
   const { data, error } = await supabase
     .from('garage_reparations')
     .select('*, car:garage_cars(*), bus:buses(id, registration_number, company_id), piece:garage_pieces(*), type_technicien:garage_types_techniciens(*)')
     .order('date', { ascending: false })
   if (error) throw error
-  return data ?? []
+  const reparations = data ?? []
+  const repIds = reparations.map(r => r.id)
+  if (repIds.length === 0) return reparations
+  const pieces = await fetchReparationPieces(repIds)
+  const piecesByRep = new Map<string, GarageReparationPiece[]>()
+  for (const p of pieces) {
+    const arr = piecesByRep.get(p.reparation_id) ?? []
+    arr.push(p)
+    piecesByRep.set(p.reparation_id, arr)
+  }
+  return reparations.map(r => ({
+    ...r,
+    reparation_pieces: piecesByRep.get(r.id) ?? [],
+  }))
 }
 
 export async function fetchReparationsEnCours(): Promise<GarageReparation[]> {
