@@ -231,8 +231,8 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
 
       const drawTireHeader = () => {
         const headerTop = y - 6
-        const headerHeight = 20
-        const headerSplit = headerTop + 10
+        const headerHeight = 24
+        const headerSplit = headerTop + 12
         doc.setFillColor(247, 248, 250); doc.setDrawColor(20, 20, 20); doc.setLineWidth(0.35)
         doc.rect(margin, headerTop, contentW, headerHeight, 'FD')
         doc.line(colLibelle, headerTop, colLibelle, headerTop + headerHeight)
@@ -243,13 +243,13 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         doc.line(colCar, headerSplit, colCar, headerTop + headerHeight)
         doc.line(colLibelle, headerSplit, colQty, headerSplit)
         doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-        doc.text('DATES', colDate + 2, headerTop + 12)
-        doc.text('DESIGNATIONS', colLibelle + 2, headerTop + 7)
-        doc.text('LIBELLES', colLibelle + 2, headerTop + 17)
-        doc.text('N° DE CARS', colCar + 2, headerTop + 17)
-        drawPdfRight(doc, 'QTE', colPrix - 2, headerTop + 12)
-        drawPdfRight(doc, 'P.UNITAIRE', colMontant - 2, headerTop + 12)
-        drawPdfRight(doc, 'MONTANTS', colRight - 2, headerTop + 12)
+        doc.text('DATES', colDate + 4, headerTop + 14)
+        doc.text('DESIGNATIONS', colLibelle + 4, headerTop + 8)
+        doc.text('LIBELLES', colLibelle + 4, headerTop + 20)
+        doc.text('N° DE CARS', colCar + 4, headerTop + 20)
+        drawPdfRight(doc, 'QTE', colPrix - 4, headerTop + 14)
+        drawPdfRight(doc, 'P.UNITAIRE', colMontant - 4, headerTop + 14)
+        drawPdfRight(doc, 'MONTANTS', colRight - 4, headerTop + 14)
         y = headerTop + headerHeight + 7
       }
 
@@ -264,7 +264,7 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
         let groupQty = 0; let groupMontant = 0
         doc.setFont('helvetica', 'normal'); doc.setTextColor(20, 20, 20)
         tireItems.forEach(p => {
-          const rowHeight = 11
+          const rowHeight = 14
           y = ensureSpace(doc, y, rowHeight + 3, ph, pw)
           const rowTop = y - 7
           doc.setDrawColor(40, 40, 40); doc.rect(margin, rowTop, contentW, rowHeight)
@@ -273,39 +273,39 @@ export default function GarageReports({ groupes: propGroupes, settings: propSett
           doc.line(colQty, rowTop, colQty, rowTop + rowHeight)
           doc.line(colPrix, rowTop, colPrix, rowTop + rowHeight)
           doc.setFontSize(8)
-          doc.text(formatDate(p.date), colDate + 2, rowTop + 7)
-          doc.text(typeLabel, colLibelle + 2, rowTop + 7)
-          doc.text(p.car?.registration_number ?? '—', colCar + 2, rowTop + 7)
-          drawPdfRight(doc, formatPdfNumber(p.quantite), colPrix - 2, rowTop + 7)
-          drawPdfRight(doc, formatPdfNumber(p.prix_unitaire), colMontant - 2, rowTop + 7)
-          drawPdfRight(doc, formatPdfNumber(p.montant), colRight - 2, rowTop + 7)
+          doc.text(formatDate(p.date), colDate + 4, rowTop + 9)
+          doc.text(typeLabel, colLibelle + 4, rowTop + 9)
+          doc.text(p.car?.registration_number ?? '—', colCar + 4, rowTop + 9)
+          drawPdfRight(doc, formatPdfNumber(p.quantite), colPrix - 4, rowTop + 9)
+          drawPdfRight(doc, formatPdfNumber(p.prix_unitaire), colMontant - 4, rowTop + 9)
+          drawPdfRight(doc, formatPdfNumber(p.montant), colRight - 4, rowTop + 9)
           groupQty += p.quantite; groupMontant += Number(p.montant); y = rowTop + rowHeight + 3
         })
         y = ensureSpace(doc, y, 16, ph, pw)
         const totalTop = y - 7
-        doc.setFillColor(255, 224, 205); doc.rect(margin, totalTop, contentW, 11, 'FD')
-        doc.line(colLibelle, totalTop, colLibelle, totalTop + 11)
-        doc.line(colCar, totalTop, colCar, totalTop + 11)
-        doc.line(colQty, totalTop, colQty, totalTop + 11)
-        doc.line(colPrix, totalTop, colPrix, totalTop + 11)
+        doc.setFillColor(255, 224, 205); doc.rect(margin, totalTop, contentW, 13, 'FD')
+        doc.line(colLibelle, totalTop, colLibelle, totalTop + 13)
+        doc.line(colCar, totalTop, colCar, totalTop + 13)
+        doc.line(colQty, totalTop, colQty, totalTop + 13)
+        doc.line(colPrix, totalTop, colPrix, totalTop + 13)
         doc.setFont('helvetica', 'bold'); doc.setFontSize(8)
-        doc.text('TOTAL', margin + 2, totalTop + 7)
-        drawPdfRight(doc, formatPdfNumber(groupQty), colPrix - 2, totalTop + 7)
-        drawPdfRight(doc, formatPdfNumber(groupMontant), colRight - 2, totalTop + 7)
-        totalQty += groupQty; totalMontant += groupMontant; y = totalTop + 15
+        doc.text('TOTAL', margin + 4, totalTop + 9)
+        drawPdfRight(doc, formatPdfNumber(groupQty), colPrix - 4, totalTop + 9)
+        drawPdfRight(doc, formatPdfNumber(groupMontant), colRight - 4, totalTop + 9)
+        totalQty += groupQty; totalMontant += groupMontant; y = totalTop + 17
       }
 
       y = ensureSpace(doc, y, 20, ph, pw)
       const totalsTop = y - 7
-      doc.setFillColor(255, 244, 161); doc.rect(margin, totalsTop, contentW, 11, 'FD')
-      doc.line(colLibelle, totalsTop, colLibelle, totalsTop + 11)
-      doc.line(colCar, totalsTop, colCar, totalsTop + 11)
-      doc.line(colQty, totalsTop, colQty, totalsTop + 11)
-      doc.line(colPrix, totalsTop, colPrix, totalsTop + 11)
+      doc.setFillColor(255, 244, 161); doc.rect(margin, totalsTop, contentW, 13, 'FD')
+      doc.line(colLibelle, totalsTop, colLibelle, totalsTop + 13)
+      doc.line(colCar, totalsTop, colCar, totalsTop + 13)
+      doc.line(colQty, totalsTop, colQty, totalsTop + 13)
+      doc.line(colPrix, totalsTop, colPrix, totalsTop + 13)
       doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20)
-      doc.text('TOTAUX', margin + 2, totalsTop + 7)
-      drawPdfRight(doc, formatPdfNumber(totalQty), colPrix - 2, totalsTop + 7)
-      drawPdfRight(doc, formatPdfNumber(totalMontant), colRight - 2, totalsTop + 7)
+      doc.text('TOTAUX', margin + 4, totalsTop + 9)
+      drawPdfRight(doc, formatPdfNumber(totalQty), colPrix - 4, totalsTop + 9)
+      drawPdfRight(doc, formatPdfNumber(totalMontant), colRight - 4, totalsTop + 9)
       y = totalsTop + 18
       doc.setFontSize(8); doc.setFont('helvetica', 'normal')
       const tireNom = reportType === 'pneus_michelin' ? 'PNEU MICHELIN' : 'LONG-MARCH'
