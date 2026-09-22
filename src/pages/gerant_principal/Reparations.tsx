@@ -46,6 +46,30 @@ function getLatestSortieDate(reparation: GarageReparation): string {
     .reduce((latest, date) => date > latest ? date : latest, reparation.date)
 }
 
+type PeriodFilter = 'all' | 'day' | 'week' | 'month'
+
+function getPeriodStart(periodFilter: PeriodFilter): Date | null {
+  if (periodFilter === 'all') return null
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (periodFilter === 'day') return today
+  if (periodFilter === 'week') {
+    const startOfWeek = new Date(today)
+    startOfWeek.setDate(today.getDate() - today.getDay() + 1)
+    return startOfWeek
+  }
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+}
+
+function filterPiecesByPeriod(pieces: GarageReparationPiece[], periodFilter: PeriodFilter): GarageReparationPiece[] {
+  const start = getPeriodStart(periodFilter)
+  if (!start) return pieces
+  return pieces.filter(rp => {
+    if (!rp.date_sortie) return false
+    return new Date(rp.date_sortie) >= start
+  })
+}
+
 function PieceAutocomplete({
   pieces,
   value,
@@ -431,7 +455,6 @@ function BusAutocomplete({
   )
 }
 
-type PeriodFilter = 'all' | 'day' | 'week' | 'month'
 type StatutFilter = 'all' | ReparationStatut
 
 export default function GarageReparations() {
@@ -532,23 +555,27 @@ export default function GarageReparations() {
   }, [form.type_technicien_id, typesTech])
 
   const filteredReparations = useMemo(() => {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const startOfWeek = new Date(today)
-    startOfWeek.setDate(today.getDate() - today.getDay() + 1)
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-
     return reparations.filter(r => {
       if (statutFilter !== 'all' && r.statut !== statutFilter) return false
       if (periodFilter !== 'all') {
-        const latestDate = new Date(getLatestSortieDate(r))
-        if (periodFilter === 'day' && latestDate < today) return false
-        if (periodFilter === 'week' && latestDate < startOfWeek) return false
-        if (periodFilter === 'month' && latestDate < startOfMonth) return false
+        const visible = filterPiecesByPeriod(r.reparation_pieces ?? [], periodFilter)
+        if (visible.length === 0) return false
       }
       return true
     })
   }, [reparations, periodFilter, statutFilter])
+
+  const visiblePiecesFor = useCallback(
+    (r: GarageReparation) => filterPiecesByPeriod(r.reparation_pieces ?? [], periodFilter),
+    [periodFilter],
+  )
+
+  const displayDateFor = useCallback((r: GarageReparation) => {
+    const visible = visiblePiecesFor(r)
+    const dates = visible.map(p => p.date_sortie).filter((d): d is string => Boolean(d))
+    if (dates.length > 0) return dates.reduce((latest, d) => d > latest ? d : latest, dates[0])
+    return getLatestSortieDate(r)
+  }, [visiblePiecesFor])
 
   const statutCounts = useMemo(() => {
     const counts = { BROUILLON: 0, 'EN RÉPARATION': 0, LIBÉRÉ: 0 }
@@ -667,18 +694,18 @@ export default function GarageReparations() {
         createLabel="Créer une réparation"
         pageSize={50}
         columns={[
-          { key: 'date', label: 'Date', render: (r: GarageReparation) => formatDate(getLatestSortieDate(r)) },
+          { key: 'date', label: 'Date', render: (r: GarageReparation) => formatDate(displayDateFor(r)) },
           { key: 'bus', label: 'N° Car', render: (r: GarageReparation) => (
             <span className="font-mono font-medium text-[#0B7439]">
               {r.bus?.registration_number ?? r.car?.immatriculation ?? '—'}
             </span>
           )},
           { key: 'piece', label: 'Pièces', render: (r: GarageReparation) => {
-            const linked = r.reparation_pieces ?? []
+            const linked = visiblePiecesFor(r)
             if (linked.length > 0) {
               return (
                 <div className="text-sm text-[#1A2E22] max-w-[250px]">
-                  {linked.map((rp, i) => (
+                  {linked.map((rp) => (
                     <div key={rp.id} className="line-clamp-1">
                       {rp.date_sortie && <span className="text-xs text-[#6B7280] mr-1">{formatDate(rp.date_sortie)}</span>}
                       {rp.piece?.reference && <span className="text-xs text-[#0B7439] font-mono mr-1">{rp.piece.reference}</span>}
@@ -688,6 +715,7 @@ export default function GarageReparations() {
                 </div>
               )
             }
+            if (periodFilter !== 'all') return <span className="text-sm text-[#6B7280] italic">Aucune sortie sur la période</span>
             return <span className="text-sm text-[#1A2E22]">{r.piece?.nom ?? '—'}</span>
           }},
           { key: 'statut', label: 'Statut', render: (r: GarageReparation) => <ReparationStatusBadge statut={r.statut} /> },
@@ -697,7 +725,7 @@ export default function GarageReparations() {
           }},
           { key: 'type_technicien', label: 'Type technicien', render: (r: GarageReparation) => r.type_technicien?.nom ?? '—' },
           { key: 'description', label: 'Description', render: (r: GarageReparation) => {
-            const linked = r.reparation_pieces ?? []
+            const linked = visiblePiecesFor(r)
             if (linked.length > 0) {
               return (
                 <div className="text-[#4A6B55] text-xs max-w-xs whitespace-pre-line">
@@ -705,6 +733,7 @@ export default function GarageReparations() {
                 </div>
               )
             }
+            if (periodFilter !== 'all') return <span className="text-[#6B7280] text-xs italic">Aucune sortie sur la période</span>
             return <span className="text-[#4A6B55] line-clamp-1 max-w-xs">{r.description || '—'}</span>
           }},
         ]}
