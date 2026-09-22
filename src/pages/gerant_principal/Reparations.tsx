@@ -545,6 +545,7 @@ export default function GarageReparations() {
                 <div className="text-sm text-[#1A2E22] max-w-[200px]">
                   {linked.slice(0, 2).map((rp, i) => (
                     <div key={rp.id} className="line-clamp-1">
+                      {rp.date_sortie && <span className="text-xs text-[#6B7280] mr-1">{formatDate(rp.date_sortie)}</span>}
                       {rp.piece?.nom ?? '—'} — Qté : {rp.quantite}
                     </div>
                   ))}
@@ -567,7 +568,7 @@ export default function GarageReparations() {
             if (linked.length > 0) {
               return (
                 <div className="text-[#4A6B55] text-xs max-w-xs whitespace-pre-line line-clamp-3">
-                  {linked.map(rp => `${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`).join('\n')}
+                  {linked.map(rp => `${rp.date_sortie ? formatDate(rp.date_sortie) + ' — ' : ''}${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`).join('\n')}
                 </div>
               )
             }
@@ -621,7 +622,10 @@ export default function GarageReparations() {
                   <div className="space-y-1.5">
                     {(editing.reparation_pieces ?? []).map((rp: GarageReparationPiece) => (
                       <div key={rp.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
-                        <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                        <div className="flex flex-col">
+                          <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                          {rp.date_sortie && <span className="text-xs text-[#6B7280]">{formatDate(rp.date_sortie)}</span>}
+                        </div>
                         <span className="text-[#4A6B55]">Qté : {rp.quantite}</span>
                       </div>
                     ))}
@@ -681,7 +685,10 @@ export default function GarageReparations() {
                   <div className="space-y-1.5">
                     {(detail.reparation_pieces ?? []).map(rp => (
                       <div key={rp.id} className="flex justify-between items-center text-sm bg-[#F8FAF8] rounded-lg px-3 py-2">
-                        <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                        <div className="flex flex-col">
+                          <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                          {rp.date_sortie && <span className="text-xs text-[#6B7280]">{formatDate(rp.date_sortie)}</span>}
+                        </div>
                         <span className="text-[#4A6B55]">Qté : {rp.quantite}</span>
                       </div>
                     ))}
