@@ -4,10 +4,10 @@ import toast from 'react-hot-toast'
 import ListPage from '@/components/garage/ListPage'
 import {
   fetchReparations, createReparation, updateReparation, deleteReparation,
-  fetchTypesTechniciens, fetchTechniciens, fetchBusesForGarage, fetchSorties,
+  fetchTypesTechniciens, fetchTechniciens, fetchBusesForGarage, fetchPieces,
 } from '@/services/garageSbta.service'
 import { supabase } from '@/services/supabase'
-import type { GarageReparation, GarageTypeTechnicien, GarageBus, GarageSortiePiece, ReparationStatut } from '@/types/garage.types'
+import type { GarageReparation, GarageReparationPiece, GarageTypeTechnicien, GarageBus, GaragePiece, ReparationStatut } from '@/types/garage.types'
 import { formatDate } from '@/components/garage/reportHelpers'
 import { formatCurrency } from '@/utils/formatCurrency'
 
@@ -35,6 +35,7 @@ interface FormState {
   statut: ReparationStatut
   technicien_id: string
   type_technicien_id: string
+  piece_id: string
   description: string
 }
 
@@ -67,6 +68,135 @@ function filterPiecesByPeriod(pieces: GarageReparationPiece[], periodFilter: Per
     if (!rp.date_sortie) return false
     return new Date(rp.date_sortie) >= start
   })
+}
+
+function PieceAutocomplete({
+  pieces,
+  value,
+  onChange,
+  inputCls,
+}: {
+  pieces: GaragePiece[]
+  value: string
+  onChange: (id: string) => void
+  inputCls: string
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [highlighted, setHighlighted] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const selected = useMemo(() => pieces.find(p => p.id === value), [pieces, value])
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return pieces
+    const q = query.toLowerCase().trim()
+    return pieces.filter(p =>
+      p.nom.toLowerCase().includes(q) ||
+      (p.reference?.toLowerCase().includes(q) ?? false) ||
+      (p.marque?.toLowerCase().includes(q) ?? false),
+    )
+  }, [pieces, query])
+
+  useEffect(() => {
+    if (highlighted >= filtered.length) setHighlighted(0)
+  }, [filtered.length, highlighted])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        if (selected) setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [selected])
+
+  const handleSelect = (piece: GaragePiece) => {
+    onChange(piece.id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setOpen(true)
+        e.preventDefault()
+      }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlighted(h => Math.min(h + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlighted(h => Math.max(h - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filtered[highlighted]) handleSelect(filtered[highlighted])
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+      setQuery('')
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      {open ? (
+        <div className={`flex items-center gap-2 ${inputCls}`}>
+          <Search className="w-4 h-4 flex-shrink-0 text-[#6B7280]" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => { setQuery(e.target.value); setOpen(true); setHighlighted(0) }}
+            onKeyDown={handleKeyDown}
+            placeholder="Rechercher une pièce..."
+            className="flex-1 bg-transparent outline-none text-sm"
+            autoFocus
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={`flex items-center justify-between gap-2 ${inputCls} text-left`}
+        >
+          <span className={selected ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}>
+            {selected ? `${selected.nom}${selected.reference ? ` (${selected.reference})` : ''}` : 'Rechercher une pièce...'}
+          </span>
+          <ChevronDown className="w-4 h-4 flex-shrink-0 text-[#6B7280]" />
+        </button>
+      )}
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border border-[#E2EAE5] bg-white max-h-56 overflow-y-auto shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-center text-[#6B7280]">Aucune pièce trouvée</div>
+          ) : (
+            filtered.map((piece, idx) => (
+              <button
+                key={piece.id}
+                type="button"
+                onMouseEnter={() => setHighlighted(idx)}
+                onClick={() => handleSelect(piece)}
+                className="w-full text-left px-3 py-2.5 flex flex-col gap-0.5 transition-colors"
+                style={{ backgroundColor: idx === highlighted ? '#F0F7F4' : 'transparent' }}
+              >
+                <span className={`text-sm font-medium truncate ${piece.id === value ? 'text-[#0B7439]' : 'text-[#1A2E22]'}`}>
+                  {piece.nom}
+                </span>
+                <span className="text-xs text-[#6B7280] truncate">
+                  {piece.reference}{piece.marque ? ` · ${piece.marque}` : ''}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function TechnicienAutocomplete({
@@ -332,7 +462,7 @@ export default function GarageReparations() {
   const [buses, setBuses] = useState<GarageBus[]>([])
   const [typesTech, setTypesTech] = useState<GarageTypeTechnicien[]>([])
   const [techniciens, setTechniciens] = useState<Technicien[]>([])
-  const [sorties, setSorties] = useState<GarageSortiePiece[]>([])
+  const [pieces, setPieces] = useState<GaragePiece[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<GarageReparation | null>(null)
@@ -342,17 +472,17 @@ export default function GarageReparations() {
 
   const [form, setForm] = useState<FormState>({
     bus_id: '', date: new Date().toISOString().slice(0, 10),
-    statut: 'BROUILLON', technicien_id: '', type_technicien_id: '', description: '',
+    statut: 'BROUILLON', technicien_id: '', type_technicien_id: '', piece_id: '', description: '',
   })
 
   const load = useCallback(() => {
     setLoading(true)
-    Promise.all([fetchReparations(), fetchBusesForGarage(), fetchTypesTechniciens(), fetchTechniciens(), fetchSorties()])
-      .then(([r, b, t, techs, sortiesStock]) => {
+    Promise.all([fetchReparations(), fetchBusesForGarage(), fetchTypesTechniciens(), fetchTechniciens(), fetchPieces()])
+      .then(([r, b, t, techs, p]) => {
         const sorted = [...r].sort((a, b2) => {
           return b2.date.localeCompare(a.date)
         })
-        setReparations(sorted); setBuses(b); setTypesTech(t); setTechniciens(techs); setSorties(sortiesStock)
+        setReparations(sorted); setBuses(b); setTypesTech(t); setTechniciens(techs); setPieces(p)
       })
       .catch(() => toast.error('Erreur de chargement'))
       .finally(() => setLoading(false))
@@ -378,6 +508,7 @@ export default function GarageReparations() {
       statut: r.statut,
       technicien_id: r.technicien_id ?? '',
       type_technicien_id: r.type_technicien_id ?? '',
+      piece_id: r.piece_id ?? '',
       description: r.description,
     })
     setShowModal(true)
@@ -392,7 +523,7 @@ export default function GarageReparations() {
     try {
       const payload = {
         bus_id: form.bus_id,
-        piece_id: null,
+        piece_id: form.piece_id || null,
         date: form.date,
         statut: form.statut,
         technicien_id: form.technicien_id || null,
@@ -412,11 +543,6 @@ export default function GarageReparations() {
   }
 
   const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-[#E2EAE5] text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/20 focus:border-[#0B7439]'
-
-  const matchingSorties = useMemo(() => {
-    if (!editing || !form.bus_id || !form.date) return []
-    return sorties.filter(sortie => sortie.car_id === form.bus_id && sortie.date === form.date)
-  }, [editing, form.bus_id, form.date, sorties])
 
   const selectedTypeTechNom = useMemo(() => {
     if (!form.type_technicien_id) return null
@@ -648,24 +774,29 @@ export default function GarageReparations() {
                   <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={inputCls} />
                 </div>
               </div>
-              {editing && (
+              <div>
+                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Pièce</label>
+                <div className={`${inputCls} bg-[#F4F7F5] flex items-center ${form.piece_id ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}`}>
+                  {(() => {
+                    const p = pieces.find(x => x.id === form.piece_id)
+                    return p ? `${p.nom}${p.reference ? ` (${p.reference})` : ''}` : 'Aucune pièce associée'
+                  })()}
+                </div>
+              </div>
+              {(editing?.reparation_pieces ?? []).length > 0 && (
                 <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
-                  <label className="block text-sm font-semibold text-[#4A6B55]">Pièces sorties pour ce car et cette date</label>
-                  {matchingSorties.length > 0 ? (
-                    <div className="space-y-1.5">
-                      {matchingSorties.map((sortie: GarageSortiePiece) => (
-                        <div key={sortie.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
-                          <div className="flex flex-col">
-                            <span className="text-[#1A2E22] font-medium">{sortie.piece?.nom ?? 'pièce inconnue'}</span>
-                            <span className="text-xs text-[#6B7280]">{formatDate(sortie.date)}</span>
-                          </div>
-                          <span className="text-[#4A6B55]">Qté : {sortie.quantite}</span>
+                  <label className="block text-sm font-semibold text-[#4A6B55]">Pièces sorties pour ce car</label>
+                  <div className="space-y-1.5">
+                    {(editing.reparation_pieces ?? []).map((rp: GarageReparationPiece) => (
+                      <div key={rp.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
+                        <div className="flex flex-col">
+                          <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                          {rp.date_sortie && <span className="text-xs text-[#6B7280]">{formatDate(rp.date_sortie)}</span>}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-[#6B7280] italic">Aucune sortie de stock pour ce car à cette date.</p>
-                  )}
+                        <span className="text-[#4A6B55]">Qté : {rp.quantite}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               <div>
