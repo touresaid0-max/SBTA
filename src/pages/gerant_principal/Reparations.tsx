@@ -562,8 +562,13 @@ export default function GarageReparations() {
   }, [periodPiecesFor])
 
   const visiblePiecesFor = useCallback(
-    (r: GarageReparation) => periodPiecesFor(r),
-    [periodPiecesFor],
+    (r: GarageReparation) => {
+      const periodPieces = periodPiecesFor(r)
+      const displayDate = displayDateFor(r)
+      const dateMatch = periodPieces.filter(rp => rp.date_sortie === displayDate)
+      return dateMatch.length > 0 ? dateMatch : periodPieces
+    },
+    [periodPiecesFor, displayDateFor],
   )
 
   const filteredReparations = useMemo(() => {
