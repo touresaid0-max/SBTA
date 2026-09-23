@@ -549,6 +549,25 @@ export default function GarageReparations() {
     return typesTech.find(t => t.id === form.type_technicien_id)?.nom ?? null
   }, [form.type_technicien_id, typesTech])
 
+  const editingPiecesForDate = useMemo<GarageReparationPiece[]>(() => {
+    if (!editing) return []
+    return (editing.reparation_pieces ?? []).filter(rp => rp.date_sortie === form.date)
+  }, [editing, form.date])
+
+  const showPieceField = useMemo(() => {
+    if (!editing) return true
+    if (!form.piece_id) return false
+    return editingPiecesForDate.some(rp => rp.piece_id === form.piece_id)
+  }, [editing, form.piece_id, editingPiecesForDate])
+
+  useEffect(() => {
+    if (!editing || !showModal) return
+    const desc = editingPiecesForDate
+      .map(rp => `${rp.date_sortie ? formatDate(rp.date_sortie) + ' — ' : ''}${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`)
+      .join('\n')
+    setForm(f => (f.description === desc ? f : { ...f, description: desc }))
+  }, [editing, showModal, editingPiecesForDate])
+
   const periodPiecesFor = useCallback(
     (r: GarageReparation) => filterPiecesByPeriod(r.reparation_pieces ?? [], periodFilter),
     [periodFilter],
@@ -761,7 +780,7 @@ export default function GarageReparations() {
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-[#4A6B55] mb-1">Car *</label>
+                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Car *</label>
                   <BusAutocomplete
                     buses={buses}
                     value={form.bus_id}
@@ -774,20 +793,22 @@ export default function GarageReparations() {
                   <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={inputCls} />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Pièce</label>
-                <div className={`${inputCls} bg-[#F4F7F5] flex items-center ${form.piece_id ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}`}>
-                  {(() => {
-                    const p = pieces.find(x => x.id === form.piece_id)
-                    return p ? `${p.nom}${p.reference ? ` (${p.reference})` : ''}` : 'Aucune pièce associée'
-                  })()}
+              {showPieceField && (
+                <div>
+                  <label className="block text-sm font-medium text-[#4A6B55] mb-1">Pièce</label>
+                  <div className={`${inputCls} bg-[#F4F7F5] flex items-center ${form.piece_id ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}`}>
+                    {(() => {
+                      const p = pieces.find(x => x.id === form.piece_id)
+                      return p ? `${p.nom}${p.reference ? ` (${p.reference})` : ''}` : 'Aucune pièce associée'
+                    })()}
+                  </div>
                 </div>
-              </div>
-              {(editing?.reparation_pieces ?? []).length > 0 && (
+              )}
+              {editing && editingPiecesForDate.length > 0 && (
                 <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
                   <label className="block text-sm font-semibold text-[#4A6B55]">Pièces sorties pour ce car</label>
                   <div className="space-y-1.5">
-                    {(editing.reparation_pieces ?? []).map((rp: GarageReparationPiece) => (
+                    {editingPiecesForDate.map((rp: GarageReparationPiece) => (
                       <div key={rp.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
                         <div className="flex flex-col">
                           <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
