@@ -501,10 +501,11 @@ export default function GarageReparations() {
   }, [load])
 
   const openEdit = (r: GarageReparation) => {
+    const displayDate = displayDateFor(r)
     setEditing(r)
     setForm({
       bus_id: r.bus_id ?? r.car_id,
-      date: r.date,
+      date: displayDate,
       statut: r.statut,
       technicien_id: r.technicien_id ?? '',
       type_technicien_id: r.type_technicien_id ?? '',
@@ -549,25 +550,6 @@ export default function GarageReparations() {
     return typesTech.find(t => t.id === form.type_technicien_id)?.nom ?? null
   }, [form.type_technicien_id, typesTech])
 
-  const editingPiecesForDate = useMemo<GarageReparationPiece[]>(() => {
-    if (!editing) return []
-    return (editing.reparation_pieces ?? []).filter(rp => rp.date_sortie === form.date)
-  }, [editing, form.date])
-
-  const showPieceField = useMemo(() => {
-    if (!editing) return true
-    if (!form.piece_id) return false
-    return editingPiecesForDate.some(rp => rp.piece_id === form.piece_id)
-  }, [editing, form.piece_id, editingPiecesForDate])
-
-  useEffect(() => {
-    if (!editing || !showModal) return
-    const desc = editingPiecesForDate
-      .map(rp => `${rp.date_sortie ? formatDate(rp.date_sortie) + ' — ' : ''}${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`)
-      .join('\n')
-    setForm(f => (f.description === desc ? f : { ...f, description: desc }))
-  }, [editing, showModal, editingPiecesForDate])
-
   const periodPiecesFor = useCallback(
     (r: GarageReparation) => filterPiecesByPeriod(r.reparation_pieces ?? [], periodFilter),
     [periodFilter],
@@ -589,6 +571,25 @@ export default function GarageReparations() {
     },
     [periodPiecesFor, displayDateFor],
   )
+
+  const editingVisiblePieces = useMemo<GarageReparationPiece[]>(() => {
+    if (!editing) return []
+    return visiblePiecesFor(editing)
+  }, [editing, visiblePiecesFor])
+
+  const showPieceField = useMemo(() => {
+    if (!editing) return true
+    if (!form.piece_id) return false
+    return editingVisiblePieces.some(rp => rp.piece_id === form.piece_id)
+  }, [editing, form.piece_id, editingVisiblePieces])
+
+  useEffect(() => {
+    if (!editing || !showModal) return
+    const desc = editingVisiblePieces
+      .map(rp => `${rp.date_sortie ? formatDate(rp.date_sortie) + ' — ' : ''}${rp.piece?.nom ?? 'pièce inconnue'} — Qté : ${rp.quantite}`)
+      .join('\n')
+    setForm(f => (f.description === desc ? f : { ...f, description: desc }))
+  }, [editing, showModal, editingVisiblePieces])
 
   const filteredReparations = useMemo(() => {
     return reparations
@@ -804,11 +805,11 @@ export default function GarageReparations() {
                   </div>
                 </div>
               )}
-              {editing && editingPiecesForDate.length > 0 && (
+              {editing && editingVisiblePieces.length > 0 && (
                 <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
                   <label className="block text-sm font-semibold text-[#4A6B55]">Pièces sorties pour ce car</label>
                   <div className="space-y-1.5">
-                    {editingPiecesForDate.map((rp: GarageReparationPiece) => (
+                    {editingVisiblePieces.map((rp: GarageReparationPiece) => (
                       <div key={rp.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
                         <div className="flex flex-col">
                           <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
