@@ -774,31 +774,26 @@ export default function GarageReparations() {
                   <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={inputCls} />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#4A6B55] mb-1">Pièce</label>
-                <div className={`${inputCls} bg-[#F4F7F5] flex items-center ${form.piece_id ? 'text-[#1A2E22]' : 'text-[#9CA3AF]'}`}>
-                  {(() => {
-                    const p = pieces.find(x => x.id === form.piece_id)
-                    return p ? `${p.nom}${p.reference ? ` (${p.reference})` : ''}` : 'Aucune pièce associée'
-                  })()}
-                </div>
-              </div>
-              {(editing?.reparation_pieces ?? []).length > 0 && (
-                <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
-                  <label className="block text-sm font-semibold text-[#4A6B55]">Pièces sorties pour ce car</label>
-                  <div className="space-y-1.5">
-                    {(editing.reparation_pieces ?? []).map((rp: GarageReparationPiece) => (
-                      <div key={rp.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
-                        <div className="flex flex-col">
-                          <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
-                          {rp.date_sortie && <span className="text-xs text-[#6B7280]">{formatDate(rp.date_sortie)}</span>}
+              {(() => {
+                const repDate = editing?.date ?? form.date
+                const matchedPieces = (editing?.reparation_pieces ?? []).filter(rp => rp.date_sortie === repDate)
+                return matchedPieces.length > 0 ? (
+                  <div className="bg-[#F8FAF8] rounded-xl p-4 space-y-2">
+                    <label className="block text-sm font-semibold text-[#4A6B55]">Pièces sorties pour ce car ({formatDate(repDate)})</label>
+                    <div className="space-y-1.5">
+                      {matchedPieces.map((rp: GarageReparationPiece) => (
+                        <div key={rp.id} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2 border border-[#E2EAE5]">
+                          <div className="flex flex-col">
+                            <span className="text-[#1A2E22] font-medium">{rp.piece?.nom ?? 'pièce inconnue'}</span>
+                            {rp.date_sortie && <span className="text-xs text-[#6B7280]">{formatDate(rp.date_sortie)}</span>}
+                          </div>
+                          <span className="text-[#4A6B55]">Qté : {rp.quantite}</span>
                         </div>
-                        <span className="text-[#4A6B55]">Qté : {rp.quantite}</span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null
+              })()}
               <div>
                 <label className="block text-sm font-medium text-[#4A6B55] mb-1">Statut</label>
                 <select value={form.statut} onChange={e => setForm({ ...form, statut: e.target.value as ReparationStatut })} className={inputCls}>
