@@ -19,6 +19,13 @@ export type RouteRow = {
   base_price: number;
 };
 
+type RouteStop = {
+  route_id: string;
+  city_id: string;
+  price: number;
+  city: { id: string; name: string } | { id: string; name: string }[];
+};
+
 export type TripOption = {
   key: string;
   route: RouteRow;
@@ -272,16 +279,32 @@ export async function searchTrips(
   originStationId?: string,
   destStationId?: string
 ): Promise<SearchResult> {
-  const { data, error } = await supabase
+  const { data: routeData, error } = await supabase
     .from('routes')
     .select(
       'id, name, origin_city_id, destination_city_id, distance_km, estimated_duration_minutes, base_price, origin:cities!routes_origin_city_id_fkey(name), destination:cities!routes_destination_city_id_fkey(name)'
     )
     .eq('is_active', true)
-    .eq('origin_city_id', originCityId)
-    .eq('destination_city_id', destCityId);
+    .eq('origin_city_id', originCityId);
   if (error) throw error;
-  if (!data || data.length === 0) return { planned: [], provisional: null };
+  if (!routeData || routeData.length === 0) return { planned: [], provisional: null };
+
+  const routeIds = routeData.map((route) => route.id);
+  const { data: stopData, error: stopsError } = await supabase
+    .from('route_city_stops')
+    .select('route_id, city_id, price, city:cities!inner(id, name)')
+    .in('route_id', routeIds)
+    .eq('city_id', destCityId)
+    .order('position');
+  if (stopsError) throw stopsError;
+
+  const matchingStops = new Map<string, RouteStop>();
+  for (const rawStop of (stopData ?? []) as unknown as RouteStop[]) {
+    if (!matchingStops.has(rawStop.route_id)) matchingStops.set(rawStop.route_id, rawStop);
+  }
+
+  const data = routeData.filter((route) => route.destination_city_id === destCityId || matchingStops.has(route.id));
+  if (data.length === 0) return { planned: [], provisional: null };
 
   const companies = await fetchOperatingCompanies();
   if (companies.length === 0) return { planned: [], provisional: null };
@@ -292,24 +315,34 @@ export async function searchTrips(
 
   for (const raw of data) {
     const originRel = raw.origin as { name: string } | { name: string }[] | null;
-    const destRel = raw.destination as { name: string } | { name: string }[] | null;
+    const finalDestRel = raw.destination as { name: string } | { name: string }[] | null;
     const originName = Array.isArray(originRel) ? originRel[0]?.name ?? '' : originRel?.name ?? '';
-    const destName = Array.isArray(destRel) ? destRel[0]?.name ?? '' : destRel?.name ?? '';
+    const finalDestName = Array.isArray(finalDestRel) ? finalDestRel[0]?.name ?? '' : finalDestRel?.name ?? '';
+    const selectedStop = matchingStops.get(raw.id);
+    const selectedStopCity = selectedStop
+      ? (Array.isArray(selectedStop.city) ? selectedStop.city[0] : selectedStop.city)
+      : null;
+    const isIntermediateDestination = Boolean(selectedStop);
     const route: RouteRow = {
       id: raw.id,
       name: raw.name,
       origin_city_id: raw.origin_city_id,
       destination_city_id: raw.destination_city_id,
       origin: originName,
-      destination: destName,
+      destination: selectedStopCity?.name ?? finalDestName,
       distance_km: Number(raw.distance_km ?? 0),
       estimated_duration_minutes: Number(raw.estimated_duration_minutes ?? 0),
-      base_price: Number(raw.base_price ?? 0),
+      base_price: isIntermediateDestination ? Number(selectedStop?.price ?? 0) : Number(raw.base_price ?? 0),
     };
     if (!firstRoute) firstRoute = route;
 
-    // Cas 1 : un voyage planifie par le chef de gare existe pour cette date/creneau.
-    const schedules = await fetchPlannedSchedules(route.id, date, originStationId, destStationId);
+    // Intermediate destinations use the route schedule without restricting arrival to the final station.
+    const schedules = await fetchPlannedSchedules(
+      route.id,
+      date,
+      originStationId,
+      isIntermediateDestination ? undefined : destStationId,
+    );
     const matched = schedules.filter((s) => {
       const { hour } = utcHourMinute(s.departure_datetime);
       return hour >= slot.startHour && hour <= slot.endHour;
@@ -331,7 +364,7 @@ export async function searchTrips(
         departureTime: dep.label,
         arrivalTime,
         durationMinutes: route.estimated_duration_minutes,
-        price: Number(s.price ?? route.base_price),
+        price: isIntermediateDestination ? route.base_price : Number(s.price ?? route.base_price),
         amenities: { ac: true, wifi: true, usb: true },
         busType,
         scheduleId: s.id,
