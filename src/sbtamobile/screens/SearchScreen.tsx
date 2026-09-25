@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, MapPin, Calendar, Clock, ArrowDownUp, LogOut, Menu, User } from 'lucide-react';
 import { SBTA, TIME_SLOTS } from '../theme';
@@ -7,6 +7,82 @@ import { City, Station, fetchCities, fetchStations, fetchServiceFee, searchTrips
 import { useBooking } from '../BookingContext';
 import { useMobileAuth } from '../MobileAuthContext';
 import heroImg from './hero-banner.jpg';
+
+function CityAutocomplete({
+  cities,
+  value,
+  onChange,
+  placeholder,
+  inputClassName,
+  inputStyle,
+}: {
+  cities: City[];
+  value: string;
+  onChange: (cityId: string) => void;
+  placeholder: string;
+  inputClassName: string;
+  inputStyle: React.CSSProperties;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const selected = cities.find((city) => city.id === value);
+  const filteredCities = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('fr');
+    if (!normalizedQuery) return cities;
+    return cities.filter((city) => city.name.toLocaleLowerCase('fr').includes(normalizedQuery));
+  }, [cities, query]);
+
+  useEffect(() => {
+    if (!open) setQuery(selected?.name ?? '');
+  }, [open, selected?.name]);
+
+  return (
+    <div className="relative">
+      <input
+        name={placeholder}
+        autoComplete="off"
+        value={query}
+        placeholder={placeholder}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          onChange('');
+          setOpen(true);
+        }}
+        className={inputClassName}
+        style={inputStyle}
+      />
+      {open && (
+        <div
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-xl border shadow-lg"
+          style={{ background: SBTA.white, borderColor: SBTA.gray200 }}
+        >
+          {filteredCities.length > 0 ? filteredCities.map((city) => (
+            <button
+              key={city.id}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setQuery(city.name);
+                onChange(city.id);
+                setOpen(false);
+              }}
+              className="block w-full px-4 py-3 text-left text-[16px] font-semibold transition active:bg-black/5"
+              style={{ color: SBTA.ink }}
+            >
+              {city.name}
+            </button>
+          )) : (
+            <div className="px-4 py-3 text-[15px]" style={{ color: SBTA.gray600 }}>
+              Aucune ville trouvée
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SearchScreen() {
   const navigate = useNavigate();
@@ -186,10 +262,14 @@ export default function SearchScreen() {
               <MapPin size={24} color={SBTA.green} className="shrink-0" />
               <div className="min-w-0 flex-1">
                 <span className="block text-[13px] font-bold" style={{ color: SBTA.green }}>Ville de départ</span>
-                <select name="sbta-origin" autoComplete="off" value={origin} onChange={(e) => setOrigin(e.target.value)} className={selectCls} style={{ color: origin ? SBTA.ink : SBTA.gray400 }}>
-                  <option value="">Choisir une ville</option>
-                  {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <CityAutocomplete
+                  cities={cities}
+                  value={origin}
+                  onChange={setOrigin}
+                  placeholder="Choisir une ville"
+                  inputClassName={selectCls}
+                  inputStyle={{ color: origin ? SBTA.ink : SBTA.gray400 }}
+                />
               </div>
             </div>
 
@@ -212,10 +292,14 @@ export default function SearchScreen() {
               <MapPin size={24} color={SBTA.red} className="shrink-0" />
               <div className="min-w-0 flex-1">
                 <span className="block text-[13px] font-bold" style={{ color: SBTA.green }}>Ville d'arrivée</span>
-                <select name="sbta-dest" autoComplete="off" value={dest} onChange={(e) => setDest(e.target.value)} className={selectCls} style={{ color: dest ? SBTA.ink : SBTA.gray400 }}>
-                  <option value="">Choisir une ville</option>
-                  {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <CityAutocomplete
+                  cities={cities}
+                  value={dest}
+                  onChange={setDest}
+                  placeholder="Choisir une ville"
+                  inputClassName={selectCls}
+                  inputStyle={{ color: dest ? SBTA.ink : SBTA.gray400 }}
+                />
               </div>
             </div>
 
