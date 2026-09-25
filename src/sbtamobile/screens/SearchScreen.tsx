@@ -11,7 +11,7 @@ import {
   fetchRouteDestinations,
   fetchStationForCity,
   fetchStations,
-  fetchServiceFee,
+  fetchRouteServiceFee,
   searchTrips,
 } from '../api';
 import { useBooking } from '../BookingContext';
@@ -117,8 +117,7 @@ export default function SearchScreen() {
 
   useEffect(() => {
     fetchRouteOrigins().then(setOriginCities).catch(() => setError('Impossible de charger les villes.'));
-    fetchServiceFee().then(setServiceFee).catch(() => undefined);
-  }, [setServiceFee]);
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
@@ -202,11 +201,15 @@ export default function SearchScreen() {
     const slot = TIME_SLOTS.find((s) => s.id === slotId)!;
     setLoading(true);
     try {
-      const result = await searchTrips(origin, dest, slot, date, originStation || undefined, destStation || undefined);
+      const [result, routeFee] = await Promise.all([
+        searchTrips(origin, dest, slot, date, originStation || undefined, destStation || undefined),
+        fetchRouteServiceFee(origin, dest),
+      ]);
       const originName = originCities.find((c) => c.id === origin)?.name ?? '';
       const destName = destCities.find((c) => c.id === dest)?.name ?? '';
       const originStationName = originStations.find((s) => s.id === originStation)?.name ?? '';
       const destStationName = destStations.find((s) => s.id === destStation)?.name ?? '';
+      setServiceFee(routeFee);
       setSearch({
         originCityId: origin,
         originName,

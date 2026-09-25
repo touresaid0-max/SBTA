@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Save, Wallet, Info, Waves, Copy, Check, Eye, EyeOff } from 'lucide-react';
+import { Save, Wallet, Info, Waves, Copy, Check, Eye, EyeOff, Route as RouteIcon, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/utils/formatCurrency';
+import { supabase } from '@/services/supabase';
 import {
   fetchServiceFee, updateServiceFee,
   fetchWaveSettings, updateWaveSettings, type WaveSettings,
+  fetchRouteFees, upsertRouteFee, deleteRouteFee, type RouteFee,
 } from '@/services/agentReservation.service';
 import { useRealtimeSync } from './shared';
 
 const WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wave-webhook`;
+
+interface City {
+  id: string;
+  name: string;
+}
 
 export default function Settings() {
   const [fee, setFee] = useState<number>(300);
@@ -19,15 +26,30 @@ export default function Settings() {
   const [showSecrets, setShowSecrets] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [routeFees, setRouteFees] = useState<RouteFee[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+  const [newRoute, setNewRoute] = useState({ origin: '', destination: '', fee: 1000 });
+  const [savingRoute, setSavingRoute] = useState(false);
+
   const load = () => {
-    Promise.all([fetchServiceFee(), fetchWaveSettings()])
-      .then(([f, w]) => { setFee(f); setWave(w); })
+    Promise.all([
+      fetchServiceFee(),
+      fetchWaveSettings(),
+      fetchRouteFees(),
+      supabase.from('cities').select('id, name').eq('is_active', true).order('name'),
+    ])
+      .then(([f, w, rf, c]) => {
+        setFee(f);
+        setWave(w);
+        setRouteFees(rf);
+        setCities((c.data ?? []) as City[]);
+      })
       .catch((e) => { console.error(e); toast.error('Erreur lors du chargement des paramètres'); })
       .finally(() => setLoading(false));
   };
 
   useEffect(load, []);
-  useRealtimeSync(['mobile_app_settings', 'wave_settings'], load);
+  useRealtimeSync(['mobile_app_settings', 'wave_settings', 'mobile_route_fees'], load);
 
   const save = async () => {
     if (fee < 0 || isNaN(fee)) { toast.error('Montant invalide'); return; }
@@ -69,6 +91,66 @@ export default function Settings() {
 
   const setW = (patch: Partial<WaveSettings>) => setWave((prev) => prev ? { ...prev, ...patch } : prev);
 
+  const addRouteFee = async () => {
+    if (!newRoute.origin || !newRoute.destination) {
+      toast.error('Sélectionnez les villes de départ et d\'arrivée');
+      return;
+    }
+    if (newRoute.origin === newRoute.destination) {
+      toast.error('Les villes doivent être différentes');
+      return;
+    }
+    if (newRoute.fee < 0 || isNaN(newRoute.fee)) {
+      toast.error('Montant invalide');
+      return;
+    }
+    setSavingRoute(true);
+    try {
+      await upsertRouteFee({
+        origin_city_id: newRoute.origin,
+        destination_city_id: newRoute.destination,
+        service_fee: newRoute.fee,
+        is_active: true,
+      });
+      toast.success('Frais par trajet ajouté');
+      setNewRoute({ origin: '', destination: '', fee: 1000 });
+      load();
+    } catch (e) {
+      console.error(e);
+      toast.error('Échec de l\'ajout');
+    } finally {
+      setSavingRoute(false);
+    }
+  };
+
+  const updateRouteFeeAmount = async (id: string, amount: number) => {
+    const rf = routeFees.find((r) => r.id === id);
+    if (!rf) return;
+    try {
+      await upsertRouteFee({
+        origin_city_id: rf.origin_city_id,
+        destination_city_id: rf.destination_city_id,
+        service_fee: amount,
+        is_active: rf.is_active,
+      });
+      setRouteFees((prev) => prev.map((r) => r.id === id ? { ...r, service_fee: amount } : r));
+    } catch (e) {
+      console.error(e);
+      toast.error('Échec de la mise à jour');
+    }
+  };
+
+  const removeRouteFee = async (id: string) => {
+    try {
+      await deleteRouteFee(id);
+      toast.success('Frais supprimé');
+      setRouteFees((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      console.error(e);
+      toast.error('Échec de la suppression');
+    }
+  };
+
   if (loading || !wave) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -79,6 +161,7 @@ export default function Settings() {
 
   const samplePrice = 5000;
   const inputCls = 'w-full border border-[#E2EAE5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/30';
+  const selectCls = 'w-full border border-[#E2EAE5] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/30 bg-white';
 
   return (
     <div className="space-y-6 p-6 max-w-2xl">
@@ -94,13 +177,13 @@ export default function Settings() {
             <Wallet className="w-6 h-6 text-[#0B7439]" />
           </div>
           <div>
-            <h2 className="font-semibold text-[#1A2E22]">Frais de service fixe</h2>
-            <p className="text-sm text-[#6B7280]">Appliqué à chaque billet réservé sur l'application mobile</p>
+            <h2 className="font-semibold text-[#1A2E22]">Frais de service par défaut</h2>
+            <p className="text-sm text-[#6B7280]">Frais de base appliqué aux lignes non configurées ci-dessous (+1000 F automatiquement)</p>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#1A2E22] mb-1.5">Montant des frais (FCFA)</label>
+          <label className="block text-sm font-medium text-[#1A2E22] mb-1.5">Montant des frais par défaut (FCFA)</label>
           <input type="number" min={0} step={50} value={fee}
             onChange={(e) => setFee(Number(e.target.value))} className={inputCls} />
         </div>
@@ -110,9 +193,9 @@ export default function Settings() {
           <div className="text-sm text-[#4A6B55] space-y-1">
             <p className="font-medium text-[#1A2E22]">Impact sur le paiement mobile</p>
             <p>Prix du billet : <span className="font-medium">{formatCurrency(samplePrice)}</span></p>
-            <p>Frais de service : <span className="font-medium">{formatCurrency(fee)}</span></p>
+            <p>Frais de service (ligne non configurée) : <span className="font-medium">{formatCurrency(fee + 1000)}</span></p>
             <p className="pt-1 border-t border-[#E2EAE5] text-[#0B7439] font-semibold">
-              Total à payer : {formatCurrency(samplePrice + fee)}
+              Total à payer : {formatCurrency(samplePrice + fee + 1000)}
             </p>
           </div>
         </div>
@@ -122,6 +205,98 @@ export default function Settings() {
           style={{ backgroundColor: '#0B7439' }}>
           <Save className="w-4 h-4" /> {saving ? 'Enregistrement...' : 'Enregistrer'}
         </button>
+      </div>
+
+      {/* Frais de service par trajet */}
+      <div className="bg-white rounded-2xl border border-[#E2EAE5] p-6 space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-[#E7F6EC] flex items-center justify-center flex-shrink-0">
+            <RouteIcon className="w-6 h-6 text-[#0B7439]" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-[#1A2E22]">Frais de service par trajet</h2>
+            <p className="text-sm text-[#6B7280]">Frais spécifiques appliqués automatiquement selon la ligne sélectionnée</p>
+          </div>
+        </div>
+
+        {routeFees.length > 0 && (
+          <div className="space-y-2">
+            {routeFees.map((rf) => (
+              <div key={rf.id} className="flex items-center gap-3 rounded-xl border border-[#E2EAE5] p-3">
+                <div className="flex-1 text-sm font-medium text-[#1A2E22]">
+                  {rf.origin_city_name} → {rf.destination_city_name}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    value={rf.service_fee}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setRouteFees((prev) => prev.map((r) => r.id === rf.id ? { ...r, service_fee: val } : r));
+                    }}
+                    onBlur={(e) => updateRouteFeeAmount(rf.id, Number(e.target.value))}
+                    className="w-28 border border-[#E2EAE5] rounded-lg px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-[#0B7439]/30"
+                  />
+                  <span className="text-xs text-[#6B7280]">FCFA</span>
+                  <button
+                    onClick={() => removeRouteFee(rf.id)}
+                    className="flex-shrink-0 p-1.5 rounded-lg text-[#B45309] hover:bg-[#FEF3C7] transition-colors"
+                    title="Supprimer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {routeFees.length === 0 && (
+          <p className="text-sm text-[#6B7280] italic">Aucun frais par trajet configuré. Toutes les lignes utilisent le frais par défaut + 1000 F.</p>
+        )}
+
+        <div className="border-t border-[#E2EAE5] pt-4 space-y-3">
+          <p className="text-sm font-medium text-[#1A2E22]">Ajouter un frais pour un trajet</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <select value={newRoute.origin} onChange={(e) => setNewRoute((p) => ({ ...p, origin: e.target.value }))} className={selectCls}>
+              <option value="">Ville de départ</option>
+              {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <select value={newRoute.destination} onChange={(e) => setNewRoute((p) => ({ ...p, destination: e.target.value }))} className={selectCls}>
+              <option value="">Ville d'arrivée</option>
+              {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                step={50}
+                value={newRoute.fee}
+                onChange={(e) => setNewRoute((p) => ({ ...p, fee: Number(e.target.value) }))}
+                className="w-full border border-[#E2EAE5] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B7439]/30"
+                placeholder="Frais (FCFA)"
+              />
+              <span className="text-xs text-[#6B7280] whitespace-nowrap">FCFA</span>
+            </div>
+          </div>
+          <button onClick={addRouteFee} disabled={savingRoute}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-white text-sm transition-colors disabled:opacity-60"
+            style={{ backgroundColor: '#0B7439' }}>
+            <Plus className="w-4 h-4" /> {savingRoute ? 'Ajout...' : 'Ajouter'}
+          </button>
+        </div>
+
+        <div className="rounded-xl bg-[#F8FAF8] border border-[#E2EAE5] p-4 flex gap-3">
+          <Info className="w-4 h-4 text-[#0B7439] flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-[#4A6B55] space-y-1">
+            <p className="font-medium text-[#1A2E22]">Règles d'application</p>
+            <p>• Les trajets configurés ci-dessus utilisent le montant indiqué.</p>
+            <p>• Toutes les autres lignes : frais par défaut + 1000 FCFA automatiquement.</p>
+            <p>• Le prix du billet de transport n'est jamais modifié.</p>
+          </div>
+        </div>
       </div>
 
       {/* Configuration Wave */}

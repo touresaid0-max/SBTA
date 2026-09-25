@@ -201,6 +201,20 @@ export async function fetchServiceFee(): Promise<number> {
   return Number(data?.service_fee ?? 300);
 }
 
+export async function fetchRouteServiceFee(originCityId: string, destCityId: string): Promise<number> {
+  const { data, error } = await supabase
+    .rpc('get_mobile_service_fee', {
+      p_origin_city_id: originCityId,
+      p_destination_city_id: destCityId,
+    });
+  if (error) {
+    // Fallback to default fee + 1000 if RPC fails
+    const fallback = await fetchServiceFee();
+    return fallback + 1000;
+  }
+  return Number(data ?? 300);
+}
+
 async function fetchOperatingCompanies(): Promise<Company[]> {
   const { data, error } = await supabase
     .from('companies')

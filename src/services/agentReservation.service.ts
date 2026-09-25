@@ -180,6 +180,61 @@ export async function updateServiceFee(fee: number): Promise<void> {
   if (error) throw error;
 }
 
+// ── Frais de service par trajet ─────────────────────────────────
+export interface RouteFee {
+  id: string;
+  origin_city_id: string;
+  origin_city_name: string;
+  destination_city_id: string;
+  destination_city_name: string;
+  service_fee: number;
+  is_active: boolean;
+}
+
+export async function fetchRouteFees(): Promise<RouteFee[]> {
+  const { data, error } = await supabase
+    .from('mobile_route_fees')
+    .select(`
+      id,
+      origin_city_id,
+      destination_city_id,
+      service_fee,
+      is_active,
+      origin:cities!mobile_route_fees_origin_city_id_fkey(name),
+      destination:cities!mobile_route_fees_destination_city_id_fkey(name)
+    `)
+    .order('created_at');
+  if (error) throw error;
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    origin_city_id: row.origin_city_id,
+    origin_city_name: Array.isArray(row.origin) ? row.origin[0]?.name ?? '' : row.origin?.name ?? '',
+    destination_city_id: row.destination_city_id,
+    destination_city_name: Array.isArray(row.destination) ? row.destination[0]?.name ?? '' : row.destination?.name ?? '',
+    service_fee: num(row.service_fee),
+    is_active: row.is_active ?? true,
+  }));
+}
+
+export async function upsertRouteFee(fee: Partial<RouteFee> & { origin_city_id: string; destination_city_id: string; service_fee: number }): Promise<void> {
+  const payload = {
+    origin_city_id: fee.origin_city_id,
+    destination_city_id: fee.destination_city_id,
+    service_fee: fee.service_fee,
+    is_active: fee.is_active ?? true,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from('mobile_route_fees')
+    .upsert(payload, { onConflict: 'origin_city_id,destination_city_id' });
+  if (error) throw error;
+}
+
+export async function deleteRouteFee(id: string): Promise<void> {
+  const { error } = await supabase.from('mobile_route_fees').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ── FAQ ──────────────────────────────────────────────────────────
 export async function fetchFaqs(): Promise<Faq[]> {
   const { data, error } = await supabase
