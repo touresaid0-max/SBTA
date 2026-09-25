@@ -3,7 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, MapPin, Calendar, Clock, ArrowDownUp, LogOut, Menu, User } from 'lucide-react';
 import { SBTA, TIME_SLOTS } from '../theme';
 import { Button, BottomNav } from '../components';
-import { City, Station, fetchCities, fetchStations, fetchServiceFee, searchTrips } from '../api';
+import {
+  City,
+  Station,
+  RouteDestination,
+  fetchRouteOrigins,
+  fetchRouteDestinations,
+  fetchStationForCity,
+  fetchStations,
+  fetchServiceFee,
+  searchTrips,
+} from '../api';
 import { useBooking } from '../BookingContext';
 import { useMobileAuth } from '../MobileAuthContext';
 import heroImg from './hero-banner.jpg';
@@ -89,7 +99,8 @@ export default function SearchScreen() {
   const { setSearch, setServiceFee, setTrip } = useBooking();
   const { logout } = useMobileAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [cities, setCities] = useState<City[]>([]);
+  const [originCities, setOriginCities] = useState<City[]>([]);
+  const [destinations, setDestinations] = useState<RouteDestination[]>([]);
   const [origin, setOrigin] = useState('');
   const [dest, setDest] = useState('');
   const [originStations, setOriginStations] = useState<Station[]>([]);
@@ -105,7 +116,7 @@ export default function SearchScreen() {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    fetchCities().then(setCities).catch(() => setError('Impossible de charger les villes.'));
+    fetchRouteOrigins().then(setOriginCities).catch(() => setError('Impossible de charger les villes.'));
     fetchServiceFee().then(setServiceFee).catch(() => undefined);
   }, [setServiceFee]);
 
@@ -114,10 +125,23 @@ export default function SearchScreen() {
     return () => clearInterval(t);
   }, []);
 
+  // When origin changes: load route destinations, auto-select the station, reset destination
   useEffect(() => {
-    setOriginStation('');
-    if (!origin) { setOriginStations([]); return; }
+    setDest('');
+    setDestStation('');
+    setDestStations([]);
+    if (!origin) {
+      setDestinations([]);
+      setOriginStations([]);
+      setOriginStation('');
+      return;
+    }
+    fetchRouteDestinations(origin).then(setDestinations).catch(() => setDestinations([]));
     fetchStations(origin).then(setOriginStations).catch(() => setOriginStations([]));
+    // Auto-select the station for this city
+    fetchStationForCity(origin).then((station) => {
+      if (station) setOriginStation(station.id);
+    }).catch(() => undefined);
   }, [origin]);
 
   useEffect(() => {
@@ -125,6 +149,11 @@ export default function SearchScreen() {
     if (!dest) { setDestStations([]); return; }
     fetchStations(dest).then(setDestStations).catch(() => setDestStations([]));
   }, [dest]);
+
+  const destCities = useMemo<City[]>(
+    () => destinations.map((d) => ({ id: d.cityId, name: d.cityName })),
+    [destinations],
+  );
 
   const isPastDate = date < today;
   const isToday = date === today;
@@ -150,8 +179,14 @@ export default function SearchScreen() {
   }, [date, nowMinutes]);
 
   function swap() {
-    setOrigin(dest);
-    setDest(origin);
+    const prevOrigin = origin;
+    const prevDest = dest;
+    const prevOriginStation = originStation;
+    const prevDestStation = destStation;
+    setOrigin(prevDest);
+    setDest(prevOrigin);
+    setOriginStation(prevDestStation);
+    setDestStation(prevOriginStation);
   }
 
   async function submit() {
@@ -168,8 +203,8 @@ export default function SearchScreen() {
     setLoading(true);
     try {
       const result = await searchTrips(origin, dest, slot, date, originStation || undefined, destStation || undefined);
-      const originName = cities.find((c) => c.id === origin)?.name ?? '';
-      const destName = cities.find((c) => c.id === dest)?.name ?? '';
+      const originName = originCities.find((c) => c.id === origin)?.name ?? '';
+      const destName = destCities.find((c) => c.id === dest)?.name ?? '';
       const originStationName = originStations.find((s) => s.id === originStation)?.name ?? '';
       const destStationName = destStations.find((s) => s.id === destStation)?.name ?? '';
       setSearch({
@@ -263,7 +298,7 @@ export default function SearchScreen() {
               <div className="min-w-0 flex-1">
                 <span className="block text-[13px] font-bold" style={{ color: SBTA.green }}>Ville de départ</span>
                 <CityAutocomplete
-                  cities={cities}
+                  cities={originCities}
                   value={origin}
                   onChange={setOrigin}
                   placeholder="Choisir une ville"
@@ -293,10 +328,10 @@ export default function SearchScreen() {
               <div className="min-w-0 flex-1">
                 <span className="block text-[13px] font-bold" style={{ color: SBTA.green }}>Ville d'arrivée</span>
                 <CityAutocomplete
-                  cities={cities}
+                  cities={destCities}
                   value={dest}
                   onChange={setDest}
-                  placeholder="Choisir une ville"
+                  placeholder={origin ? "Choisir une destination" : "Sélectionnez d'abord une ville de départ"}
                   inputClassName={selectCls}
                   inputStyle={{ color: dest ? SBTA.ink : SBTA.gray400 }}
                 />

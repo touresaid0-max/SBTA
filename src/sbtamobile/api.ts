@@ -90,6 +90,101 @@ export async function fetchStations(cityId: string): Promise<Station[]> {
   return (data ?? []) as Station[];
 }
 
+export type RouteDestination = {
+  cityId: string;
+  cityName: string;
+  routeId: string;
+  routeName: string;
+  price: number;
+};
+
+export async function fetchRouteOrigins(): Promise<City[]> {
+  const { data, error } = await supabase
+    .from('routes')
+    .select('origin_city_id, cities!routes_origin_city_id_fkey(id, name)')
+    .eq('is_active', true)
+    .order('name');
+  if (error) throw error;
+  const seen = new Set<string>();
+  const result: City[] = [];
+  for (const row of data ?? []) {
+    const city = Array.isArray(row.cities) ? row.cities[0] : row.cities;
+    if (city && !seen.has(city.id)) {
+      seen.add(city.id);
+      result.push({ id: city.id, name: city.name });
+    }
+  }
+  return result.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function fetchRouteDestinations(originCityId: string): Promise<RouteDestination[]> {
+  const { data: routes, error } = await supabase
+    .from('routes')
+    .select('id, name, destination_city_id, base_price, destination:cities!routes_destination_city_id_fkey(id, name)')
+    .eq('is_active', true)
+    .eq('origin_city_id', originCityId)
+    .order('name');
+  if (error) throw error;
+
+  const result: RouteDestination[] = [];
+  const seenCityIds = new Set<string>();
+
+  for (const route of routes ?? []) {
+    const destCity = Array.isArray(route.destination) ? route.destination[0] : route.destination;
+    if (destCity) {
+      if (!seenCityIds.has(destCity.id)) {
+        seenCityIds.add(destCity.id);
+        result.push({
+          cityId: destCity.id,
+          cityName: destCity.name,
+          routeId: route.id,
+          routeName: route.name,
+          price: Number(route.base_price ?? 0),
+        });
+      }
+    }
+  }
+
+  const routeIds = (routes ?? []).map((r) => r.id);
+  if (routeIds.length > 0) {
+    const { data: stops } = await supabase
+      .from('route_city_stops')
+      .select('route_id, city_id, price, cities!inner(id, name)')
+      .in('route_id', routeIds)
+      .order('position');
+    if (stops) {
+      for (const stop of stops as unknown as { city_id: string; price: string; cities: { id: string; name: string } | { id: string; name: string }[]; route_id: string }[]) {
+        const city = Array.isArray(stop.cities) ? stop.cities[0] : stop.cities;
+        if (city && !seenCityIds.has(city.id)) {
+          seenCityIds.add(city.id);
+          result.push({
+            cityId: city.id,
+            cityName: city.name,
+            routeId: stop.route_id,
+            routeName: routes?.find((r) => r.id === stop.route_id)?.name ?? '',
+            price: Number(stop.price ?? 0),
+          });
+        }
+      }
+    }
+  }
+
+  return result.sort((a, b) => a.cityName.localeCompare(b.cityName));
+}
+
+export async function fetchStationForCity(cityId: string): Promise<Station | null> {
+  const { data, error } = await supabase
+    .from('stations')
+    .select('id, name, city_id')
+    .eq('is_active', true)
+    .eq('city_id', cityId)
+    .order('name')
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Station) ?? null;
+}
+
 export async function fetchServiceFee(): Promise<number> {
   const { data } = await supabase
     .from('mobile_app_settings')
