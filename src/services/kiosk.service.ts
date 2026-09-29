@@ -3,6 +3,7 @@ import { supabase } from '@/services/supabase';
 export interface DigitalKiosk {
   id: string;
   name: string;
+  slug: string | null;
   station_id: string | null;
   station_name?: string;
   kiosk_type: 'physical' | 'virtual_qr';
@@ -16,6 +17,7 @@ export interface DigitalKiosk {
   payment_confirmation_mode: 'wave_api' | 'manual';
   services: Record<string, boolean>;
   is_active: boolean;
+  kiosk_channel: 'borne' | 'borne_virtuelle';
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +43,7 @@ export interface KioskTicket {
   ticket_ref: string;
   qr_code: string | null;
   printed: boolean;
+  channel: 'borne' | 'borne_virtuelle';
   station_id: string | null;
   created_at: string;
   updated_at: string;
@@ -51,18 +54,11 @@ function num(v: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
-export async function fetchKiosks(): Promise<DigitalKiosk[]> {
-  const { data, error } = await supabase
-    .from('digital_kiosks')
-    .select(`
-      *,
-      station:stations(name)
-    `)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((row: any) => ({
+function mapKiosk(row: any): DigitalKiosk {
+  return {
     id: row.id,
     name: row.name,
+    slug: row.slug ?? null,
     station_id: row.station_id,
     station_name: Array.isArray(row.station) ? row.station[0]?.name ?? null : row.station?.name ?? null,
     kiosk_type: row.kiosk_type,
@@ -76,9 +72,48 @@ export async function fetchKiosks(): Promise<DigitalKiosk[]> {
     payment_confirmation_mode: row.payment_confirmation_mode ?? 'wave_api',
     services: row.services ?? { ticket_sale: true, info: true },
     is_active: row.is_active ?? true,
+    kiosk_channel: row.kiosk_channel ?? (row.kiosk_type === 'virtual_qr' ? 'borne_virtuelle' : 'borne'),
     created_at: row.created_at,
     updated_at: row.updated_at,
-  }));
+  };
+}
+
+function mapTicket(row: any): KioskTicket {
+  return {
+    id: row.id,
+    kiosk_id: row.kiosk_id,
+    kiosk_name: Array.isArray(row.kiosk) ? row.kiosk[0]?.name ?? null : row.kiosk?.name ?? null,
+    schedule_id: row.schedule_id,
+    route_id: row.route_id,
+    bus_id: row.bus_id,
+    origin_city_id: row.origin_city_id,
+    destination_city_id: row.destination_city_id,
+    passenger_name: row.passenger_name ?? 'Voyageur',
+    passenger_phone: row.passenger_phone,
+    seat_numbers: row.seat_numbers ?? [],
+    unit_price: num(row.unit_price),
+    service_fee: num(row.service_fee),
+    total_amount: num(row.total_amount),
+    payment_method: row.payment_method ?? 'wave',
+    payment_status: row.payment_status ?? 'pending',
+    wave_session_id: row.wave_session_id,
+    ticket_ref: row.ticket_ref,
+    qr_code: row.qr_code,
+    printed: row.printed ?? false,
+    channel: row.channel ?? 'borne',
+    station_id: row.station_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export async function fetchKiosks(): Promise<DigitalKiosk[]> {
+  const { data, error } = await supabase
+    .from('digital_kiosks')
+    .select(`*, station:stations(name)`)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapKiosk);
 }
 
 export async function fetchKiosk(id: string): Promise<DigitalKiosk | null> {
@@ -88,27 +123,17 @@ export async function fetchKiosk(id: string): Promise<DigitalKiosk | null> {
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
-  if (!data) return null;
-  const row = data as any;
-  return {
-    id: row.id,
-    name: row.name,
-    station_id: row.station_id,
-    station_name: Array.isArray(row.station) ? row.station[0]?.name ?? null : row.station?.name ?? null,
-    kiosk_type: row.kiosk_type,
-    status: row.status,
-    logo_url: row.logo_url,
-    primary_color: row.primary_color ?? '#0B7439',
-    secondary_color: row.secondary_color ?? '#E7F6EC',
-    background_image_url: row.background_image_url,
-    welcome_text: row.welcome_text ?? "Touchez l'écran pour commencer",
-    idle_timeout_seconds: row.idle_timeout_seconds ?? 60,
-    payment_confirmation_mode: row.payment_confirmation_mode ?? 'wave_api',
-    services: row.services ?? { ticket_sale: true, info: true },
-    is_active: row.is_active ?? true,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
+  return data ? mapKiosk(data) : null;
+}
+
+export async function fetchKioskBySlug(slug: string): Promise<DigitalKiosk | null> {
+  const { data, error } = await supabase
+    .from('digital_kiosks')
+    .select(`*, station:stations(name)`)
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapKiosk(data) : null;
 }
 
 export async function fetchKioskByStation(stationId: string): Promise<DigitalKiosk | null> {
@@ -122,34 +147,19 @@ export async function fetchKioskByStation(stationId: string): Promise<DigitalKio
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  if (!data) return null;
-  const row = data as any;
-  return {
-    id: row.id,
-    name: row.name,
-    station_id: row.station_id,
-    station_name: Array.isArray(row.station) ? row.station[0]?.name ?? null : row.station?.name ?? null,
-    kiosk_type: row.kiosk_type,
-    status: row.status,
-    logo_url: row.logo_url,
-    primary_color: row.primary_color ?? '#0B7439',
-    secondary_color: row.secondary_color ?? '#E7F6EC',
-    background_image_url: row.background_image_url,
-    welcome_text: row.welcome_text ?? "Touchez l'écran pour commencer",
-    idle_timeout_seconds: row.idle_timeout_seconds ?? 60,
-    payment_confirmation_mode: row.payment_confirmation_mode ?? 'wave_api',
-    services: row.services ?? { ticket_sale: true, info: true },
-    is_active: row.is_active ?? true,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
+  return data ? mapKiosk(data) : null;
 }
 
 export async function createKiosk(kiosk: Partial<DigitalKiosk>): Promise<DigitalKiosk> {
+  const name = kiosk.name ?? 'Borne';
+  const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const slug = `${slugBase}-${Math.random().toString(36).slice(2, 8)}`;
   const payload = {
-    name: kiosk.name,
+    name,
+    slug,
     station_id: kiosk.station_id,
     kiosk_type: kiosk.kiosk_type ?? 'physical',
+    kiosk_channel: kiosk.kiosk_type === 'virtual_qr' ? 'borne_virtuelle' : 'borne',
     status: kiosk.status ?? 'active',
     logo_url: kiosk.logo_url ?? null,
     primary_color: kiosk.primary_color ?? '#0B7439',
@@ -168,7 +178,7 @@ export async function createKiosk(kiosk: Partial<DigitalKiosk>): Promise<Digital
     .select('*')
     .single();
   if (error) throw error;
-  return data as DigitalKiosk;
+  return mapKiosk(data);
 }
 
 export async function updateKiosk(id: string, patch: Partial<DigitalKiosk>): Promise<void> {
@@ -192,31 +202,7 @@ export async function fetchKioskTickets(kioskId?: string): Promise<KioskTicket[]
   if (kioskId) q = q.eq('kiosk_id', kioskId);
   const { data, error } = await q.limit(200);
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    kiosk_id: row.kiosk_id,
-    kiosk_name: Array.isArray(row.kiosk) ? row.kiosk[0]?.name ?? null : row.kiosk?.name ?? null,
-    schedule_id: row.schedule_id,
-    route_id: row.route_id,
-    bus_id: row.bus_id,
-    origin_city_id: row.origin_city_id,
-    destination_city_id: row.destination_city_id,
-    passenger_name: row.passenger_name ?? 'Voyageur',
-    passenger_phone: row.passenger_phone,
-    seat_numbers: row.seat_numbers ?? [],
-    unit_price: num(row.unit_price),
-    service_fee: num(row.service_fee),
-    total_amount: num(row.total_amount),
-    payment_method: row.payment_method ?? 'wave',
-    payment_status: row.payment_status ?? 'pending',
-    wave_session_id: row.wave_session_id,
-    ticket_ref: row.ticket_ref,
-    qr_code: row.qr_code,
-    printed: row.printed ?? false,
-    station_id: row.station_id,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
+  return (data ?? []).map(mapTicket);
 }
 
 export async function createKioskTicket(ticket: {
@@ -233,6 +219,7 @@ export async function createKioskTicket(ticket: {
   service_fee: number;
   total_amount: number;
   payment_method?: string;
+  channel?: 'borne' | 'borne_virtuelle';
   station_id?: string | null;
 }): Promise<KioskTicket> {
   const { data, error } = await supabase
@@ -252,12 +239,13 @@ export async function createKioskTicket(ticket: {
       total_amount: ticket.total_amount,
       payment_method: ticket.payment_method ?? 'wave',
       payment_status: 'pending',
+      channel: ticket.channel ?? 'borne',
       station_id: ticket.station_id ?? null,
     })
     .select('*')
     .single();
   if (error) throw error;
-  return data as KioskTicket;
+  return mapTicket(data);
 }
 
 export async function updateKioskTicketPayment(
@@ -304,4 +292,25 @@ export async function fetchKioskRevenue(kioskId?: string): Promise<{
     }
   }
   return { totalRevenue, totalTickets, paidTickets, pendingTickets, todayRevenue, todayTickets };
+}
+
+export async function fetchKioskTicketsFiltered(filters: {
+  kioskId?: string;
+  stationId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  channel?: 'borne' | 'borne_virtuelle' | 'all';
+}): Promise<KioskTicket[]> {
+  let q = supabase
+    .from('kiosk_tickets')
+    .select(`*, kiosk:digital_kiosks(name)`, { count: 'exact' })
+    .order('created_at', { ascending: false });
+  if (filters.kioskId) q = q.eq('kiosk_id', filters.kioskId);
+  if (filters.stationId) q = q.eq('station_id', filters.stationId);
+  if (filters.channel && filters.channel !== 'all') q = q.eq('channel', filters.channel);
+  if (filters.dateFrom) q = q.gte('created_at', `${filters.dateFrom}T00:00:00`);
+  if (filters.dateTo) q = q.lte('created_at', `${filters.dateTo}T23:59:59`);
+  const { data, error } = await q.limit(500);
+  if (error) throw error;
+  return (data ?? []).map(mapTicket);
 }

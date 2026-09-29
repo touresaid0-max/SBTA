@@ -407,6 +407,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   ],
   gestionnaire_borne: [
     { label: 'Gestion des bornes', path: '/bornes/dashboard', icon: <Monitor className="w-5 h-5" /> },
+    { label: 'Recettes', path: '/bornes/recettes', icon: <TrendingUp className="w-5 h-5" /> },
   ],
 };
 

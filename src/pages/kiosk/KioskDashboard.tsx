@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Monitor, Plus, Settings, Trash2, QrCode, Check, X, AlertTriangle, Ticket as TicketIcon, TrendingUp, Calendar } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
@@ -21,6 +22,7 @@ export default function KioskDashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingKiosk, setEditingKiosk] = useState<DigitalKiosk | null>(null);
   const [showTickets, setShowTickets] = useState(false);
+  const [qrKiosk, setQrKiosk] = useState<DigitalKiosk | null>(null);
   const [newKiosk, setNewKiosk] = useState({ name: '', station_id: '', kiosk_type: 'physical' as 'physical' | 'virtual_qr' });
 
   const load = () => {
@@ -199,21 +201,33 @@ export default function KioskDashboard() {
         <div className="bg-white rounded-2xl border border-[#E2EAE5] p-6">
           <h2 className="font-semibold text-[#1A2E22] mb-4">Accès aux bornes</h2>
           <div className="space-y-2">
-            {kiosks.filter(k => k.status === 'active').map((kiosk) => (
+            {kiosks.filter(k => k.status === 'active').map((kiosk) => {
+              const kioskUrl = kiosk.slug ? `${window.location.origin}/bornes/${kiosk.slug}` : `${window.location.origin}/bornes/terminal?id=${kiosk.id}`;
+              return (
               <div key={kiosk.id} className="flex items-center justify-between rounded-xl border border-[#E2EAE5] p-3">
-                <span className="text-sm font-medium text-[#1A2E22]">{kiosk.name}</span>
+                <div className="flex items-center gap-3">
+                  {kiosk.kiosk_type === 'virtual_qr' && (
+                    <button onClick={() => setQrKiosk(kiosk)} className="p-2 rounded-lg hover:bg-[#F0F4F1] transition-colors" title="Afficher le QR code">
+                      <QrCode className="w-5 h-5 text-[#0B7439]" />
+                    </button>
+                  )}
+                  <div>
+                    <span className="text-sm font-medium text-[#1A2E22] block">{kiosk.name}</span>
+                    <span className="text-xs text-[#6B7280]">{kiosk.kiosk_type === 'virtual_qr' ? 'Borne virtuelle' : 'Borne physique'}</span>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
-                  <code className="text-xs text-[#6B7280] bg-[#F8FAF8] px-2 py-1 rounded">
-                    {window.location.origin}/bornes/terminal?id={kiosk.id}
+                  <code className="text-xs text-[#6B7280] bg-[#F8FAF8] px-2 py-1 rounded max-w-xs truncate">
+                    {kioskUrl}
                   </code>
                   <button
-                    onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/bornes/terminal?id=${kiosk.id}`); toast.success('Lien copié'); }}
+                    onClick={() => { navigator.clipboard?.writeText(kioskUrl); toast.success('Lien copié'); }}
                     className="text-xs font-medium text-[#0B7439] hover:underline"
                   >
                     Copier
                   </button>
                   <a
-                    href={`/bornes/terminal?id=${kiosk.id}`}
+                    href={kiosk.slug ? `/bornes/${kiosk.slug}` : `/bornes/terminal?id=${kiosk.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs font-medium text-[#0B7439] hover:underline"
@@ -222,7 +236,37 @@ export default function KioskDashboard() {
                   </a>
                 </div>
               </div>
-            ))}
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* QR code modal for virtual kiosks */}
+      {qrKiosk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setQrKiosk(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[#1A2E22]">QR Code — {qrKiosk.name}</h3>
+            <p className="text-sm text-[#6B7280]">Scannez ce QR code avec un téléphone pour accéder à la borne virtuelle</p>
+            <div className="p-4 bg-white rounded-xl border-2 border-[#E2EAE5]">
+              <QRCodeCanvas
+                value={`${window.location.origin}/bornes/${qrKiosk.slug ?? qrKiosk.id}`}
+                size={256}
+                level="M"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/bornes/${qrKiosk.slug ?? qrKiosk.id}`); toast.success('Lien copié'); }}
+                className="px-5 py-2.5 rounded-xl font-semibold text-white"
+                style={{ backgroundColor: '#0B7439' }}
+              >
+                Copier le lien
+              </button>
+              <button onClick={() => setQrKiosk(null)} className="px-5 py-2.5 rounded-xl border border-[#E2EAE5] font-semibold text-[#6B7280]">
+                Fermer
+              </button>
+            </div>
           </div>
         </div>
       )}

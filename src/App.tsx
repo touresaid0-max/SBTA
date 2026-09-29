@@ -274,6 +274,7 @@ import { ConnectionProvider as CourrierConnectionProvider } from './services/cou
 // Kiosk / Bornes digitales module (additive, standalone)
 import KioskDashboard from './pages/kiosk/KioskDashboard';
 import KioskTerminal from './pages/kiosk/KioskTerminal';
+import KioskReports from './pages/kiosk/KioskReports';
 
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
@@ -620,9 +621,11 @@ function App() {
 
           {/* Bornes digitales — standalone kiosk terminal (no auth, public PWA) */}
           <Route path="/bornes/terminal" element={<KioskTerminal />} />
+          <Route path="/bornes/:slug" element={<KioskTerminal />} />
 
           {/* Gestionnaire Borne — admin management inside Layout */}
           <Route path="bornes/dashboard" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskDashboard /></ProtectedRoute>} />
+          <Route path="bornes/recettes" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskReports /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { MapPin, Building2, Calendar, Clock, ArrowRight, ArrowLeft, RotateCcw, Printer, Check, X, Loader2, Ticket, Info, Wallet, QrCode } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import {
-  fetchKiosk, updateKioskTicketPayment, createKioskTicket,
+  fetchKiosk, fetchKioskBySlug, updateKioskTicketPayment, createKioskTicket,
   type DigitalKiosk,
 } from '@/services/kiosk.service';
 import {
@@ -20,6 +20,7 @@ const SESSION_ID = `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 8)
 
 export default function KioskTerminal() {
   const navigate = useNavigate();
+  const { slug } = useParams();
   const [params] = useSearchParams();
   const kioskId = params.get('id') ?? '';
 
@@ -47,10 +48,11 @@ export default function KioskTerminal() {
   const primary = kiosk?.primary_color ?? '#0B7439';
   const secondary = kiosk?.secondary_color ?? '#E7F6EC';
 
-  // Load kiosk config
+  // Load kiosk config — by slug from URL path, or by id from query param
   useEffect(() => {
-    if (!kioskId) { setError('Borne non identifiée'); setLoading(false); return; }
-    fetchKiosk(kioskId)
+    const loader = slug ? fetchKioskBySlug(slug) : (kioskId ? fetchKiosk(kioskId) : Promise.resolve(null));
+    if (!slug && !kioskId) { setError('Borne non identifiée'); setLoading(false); return; }
+    loader
       .then((k) => {
         if (!k) { setError('Borne introuvable'); setLoading(false); return; }
         setKiosk(k);
@@ -62,7 +64,7 @@ export default function KioskTerminal() {
         setLoading(false);
       })
       .catch(() => { setError('Erreur de chargement'); setLoading(false); });
-  }, [kioskId]);
+  }, [kioskId, slug]);
 
   // Idle timeout — return to welcome screen
   const resetIdle = useCallback(() => {
@@ -126,12 +128,16 @@ export default function KioskTerminal() {
     try {
       const today = new Date().toISOString().slice(0, 10);
       const slot = { id: 'all', label: 'Toute la journée', startHour: 0, endHour: 23 };
-      const result = await searchTrips(origin, dest, slot as any, today);
+      // Filter by the kiosk's station_id so only POS-planned departures for this station appear
+      const stationFilter = kiosk?.station_id ?? undefined;
+      const result = await searchTrips(origin, dest, slot as any, today, stationFilter);
       const fee = await fetchRouteServiceFee(origin, dest);
       setServiceFee(fee);
+      // Only show planned departures (from POS). Exclude provisional (no scheduleId).
       setTrips(result.planned);
       if (result.planned.length === 0 && result.provisional) {
-        setTrips([result.provisional]);
+        // Don't show provisional trips on the kiosk — only real POS-planned departures
+        setTrips([]);
       }
       setStep('trips');
     } catch {
@@ -199,6 +205,7 @@ export default function KioskTerminal() {
 
     try {
       const total = (selectedTrip.price + serviceFee) * selectedSeats.length;
+      const channel = (kiosk.kiosk_type === 'virtual_qr' || kiosk.kiosk_channel === 'borne_virtuelle') ? 'borne_virtuelle' : 'borne';
       const ticket = await createKioskTicket({
         kiosk_id: kiosk.id,
         schedule_id: selectedTrip.scheduleId ?? null,
@@ -211,6 +218,7 @@ export default function KioskTerminal() {
         service_fee: serviceFee,
         total_amount: total,
         payment_method: 'wave',
+        channel,
         station_id: kiosk.station_id,
       });
       setTicketId(ticket.id);
