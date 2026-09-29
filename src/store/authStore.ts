@@ -474,7 +474,7 @@ export const ROLE_REDIRECTS: Record<SBTARole, string> = {
   agent_reservation: '/agent-reservation/dashboard',
   carburant: '/carburant/dashboard',
   gerant_principal: '/gerant-principal/dashboard',
-  gestionnaire_borne: '/bornes/dashboard',
+  gestionnaire_borne: '/bornes/admin/dashboard',
   // assistance_gp users land on stock; handled in login flow via user.assistance_gp
   responsable_assurance: '/assurance/dashboard',
   responsable_logistique: '/logistique/dashboard',

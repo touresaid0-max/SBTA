@@ -275,6 +275,9 @@ import { ConnectionProvider as CourrierConnectionProvider } from './services/cou
 import KioskDashboard from './pages/kiosk/KioskDashboard';
 import KioskTerminal from './pages/kiosk/KioskTerminal';
 import KioskReports from './pages/kiosk/KioskReports';
+import KioskLogin from './pages/kiosk/KioskLogin';
+import KioskTransactions from './pages/kiosk/KioskTransactions';
+import KioskQRCodes from './pages/kiosk/KioskQRCodes';
 
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
@@ -619,13 +622,18 @@ function App() {
             <Route path="courrier/scan" element={<CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider>} />
           </Route>
 
-          {/* Bornes digitales — standalone kiosk terminal (no auth, public PWA) */}
+          {/* Bornes digitales — public routes (no auth for travelers) */}
+          <Route path="/bornes/login" element={<KioskLogin />} />
           <Route path="/bornes/terminal" element={<KioskTerminal />} />
           <Route path="/bornes/:slug" element={<KioskTerminal />} />
 
-          {/* Gestionnaire Borne — admin management inside Layout */}
+          {/* Bornes admin — protected, inside Layout */}
+          <Route path="bornes/admin/dashboard" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskDashboard /></ProtectedRoute>} />
+          <Route path="bornes/admin/gestion" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskDashboard /></ProtectedRoute>} />
+          <Route path="bornes/admin/recettes" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskReports /></ProtectedRoute>} />
+          <Route path="bornes/admin/transactions" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskTransactions /></ProtectedRoute>} />
+          <Route path="bornes/admin/qr-codes" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskQRCodes /></ProtectedRoute>} />
           <Route path="bornes/dashboard" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskDashboard /></ProtectedRoute>} />
-          <Route path="bornes/recettes" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskReports /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

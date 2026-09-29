@@ -406,8 +406,11 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: "Politique d'annulation", path: '/agent-reservation/policies', icon: <Shield className="w-5 h-5" /> },
   ],
   gestionnaire_borne: [
-    { label: 'Gestion des bornes', path: '/bornes/dashboard', icon: <Monitor className="w-5 h-5" /> },
-    { label: 'Recettes', path: '/bornes/recettes', icon: <TrendingUp className="w-5 h-5" /> },
+    { label: 'Tableau de bord', path: '/bornes/admin/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+    { label: 'Gestion des bornes', path: '/bornes/admin/gestion', icon: <Monitor className="w-5 h-5" /> },
+    { label: 'QR codes', path: '/bornes/admin/qr-codes', icon: <QrCode className="w-5 h-5" /> },
+    { label: 'Recettes', path: '/bornes/admin/recettes', icon: <TrendingUp className="w-5 h-5" /> },
+    { label: 'Transactions', path: '/bornes/admin/transactions', icon: <TicketCheck className="w-5 h-5" /> },
   ],
 };
 
