@@ -93,7 +93,7 @@ export default function KioskTerminal() {
   function handleCancel() {
     // Release seats
     if (selectedTrip?.scheduleId) {
-      lockedSeats.forEach((s) => releaseSeatLock(selectedTrip.scheduleId!, s).catch(() => {}));
+      lockedSeats.forEach((s) => releaseSeatLock(selectedTrip.scheduleId!, s, SESSION_ID).catch(() => {}));
     }
     setStep('welcome');
     setOrigin(''); setDest(''); setDestinations([]);
@@ -173,7 +173,7 @@ export default function KioskTerminal() {
       // Deselect
       setSelectedSeats((prev) => prev.filter((s) => s !== seatNumber));
       setLockedSeats((prev) => prev.filter((s) => s !== seatNumber));
-      releaseSeatLock(selectedTrip.scheduleId, seatNumber).catch(() => {});
+      releaseSeatLock(selectedTrip.scheduleId, seatNumber, SESSION_ID).catch(() => {});
       return;
     }
 

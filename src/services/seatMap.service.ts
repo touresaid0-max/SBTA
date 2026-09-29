@@ -363,12 +363,14 @@ export async function tryLockSeat(
     console.error('tryLockSeat error', error)
     return null
   }
-  const rows = data as Array<{ expires_at: string }> | null
-  return rows && rows.length > 0 ? rows[0] : null
+  const rows = data as Array<{ out_expires_at?: string; expires_at?: string }> | null
+  if (!rows || rows.length === 0) return null
+  const row = rows[0]
+  return { expires_at: row.out_expires_at ?? row.expires_at ?? '' }
 }
 
-export async function releaseSeatLock(scheduleId: string, seatNumber: string): Promise<void> {
-  await supabase.rpc('release_seat_lock', { p_schedule_id: scheduleId, p_seat_number: seatNumber })
+export async function releaseSeatLock(scheduleId: string, seatNumber: string, sessionId?: string): Promise<void> {
+  await supabase.rpc('release_seat_lock', { p_schedule_id: scheduleId, p_seat_number: seatNumber, p_session_id: sessionId ?? '' })
 }
 
 export async function fetchActiveSeatLocks(
