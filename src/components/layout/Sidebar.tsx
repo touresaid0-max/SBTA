@@ -405,6 +405,9 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'FAQ',                path: '/agent-reservation/faq',       icon: <BookOpen className="w-5 h-5" /> },
     { label: "Politique d'annulation", path: '/agent-reservation/policies', icon: <Shield className="w-5 h-5" /> },
   ],
+  gestionnaire_borne: [
+    { label: 'Gestion des bornes', path: '/bornes/dashboard', icon: <Monitor className="w-5 h-5" /> },
+  ],
 };
 
 interface SidebarProps {

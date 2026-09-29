@@ -24,6 +24,7 @@ export type UserRole =
   | 'logistique'
   | 'agent_qhse'
   | 'gestion_agboville'
+  | 'gestionnaire_borne'
   | 'client';
 
 export type LoyaltyTier = 'bronze' | 'silver' | 'gold' | 'platinum';

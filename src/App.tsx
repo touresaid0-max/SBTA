@@ -271,6 +271,10 @@ import { POSSessionProvider } from './services/pos/POSSessionContext';
 import { ConnectionProvider } from './services/pos/ConnectionContext';
 import { ConnectionProvider as CourrierConnectionProvider } from './services/courrier/ConnectionContext';
 
+// Kiosk / Bornes digitales module (additive, standalone)
+import KioskDashboard from './pages/kiosk/KioskDashboard';
+import KioskTerminal from './pages/kiosk/KioskTerminal';
+
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-subtle)' }}>
@@ -613,6 +617,12 @@ function App() {
             <Route path="courrier/parcels/:id" element={<CourrierConnectionProvider><ParcelDetail /></CourrierConnectionProvider>} />
             <Route path="courrier/scan" element={<CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider>} />
           </Route>
+
+          {/* Bornes digitales — standalone kiosk terminal (no auth, public PWA) */}
+          <Route path="/bornes/terminal" element={<KioskTerminal />} />
+
+          {/* Gestionnaire Borne — admin management inside Layout */}
+          <Route path="bornes/dashboard" element={<ProtectedRoute roles={['gestionnaire_borne','admin']}><KioskDashboard /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
