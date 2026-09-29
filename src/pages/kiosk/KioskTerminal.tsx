@@ -166,8 +166,15 @@ export default function KioskTerminal() {
 
   async function toggleSeat(seatNumber: string) {
     if (!selectedTrip?.scheduleId) return;
-    const seat = seatMap?.seats?.find((s: any) => s.seatNumber === seatNumber);
-    if (!seat || seat.status !== 'available') return;
+
+    // Find the seat in the enriched layout to check its status
+    const layoutRows: any[] = seatMap?.enriched_layout ?? [];
+    let seatStatus: string | undefined;
+    for (const row of layoutRows) {
+      const found = (row.seats ?? []).find((s: any) => s.id === seatNumber);
+      if (found) { seatStatus = found.status; break; }
+    }
+    if (!seatStatus || seatStatus !== 'available') return;
 
     if (selectedSeats.includes(seatNumber)) {
       // Deselect
@@ -565,8 +572,25 @@ export default function KioskTerminal() {
 
   // ─── Seat Selection ──────────────────────────────────
   if (step === 'seats' && seatMap) {
-    const seats = seatMap?.seats ?? [];
-    const config = seatMap?.config;
+    const layoutRows: any[] = seatMap?.enriched_layout ?? [];
+    const aislePos: number = seatMap?.config?.aisle_position ?? seatMap?.config?.columns_left ?? 2;
+    const totalSeats: number = seatMap?.total_seats ?? 0;
+    const availableCount: number = seatMap?.available_count ?? 0;
+
+    function seatStyle(seat: any) {
+      const isSelected = selectedSeats.includes(seat.id);
+      const isAvailable = seat.status === 'available';
+      const isOccupied = ['occupied', 'locked', 'locked_by_me', 'boarding', 'online_reserved', 'my_reservation'].includes(seat.status);
+      const isOutOfService = seat.status === 'out_of_service';
+      return {
+        background: isSelected ? primary : isOccupied ? '#d1d5db' : isOutOfService ? '#fee2e2' : '#f0fdf4',
+        color: isSelected ? '#fff' : isOccupied ? '#9ca3af' : isOutOfService ? '#ef4444' : primary,
+        border: `2px solid ${isSelected ? primary : isAvailable ? '#bbf7d0' : '#e5e7eb'}`,
+        cursor: isAvailable ? 'pointer' : 'not-allowed',
+        opacity: isAvailable || isSelected ? 1 : 0.6,
+      };
+    }
+
     return (
       <div className="fixed inset-0 flex flex-col" style={{ background: '#f8faf8' }} onClick={resetIdle}>
         <div className="flex items-center justify-between p-6" style={{ background: primary }}>
@@ -575,51 +599,106 @@ export default function KioskTerminal() {
           <button onClick={handleCancel}><RotateCcw className="w-6 h-6 text-white" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center">
-          <div className="bg-white rounded-3xl border-2 p-8 mb-6" style={{ borderColor: '#e2eae5', maxWidth: '500px', width: '100%' }}>
+          <div className="bg-white rounded-3xl border-2 p-8 mb-6" style={{ borderColor: '#e2eae5', maxWidth: '560px', width: '100%' }}>
             {/* Bus header */}
-            <div className="text-center mb-6">
+            <div className="text-center mb-4">
               <div className="text-xl font-bold" style={{ color: primary }}>{selectedTrip?.busType}</div>
               <div className="text-sm text-gray-500">{selectedTrip?.departureTime} — {selectedTrip?.route.origin} → {selectedTrip?.route.destination}</div>
+              <div className="text-xs text-gray-400 mt-1">{totalSeats} places • {availableCount} disponibles</div>
             </div>
-            {/* Seat layout */}
-            <div className="space-y-2">
+
+            {/* Bus body */}
+            <div className="rounded-2xl border-4 p-4" style={{ borderColor: '#e2eae5', background: '#fafafa' }}>
               {/* Driver row */}
-              <div className="flex justify-end mb-4">
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center text-xs font-bold" style={{ background: '#d1d5db', color: '#4b5563' }}>
-                  Conducteur
+              <div className="flex justify-between items-center mb-4 px-2">
+                <div className="text-xs text-gray-400 font-semibold">← Entrée</div>
+                <div className="flex items-center gap-2">
+                  <div className="w-14 h-14 rounded-lg flex items-center justify-center text-xs font-bold" style={{ background: '#d1d5db', color: '#4b5563' }}>
+                    Conducteur
+                  </div>
                 </div>
               </div>
-              {seats.map((seat: any) => {
-                const isSelected = selectedSeats.includes(seat.seatNumber);
-                const isAvailable = seat.status === 'available';
-                const isOccupied = seat.status === 'occupied' || seat.status === 'locked';
-                const isOutOfService = seat.status === 'out_of_service';
-                return (
-                  <button
-                    key={seat.seatNumber}
-                    onClick={() => isAvailable && toggleSeat(seat.seatNumber)}
-                    disabled={!isAvailable}
-                    className="w-14 h-14 rounded-xl text-lg font-bold transition-all"
-                    style={{
-                      background: isSelected ? primary : isOccupied ? '#d1d5db' : isOutOfService ? '#fee2e2' : '#f0fdf4',
-                      color: isSelected ? '#fff' : isOccupied ? '#9ca3af' : isOutOfService ? '#ef4444' : primary,
-                      border: `2px solid ${isSelected ? primary : isAvailable ? '#bbf7d0' : '#e5e7eb'}`,
-                      cursor: isAvailable ? 'pointer' : 'not-allowed',
-                      opacity: isAvailable ? 1 : 0.6,
-                    }}
-                  >
-                    {seat.seatNumber}
-                  </button>
-                );
-              })}
+
+              {/* Seat rows */}
+              <div className="space-y-2.5">
+                {layoutRows.map((row: any, rowIdx: number) => {
+                  const seats: any[] = row.seats ?? [];
+                  const leftSeats = seats.filter((s) => s.side === 'left');
+                  const rightSeats = seats.filter((s) => s.side === 'right');
+                  const backSeats = seats.filter((s) => s.side === 'back');
+                  const isBackRow = backSeats.length > 0;
+
+                  if (isBackRow) {
+                    return (
+                      <div key={`row-${rowIdx}`} className="flex justify-center gap-2 pt-3 border-t-2" style={{ borderColor: '#e2eae5' }}>
+                        {backSeats.map((seat: any) => {
+                          const isSelected = selectedSeats.includes(seat.id);
+                          const isAvailable = seat.status === 'available';
+                          return (
+                            <button
+                              key={seat.id}
+                              onClick={() => isAvailable && toggleSeat(seat.id)}
+                              disabled={!isAvailable}
+                              className="w-14 h-14 rounded-xl text-lg font-bold transition-all active:scale-90"
+                              style={seatStyle(seat)}
+                            >
+                              {seat.id}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={`row-${rowIdx}`} className="flex items-center justify-center gap-2">
+                      {/* Left seats */}
+                      <div className="flex gap-2">
+                        {leftSeats.map((seat: any) => (
+                          <button
+                            key={seat.id}
+                            onClick={() => seat.status === 'available' && toggleSeat(seat.id)}
+                            disabled={seat.status !== 'available'}
+                            className="w-14 h-14 rounded-xl text-lg font-bold transition-all active:scale-90"
+                            style={seatStyle(seat)}
+                          >
+                            {seat.id}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Aisle */}
+                      <div className="w-6 flex items-center justify-center">
+                        <div className="w-1 h-8 rounded-full" style={{ background: '#e2eae5' }} />
+                      </div>
+                      {/* Right seats */}
+                      <div className="flex gap-2">
+                        {rightSeats.map((seat: any) => (
+                          <button
+                            key={seat.id}
+                            onClick={() => seat.status === 'available' && toggleSeat(seat.id)}
+                            disabled={seat.status !== 'available'}
+                            className="w-14 h-14 rounded-xl text-lg font-bold transition-all active:scale-90"
+                            style={seatStyle(seat)}
+                          >
+                            {seat.id}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
+
           {/* Legend */}
-          <div className="flex gap-6 mb-6 text-sm">
-            <div className="flex items-center gap-2"><div className="w-5 h-5 rounded" style={{ background: '#f0fdf4', border: '2px solid #bbf7d0' }} /><span className="text-gray-600">Libre</span></div>
-            <div className="flex items-center gap-2"><div className="w-5 h-5 rounded" style={{ background: primary }} /><span className="text-gray-600">Sélectionné</span></div>
-            <div className="flex items-center gap-2"><div className="w-5 h-5 rounded bg-gray-300" /><span className="text-gray-600">Occupé</span></div>
+          <div className="flex gap-6 mb-6 text-sm flex-wrap justify-center">
+            <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-lg" style={{ background: '#f0fdf4', border: '2px solid #bbf7d0' }} /><span className="text-gray-600">Libre</span></div>
+            <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-lg" style={{ background: primary }} /><span className="text-gray-600">Sélectionné</span></div>
+            <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-lg bg-gray-300" /><span className="text-gray-600">Occupé</span></div>
+            <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-lg" style={{ background: '#fee2e2', border: '2px solid #ef4444' }} /><span className="text-gray-600">Hors service</span></div>
           </div>
+
           {error && <p className="text-red-600 font-semibold mb-4">{error}</p>}
           {selectedSeats.length > 0 && (
             <button
