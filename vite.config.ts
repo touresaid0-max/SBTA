@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['logosbta.png'],
+      includeAssets: ['logosbta.png', 'logosbta001.JPG'],
       manifest: {
         name: 'Guichet Eafribus',
         short_name: 'Guichet',

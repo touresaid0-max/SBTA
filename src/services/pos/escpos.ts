@@ -85,6 +85,20 @@ function cutPaper(): Uint8Array {
   return cmd(GS, 0x56, 0x00);
 }
 
+export interface RasterImage {
+  widthBytes: number;
+  height: number;
+  bits: Uint8Array;
+}
+
+function rasterImage(img: RasterImage): Uint8Array {
+  const { widthBytes, height, bits } = img;
+  return concat(
+    cmd(GS, 0x76, 0x30, 0x00, widthBytes & 0xff, (widthBytes >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff),
+    bits,
+  );
+}
+
 function dashLine(width: number): string {
   return '-'.repeat(width);
 }
@@ -124,7 +138,7 @@ function formatDateTime(iso: string): string {
   return `${dd}/${mm}/${yyyy} ${hh}H${mi}`;
 }
 
-export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings): Uint8Array {
+export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
   const w = settings.width_mm === 80 ? 42 : 32;
   const innerW = w - 2;
   const { ticket, depart, stationName } = data;
@@ -134,7 +148,11 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   for (const line of settings.header_lines) {
     parts.push(setAlign('center'), text(line), lineFeed());
   }
-  parts.push(setAlign('center'), setBold(true), text('SBTA TRANSPORT'), lineFeed());
+  if (logo) {
+    parts.push(setAlign('center'), rasterImage(logo), lineFeed());
+  } else {
+    parts.push(setAlign('center'), setBold(true), text('SBTA TRANSPORT'), lineFeed());
+  }
   parts.push(setBold(false), text('Societe Bonkoungou'), lineFeed());
   parts.push(text('Transport de l\'Agnely'), lineFeed());
   if (data.phoneLine) {

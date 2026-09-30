@@ -1,10 +1,44 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData } from './escpos';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization } from '../printCustomization';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
 
 export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData };
+
+const TICKET_LOGO_SRC = '/logosbta001.JPG';
+
+async function loadTicketLogoRaster(widthDots: number): Promise<RasterImage | null> {
+  try {
+    const img = new Image();
+    img.src = TICKET_LOGO_SRC;
+    await img.decode();
+    if (!img.naturalWidth || !img.naturalHeight) return null;
+    const width = Math.floor(widthDots / 8) * 8;
+    const height = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * width));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    const { data } = ctx.getImageData(0, 0, width, height);
+    const widthBytes = width / 8;
+    const bits = new Uint8Array(widthBytes * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        if (lum < 140) bits[y * widthBytes + (x >> 3)] |= 0x80 >> (x & 7);
+      }
+    }
+    return { widthBytes, height, bits };
+  } catch {
+    return null;
+  }
+}
 
 const SETTINGS_ID = 'default';
 const DEFAULT_SETTINGS: PrintSettings = {
@@ -169,7 +203,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   ${!isSouche ? `
   <div class="header">
     <div class="brand">
-      <div class="brand-logo"><img src="/logosbta001%20copy.JPG" alt="SBTA"/></div>
+      <div class="brand-logo"><img src="${TICKET_LOGO_SRC}" alt="SBTA"/></div>
       <div class="brand-sub">Société Bonkoungou Transport de l&apos;Angély</div>
       <div class="brand-sub phone">${escapeHtml(phoneLine)}</div>
     </div>
@@ -226,7 +260,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   .header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 3px; gap: 4px; }
   .brand { flex: 1 1 auto; text-align: center; line-height: 1.15; min-width: 0; }
   .brand-logo { display: flex; justify-content: center; }
-  .brand-logo img { width: 110px; max-width: 70%; height: auto; display: block; }
+  .brand-logo img { width: 96px; max-width: 60%; height: auto; display: block; }
   .brand-sub { font-size: 8px; white-space: normal; word-break: break-word; }
   .brand-sub.phone { font-size: 11px; font-weight: 700; }
 
@@ -486,7 +520,8 @@ export const PrintService = {
     const settings = await getPrintSettings();
     let escposData: Uint8Array;
     if (payload.type === 'ticket' && payload.ticket) {
-      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
+      const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
+      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings, logo);
     } else if (payload.type === 'bagage' && payload.bagage) {
       escposData = buildBagageESCPOS({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
     } else {
