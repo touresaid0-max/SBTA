@@ -168,9 +168,8 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 <div class="ticket-block${isFirst ? ' first' : ' last'}">
   ${!isSouche ? `
   <div class="header">
-    <div class="logo"><img src="/LOGO_SBTA_-1.png" alt="SBTA"/></div>
     <div class="brand">
-      <div class="brand-name">SBTA</div>
+      <div class="brand-logo"><img src="/logosbta001%20copy.JPG" alt="SBTA"/></div>
       <div class="brand-sub">Société Bonkoungou Transport de l&apos;Angély</div>
       <div class="brand-sub phone">${escapeHtml(phoneLine)}</div>
     </div>
@@ -225,10 +224,9 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   .ticket-block { width: 100%; overflow: visible; }
 
   .header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 3px; gap: 4px; }
-  .logo { flex: 0 0 auto; width: 44px; }
-  .logo img { width: 100%; height: auto; display: block; }
   .brand { flex: 1 1 auto; text-align: center; line-height: 1.15; min-width: 0; }
-  .brand-name { font-size: 21px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
+  .brand-logo { display: flex; justify-content: center; }
+  .brand-logo img { width: 110px; max-width: 70%; height: auto; display: block; }
   .brand-sub { font-size: 8px; white-space: normal; word-break: break-word; }
   .brand-sub.phone { font-size: 11px; font-weight: 700; }
 
