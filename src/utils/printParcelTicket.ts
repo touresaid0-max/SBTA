@@ -49,7 +49,7 @@ function escHtml(s: string): string {
 export async function printParcelTicket(data: ParcelReceiptData, copyType: 'client' | 'agency' | 'both' = 'both') {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
   const qrDataUrl = data.courier_qr_enabled ? await generateQRDataUrl(data.parcel_code, 100) : ''
-  const logoUrl = window.location.origin + '/logo-sbta.JPG'
+  const logoUrl = window.location.origin + '/logosbta00-1.JPG'
   const customization = await getPrintCustomization()
   const customNotes = customization.parcel_notes
   const notesHtml = customNotes.length > 0
@@ -279,7 +279,6 @@ ${copies.map(copyNum => `
   <div class="header">
     <div class="logo-container">
       <img class="logo-img" id="logo-img-${copyNum}" src="${logoUrl}" alt="SBTA" onerror="this.style.display='none';">
-      <div class="logo-text">SBTA</div>
     </div>
     <div class="header-right">
       <div><span class="label">VILLE EXP :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
