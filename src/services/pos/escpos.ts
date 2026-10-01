@@ -508,7 +508,7 @@ export interface PrintBordereauDepartData {
   phoneLine?: string;
 }
 
-export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, settings: PrintSettings): Uint8Array {
+export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
   const w = settings.width_mm === 80 ? 68 : 64;
   const { data: bord, phoneLine } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
@@ -540,7 +540,11 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
   parts.push(setAlign('center'), ...topBorder());
 
   // ── EN-TÊTE ──────────────────────────────────────────────────────
-  parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  if (logo) {
+    parts.push(setAlign('center'), rasterImage(logo), lineFeed());
+  } else {
+    parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  }
   parts.push(setBold(true), ...center("Soc. Bonkoungou Transport de L'Agneby"), setBold(false));
   parts.push(setBold(true), ...center(`Tel ${phoneLine || '07 69 94 88 03 / 07 99 68 60 03'}`), setBold(false));
   parts.push(...doubleSep());
