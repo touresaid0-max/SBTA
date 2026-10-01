@@ -361,7 +361,7 @@ export interface PrintRecettesData {
   phoneLine?: string;
 }
 
-export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSettings): Uint8Array {
+export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
   const w = settings.width_mm === 80 ? 52 : 44;
   const { data: bordereau, phoneLine } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
@@ -380,7 +380,11 @@ export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSett
   const doubleSep = () => line('='.repeat(w));
 
   // ── EN-TÊTE ──────────────────────────────────────────────────────
-  parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  if (logo) {
+    parts.push(setAlign('center'), rasterImage(logo), lineFeed());
+  } else {
+    parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  }
   parts.push(setBold(true), ...center("Soc. Bonkoungou Transport de L'Agneby"), setBold(false));
   parts.push(setBold(true), ...center(`Tel ${phoneLine || '07 69 94 88 03 / 07 99 68 60 03'}`), setBold(false));
   parts.push(...doubleSep());

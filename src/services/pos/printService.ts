@@ -50,9 +50,14 @@ async function loadBagageLogoRaster(widthDots: number): Promise<RasterImage | nu
 }
 
 const BORDEREAU_LOGO_SRC = '/logosbta001.JPG';
+const RECETTES_LOGO_SRC = '/logosbta00-1.JPG';
 
 async function loadBordereauLogoRaster(widthDots: number): Promise<RasterImage | null> {
   return loadLogoRaster(BORDEREAU_LOGO_SRC, widthDots);
+}
+
+async function loadRecettesLogoRaster(widthDots: number): Promise<RasterImage | null> {
+  return loadLogoRaster(RECETTES_LOGO_SRC, widthDots);
 }
 
 const SETTINGS_ID = 'default';
@@ -888,6 +893,8 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   body { width: ${mm}mm; margin: 0 auto; padding: 2px; font-weight: 600; }
   .hdr { text-align: center; }
   .brand { font-size: 16px; font-weight: 900; }
+  .brand-logo { display: flex; justify-content: center; }
+  .brand-logo img { width: 72px; max-width: 42%; height: auto; display: block; margin: 0 auto 2px; }
   .sub { font-size: 8px; }
   .phone { font-size: 9px; font-weight: 700; }
   .title { text-align: center; font-size: 11px; font-weight: 900; margin: 2px 0; }
@@ -909,7 +916,7 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   @media print { body { margin: 0 auto; } }
 </style></head><body>
   <div class="hdr">
-    <div class="brand">SBTA</div>
+    <div class="brand-logo"><img src="${RECETTES_LOGO_SRC}" alt="SBTA"/></div>
     <div class="sub">Soc. Bonkoungou Transport de L'Agneby</div>
     <div class="phone">Tel ${escapeHtml(phoneLine || '07 69 94 88 03 / 07 99 68 60 03')}</div>
   </div>
@@ -967,7 +974,8 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
 
 export async function printRecettesBordereau(data: PrintRecettesData): Promise<boolean> {
   const settings = await getPrintSettings();
-  const escposData = buildRecettesESCPOS(data, settings);
+  const logo = await loadRecettesLogoRaster(settings.width_mm === 80 ? 208 : 160);
+  const escposData = buildRecettesESCPOS(data, settings, logo);
 
   const okSerial = await sendWebSerial(escposData);
   if (okSerial) return true;
