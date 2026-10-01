@@ -50,10 +50,15 @@ async function loadBagageLogoRaster(widthDots: number): Promise<RasterImage | nu
 }
 
 const BORDEREAU_LOGO_SRC = '/logosbta001.JPG';
+const COURRIER_LOGO_SRC = '/logosbta00-1.JPG';
 const RECETTES_LOGO_SRC = '/logosbta00-1.JPG';
 
 async function loadBordereauLogoRaster(widthDots: number): Promise<RasterImage | null> {
   return loadLogoRaster(BORDEREAU_LOGO_SRC, widthDots);
+}
+
+async function loadCourrierLogoRaster(widthDots: number): Promise<RasterImage | null> {
+  return loadLogoRaster(COURRIER_LOGO_SRC, widthDots);
 }
 
 async function loadRecettesLogoRaster(widthDots: number): Promise<RasterImage | null> {
@@ -1164,7 +1169,8 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
 
 export async function printBordereauCourrierThermal(data: BordereauCourrierData): Promise<boolean> {
   const settings = await getPrintSettings();
-  const escposData = buildBordereauCourrierESCPOS(data, settings);
+  const logo = await loadCourrierLogoRaster(settings.width_mm === 80 ? 208 : 160);
+  const escposData = buildBordereauCourrierESCPOS(data, settings, logo);
 
   const okSerial = await sendWebSerial(escposData);
   if (okSerial) return true;
@@ -1186,6 +1192,7 @@ export async function printBordereauCourrierThermal(data: BordereauCourrierData)
   body { width: ${w}px; margin: 0 auto; }
   h1 { font-size: 12px; text-align: center; font-weight: bold; }
   h2 { font-size: 10px; text-align: center; font-weight: bold; }
+  .logo { display: block; width: 72px; max-width: 42%; height: auto; margin: 0 auto 2px; }
   .info { font-size: 9px; }
   .info b { font-weight: bold; }
   table { width: 100%; border-collapse: collapse; }
@@ -1195,7 +1202,7 @@ export async function printBordereauCourrierThermal(data: BordereauCourrierData)
   .total { font-weight: bold; font-size: 10px; }
   .footer { text-align: center; font-size: 8px; }
 </style></head><body>
-  <h1>SBTA</h1>
+  <img class="logo" src="${COURRIER_LOGO_SRC}" alt="SBTA" />
   <h2>${data.station_name.toUpperCase()}</h2>
   ${data.station_phone ? `<div class="footer">Tel ${data.station_phone}</div>` : ''}
   <div class="sep"></div>

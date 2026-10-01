@@ -676,7 +676,7 @@ const COURRIER_NATURE_LABELS: Record<string, string> = {
   fragile:        'FRAGILE',
 };
 
-export function buildBordereauCourrierESCPOS(data: BordereauCourrierData, settings: PrintSettings): Uint8Array {
+export function buildBordereauCourrierESCPOS(data: BordereauCourrierData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
   const w = settings.width_mm === 80 ? 68 : 64;
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
 
@@ -700,7 +700,9 @@ export function buildBordereauCourrierESCPOS(data: BordereauCourrierData, settin
 
   parts.push(setAlign('center'), ...topBorder());
 
-  parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+  if (logo) {
+    parts.push(setAlign('center'), rasterImage(logo), lineFeed());
+  }
   parts.push(setBold(true), ...center(data.station_name.toUpperCase()), setBold(false));
   if (data.station_phone) {
     parts.push(setBold(true), ...center(`Tel ${data.station_phone}`), setBold(false));
