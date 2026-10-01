@@ -262,7 +262,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   return concat(...parts);
 }
 
-export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings): Uint8Array {
+export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
   const w = settings.width_mm === 80 ? 52 : 44;
   const { bagage, depart, stationName } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
@@ -304,7 +304,11 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
 
   const renderBlock = (isSouche: boolean): void => {
     parts.push(setAlign('left'));
-    parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+    if (logo) {
+      parts.push(setAlign('center'), rasterImage(logo), lineFeed());
+    } else {
+      parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
+    }
     parts.push(setBold(true), ...center("Societe Bonkoungou Transport de L'Agneby"), setBold(false));
     parts.push(setBold(true), ...center(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
     parts.push(...separator());

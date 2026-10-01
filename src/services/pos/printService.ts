@@ -7,11 +7,12 @@ import type { BordereauCourrierData } from '@/utils/printBordereau';
 export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData };
 
 const TICKET_LOGO_SRC = '/logosbta001.JPG';
+const BAGAGE_LOGO_SRC = '/logosbta001.JPG';
 
-async function loadTicketLogoRaster(widthDots: number): Promise<RasterImage | null> {
+async function loadLogoRaster(src: string, widthDots: number): Promise<RasterImage | null> {
   try {
     const img = new Image();
-    img.src = TICKET_LOGO_SRC;
+    img.src = src;
     await img.decode();
     if (!img.naturalWidth || !img.naturalHeight) return null;
     const width = Math.floor(widthDots / 8) * 8;
@@ -38,6 +39,14 @@ async function loadTicketLogoRaster(widthDots: number): Promise<RasterImage | nu
   } catch {
     return null;
   }
+}
+
+async function loadTicketLogoRaster(widthDots: number): Promise<RasterImage | null> {
+  return loadLogoRaster(TICKET_LOGO_SRC, widthDots);
+}
+
+async function loadBagageLogoRaster(widthDots: number): Promise<RasterImage | null> {
+  return loadLogoRaster(BAGAGE_LOGO_SRC, widthDots);
 }
 
 const SETTINGS_ID = 'default';
@@ -342,9 +351,8 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const ticketBlock = (isSouche: boolean) => `
     ${!isSouche ? `
     <div class="hdr">
-      <div class="hdr-logo"><img src="/LOGO_SBTA_-1.png" alt="SBTA"/></div>
       <div class="hdr-brand">
-        <div class="brand-name">SBTA</div>
+        <div class="brand-logo"><img src="/logosbta001.JPG" alt="SBTA"/></div>
         <div class="brand-sub">Société Bonkoungou Transport de L'Agneby</div>
         <div class="brand-sub phone">Tel ${v(phone)}</div>
       </div>
@@ -374,11 +382,10 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif; font-stretch: condensed; margin: 0; padding: 0; box-sizing: border-box; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
   body { width: ${settings.width_mm}mm; margin: 0; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
-  .hdr { display: flex; align-items: center; gap: 3px; padding: 2px 0 3px; }
-  .hdr-logo { flex: 0 0 auto; width: 38px; }
-  .hdr-logo img { width: 100%; height: auto; display: block; }
-  .hdr-brand { flex: 1 1 auto; text-align: center; line-height: 1.05; min-width: 0; }
-  .brand-name { font-size: 20px; font-weight: 900; letter-spacing: 1px; line-height: 1; }
+  .hdr { padding: 2px 0 3px; }
+  .hdr-brand { text-align: center; line-height: 1.05; min-width: 0; }
+  .brand-logo { display: flex; justify-content: center; }
+  .brand-logo img { width: 150px; max-width: 70%; height: auto; display: block; }
   .brand-sub { font-size: 8.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .brand-sub.phone { font-size: 9.5px; font-weight: 800; margin-top: 1px; }
   .title { text-align: center; font-size: 15px; font-weight: 900; letter-spacing: 1px; padding: 3px 0 2px; }
@@ -523,7 +530,8 @@ export const PrintService = {
       const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
       escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings, logo);
     } else if (payload.type === 'bagage' && payload.bagage) {
-      escposData = buildBagageESCPOS({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
+      const logo = await loadBagageLogoRaster(settings.width_mm === 80 ? 208 : 160);
+      escposData = buildBagageESCPOS({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings, logo);
     } else {
       return false;
     }
