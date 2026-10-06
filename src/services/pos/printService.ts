@@ -868,6 +868,7 @@ export async function printRamassageBordereau(data: PrintRamassageData): Promise
 function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSettings): string {
   const { data: bordereau, phoneLine } = data;
   const mm = settings.width_mm;
+  const bodyWidthMm = mm - 4;
   const fmtNum = (n: number): string =>
     Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   const fmt = (n: number): string => fmtNum(n) + ' F';
@@ -893,31 +894,31 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 8px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  * { font-family: 'Courier New', monospace; font-size: 10px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: ${mm}mm; margin: 0 auto; padding: 2px; font-weight: 600; }
+  body { width: ${bodyWidthMm}mm; margin: 0 auto; padding: 2px 0; font-weight: 700; }
   .hdr { text-align: center; }
-  .brand { font-size: 16px; font-weight: 900; }
+  .brand { font-size: 18px; font-weight: 900; }
   .brand-logo { display: flex; justify-content: center; }
-  .brand-logo img { width: 72px; max-width: 42%; height: auto; display: block; margin: 0 auto 2px; }
-  .sub { font-size: 8px; }
-  .phone { font-size: 9px; font-weight: 700; }
-  .title { text-align: center; font-size: 11px; font-weight: 900; margin: 2px 0; }
+  .brand-logo img { width: 80px; max-width: 45%; height: auto; display: block; margin: 0 auto 2px; }
+  .sub { font-size: 10px; }
+  .phone { font-size: 11px; font-weight: 800; }
+  .title { text-align: center; font-size: 13px; font-weight: 900; margin: 2px 0; }
   .dsep { border-top: 2px solid #000; margin: 2px 0; }
   .sep { border-top: 1px solid #000; margin: 1px 0; }
-  .info { display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; padding: 1px 0; }
-  table { width: 100%; border-collapse: collapse; }
-  th { font-size: 7px; font-weight: 900; padding: 1px 0; border-bottom: 1px solid #000; }
+  .info { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; padding: 1px 0; }
+  table { width: 100%; border-collapse: collapse; table-layout: auto; }
+  th { font-size: 9px; font-weight: 900; padding: 1px 1px; border-bottom: 1px solid #000; }
   th.l { text-align: left; }
   th.r { text-align: right; }
-  td { font-size: 8px; padding: 1px 0; }
+  td { font-size: 9px; font-weight: 800; padding: 1px 1px; }
   td.l { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
   td.r { text-align: right; white-space: nowrap; }
   .tot { font-weight: 900; border-top: 1px solid #000; }
-  .recap { font-size: 9px; font-weight: 700; padding: 1px 2px; }
+  .recap { font-size: 11px; font-weight: 800; padding: 1px 0; }
   .recap-row { display: flex; justify-content: space-between; padding: 1px 0; }
   .recap-bold { font-weight: 900; }
-  .printed { text-align: center; font-size: 8px; font-weight: 700; padding: 2px 0; }
+  .printed { text-align: center; font-size: 10px; font-weight: 800; padding: 2px 0; }
   @media print { body { margin: 0 auto; } }
 </style></head><body>
   <div class="hdr">
