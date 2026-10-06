@@ -1179,7 +1179,7 @@ export async function printBordereauCourrierThermal(data: BordereauCourrierData)
   const okQz = await sendQzTray(escposData, settings);
   if (okQz) return true;
 
-  const w = settings.width_mm === 80 ? 280 : 220;
+  const bodyWidthMm = settings.width_mm - 4;
   const headerRow = `<tr><th>CODE</th><th>NATURE</th><th>DESIGNATION</th></tr>`;
   const dataRows = data.parcels.map(p => {
     const nat = ({autre:'AUTRE',electronique:'ELEC.',vetement:'VET.',document:'DOC.',alimentaire:'ALIM.',medicament:'MEDIC.',electromenager:'ELECTR',fragile:'FRAGILE'} as Record<string,string>)[p.nature] ?? 'AUTRE';
@@ -1188,19 +1188,19 @@ export async function printBordereauCourrierThermal(data: BordereauCourrierData)
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau Courrier</title><style>
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
-  * { font-family: 'Courier New', monospace; font-size: 9px; color: #000; margin: 0; padding: 0; }
-  body { width: ${w}px; margin: 0 auto; }
-  h1 { font-size: 12px; text-align: center; font-weight: bold; }
-  h2 { font-size: 10px; text-align: center; font-weight: bold; }
-  .logo { display: block; width: 72px; max-width: 42%; height: auto; margin: 0 auto 2px; }
-  .info { font-size: 9px; }
+  * { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 600; color: #000; margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: ${bodyWidthMm}mm; margin: 0 auto; }
+  h1 { font-size: 14px; text-align: center; font-weight: bold; }
+  h2 { font-size: 12px; text-align: center; font-weight: bold; }
+  .logo { display: block; width: 80px; max-width: 42%; height: auto; margin: 0 auto 2px; }
+  .info { font-size: 11px; }
   .info b { font-weight: bold; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #000; padding: 1px 2px; font-size: 8px; text-align: left; }
+  table { width: 100%; border-collapse: collapse; table-layout: auto; }
+  th, td { border: 1px solid #000; padding: 1px 3px; font-size: 10px; text-align: left; word-break: break-word; }
   th { font-weight: bold; }
   .sep { border-top: 1px solid #000; margin: 2px 0; }
-  .total { font-weight: bold; font-size: 10px; }
-  .footer { text-align: center; font-size: 8px; }
+  .total { font-weight: bold; font-size: 12px; }
+  .footer { text-align: center; font-size: 10px; }
 </style></head><body>
   <img class="logo" src="${COURRIER_LOGO_SRC}" alt="SBTA" />
   <h2>${data.station_name.toUpperCase()}</h2>
