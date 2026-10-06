@@ -100,6 +100,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
         { label: 'Rapport Bagage',       path: '/logistique/baggage-report',       icon: <Package className="w-5 h-5" /> },
         { label: 'Rapport Conducteur',   path: '/logistique/driver-report',        icon: <FileText className="w-5 h-5" /> },
         { label: 'Rapport Réparations',  path: '/logistique/rapport-reparations',  icon: <FileText className="w-5 h-5" /> },
+        { label: 'Rapport Courrier',       path: '/logistique/courrier-report',       icon: <Package className="w-5 h-5" /> },
       ],
     },
     {
@@ -382,11 +383,13 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
     { label: 'Bilan',          path: '/logistique/bilan',         icon: <ClipboardList className="w-5 h-5" /> },
     { label: 'Rapport conducteur', path: '/logistique/driver-report', icon: <FileText className="w-5 h-5" /> },
     { label: 'Rapport Bagage',  path: '/logistique/baggage-report', icon: <Package className="w-5 h-5" /> },
+    { label: 'Rapport Courrier', path: '/logistique/courrier-report', icon: <Package className="w-5 h-5" /> },
   ],
   logistique: [
     { label: 'Parc véhicules',  path: '/logistique/vehicles',  icon: <Bus className="w-5 h-5" /> },
     { label: 'Synthèse bus',   path: '/logistique/bus-synthesis', icon: <BarChart2 className="w-5 h-5" /> },
     { label: 'Rapport conducteur', path: '/logistique/driver-report', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Rapport Courrier', path: '/logistique/courrier-report', icon: <Package className="w-5 h-5" /> },
   ],
   gestion_agboville: [
     { label: 'Tableau de bord',  path: '/gestion-agboville/dashboard',  icon: <LayoutDashboard className="w-5 h-5" /> },

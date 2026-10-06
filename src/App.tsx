@@ -533,6 +533,7 @@ function App() {
             <Route path="logistique/reparations"      element={<ProtectedRoute roles={['responsable_logistique', 'admin']}><LogistiqueReparations /></ProtectedRoute>} />
             <Route path="logistique/rapport-reparations" element={<ProtectedRoute roles={['responsable_logistique', 'admin', 'dg']}><LogistiqueRapportReparations /></ProtectedRoute>} />
             <Route path="logistique/baggage-report" element={<ProtectedRoute roles={['responsable_logistique', 'admin', 'dg']}><LogistiqueBaggageReportDashboard /></ProtectedRoute>} />
+            <Route path="logistique/courrier-report" element={<ProtectedRoute roles={['responsable_logistique', 'logistique', 'dg']}><SuperviseurConsolidatedReport /></ProtectedRoute>} />
 
             <Route path="agent-reservation/dashboard"  element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationDashboard /></ProtectedRoute>} />
             <Route path="agent-reservation/users"      element={<ProtectedRoute roles={['agent_reservation', 'admin']}><AgentReservationUsers /></ProtectedRoute>} />
