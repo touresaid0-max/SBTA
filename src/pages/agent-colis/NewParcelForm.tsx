@@ -4,7 +4,7 @@ import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, A
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
-import { createParcel, fetchParcelAgentInfo, markTicketPrinted } from '@/services/parcel.service'
+import { createParcel, fetchParcelAgentInfo, fetchPosOriginPhones, markTicketPrinted } from '@/services/parcel.service'
 import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
 import { localInsertParcel } from '@/services/courrier/offlineStore'
 import { getReferentiel } from '@/services/courrier/referentiels'
@@ -44,6 +44,14 @@ export default function NewParcelForm() {
     ? { id: user.station_id, name: user.station_name ?? '' }
     : null
   const stationPhone = user?.station_phone ?? ''
+  const isPosCourrier = basePath === '/guichet/courrier'
+
+  async function loadAgentInfo(originStationId: string, destinationStationId: string) {
+    const agentInfo = await fetchParcelAgentInfo(originStationId, destinationStationId).catch(() => null)
+    if (!isPosCourrier || !agentInfo || !user?.id) return agentInfo
+    const posPhones = await fetchPosOriginPhones(user.id, originStationId, user.phone ?? null).catch(() => null)
+    return posPhones ? { ...agentInfo, origin_agent_phone: posPhones } : agentInfo
+  }
 
   const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(false)
@@ -233,7 +241,7 @@ export default function NewParcelForm() {
         toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
 
         try {
-          const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
+          const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
           let courierQrEnabled = true
           const cachedStationsForQr = await getReferentiel<{ id: string; courier_qr_enabled?: boolean }>('stations_all')
           if (cachedStationsForQr) {
@@ -307,7 +315,7 @@ export default function NewParcelForm() {
       toast.success('Courrier enregistré avec succès !')
 
       try {
-        const agentInfo = await fetchParcelAgentInfo(myStation.id, form.destination_station_id).catch(() => null)
+        const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
         const { data: myStationQr } = await supabase
           .from('stations')
           .select('courier_qr_enabled')

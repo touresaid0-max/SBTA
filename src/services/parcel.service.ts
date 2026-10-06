@@ -434,6 +434,45 @@ export async function fetchScheduleDriverName(scheduleId: string): Promise<strin
  * Fetches the agent colis phone numbers for origin/destination stations
  * and the superviseur colis info for ticket printing.
  */
+export async function fetchPosOriginPhones(
+  guichetierId: string,
+  stationId: string,
+  fallbackGuichetierPhone: string | null,
+): Promise<string | null> {
+  const [selfRes, managersRes, stationRes] = await Promise.all([
+    supabase.from('users').select('phone').eq('id', guichetierId).maybeSingle(),
+    supabase
+      .from('station_managers')
+      .select('manager_id, is_primary')
+      .eq('station_id', stationId)
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true }),
+    supabase.from('stations').select('station_manager_id').eq('id', stationId).maybeSingle(),
+  ])
+
+  const managerIds = [
+    ...(managersRes.data ?? []).map(m => m.manager_id as string),
+    stationRes.data?.station_manager_id as string | undefined,
+  ].filter((id): id is string => !!id)
+
+  let chefPhone: string | null = null
+  if (managerIds.length > 0) {
+    const { data: chefs } = await supabase
+      .from('users')
+      .select('id, phone')
+      .in('id', managerIds)
+      .eq('role', 'chef_gare')
+    for (const id of managerIds) {
+      const phone = chefs?.find(c => c.id === id)?.phone
+      if (phone) { chefPhone = phone; break }
+    }
+  }
+
+  const guichetierPhone = selfRes.data?.phone ?? fallbackGuichetierPhone
+  const phones = [guichetierPhone, chefPhone].filter((p): p is string => !!p)
+  return phones.length > 0 ? phones.join(' / ') : null
+}
+
 export async function fetchParcelAgentInfo(
   originStationId: string,
   destinationStationId: string,
