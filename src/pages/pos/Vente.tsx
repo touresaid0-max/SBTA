@@ -1633,7 +1633,8 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Prix bagage</label>
                       <div className="relative">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           value={bagPrice || ''}
                           onChange={e => setBagPrice(parseInt(e.target.value) || 0)}
                           className={fieldInput}
@@ -1715,7 +1716,8 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Prix bagage *</label>
                       <div className="relative">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           value={bagPrice || ''}
                           onChange={e => setBagPrice(parseInt(e.target.value) || 0)}
                           className={fieldInput}
