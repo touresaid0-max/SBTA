@@ -921,7 +921,6 @@ export default function POSConvois() {
                     items={cityOptions} value={form.route_id}
                     onChange={id => setForm(p => ({ ...p, route_id: id }))}
                     getLabel={city => city.name}
-                    getSub={city => `Depuis ${city.origin_name}`}
                     placeholder="Rechercher une ville…"
                   />
                 </div>
@@ -1041,7 +1040,6 @@ export default function POSConvois() {
                         items={returnCityOptions} value={form.retour_route_id}
                         onChange={id => setForm(p => ({ ...p, retour_route_id: id }))}
                         getLabel={city => city.name}
-                        getSub={city => `Depuis ${city.origin_name}`}
                         placeholder="Rechercher une ville…"
                       />
                     </div>
