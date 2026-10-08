@@ -193,6 +193,7 @@ export default function POSConvois() {
   // Master data
   const [routes, setRoutes] = useState<RouteOption[]>([]);
   const [allRoutes, setAllRoutes] = useState<RouteOption[]>([]);
+  const [systemRoutes, setSystemRoutes] = useState<RouteOption[]>([]);
   const [buses, setBuses] = useState<BusOption[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [allStations, setAllStations] = useState<StationOption[]>([]);
@@ -236,12 +237,17 @@ export default function POSConvois() {
           } catch { /* non-critical */ }
         }
 
-        const [routesRes, busesRes, driversRes, stationsRes] = await Promise.all([
+        const [routesRes, systemRoutesRes, busesRes, driversRes, stationsRes] = await Promise.all([
           supabase
             .from('routes')
             .select('id, name, base_price, estimated_duration_minutes, origin_city_id, destination_city_id, origin_city:origin_city_id(id,name), destination_city:destination_city_id(id,name)')
             .eq('is_active', true)
             .or(`origin_station_id.eq.${stData.id},and(origin_station_id.is.null,origin_city_id.eq.${stData.city_id})`)
+            .order('name'),
+          supabase
+            .from('routes')
+            .select('id, name, base_price, estimated_duration_minutes, origin_city_id, destination_city_id, origin_city:origin_city_id(id,name), destination_city:destination_city_id(id,name)')
+            .eq('is_active', true)
             .order('name'),
           supabase
             .from('buses')
@@ -263,6 +269,7 @@ export default function POSConvois() {
 
         setRoutes(myRoutes);
         setAllRoutes(allStationRoutes);
+        setSystemRoutes((systemRoutesRes.data || []) as unknown as RouteOption[]);
         setBuses((busesRes.data || []) as unknown as BusOption[]);
         setDrivers((driversRes.data || []) as unknown as DriverOption[]);
         setAllStations((stationsRes.data || []) as unknown as StationOption[]);
@@ -361,26 +368,26 @@ export default function POSConvois() {
   useEffect(() => { loadConvoys(); }, [loadConvoys]);
 
   // ─── Derived ────────────────────────────────────────────────────────────────
-  const selectedRoute = routes.find(r => r.id === form.route_id) || null;
-  const retourRoute = allRoutes.find(r => r.id === form.retour_route_id) || null;
+  const selectedRoute = systemRoutes.find(r => r.id === form.route_id) || routes.find(r => r.id === form.route_id) || null;
+  const retourRoute = systemRoutes.find(r => r.id === form.retour_route_id) || allRoutes.find(r => r.id === form.retour_route_id) || null;
   const cityOptions = useMemo<CityOption[]>(() => {
     const seen = new Set<string>();
-    return routes.flatMap(route => {
+    return systemRoutes.flatMap(route => {
       const city = route.destination_city;
       if (!city || seen.has(city.id)) return [];
       seen.add(city.id);
       return [{ id: route.id, name: city.name, route_id: route.id, origin_name: route.origin_city?.name || '—' }];
     });
-  }, [routes]);
+  }, [systemRoutes]);
   const returnCityOptions = useMemo<CityOption[]>(() => {
     const seen = new Set<string>();
-    return allRoutes.flatMap(route => {
+    return systemRoutes.flatMap(route => {
       const city = route.destination_city;
       if (!city || seen.has(city.id)) return [];
       seen.add(city.id);
       return [{ id: route.id, name: city.name, route_id: route.id, origin_name: route.origin_city?.name || '—' }];
     });
-  }, [allRoutes]);
+  }, [systemRoutes]);
   const selectedBus = buses.find(b => b.id === form.bus_id) || null;
   const busCapacity = selectedBus?.capacity ?? 0;
   const passengers = parseInt(form.passengers_count) || 0;
