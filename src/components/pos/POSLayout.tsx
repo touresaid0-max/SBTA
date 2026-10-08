@@ -11,9 +11,10 @@ interface POSLayoutProps {
   activeRoute?: string;
   showBack?: boolean;
   backTo?: string;
+  headerActions?: ReactNode;
 }
 
-export default function POSLayout({ children, stationName, activeRoute, showBack, backTo }: POSLayoutProps) {
+export default function POSLayout({ children, stationName, activeRoute, showBack, backTo, headerActions }: POSLayoutProps) {
   const navigate = useNavigate();
   const { session } = usePOSSession();
   useAutoSync(session?.station_id);
@@ -67,6 +68,7 @@ export default function POSLayout({ children, stationName, activeRoute, showBack
             )}
           </div>
         </div>
+        {headerActions}
       </header>
 
       <ConnectionBanner />

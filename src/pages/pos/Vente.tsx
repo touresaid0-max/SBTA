@@ -22,7 +22,7 @@ import { getTicketPhoneLine } from '@/services/ticketPhones.service';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Printer, Lock, RotateCw,
   Ticket as TicketIcon, Users, Armchair, TrendingDown, Calendar,
-  Package, Banknote, XCircle, ArrowRightLeft, Unlock, X,
+  Package, Banknote, XCircle, ArrowRightLeft, Unlock, X, Home, BusFront,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { fetchScheduleSeatMap } from '@/services/seatMap.service';
@@ -682,10 +682,32 @@ export default function POSVente() {
   const fieldLabel = 'block text-xs font-bold mb-1';
   const fieldInput = 'w-full px-3 py-2.5 rounded-lg border-2 text-sm outline-none transition-colors';
   const fieldStyle = { borderColor: 'var(--border)', backgroundColor: 'var(--surface)' as const };
+  const headerActions = (
+    <nav className="flex items-center gap-1.5 sm:gap-2 ml-2" aria-label="Navigation de vente">
+      <button
+        type="button"
+        onClick={() => navigate('/guichet/accueil')}
+        className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs sm:text-sm font-bold transition-colors hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/70"
+        aria-label="Accueil"
+      >
+        <Home className="w-4 h-4" />
+        <span>Accueil</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => navigate('/guichet/departs')}
+        className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs sm:text-sm font-bold transition-colors hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/70"
+        aria-label="Départ"
+      >
+        <BusFront className="w-4 h-4" />
+        <span>Départ</span>
+      </button>
+    </nav>
+  );
 
   if (loading) {
     return (
-      <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute="Vente de tickets">
+      <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute="Vente de tickets" headerActions={headerActions}>
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--primary)' }} />
         </div>
@@ -695,7 +717,7 @@ export default function POSVente() {
 
   if (!depart) {
     return (
-      <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute="Vente de tickets">
+      <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute="Vente de tickets" headerActions={headerActions}>
         <div className="text-center py-20">
           <AlertCircle className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--danger)' }} />
           <p style={{ color: 'var(--text-secondary)' }}>{error || 'Départ introuvable'}</p>
@@ -708,7 +730,7 @@ export default function POSVente() {
   }
 
   return (
-    <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${depart.route_name ?? ''})`}>
+    <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${depart.route_name ?? ''})`} headerActions={headerActions}>
       <div className="max-w-5xl mx-auto">
         {/* Status warning banners */}
         {depart.cancelled && (
