@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
@@ -682,11 +682,20 @@ export default function POSVente() {
   const fieldLabel = 'block text-xs font-bold mb-1';
   const fieldInput = 'w-full px-3 py-2.5 rounded-lg border-2 text-sm outline-none transition-colors';
   const fieldStyle = { borderColor: 'var(--border)', backgroundColor: 'var(--surface)' as const };
+  const goToHeaderLink = (e: MouseEvent, path: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate(path);
+    // Fallback: force a hard navigation if the router did not leave the sale screen
+    window.setTimeout(() => {
+      if (window.location.pathname !== path) window.location.assign(path);
+    }, 150);
+  };
   const headerActions = (
-    <nav className="flex items-center gap-1.5 sm:gap-2 ml-2" aria-label="Navigation de vente">
+    <nav className="relative z-40 flex flex-shrink-0 items-center gap-1.5 sm:gap-2 ml-2 pointer-events-auto" aria-label="Navigation de vente">
       <button
         type="button"
-        onClick={() => navigate('/guichet/accueil')}
+        onClick={(e) => goToHeaderLink(e, '/guichet/accueil')}
         className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs sm:text-sm font-bold transition-colors hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/70"
         aria-label="Accueil"
       >
@@ -695,7 +704,7 @@ export default function POSVente() {
       </button>
       <button
         type="button"
-        onClick={() => navigate('/guichet/departs')}
+        onClick={(e) => goToHeaderLink(e, '/guichet/departs')}
         className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs sm:text-sm font-bold transition-colors hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/70"
         aria-label="Départ"
       >
