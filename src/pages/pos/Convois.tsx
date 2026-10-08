@@ -26,6 +26,7 @@ interface BusOption {
 }
 interface DriverOption { id: string; full_name: string; phone: string | null }
 interface StationOption { id: string; name: string; city_id: string }
+interface CityOption { id: string; name: string; route_id: string; origin_name: string }
 
 interface ConvoyRow {
   id: string;
@@ -41,6 +42,7 @@ interface ConvoyRow {
   created_at: string;
   return_convoy_id: string | null;
   departure_datetime: string;
+  return_departure_datetime: string | null;
   route_id: string;
   route_name: string;
   origin_city: string;
@@ -297,6 +299,7 @@ export default function POSConvois() {
           id, schedule_id, amount, trip_type, passengers_count,
           ratio_amount, carburant_amount, peage_amount, autres_amount,
           observation, created_at, return_convoy_id,
+          return_convoy:return_convoy_id ( schedule:schedule_id ( departure_datetime ) ),
           schedule:schedule_id (
             id, departure_datetime, departure_station_id, route_id, bus_id, driver_id,
             route:route_id ( id, name, origin_city:origin_city_id(name), destination_city:destination_city_id(name) ),
@@ -332,6 +335,7 @@ export default function POSConvois() {
             created_at: c.created_at,
             return_convoy_id: c.return_convoy_id,
             departure_datetime: s?.departure_datetime,
+            return_departure_datetime: c.return_convoy?.schedule?.departure_datetime || null,
             route_id: s?.route_id,
             route_name: r?.name || '—',
             origin_city: r?.origin_city?.name || '—',
@@ -359,6 +363,24 @@ export default function POSConvois() {
   // ─── Derived ────────────────────────────────────────────────────────────────
   const selectedRoute = routes.find(r => r.id === form.route_id) || null;
   const retourRoute = allRoutes.find(r => r.id === form.retour_route_id) || null;
+  const cityOptions = useMemo<CityOption[]>(() => {
+    const seen = new Set<string>();
+    return routes.flatMap(route => {
+      const city = route.destination_city;
+      if (!city || seen.has(city.id)) return [];
+      seen.add(city.id);
+      return [{ id: route.id, name: city.name, route_id: route.id, origin_name: route.origin_city?.name || '—' }];
+    });
+  }, [routes]);
+  const returnCityOptions = useMemo<CityOption[]>(() => {
+    const seen = new Set<string>();
+    return allRoutes.flatMap(route => {
+      const city = route.destination_city;
+      if (!city || seen.has(city.id)) return [];
+      seen.add(city.id);
+      return [{ id: route.id, name: city.name, route_id: route.id, origin_name: route.origin_city?.name || '—' }];
+    });
+  }, [allRoutes]);
   const selectedBus = buses.find(b => b.id === form.bus_id) || null;
   const busCapacity = selectedBus?.capacity ?? 0;
   const passengers = parseInt(form.passengers_count) || 0;
@@ -440,7 +462,8 @@ export default function POSConvois() {
   }, [form.route_id]); // eslint-disable-line
 
   const canSubmit = form.route_id && form.bus_id && form.driver_id
-    && form.departure_datetime && Number(form.amount) > 0;
+    && form.departure_datetime && Number(form.amount) > 0
+    && (editConvoy || form.trip_type === 'aller_simple' || (form.retour_route_id && form.retour_departure_datetime));
 
   // ─── Print bordereau ────────────────────────────────────────────────────────
   const handlePrint = async (c: ConvoyRow) => {
@@ -577,7 +600,8 @@ export default function POSConvois() {
           }).select('id').single();
           if (rcErr) throw rcErr;
 
-          await supabase.from('convoys').update({ return_convoy_id: retConvoy.id }).eq('id', newSched.id);
+          const { error: linkErr } = await supabase.from('convoys').update({ return_convoy_id: retConvoy.id }).eq('schedule_id', newSched.id);
+          if (linkErr) throw linkErr;
         }
 
         // Build a ConvoyRow for immediate bordereau printing
@@ -593,7 +617,8 @@ export default function POSConvois() {
           autres_amount: charges.autres_amount,
           observation: form.observation.trim() || null,
           created_at: new Date().toISOString(),
-          return_convoy_id: null,
+              return_convoy_id: null,
+          return_departure_datetime: form.trip_type === 'aller_retour' ? form.retour_departure_datetime : null,
           departure_datetime: depDate,
           route_id: form.route_id,
           route_name: selectedRoute?.name ?? '—',
@@ -776,7 +801,8 @@ export default function POSConvois() {
                     return (
                       <tr key={c.id} className="hover:opacity-80 transition-opacity">
                         <td className="px-2 py-2.5 whitespace-nowrap font-medium" style={{ color: 'var(--text-primary)' }}>
-                          {format(parseISO(c.departure_datetime || c.created_at), 'dd/MM HH:mm')}
+                          <span className="block">Aller : {format(parseISO(c.departure_datetime || c.created_at), 'dd/MM HH:mm')}</span>
+                          {c.return_departure_datetime && <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>Retour : {format(parseISO(c.return_departure_datetime), 'dd/MM HH:mm')}</span>}
                         </td>
                         <td className="px-2 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
                           {c.origin_city} → {c.destination_city}
@@ -883,17 +909,17 @@ export default function POSConvois() {
               {/* Route + datetime */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Ligne *</label>
-                  <Autocomplete<RouteOption>
-                    items={routes} value={form.route_id}
+                  <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Ville d'arrivée *</label>
+                  <Autocomplete<CityOption>
+                    items={cityOptions} value={form.route_id}
                     onChange={id => setForm(p => ({ ...p, route_id: id }))}
-                    getLabel={r => r.name}
-                    getSub={r => `${r.origin_city?.name || '—'} → ${r.destination_city?.name || '—'}`}
-                    placeholder="Rechercher une ligne…"
+                    getLabel={city => city.name}
+                    getSub={city => `Depuis ${city.origin_name}`}
+                    placeholder="Rechercher une ville…"
                   />
                 </div>
                 <div>
-                  <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Date & heure *</label>
+                  <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Date d’aller *</label>
                   <input type="datetime-local" value={form.departure_datetime}
                     onChange={e => setForm(p => ({ ...p, departure_datetime: e.target.value }))}
                     className="w-full px-3 py-2.5 border rounded-lg text-sm"
@@ -1003,17 +1029,17 @@ export default function POSConvois() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Ligne retour</label>
-                      <Autocomplete<RouteOption>
-                        items={allRoutes} value={form.retour_route_id}
+                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Ville de retour *</label>
+                      <Autocomplete<CityOption>
+                        items={returnCityOptions} value={form.retour_route_id}
                         onChange={id => setForm(p => ({ ...p, retour_route_id: id }))}
-                        getLabel={r => r.name}
-                        getSub={r => `${r.origin_city?.name || '—'} → ${r.destination_city?.name || '—'}`}
-                        placeholder="Ligne de retour…"
+                        getLabel={city => city.name}
+                        getSub={city => `Depuis ${city.origin_name}`}
+                        placeholder="Rechercher une ville…"
                       />
                     </div>
                     <div>
-                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Date & heure retour</label>
+                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Date de retour *</label>
                       <input type="datetime-local" value={form.retour_departure_datetime}
                         onChange={e => setForm(p => ({ ...p, retour_departure_datetime: e.target.value }))}
                         className="w-full px-3 py-2.5 border rounded-lg text-sm"
