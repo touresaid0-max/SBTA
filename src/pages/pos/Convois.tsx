@@ -389,6 +389,10 @@ export default function POSConvois() {
     });
   }, [systemRoutes]);
   const selectedBus = buses.find(b => b.id === form.bus_id) || null;
+  const getMatchingReturnRouteId = (routeId: string) => {
+    const destination = cityOptions.find(city => city.route_id === routeId)?.name;
+    return returnCityOptions.find(city => city.name === destination)?.route_id || '';
+  };
   const busCapacity = selectedBus?.capacity ?? 0;
   const passengers = parseInt(form.passengers_count) || 0;
   const isOverload = busCapacity > 0 && passengers > busCapacity;
@@ -899,7 +903,13 @@ export default function POSConvois() {
                 <label className="block mb-2 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Type de trajet</label>
                 <div className="grid grid-cols-2 gap-3">
                   {([['aller_simple', 'Aller simple'], ['aller_retour', 'Aller – Retour']] as const).map(([val, label]) => (
-                    <button key={val} type="button" onClick={() => setForm(p => ({ ...p, trip_type: val }))}
+                    <button key={val} type="button" onClick={() => setForm(p => ({
+                      ...p,
+                      trip_type: val,
+                      ...(val === 'aller_retour' && p.route_id && !p.retour_route_id
+                        ? { retour_route_id: getMatchingReturnRouteId(p.route_id) }
+                        : {}),
+                    }))}
                       className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all"
                       style={{
                         borderColor: form.trip_type === val ? 'var(--primary)' : 'var(--border)',
@@ -919,7 +929,11 @@ export default function POSConvois() {
                   <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Ville d'arrivée *</label>
                   <Autocomplete<CityOption>
                     items={cityOptions} value={form.route_id}
-                    onChange={id => setForm(p => ({ ...p, route_id: id }))}
+                    onChange={id => setForm(p => ({
+                      ...p,
+                      route_id: id,
+                      ...(p.trip_type === 'aller_retour' ? { retour_route_id: getMatchingReturnRouteId(id) } : {}),
+                    }))}
                     getLabel={city => city.name}
                     placeholder="Rechercher une ville…"
                   />
@@ -932,6 +946,37 @@ export default function POSConvois() {
                     style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
+
+              {/* Retour (aller_retour only) */}
+              {form.trip_type === 'aller_retour' && (
+                <div className="rounded-xl border-2 border-dashed p-4" style={{ borderColor: '#4338CA', backgroundColor: '#EEF2FF' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <RotateCcw className="w-4 h-4" style={{ color: '#4338CA' }} />
+                    <h3 className="text-sm font-bold" style={{ color: '#4338CA' }}>Trajet retour</h3>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Ville de retour *</label>
+                      <Autocomplete<CityOption>
+                        items={returnCityOptions} value={form.retour_route_id}
+                        onChange={id => setForm(p => ({ ...p, retour_route_id: id }))}
+                        getLabel={city => city.name}
+                        placeholder="Rechercher une ville…"
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Date de retour *</label>
+                      <input type="datetime-local" value={form.retour_departure_datetime}
+                        onChange={e => setForm(p => ({ ...p, retour_departure_datetime: e.target.value }))}
+                        className="w-full px-3 py-2.5 border rounded-lg text-sm"
+                        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Le retour utilise le même bus, chauffeur, passagers et charges que l'aller.
+                  </p>
+                </div>
+              )}
 
               {/* Bus + Driver */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1025,37 +1070,6 @@ export default function POSConvois() {
                   <span className="font-bold" style={{ color: solde >= 0 ? '#16A34A' : '#DC2626' }}>{formatCurrency(solde)}</span>
                 </div>
               </div>
-
-              {/* Retour (aller_retour only) */}
-              {form.trip_type === 'aller_retour' && (
-                <div className="rounded-xl border-2 border-dashed p-4" style={{ borderColor: '#4338CA', backgroundColor: '#EEF2FF' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <RotateCcw className="w-4 h-4" style={{ color: '#4338CA' }} />
-                    <h3 className="text-sm font-bold" style={{ color: '#4338CA' }}>Trajet retour</h3>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Ville de retour *</label>
-                      <Autocomplete<CityOption>
-                        items={returnCityOptions} value={form.retour_route_id}
-                        onChange={id => setForm(p => ({ ...p, retour_route_id: id }))}
-                        getLabel={city => city.name}
-                        placeholder="Rechercher une ville…"
-                      />
-                    </div>
-                    <div>
-                      <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Date de retour *</label>
-                      <input type="datetime-local" value={form.retour_departure_datetime}
-                        onChange={e => setForm(p => ({ ...p, retour_departure_datetime: e.target.value }))}
-                        className="w-full px-3 py-2.5 border rounded-lg text-sm"
-                        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
-                    </div>
-                  </div>
-                  <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    Le retour utilise le même bus, chauffeur, passagers et charges que l'aller.
-                  </p>
-                </div>
-              )}
 
               {/* Observation */}
               <div>
