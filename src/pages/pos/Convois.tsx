@@ -602,9 +602,11 @@ export default function POSConvois() {
           ...charges,
         };
 
+        const allerConvoyId = crypto.randomUUID();
         const retourConvoyId = hasRetour ? crypto.randomUUID() : null;
         const convoysToInsert: Record<string, any>[] = [{
           ...convoyBase,
+          id: allerConvoyId,
           schedule_id: newSched.id,
           trip_type: form.trip_type,
           return_convoy_id: retourConvoyId,
