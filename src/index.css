@@ -70,6 +70,17 @@ body {
 /* Smooth transitions on interactive elements */
 a, button { transition: background-color 0.15s, color 0.15s, opacity 0.15s; }
 
+.convoi-number-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.convoi-number-input::-webkit-inner-spin-button,
+.convoi-number-input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 .garage-tire-report-table th,
 .garage-tire-report-table td {
   vertical-align: middle !important;

@@ -1034,7 +1034,7 @@ export default function POSConvois() {
                   </label>
                   <input type="number" min={0} value={form.passengers_count}
                     onChange={e => setForm(p => ({ ...p, passengers_count: e.target.value }))}
-                    className="w-full px-3 py-2.5 border rounded-lg text-sm appearance-none"
+                    className="convoi-number-input w-full px-3 py-2.5 border rounded-lg text-sm"
                     style={{
                       borderColor: isOverload ? '#DC2626' : 'var(--border)',
                       backgroundColor: isOverload ? '#FEF2F2' : 'var(--surface)',
@@ -1051,7 +1051,7 @@ export default function POSConvois() {
                   <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Montant (FCFA) *</label>
                   <input type="number" min={0} value={form.amount}
                     onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
-                    className="w-full px-3 py-2.5 border rounded-lg text-sm appearance-none"
+                    className="convoi-number-input w-full px-3 py-2.5 border rounded-lg text-sm"
                     style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
@@ -1068,7 +1068,7 @@ export default function POSConvois() {
                       <label className="block mb-1 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{label}</label>
                       <input type="number" min={0} value={(form as any)[key]}
                         onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
-                        className="w-full px-2.5 py-2 border rounded-lg text-sm appearance-none"
+                        className="convoi-number-input w-full px-2.5 py-2 border rounded-lg text-sm"
                         style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
                     </div>
                   ))}
