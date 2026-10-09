@@ -744,7 +744,7 @@ function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings
     <div class="title">BORDEREAU CONVOI</div>
     <div class="trip-type">${tripLabel}</div>
     <div class="section">
-      <div class="row"><span class="lbl">Ligne</span><span class="val val-strong">${escapeHtml(convoy.route_name ?? '—')}</span></div>
+      <div class="row"><span class="lbl">Ville d'arrivée</span><span class="val val-strong">${escapeHtml(convoy.route_name ?? '—')}</span></div>
       <div class="row"><span class="lbl">Date</span><span class="val">${escapeHtml(dateStr)}</span></div>
       <div class="row"><span class="lbl">Heure</span><span class="val">${escapeHtml(timeStr)}</span></div>
     </div>

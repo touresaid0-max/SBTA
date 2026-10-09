@@ -480,7 +480,7 @@ export default function POSConvois() {
     const printData: PrintConvoyData = {
       convoy: {
         trip_type: c.trip_type,
-        route_name: `${c.origin_city} → ${c.destination_city}`,
+        route_name: c.destination_city,
         departure_datetime: c.departure_datetime,
         bus_registration: c.bus_registration,
         driver_name: c.driver_name,
@@ -644,7 +644,7 @@ export default function POSConvois() {
           return_departure_datetime: form.trip_type === 'aller_retour' ? form.retour_departure_datetime : null,
           departure_datetime: depDate,
           route_id: form.route_id,
-          route_name: selectedRoute?.name ?? '—',
+          route_name: selectedRoute?.destination_city?.name ?? '—',
           origin_city: selectedRoute?.origin_city?.name ?? '—',
           destination_city: selectedRoute?.destination_city?.name ?? '—',
           bus_id: form.bus_id,
@@ -810,7 +810,7 @@ export default function POSConvois() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                    {['Date', 'Ligne', 'Bus', 'Société', 'Chauffeur', 'Type', 'Pass.', 'Montant', 'Charges', 'Solde', ''].map((h, i) => (
+                    {['Date', 'Ville d\'arrivée', 'Bus', 'Société', 'Chauffeur', 'Type', 'Pass.', 'Montant', 'Charges', 'Solde', ''].map((h, i) => (
                       <th key={i} className="px-2 py-3 text-left text-xs font-semibold uppercase tracking-wider"
                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                     ))}
@@ -828,7 +828,7 @@ export default function POSConvois() {
                           {c.return_departure_datetime && <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>Retour : {format(parseISO(c.return_departure_datetime), 'dd/MM HH:mm')}</span>}
                         </td>
                         <td className="px-2 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
-                          {c.origin_city} → {c.destination_city}
+                          {c.destination_city}
                         </td>
                         <td className="px-2 py-2.5 whitespace-nowrap font-medium" style={{ color: 'var(--text-primary)' }}>{c.bus_registration}</td>
                         <td className="px-2 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{c.company_name}</td>
@@ -863,7 +863,7 @@ export default function POSConvois() {
                               operationType="convoy"
                               operationId={c.id}
                               operationTable="convoys"
-                              operationReference={`Convoi ${c.origin_city} → ${c.destination_city} ${format(parseISO(c.departure_datetime || c.created_at), 'dd/MM HH:mm')}`}
+                              operationReference={`Convoi ${c.destination_city} ${format(parseISO(c.departure_datetime || c.created_at), 'dd/MM HH:mm')}`}
                               operationSnapshot={c as unknown as Record<string, unknown>}
                               stationId={stationId}
                               stationName={stationName}
