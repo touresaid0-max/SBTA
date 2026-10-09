@@ -216,6 +216,8 @@ export default function POSDeparts() {
   const [departs, setDeparts] = useState<DepartRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
+  const [routeFilter, setRouteFilter] = useState('');
+  const [departureFilter, setDepartureFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('departure_datetime');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -268,9 +270,26 @@ export default function POSDeparts() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const visibleDeparts = useMemo(() => {
+  const filterBaseDeparts = useMemo(() => {
     let list = showAll ? departs : departs.filter(d => d.departure_date === todayStr);
-    list = list.filter(d => !d.cancelled);
+    return list.filter(d => !d.cancelled);
+  }, [departs, showAll, todayStr]);
+
+  const routeOptions = useMemo(() => {
+    return Array.from(new Set(filterBaseDeparts.map(d => d.route_name).filter((name): name is string => Boolean(name)))).sort((a, b) => a.localeCompare(b));
+  }, [filterBaseDeparts]);
+
+  const departureOptions = useMemo(() => {
+    return filterBaseDeparts
+      .filter(d => !routeFilter || d.route_name === routeFilter)
+      .sort((a, b) => (a.route_number ?? a.departure_number ?? 0) - (b.route_number ?? b.departure_number ?? 0));
+  }, [filterBaseDeparts, routeFilter]);
+
+  const visibleDeparts = useMemo(() => {
+    let list = filterBaseDeparts.filter(d =>
+      (!routeFilter || d.route_name === routeFilter) &&
+      (!departureFilter || d.id === departureFilter),
+    );
     list = [...list].sort((a, b) => {
       let cmp = 0;
       const av = getSortValue(a, sortKey); const bv = getSortValue(b, sortKey);
@@ -280,7 +299,7 @@ export default function POSDeparts() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return list;
-  }, [departs, showAll, sortKey, sortDir, todayStr]);
+  }, [filterBaseDeparts, routeFilter, departureFilter, sortKey, sortDir]);
 
   const totals = useMemo(() => {
     return visibleDeparts.reduce((acc, d) => ({
@@ -635,6 +654,48 @@ export default function POSDeparts() {
         >
           <Eye className="w-4 h-4" /> {showAll ? "Aujourd'hui" : 'Voir tout'}
         </button>
+      </div>
+
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+        <div className="min-w-[220px] flex-1">
+          <label className="mb-1 block text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Filtre par ligne</label>
+          <select
+            value={routeFilter}
+            onChange={e => { setRouteFilter(e.target.value); setDepartureFilter(''); }}
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+          >
+            <option value="">Tous</option>
+            {routeOptions.map(route => <option key={route} value={route}>{route}</option>)}
+          </select>
+        </div>
+        <div className="min-w-[260px] flex-1">
+          <label className="mb-1 block text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Filtre par départ</label>
+          <select
+            value={departureFilter}
+            onChange={e => setDepartureFilter(e.target.value)}
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+          >
+            <option value="">Tous</option>
+            {departureOptions.map(depart => (
+              <option key={depart.id} value={depart.id}>
+                Départ #{depart.route_number ?? depart.departure_number} — {depart.route_name ?? 'Ligne'} — {depart.departure_date} {depart.departure_time}
+              </option>
+            ))}
+          </select>
+        </div>
+        {(routeFilter || departureFilter) && (
+          <button
+            type="button"
+            onClick={() => { setRouteFilter(''); setDepartureFilter(''); }}
+            className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-bold"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+          >
+            <X className="h-4 w-4" /> Réinitialiser
+          </button>
+        )}
       </div>
 
       {/* Cancel error banner */}
