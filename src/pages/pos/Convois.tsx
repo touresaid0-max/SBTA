@@ -369,7 +369,6 @@ export default function POSConvois() {
 
   // ─── Derived ────────────────────────────────────────────────────────────────
   const selectedRoute = systemRoutes.find(r => r.id === form.route_id) || routes.find(r => r.id === form.route_id) || null;
-  const retourRoute = systemRoutes.find(r => r.id === form.retour_route_id) || allRoutes.find(r => r.id === form.retour_route_id) || null;
   const cityOptions = useMemo<CityOption[]>(() => {
     const seen = new Set<string>();
     return systemRoutes.flatMap(route => {
@@ -569,50 +568,61 @@ export default function POSConvois() {
           is_ramassage: false,
         };
 
-        const { data: newSched, error: sErr } = await supabase
-          .from('schedules').insert([baseSchedule]).select('id').single();
-        if (sErr) throw sErr;
+        const hasRetour = form.trip_type === 'aller_retour' && !!form.retour_route_id;
+        const schedulesToInsert: Record<string, any>[] = [baseSchedule];
+        if (hasRetour) {
+          const retDep = form.retour_departure_datetime.includes('T')
+            ? form.retour_departure_datetime : `${form.retour_departure_datetime}:00`;
+          const retArr = new Date(new Date(retDep).getTime() + durationMin * 60 * 1000).toISOString();
+          // The return leg comes back to this counter's station.
+          schedulesToInsert.push({
+            ...baseSchedule,
+            route_id: form.retour_route_id,
+            departure_station_id: form.arrival_station_id || stationId,
+            arrival_station_id: stationId,
+            departure_datetime: retDep,
+            arrival_datetime: retArr,
+          });
+        }
 
-        const { error: cErr } = await supabase.from('convoys').insert({
-          schedule_id: newSched.id,
+        // Single insert so both legs are saved together or not at all.
+        const { data: newScheds, error: sErr } = await supabase
+          .from('schedules').insert(schedulesToInsert).select('id');
+        if (sErr) throw sErr;
+        if (!newScheds || newScheds.length !== schedulesToInsert.length) {
+          throw new Error("Échec de l'enregistrement des trajets du convoi");
+        }
+        const newSched = newScheds[0];
+
+        const convoyBase = {
           amount,
-          trip_type: form.trip_type,
           passengers_count: passengersCount,
           observation: form.observation.trim() || null,
           created_by: user?.id,
           ...charges,
-        });
-        if (cErr) throw cErr;
+        };
 
-        if (form.trip_type === 'aller_retour' && form.retour_route_id) {
-          const retDep = form.retour_departure_datetime.includes('T')
-            ? form.retour_departure_datetime : `${form.retour_departure_datetime}:00`;
-          const retArr = new Date(new Date(retDep).getTime() + durationMin * 60 * 1000).toISOString();
-          const retourArrStation = allStations.find(s => s.city_id === retourRoute?.origin_city_id);
-          const { data: retSched, error: rsErr } = await supabase
-            .from('schedules').insert([{
-              ...baseSchedule,
-              route_id: form.retour_route_id,
-              departure_station_id: form.arrival_station_id || stationId,
-              arrival_station_id: retourArrStation?.id || null,
-              departure_datetime: retDep,
-              arrival_datetime: retArr,
-            }]).select('id').single();
-          if (rsErr) throw rsErr;
-
-          const { data: retConvoy, error: rcErr } = await supabase.from('convoys').insert({
-            schedule_id: retSched.id,
-            amount,
+        const retourConvoyId = hasRetour ? crypto.randomUUID() : null;
+        const convoysToInsert: Record<string, any>[] = [{
+          ...convoyBase,
+          schedule_id: newSched.id,
+          trip_type: form.trip_type,
+          return_convoy_id: retourConvoyId,
+        }];
+        if (hasRetour) {
+          convoysToInsert.push({
+            ...convoyBase,
+            id: retourConvoyId,
+            schedule_id: newScheds[1].id,
             trip_type: 'aller_retour',
-            passengers_count: passengersCount,
-            observation: form.observation.trim() || null,
-            created_by: user?.id,
-            ...charges,
-          }).select('id').single();
-          if (rcErr) throw rcErr;
+          });
+        }
 
-          const { error: linkErr } = await supabase.from('convoys').update({ return_convoy_id: retConvoy.id }).eq('schedule_id', newSched.id);
-          if (linkErr) throw linkErr;
+        const { data: newConvoys, error: cErr } = await supabase
+          .from('convoys').insert(convoysToInsert).select('id');
+        if (cErr) throw cErr;
+        if (!newConvoys || newConvoys.length !== convoysToInsert.length) {
+          throw new Error("Échec de l'enregistrement du convoi");
         }
 
         // Build a ConvoyRow for immediate bordereau printing
