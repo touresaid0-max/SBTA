@@ -54,7 +54,7 @@ function toRow(d: DepartRecord, tickets: TicketRecord[], stationId?: string): De
       seats_allocated: allocated,
       seats_sold_station: sold,
       seats_libres: seatsLibresForStation(tickets, d, stationId),
-      solde_calc: d.mt_ticket + d.mt_bagage - d.tot_depense,
+      solde_calc: d.mt_ticket - d.tot_depense,
     };
   }
   return {
@@ -62,7 +62,7 @@ function toRow(d: DepartRecord, tickets: TicketRecord[], stationId?: string): De
     seats_allocated: d.seats_total,
     seats_sold_station: d.seats_sold,
     seats_libres: seatsLibres(d),
-    solde_calc: d.mt_ticket + d.mt_bagage - d.tot_depense,
+    solde_calc: d.mt_ticket - d.tot_depense,
   };
 }
 
@@ -249,8 +249,8 @@ export default function POSDeparts() {
         mt_ticket: totals.mt_ticket,
         mt_bagage: totals.mt_bagage,
         tot_depense: totals.tot_depense,
-        solde: totals.solde,
-        caisse: totals.caisse,
+        solde: totals.mt_ticket - totals.tot_depense,
+        caisse: totals.mt_ticket - totals.tot_depense,
       };
     });
     setAllTickets(tickets);
@@ -885,8 +885,8 @@ export default function POSDeparts() {
             await updateDepart(selectedRow.id, {
               seats_sold: sourceSold,
               mt_ticket: sourceMtTicket,
-              solde: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
-              caisse: sourceMtTicket + selectedRow.mt_bagage - selectedRow.tot_depense,
+              solde: sourceMtTicket - selectedRow.tot_depense,
+              caisse: sourceMtTicket - selectedRow.tot_depense,
             });
           }}
           onPendingTransfer={async (surplusTickets, newBusId, newBusPlate, newCapacity) => {
