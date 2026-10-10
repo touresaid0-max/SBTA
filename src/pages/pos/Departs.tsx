@@ -28,11 +28,12 @@ import {
 } from '@/services/pos/posReportService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import EditDepartModal from '@/components/pos/EditDepartModal';
+import DepartExpensesModal from '@/components/pos/DepartExpensesModal';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import {
-  Plus, Pencil, Printer, Ticket, CheckCircle, XCircle, Lock,
+  Plus, Pencil, Printer, Ticket, XCircle, Lock,
   ChevronUp, ChevronDown, Eye, Loader2, X, AlertCircle,
-  FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks,
+  FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt,
 } from 'lucide-react';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
@@ -228,6 +229,7 @@ export default function POSDeparts() {
   const [allTickets, setAllTickets] = useState<TicketRecord[]>([]);
   const [cancelError, setCancelError] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showExpensesModal, setShowExpensesModal] = useState(false);
   const [editVehicules, setEditVehicules] = useState<VehiculeRef[]>([]);
   const [editChauffeurs, setEditChauffeurs] = useState<ChauffeurRef[]>([]);
   const [editSoldTickets, setEditSoldTickets] = useState<TicketRecord[]>([]);
@@ -441,9 +443,6 @@ export default function POSDeparts() {
         navigate(`/guichet/depart/${depart.id}/vente`);
         return;
       }
-      if (action === 'confirmer') {
-        await updateDepart(depart.id, { confirmed: true, status: 'confirmed' });
-      }
       if (action === 'annuler') {
         setCancelError('');
         setShowCancelConfirm(depart);
@@ -622,13 +621,13 @@ export default function POSDeparts() {
                 stationName={session?.station_name}
                 label="Demander modif./supp."
               />
-              {!selectedRow.confirmed && !selectedRow.cancelled && (
+              {!selectedRow.cancelled && !selectedRow.cloture && (
                 <button
-                  disabled
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white cursor-not-allowed opacity-60"
-                  style={{ backgroundColor: 'var(--text-muted)' }}
+                  onClick={() => setShowExpensesModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white"
+                  style={{ backgroundColor: 'var(--primary)' }}
                 >
-                  <CheckCircle className="w-4 h-4" /> Confirmer
+                  <Receipt className="w-4 h-4" /> Par dépenses
                 </button>
               )}
               {!selectedRow.cancelled && !selectedRow.cloture && (() => {
@@ -857,6 +856,17 @@ export default function POSDeparts() {
             {visibleDeparts.length} départ(s) {showAll ? '(toutes dates)' : "(aujourd'hui)"} · Cliquez sur une ligne pour la sélectionner et voir les actions
           </p>
         </>
+      )}
+
+      {/* Expenses modal */}
+      {showExpensesModal && selectedRow && (
+        <DepartExpensesModal
+          depart={selectedRow}
+          stationId={session?.station_id}
+          counterId={session?.counter_id}
+          onSaved={loadDeparts}
+          onClose={() => { setShowExpensesModal(false); loadDeparts(); }}
+        />
       )}
 
       {/* Edit modal */}

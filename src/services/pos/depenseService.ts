@@ -80,7 +80,7 @@ export async function recalcDepartTotals(departId: string): Promise<DepartRecord
 
   return updateDepart(departId, {
     tot_depense: newTotDepense,
-    solde: depart.mt_ticket + depart.mt_bagage - newTotDepense,
-    caisse: depart.mt_ticket + depart.mt_bagage - newTotDepense,
+    solde: depart.mt_ticket - newTotDepense,
+    caisse: depart.mt_ticket - newTotDepense,
   });
 }

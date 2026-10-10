@@ -74,7 +74,7 @@ export default function POSDepenses() {
 
   const solde = useMemo(() => {
     if (!selectedDepart) return 0;
-    return selectedDepart.mt_ticket + selectedDepart.mt_bagage - liveTotDepense;
+    return selectedDepart.mt_ticket - liveTotDepense;
   }, [selectedDepart, liveTotDepense]);
 
   const handleAdd = async () => {
