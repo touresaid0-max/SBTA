@@ -50,6 +50,7 @@ export default function POSRamassageDirect() {
 
   const selectedBus = vehicules.find(bus => bus.id === busId);
   const selectedDriver = chauffeurs.find(driver => driver.id === driverId);
+  const selectedDestination = gares.find(gare => (gare.city_id || gare.city) === destinationCity);
   const numericAmount = Number(amount);
   const missing = [
     !date && 'Date',
@@ -95,7 +96,7 @@ export default function POSRamassageDirect() {
         local_depart_id: ramassageId,
         schedule_id: null,
         route_id: null,
-        route_name: `Ramassage direct — ${destinationCity}`,
+        route_name: `Ramassage direct — ${selectedDestination?.city ?? destinationCity}`,
         departure_number: null,
         bus_id: busId,
         bus_registration: selectedBus?.plate_number ?? '',

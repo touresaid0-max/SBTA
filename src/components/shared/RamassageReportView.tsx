@@ -58,6 +58,7 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
   const [filterPlate, setFilterPlate] = useState('');
   const [rows, setRows] = useState<RamassageRow[]>([]);
   const [routes, setRoutes] = useState<{ id: string; name: string }[]>([]);
+  const [destinationCityNames, setDestinationCityNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -67,6 +68,13 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
   useEffect(() => {
     supabase.from('routes').select('id, name').order('name').then(({ data }) => {
       if (data) setRoutes(data as { id: string; name: string }[]);
+    });
+    supabase.from('cities').select('id, name').then(({ data }) => {
+      if (data) {
+        setDestinationCityNames(Object.fromEntries(
+          data.map(city => [String(city.id), String(city.name)]),
+        ));
+      }
     });
   }, []);
 
@@ -99,6 +107,15 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
 
   useEffect(() => { load(); }, [load]);
 
+  const getDestinationLabel = (row: RamassageRow) => {
+    if (!row.is_direct) return row.destination_station_name ?? '—';
+    const prefix = 'Ramassage direct — ';
+    const storedValue = row.route_name?.startsWith(prefix)
+      ? row.route_name.slice(prefix.length).trim()
+      : row.route_name?.trim() ?? '';
+    return `${prefix}${destinationCityNames[storedValue] ?? (storedValue || '—')}`;
+  };
+
   const totals = rows.reduce((acc, r) => ({
     places: acc.places + (r.collected_places ?? 0),
     amount: acc.amount + Number(r.collected_amount ?? 0),
@@ -116,7 +133,7 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
       'Chauffeur': r.driver_name ?? '—',
       'Gare': r.origin_station_name ?? r.destination_station_name ?? '—',
       'Guichet': r.counter_number ?? '—',
-      'Ville de destination': r.is_direct ? (r.route_name ?? '—') : (r.destination_station_name ?? '—'),
+      'Ville de destination': getDestinationLabel(r),
       'Sièges vendus': r.collected_places ?? 0,
       'Montant collecté': Number(r.collected_amount ?? 0),
       'Validé par': r.collected_by_name ?? '—',
@@ -300,7 +317,7 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
                     <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>{r.origin_station_name ?? r.destination_station_name ?? '—'}</td>
                     <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>{r.counter_number ?? '—'}</td>
                     <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      {r.is_direct ? (r.route_name ?? '—') : (r.destination_station_name ?? '—')}
+                      {getDestinationLabel(r)}
                     </td>
                     <td className="px-3 py-2.5 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.collected_places ?? 0}</td>
                     <td className="px-3 py-2.5 text-sm font-bold" style={{ color: '#15803D' }}>{fmtFCFA(Number(r.collected_amount ?? 0))}</td>
