@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import POSLayout from '@/components/pos/POSLayout';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { createDepart, getChauffeurs, getGares, getVehicules, type ChauffeurRef, type GareRef, type VehiculeRef } from '@/services/pos/departService';
+import { getChauffeurs, getGares, getVehicules, type ChauffeurRef, type GareRef, type VehiculeRef } from '@/services/pos/departService';
 import { supabase } from '@/services/supabase';
 
 export default function POSRamassageDirect() {
@@ -50,7 +50,6 @@ export default function POSRamassageDirect() {
 
   const selectedBus = vehicules.find(bus => bus.id === busId);
   const selectedDriver = chauffeurs.find(driver => driver.id === driverId);
-  const selectedDestination = gares.find(gare => (gare.city_id || gare.city) === destinationCity);
   const numericAmount = Number(amount);
   const missing = [
     !date && 'Date',
@@ -79,55 +78,32 @@ export default function POSRamassageDirect() {
     setSaving(true);
     try {
       const departureDatetime = `${date}T${time}:00`;
-      const depart = await createDepart({
-        route_id: '',
-        route_name: `Ramassage direct — ${selectedDestination?.city ?? destinationCity}`,
-        bus_id: busId,
-        bus_plate: selectedBus?.plate_number ?? '',
-        bus_name: selectedBus?.plate_number ?? '',
-        driver_id: driverId,
-        driver_name: selectedDriver?.full_name ?? '',
-        departure_datetime: departureDatetime,
-        departure_date: date,
-        departure_time: time,
-        status: 'ramassage',
-        is_ramassage: true,
-        is_ac: false,
-        seats_total: 0,
-        seats_from: 1,
-        station_id: session.station_id,
-        station_name: session.station_name ?? '',
-        arrival_station_id: selectedDestination?.id,
-        counter_id: session.counter_id,
-      });
+      const ramassageId = crypto.randomUUID();
 
       const { data: userData } = await supabase.auth.getUser();
       const { error: collectionError } = await supabase.from('ramassage_collections').insert({
-        schedule_id: depart.id,
+        schedule_id: null,
         amount: numericAmount,
         station_id: session.station_id,
         collected_by: userData.user?.id ?? null,
         observation: 'Ramassage direct',
-        local_depart_id: depart.id,
+        local_depart_id: ramassageId,
       });
       if (collectionError) throw collectionError;
 
-      // Direct ramassage self-references the originating station as destination
-      // so it stays local: the existing destination-scoped RLS grants the
-      // originating station access and excludes every other station.
       const { error: notificationError } = await supabase.from('ramassage_notifications').insert({
-        local_depart_id: depart.id,
-        schedule_id: depart.id,
+        local_depart_id: ramassageId,
+        schedule_id: null,
         route_id: null,
         route_name: `Ramassage direct — ${destinationCity}`,
-        departure_number: depart.departure_number,
-        bus_id: depart.bus_id,
-        bus_registration: depart.bus_plate,
-        driver_name: depart.driver_name,
-        departure_datetime: depart.departure_datetime,
+        departure_number: null,
+        bus_id: busId,
+        bus_registration: selectedBus?.plate_number ?? '',
+        driver_name: selectedDriver?.full_name ?? '',
+        departure_datetime: departureDatetime,
         seats_total: 0,
         seats_sold: 0,
-        company_id: depart.company_id ?? null,
+        company_id: selectedBus?.company_id ?? null,
         origin_station_id: session.station_id,
         origin_station_name: session.station_name ?? null,
         destination_station_id: session.station_id,
