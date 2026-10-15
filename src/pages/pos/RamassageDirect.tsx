@@ -108,14 +108,18 @@ export default function POSRamassageDirect() {
         station_id: session.station_id,
         collected_by: userData.user?.id ?? null,
         observation: 'Ramassage direct',
+        local_depart_id: depart.id,
       });
       if (collectionError) throw collectionError;
 
+      // Direct ramassage self-references the originating station as destination
+      // so it stays local: the existing destination-scoped RLS grants the
+      // originating station access and excludes every other station.
       const { error: notificationError } = await supabase.from('ramassage_notifications').insert({
         local_depart_id: depart.id,
         schedule_id: depart.id,
         route_id: null,
-        route_name: depart.route_name,
+        route_name: `Ramassage direct — ${destinationCity}`,
         departure_number: depart.departure_number,
         bus_id: depart.bus_id,
         bus_registration: depart.bus_plate,
@@ -126,14 +130,17 @@ export default function POSRamassageDirect() {
         company_id: depart.company_id ?? null,
         origin_station_id: session.station_id,
         origin_station_name: session.station_name ?? null,
-        destination_station_id: selectedDestination?.id ?? session.station_id,
-        destination_station_name: selectedDestination?.name ?? destinationCity,
+        destination_station_id: session.station_id,
+        destination_station_name: session.station_name ?? null,
         status: 'done',
         collected_places: 0,
         collected_amount: numericAmount,
         collected_by_name: session.full_name ?? null,
         collected_at: new Date().toISOString(),
         created_by: userData.user?.id ?? null,
+        is_direct: true,
+        counter_id: session.counter_id ?? null,
+        counter_number: session.counter_number ?? null,
       });
       if (notificationError) throw notificationError;
 

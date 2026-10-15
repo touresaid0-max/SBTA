@@ -12,14 +12,18 @@ interface RamassageRow {
   id: string;
   created_at: string;
   collected_at: string | null;
+  departure_datetime: string | null;
   departure_number: number | null;
   route_name: string | null;
   bus_registration: string | null;
+  driver_name: string | null;
   origin_station_name: string | null;
   destination_station_name: string | null;
   collected_places: number | null;
   collected_amount: number | null;
   collected_by_name: string | null;
+  counter_number: string | null;
+  is_direct: boolean | null;
   status: string;
 }
 
@@ -103,12 +107,16 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
   const exportExcel = () => {
     const wb = XLSX.utils.book_new();
     const sheetRows = rows.map(r => ({
-      'Date': format(new Date(r.collected_at ?? r.created_at), 'dd/MM/yyyy HH:mm'),
+      'Date': format(new Date(r.collected_at ?? r.created_at), 'dd/MM/yyyy'),
+      'Heure': r.departure_datetime ? format(new Date(r.departure_datetime), 'HH:mm') : '—',
+      'Type': r.is_direct ? 'Direct' : 'Ligne',
       'N° Départ': r.departure_number ?? '—',
       'Ligne': r.route_name ?? '—',
       'Immatriculation': r.bus_registration ?? '—',
-      'Gare de départ': r.origin_station_name ?? '—',
-      'Gare de destination': r.destination_station_name ?? '—',
+      'Chauffeur': r.driver_name ?? '—',
+      'Gare': r.origin_station_name ?? r.destination_station_name ?? '—',
+      'Guichet': r.counter_number ?? '—',
+      'Ville de destination': r.is_direct ? (r.route_name ?? '—') : (r.destination_station_name ?? '—'),
       'Sièges vendus': r.collected_places ?? 0,
       'Montant collecté': Number(r.collected_amount ?? 0),
       'Validé par': r.collected_by_name ?? '—',
@@ -257,7 +265,7 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
             <table className="w-full">
               <thead style={{ backgroundColor: 'var(--surface-raised)' }}>
                 <tr>
-                  {['Date', 'N° Départ', 'Ligne', 'Immatriculation', 'Gare départ', 'Gare destination', 'Sièges', 'Montant', 'Validé par'].map(h => (
+                  {['Date', 'Heure', 'Type', 'N° Départ', 'Immatriculation', 'Chauffeur', 'Gare', 'Guichet', 'Ville de destination', 'Sièges', 'Montant', 'Validé par'].map(h => (
                     <th key={h} className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap"
                       style={{ color: 'var(--text-secondary)' }}>{h}</th>
                   ))}
@@ -266,22 +274,34 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
               <tbody style={{ backgroundColor: 'var(--surface)' }}>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+                    <td colSpan={12} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
                       Aucun ramassage validé sur cette période.
                     </td>
                   </tr>
                 ) : rows.map(r => (
                   <tr key={r.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
                     <td className="px-3 py-2.5 text-sm whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
-                      {format(new Date(r.collected_at ?? r.created_at), 'dd/MM/yyyy HH:mm')}
+                      {format(new Date(r.collected_at ?? r.created_at), 'dd/MM/yyyy')}
+                    </td>
+                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-primary)' }}>
+                      {r.departure_datetime ? format(new Date(r.departure_datetime), 'HH:mm') : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-primary)' }}>
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold"
+                        style={{ backgroundColor: r.is_direct ? 'var(--primary-light, #E0F2FE)' : 'var(--surface-raised)', color: r.is_direct ? '#0EA5E9' : 'var(--text-secondary)' }}>
+                        {r.is_direct ? 'Direct' : 'Ligne'}
+                      </span>
                     </td>
                     <td className="px-3 py-2.5 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
                       {r.departure_number ?? '—'}
                     </td>
-                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-primary)' }}>{r.route_name ?? '—'}</td>
                     <td className="px-3 py-2.5 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.bus_registration ?? '—'}</td>
-                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>{r.origin_station_name ?? '—'}</td>
-                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>{r.destination_station_name ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-primary)' }}>{r.driver_name ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>{r.origin_station_name ?? r.destination_station_name ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>{r.counter_number ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {r.is_direct ? (r.route_name ?? '—') : (r.destination_station_name ?? '—')}
+                    </td>
                     <td className="px-3 py-2.5 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.collected_places ?? 0}</td>
                     <td className="px-3 py-2.5 text-sm font-bold" style={{ color: '#15803D' }}>{fmtFCFA(Number(r.collected_amount ?? 0))}</td>
                     <td className="px-3 py-2.5 text-sm" style={{ color: 'var(--text-secondary)' }}>{r.collected_by_name ?? '—'}</td>
@@ -291,7 +311,7 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
               {rows.length > 0 && (
                 <tfoot style={{ backgroundColor: 'var(--surface-raised)' }}>
                   <tr className="border-t-2" style={{ borderColor: 'var(--border)' }}>
-                    <td colSpan={6} className="px-3 py-3 text-sm font-bold text-right" style={{ color: 'var(--text-secondary)' }}>Total</td>
+                    <td colSpan={9} className="px-3 py-3 text-sm font-bold text-right" style={{ color: 'var(--text-secondary)' }}>Total</td>
                     <td className="px-3 py-3 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{fmtN(totals.places)}</td>
                     <td className="px-3 py-3 text-sm font-bold" style={{ color: '#15803D' }}>{fmtFCFA(totals.amount)}</td>
                     <td></td>
