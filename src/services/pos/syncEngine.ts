@@ -64,7 +64,7 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
   const depIso = p.departure_datetime as string;
   return {
     id: p.id,
-    route_id: p.route_id ?? null,
+    route_id: p.route_id || null,
     bus_id: p.bus_id ?? null,
     driver_id: p.driver_id ?? null,
     departure_station_id: p.station_id ?? null,
