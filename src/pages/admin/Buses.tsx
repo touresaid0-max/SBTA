@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw, MousePointerClick, Wrench, PowerOff, Power, X } from 'lucide-react';
+import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw, MousePointerClick, Wrench, PowerOff, Power, X, Copy } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import StatusBadge from '../../components/shared/StatusBadge';
@@ -156,6 +156,85 @@ export default function Buses() {
     setEditingId(null);
     setWizardInitialData(emptyGeneralData());
     setExistingBusConfig(undefined);
+    setShowWizard(true);
+  };
+
+  const handleDuplicate = async (bus: BusData) => {
+    setEditingId(null);
+    setWizardInitialData({
+      registration_number: '',
+      brand: bus.brand,
+      model: bus.model,
+      year: bus.year,
+      class: bus.class,
+      company_id: bus.company_id,
+      fuel_type: bus.fuel_type,
+      fuel_capacity: bus.fuel_capacity,
+      fuel_consumption: bus.fuel_consumption,
+      insurance_expiry: bus.insurance_expiry || '',
+      vignette_expiry: bus.vignette_expiry || '',
+      technical_inspection_expiry: bus.technical_inspection_expiry || '',
+      photo_url: bus.photo_url || '',
+      amenities: bus.amenities || [],
+    });
+
+    const deckType = (bus.bus_deck_type === 'imperial' ? 'imperial' : 'simple') as 'simple' | 'imperial';
+    const driverPos = (bus.driver_position === 'droite' ? 'droite' : 'gauche') as 'gauche' | 'droite';
+    const sleepingType = (bus.sleeping_type === 'couchettes' ? 'couchettes' : bus.sleeping_type === 'mixte' ? 'mixte' : 'aucun') as 'aucun' | 'couchettes' | 'mixte';
+
+    if (deckType === 'simple' && bus.bus_seat_config) {
+      const cfg = bus.bus_seat_config;
+      const aisleAfterColumns: number[] = Array.isArray(cfg.aisle_after_columns) ? cfg.aisle_after_columns : (cfg.aisle_position ? [cfg.aisle_position] : [2]);
+      const totalCols = cfg.total_columns ?? (cfg.left_columns + cfg.right_columns + aisleAfterColumns.length);
+      const hasBackRow = cfg.has_back_row ?? cfg.back_row ?? false;
+      setExistingBusConfig({
+        deckType: 'simple',
+        driverPosition: driverPos,
+        sleepingType,
+        maxCapacity: bus.max_allowed_capacity ?? bus.capacity,
+        seatsSoldFrom: bus.seats_sold_from ?? 1,
+        aisleAfterColumns,
+        hasBackRow,
+        backRowSeats: cfg.back_row_seats ?? 0,
+        totalRows: cfg.rows ?? 10,
+        totalCols,
+        seatConfigId: undefined,
+        simpleLayout: cfg.grid_layout ?? null,
+      });
+    } else if (deckType === 'imperial' && bus.lower_deck_config_id && bus.upper_deck_config_id) {
+      try {
+        const [lowerRes, upperRes] = await Promise.all([
+          supabase.from('bus_seat_config').select('id, rows, left_columns, right_columns, back_row, has_back_row, back_row_seats, aisle_after_columns, total_columns, driver_position, grid_layout').eq('id', bus.lower_deck_config_id).maybeSingle(),
+          supabase.from('bus_seat_config').select('id, rows, left_columns, right_columns, back_row, has_back_row, back_row_seats, aisle_after_columns, total_columns, driver_position, grid_layout').eq('id', bus.upper_deck_config_id).maybeSingle(),
+        ]);
+        const lower = lowerRes.data;
+        const upper = upperRes.data;
+        const aisleAfterColumns: number[] = lower && Array.isArray(lower.aisle_after_columns) ? lower.aisle_after_columns : [2];
+        const totalCols = lower?.total_columns ?? ((lower?.left_columns ?? 2) + (lower?.right_columns ?? 2) + aisleAfterColumns.length);
+        const hasBackRow = lower?.has_back_row ?? lower?.back_row ?? false;
+        setExistingBusConfig({
+          deckType: 'imperial',
+          driverPosition: driverPos,
+          sleepingType,
+          maxCapacity: bus.max_allowed_capacity ?? bus.capacity,
+          seatsSoldFrom: bus.seats_sold_from ?? 1,
+          aisleAfterColumns,
+          hasBackRow,
+          backRowSeats: lower?.back_row_seats ?? 0,
+          totalRows: lower?.rows ?? 10,
+          totalCols,
+          lowerConfigId: undefined,
+          upperConfigId: undefined,
+          lowerLayout: lower?.grid_layout ?? null,
+          upperLayout: upper?.grid_layout ?? null,
+        });
+      } catch {
+        setExistingBusConfig(undefined);
+      }
+    } else {
+      setExistingBusConfig(undefined);
+    }
+
     setShowWizard(true);
   };
 
@@ -532,6 +611,13 @@ export default function Buses() {
                       title="Modifier"
                     >
                       <Edit2 className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                    </button>
+                    <button
+                      onClick={() => handleDuplicate(bus)}
+                      className="p-2 hover:bg-gray-100 rounded-lg"
+                      title="Dupliquer"
+                    >
+                      <Copy className="w-4 h-4" style={{ color: 'var(--primary)' }} />
                     </button>
                     {bus.status === 'disponible' || bus.status === 'en_service' ? (
                       <button
