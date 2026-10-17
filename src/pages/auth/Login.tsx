@@ -1,18 +1,66 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore, ROLE_REDIRECTS } from '../../store/authStore';
 import { Bus, Eye, EyeOff, ArrowRight, Shield, Zap, Globe } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+};
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const navigate = useNavigate();
   const { login, isLoading } = useAuthStore();
 
+  useEffect(() => {
+    const manifestLink = document.querySelector('link[rel="manifest"]') ?? document.createElement('link');
+    manifestLink.setAttribute('rel', 'manifest');
+    manifestLink.setAttribute('href', '/login/manifest.webmanifest');
+    if (!manifestLink.parentNode) document.head.appendChild(manifestLink);
+
+    const themeMeta = document.querySelector('meta[name="theme-color"]') ?? document.createElement('meta');
+    themeMeta.setAttribute('name', 'theme-color');
+    themeMeta.setAttribute('content', '#0B7439');
+    if (!themeMeta.parentNode) document.head.appendChild(themeMeta);
+
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    navigator.serviceWorker?.register('/login/sw.js', { scope: '/login' }).catch(() => undefined);
+
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!navigator.onLine) {
+      toast.error('Une connexion Internet est nécessaire pour vous authentifier.');
+      return;
+    }
 
     if (!email || !password) {
       toast.error('Veuillez remplir tous les champs');
@@ -130,6 +178,23 @@ export default function Login() {
             <h1 className="text-3xl font-bold mb-2" style={{ color: '#1A2E22' }}>Bienvenue</h1>
             <p style={{ color: '#4A6B55' }}>Connectez-vous à votre espace de travail</p>
           </div>
+
+          {!isOnline && (
+            <div className="mb-5 rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D' }}>
+              Vous êtes hors connexion. Une connexion Internet est nécessaire pour vous authentifier.
+            </div>
+          )}
+
+          {installPrompt && (
+            <button
+              type="button"
+              onClick={handleInstall}
+              className="w-full mb-5 rounded-xl px-4 py-3 text-sm font-semibold transition-colors hover:bg-green-50"
+              style={{ color: '#0B7439', border: '1px solid #B7DCC5', backgroundColor: '#F4FBF6' }}
+            >
+              Installer SBTA Gestion
+            </button>
+          )}
 
           {/* Form card */}
           <div className="rounded-2xl p-8 shadow-xl shadow-green-900/5" style={{ backgroundColor: '#ffffff', border: '1px solid #E2EAE5' }}>
