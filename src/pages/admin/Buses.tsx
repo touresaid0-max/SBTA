@@ -117,8 +117,11 @@ export default function Buses() {
     company: '',
     class: '',
     status: '',
+    capacity: '',
     search: ''
   });
+
+  const uniqueCapacities = Array.from(new Set(buses.map(b => b.capacity).filter(c => c != null && c > 0))).sort((a, b) => a - b);
 
   useEffect(() => {
     loadData();
@@ -382,6 +385,7 @@ export default function Buses() {
     if (filters.company && bus.company_id !== filters.company) return false;
     if (filters.class && bus.class !== filters.class) return false;
     if (filters.status && bus.status !== filters.status) return false;
+    if (filters.capacity && String(bus.capacity) !== filters.capacity) return false;
     if (filters.search) {
       const search = filters.search.toLowerCase();
       return (
@@ -467,7 +471,7 @@ export default function Buses() {
       </div>
 
       <div className="bg-white rounded-xl p-6 mb-6 border">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div className="relative">
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-secondary)' }} />
             <input
@@ -499,6 +503,17 @@ export default function Buses() {
             <option value="standard">Standard</option>
             <option value="vip">VIP</option>
             <option value="executive">Executive</option>
+          </select>
+
+          <select
+            value={filters.capacity}
+            onChange={(e) => setFilters({ ...filters, capacity: e.target.value })}
+            className="px-4 py-2 border rounded-lg"
+          >
+            <option value="">Toutes les capacités</option>
+            {uniqueCapacities.map(cap => (
+              <option key={cap} value={String(cap)}>{cap} places</option>
+            ))}
           </select>
 
           <select
