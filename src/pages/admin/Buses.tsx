@@ -535,30 +535,31 @@ export default function Buses() {
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full">
-          <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
-            <tr>
-              <th className="text-left p-4 font-semibold">Immatriculation</th>
-              <th className="text-left p-4 font-semibold">Marque/Modèle</th>
-              <th className="text-left p-4 font-semibold">Année</th>
-              <th className="text-left p-4 font-semibold">Classe</th>
-              <th className="text-left p-4 font-semibold">Société</th>
-              <th className="text-left p-4 font-semibold">Capacité</th>
-              <th className="text-left p-4 font-semibold">Plan de sièges</th>
-              <th className="text-left p-4 font-semibold">Statut</th>
-              <th className="text-left p-4 font-semibold">Taux remplissage</th>
-              <th className="text-left p-4 font-semibold">Actions</th>
-            </tr>
-          </thead>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] table-auto">
+            <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
+              <tr>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Immatriculation</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Marque/Modèle</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Année</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Classe</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Société</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Capacité</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Plan de sièges</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Statut</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Taux remplissage</th>
+                <th className="text-left p-4 font-semibold whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
           <tbody>
             {filteredBuses.map((bus) => (
               <tr key={bus.id} className="border-t hover:bg-gray-50">
-                <td className="p-4">
+                <td className="p-4 whitespace-nowrap">
                   <span className="font-bold">{bus.registration_number}</span>
                 </td>
-                <td className="p-4">{bus.brand} {bus.model}</td>
-                <td className="p-4">{bus.year}</td>
-                <td className="p-4">
+                <td className="p-4 min-w-[150px]">{bus.brand} {bus.model}</td>
+                <td className="p-4 whitespace-nowrap">{bus.year}</td>
+                <td className="p-4 whitespace-nowrap">
                   <span
                     className="px-3 py-1 rounded-full text-xs font-medium text-white"
                     style={{ backgroundColor: getClassBadgeColor(bus.class) }}
@@ -566,9 +567,9 @@ export default function Buses() {
                     {bus.class.toUpperCase()}
                   </span>
                 </td>
-                <td className="p-4">{bus.companies?.name}</td>
-                <td className="p-4">{bus.capacity} pl</td>
-                <td className="p-4">
+                <td className="p-4 min-w-[120px]">{bus.companies?.name}</td>
+                <td className="p-4 whitespace-nowrap">{bus.capacity} pl</td>
+                <td className="p-4 min-w-[150px]">
                   {hasSeatPlan(bus) ? (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
                           style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
@@ -588,7 +589,7 @@ export default function Buses() {
                     </button>
                   )}
                 </td>
-                <td className="p-4">
+                <td className="p-4 min-w-[150px]">
                   <StatusBadge status={bus.status} />
                   {bus.status_note && (
                     <p className="text-xs mt-1 max-w-[200px] truncate" style={{ color: 'var(--text-secondary)' }} title={bus.status_note}>
@@ -611,8 +612,8 @@ export default function Buses() {
                     />
                   </button>
                 </td>
-                <td className="p-4">
-                  <div className="flex gap-2">
+                <td className="p-4 min-w-[230px]">
+                  <div className="flex gap-2 whitespace-nowrap">
                     <button
                       onClick={() => setViewingBus(bus)}
                       className="p-2 hover:bg-gray-100 rounded-lg"
@@ -665,8 +666,9 @@ export default function Buses() {
                 </td>
               </tr>
             ))}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
 
         {filteredBuses.length === 0 && (
           <div className="text-center py-12">
