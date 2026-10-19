@@ -35,14 +35,42 @@ export async function login(email: string, password: string): Promise<POSLoginRe
 
       const passwordHash = await hashPassword(password);
 
+      // Bagagistes: the authoritative station assignment lives in
+      // station_baggage_handlers (managed in Administration → Gestion des
+      // comptes utilisateurs). The users.station_id column is stale for some
+      // accounts and must NOT be trusted for this role. Counters are a
+      // guichetier concept and don't apply to bagagistes either.
+      let resolvedStationId = user.station_id ?? '';
+      let resolvedStationName = user.station_name ?? 'Gare';
+
+      if (user.role === 'bagagiste') {
+        try {
+          const { data: sbh } = await supabase
+            .from('station_baggage_handlers')
+            .select('station_id, stations!inner(id, name)')
+            .eq('handler_id', user.id)
+            .limit(1)
+            .maybeSingle();
+          if (sbh) {
+            const st = sbh.stations as { id: string; name: string } | null;
+            if (st?.id) {
+              resolvedStationId = st.id;
+              resolvedStationName = st.name;
+            }
+          }
+        } catch {
+          // non-critical — fall back to user.station_id
+        }
+      }
+
       const session: SessionRecord = {
         id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         user_id: user.id,
         email: user.email,
         full_name: user.full_name ?? `${user.first_name} ${user.last_name}`,
         role: user.role,
-        station_id: user.station_id ?? '',
-        station_name: user.station_name ?? 'Gare',
+        station_id: resolvedStationId,
+        station_name: resolvedStationName,
         login_at: new Date().toISOString(),
         offline: false,
         password_hash: passwordHash,
@@ -51,46 +79,51 @@ export async function login(email: string, password: string): Promise<POSLoginRe
       await db.session.clear();
       await db.session.put(session);
 
-      try {
-        const { data: counter } = await supabase
-          .from('counters')
-          .select('id, counter_number, station_id, stations!inner(name)')
-          .eq('assigned_user_id', user.id)
-          .eq('is_active', true)
-          .maybeSingle();
+      // Counter / route resolution only applies to guichetiers (and similar
+      // counter-based roles). Bagagistes get their station from the junction
+      // table above and have no counter.
+      if (user.role !== 'bagagiste') {
+        try {
+          const { data: counter } = await supabase
+            .from('counters')
+            .select('id, counter_number, station_id, stations!inner(name)')
+            .eq('assigned_user_id', user.id)
+            .eq('is_active', true)
+            .maybeSingle();
 
-        if (counter) {
-          session.counter_id = counter.id;
-          session.counter_number = counter.counter_number as string;
+          if (counter) {
+            session.counter_id = counter.id;
+            session.counter_number = counter.counter_number as string;
 
-          if (!session.station_id && counter.station_id) {
-            session.station_id = counter.station_id;
-            const stationName = (counter.stations as { name?: string } | null)?.name;
-            if (stationName) session.station_name = stationName;
+            if (!session.station_id && counter.station_id) {
+              session.station_id = counter.station_id;
+              const stationName = (counter.stations as { name?: string } | null)?.name;
+              if (stationName) session.station_name = stationName;
 
-            await supabase
-              .from('users')
-              .update({ station_id: counter.station_id })
-              .eq('id', user.id)
-              .then(() => {});
-          }
-
-          try {
-            const { data: routes } = await supabase
-              .from('counter_routes')
-              .select('route_id')
-              .eq('counter_id', counter.id);
-            if (routes && routes.length > 0) {
-              session.assigned_route_ids = routes.map(r => r.route_id as string);
+              await supabase
+                .from('users')
+                .update({ station_id: counter.station_id })
+                .eq('id', user.id)
+                .then(() => {});
             }
-          } catch {
-            // non-critical
-          }
 
-          await db.session.put(session);
+            try {
+              const { data: routes } = await supabase
+                .from('counter_routes')
+                .select('route_id')
+                .eq('counter_id', counter.id);
+              if (routes && routes.length > 0) {
+                session.assigned_route_ids = routes.map(r => r.route_id as string);
+              }
+            } catch {
+              // non-critical
+            }
+
+            await db.session.put(session);
+          }
+        } catch {
+          // non-critical
         }
-      } catch {
-        // non-critical
       }
 
       if (!session.station_id) {

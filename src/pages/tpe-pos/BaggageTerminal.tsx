@@ -46,11 +46,45 @@ export default function BaggageTerminal() {
     }
   }, [session, sessionLoading, logout, navigate]);
 
-  // Fetch company name for display.
+  // Re-sync the bagagiste's station from the authoritative junction table
+  // (station_baggage_handlers, managed in Administration). The cached session
+  // may carry a stale users.station_id from before the fix. This ensures the
+  // displayed gare and all station-scoped data match the official assignment.
+  useEffect(() => {
+    if (!session || session.role !== 'bagagiste') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: sbh } = await supabase
+          .from('station_baggage_handlers')
+          .select('station_id, stations!inner(id, name, companies!stations_company_id_fkey(name))')
+          .eq('handler_id', session.user_id)
+          .limit(1)
+          .maybeSingle();
+        if (cancelled || !sbh) return;
+        const st = sbh.stations as { id: string; name: string; companies?: { name?: string } | null } | null;
+        if (!st?.id) return;
+        setCompanyName(st.companies?.name);
+
+        // If the authoritative station differs from the cached session, update it in place.
+        if (st.id !== session.station_id || st.name !== session.station_name) {
+          const { db: idb } = await import('@/services/pos/db');
+          const updated = { ...session, station_id: st.id, station_name: st.name };
+          await idb.session.put(updated);
+        }
+      } catch {
+        // non-critical — fall back to cached session values
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user_id, session?.role]);
+
+  // Fetch company name for display (fallback when junction sync didn't return it).
   useEffect(() => {
     if (!session?.station_id) return;
     let cancelled = false;
     (async () => {
+      if (companyName) return; // already set via junction sync
       try {
         const { data } = await supabase
           .from('stations')
@@ -65,7 +99,7 @@ export default function BaggageTerminal() {
       }
     })();
     return () => { cancelled = true; };
-  }, [session?.station_id]);
+  }, [session?.station_id, companyName]);
 
   const loadDeparts = useCallback(async () => {
     if (!session?.station_id) { setLoading(false); return; }
