@@ -271,6 +271,10 @@ import { POSSessionProvider } from './services/pos/POSSessionContext';
 import { ConnectionProvider } from './services/pos/ConnectionContext';
 import { ConnectionProvider as CourrierConnectionProvider } from './services/courrier/ConnectionContext';
 
+// TPE-POS module — TPE-optimized baggage terminal (additive, standalone)
+import TPEConnexion from './pages/tpe-pos/Connexion';
+import BaggageTerminal from './pages/tpe-pos/BaggageTerminal';
+
 // Kiosk / Bornes digitales module (additive, standalone)
 import KioskDashboard from './pages/kiosk/KioskDashboard';
 import KioskTerminal from './pages/kiosk/KioskTerminal';
@@ -621,6 +625,12 @@ function App() {
             <Route path="courrier/new" element={<CourrierConnectionProvider><NewParcelForm /></CourrierConnectionProvider>} />
             <Route path="courrier/parcels/:id" element={<CourrierConnectionProvider><ParcelDetail /></CourrierConnectionProvider>} />
             <Route path="courrier/scan" element={<CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider>} />
+          </Route>
+
+          {/* TPE-POS module — TPE-optimized baggage terminal, offline-first, reuses POS infrastructure */}
+          <Route path="/tpe-pos/connexion" element={<ConnectionProvider><TPEConnexion /></ConnectionProvider>} />
+          <Route path="/tpe-pos" element={<ConnectionProvider><POSSessionProvider /></ConnectionProvider>}>
+            <Route path="accueil" element={<BaggageTerminal />} />
           </Route>
 
           {/* Bornes digitales — public routes (no auth for travelers) */}
