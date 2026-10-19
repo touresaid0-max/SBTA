@@ -2,6 +2,8 @@ import { type TicketRecord, type DepartRecord } from './db';
 import { localInsert, getAll, getById, localUpdate } from './offlineStore';
 import { getDepartById, updateDepart } from './departService';
 import { getReferentiel } from './referentiels';
+import { supabase } from '@/services/supabase';
+import { isOnline } from './syncEngine';
 
 export type { TicketRecord };
 
@@ -45,6 +47,120 @@ export async function getRouteCityStops(): Promise<RouteCityStopRef[]> {
 export async function getTicketsForDepart(departId: string): Promise<TicketRecord[]> {
   const all = await getAll<TicketRecord>('tickets');
   return all.filter(t => t.depart_id === departId && t.status !== 'cancelled');
+}
+
+export interface TicketSearchResult {
+  ticket: TicketRecord;
+  depart?: DepartRecord;
+  departureNumber?: number;
+  busPlate?: string;
+}
+
+function matchesTicketSuffix(ticketNumber: string, suffix: string): boolean {
+  return ticketNumber.trim().toLowerCase().endsWith(suffix);
+}
+
+export async function searchTicketsBySuffix(
+  suffix: string,
+  stationId: string,
+): Promise<TicketSearchResult[]> {
+  const normalizedSuffix = suffix.trim().toLowerCase();
+  if (normalizedSuffix.length !== 4 || !stationId) return [];
+
+  const [localTickets, localDeparts] = await Promise.all([
+    getAll<TicketRecord>('tickets'),
+    getAll<DepartRecord>('departs'),
+  ]);
+  const localDepartMap = new Map(localDeparts.map(depart => [depart.id, depart]));
+  const localResults = localTickets
+    .filter(ticket =>
+      ticket.status !== 'cancelled' &&
+      matchesTicketSuffix(ticket.ticket_number, normalizedSuffix),
+    )
+    .map(ticket => ({ ticket, depart: localDepartMap.get(ticket.depart_id) }))
+    .filter(result => result.depart?.station_id === stationId)
+    .map(result => ({
+      ...result,
+      departureNumber: result.depart?.departure_number,
+      busPlate: result.depart?.bus_plate,
+    }));
+
+  if (!isOnline()) return localResults;
+
+  try {
+    const { data: schedules, error: scheduleError } = await supabase
+      .from('schedules')
+      .select('id, departure_station_id, station_id, station_name, route_number, departure_number, route_name, departure_datetime, bus_id')
+      .or(`departure_station_id.eq.${stationId},station_id.eq.${stationId}`);
+    if (scheduleError) throw scheduleError;
+
+    const scheduleRows = schedules ?? [];
+    if (scheduleRows.length === 0) return localResults;
+
+    const scheduleIds = scheduleRows.map(schedule => schedule.id as string);
+    const busIds = scheduleRows
+      .map(schedule => schedule.bus_id as string | null)
+      .filter((busId): busId is string => Boolean(busId));
+    const [{ data: reservations, error: reservationError }, { data: buses }] = await Promise.all([
+      supabase
+        .from('reservations')
+        .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, destination_city_id, loyalty_card_number')
+        .in('schedule_id', scheduleIds)
+        .not('status', 'eq', 'annulee'),
+      busIds.length > 0
+        ? supabase.from('buses').select('id, registration_number').in('id', busIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (reservationError) throw reservationError;
+
+    const busPlateMap = new Map((buses ?? []).map(bus => [bus.id as string, bus.registration_number as string]));
+    const remoteResults: TicketSearchResult[] = [];
+    for (const reservation of reservations ?? []) {
+      const ticketNumber = String(reservation.booking_reference ?? reservation.id ?? '');
+      if (!matchesTicketSuffix(ticketNumber, normalizedSuffix)) continue;
+
+      const schedule = scheduleRows.find(row => row.id === reservation.schedule_id);
+      if (!schedule) continue;
+      const seatNumbers = Array.isArray(reservation.seat_numbers) ? reservation.seat_numbers as string[] : [];
+      const seatNumber = Number.parseInt(seatNumbers[0] ?? '0', 10);
+      const ticket: TicketRecord = {
+        id: reservation.id as string,
+        depart_id: reservation.schedule_id as string,
+        ticket_number: ticketNumber,
+        seat_number: Number.isFinite(seatNumber) ? seatNumber : 0,
+        seat_numbers: seatNumbers,
+        destination: String(reservation.destination_city_name ?? ''),
+        destination_id: reservation.destination_city_id as string | undefined,
+        passenger_name: String(reservation.passenger_name ?? ''),
+        passenger_phone: String(reservation.passenger_phone ?? ''),
+        price: Number(reservation.total_price ?? 0),
+        original_price: Number(reservation.total_price ?? 0),
+        is_reduced: false,
+        is_reported: false,
+        is_ac: false,
+        print_ticket: true,
+        payment_method: 'cash',
+        status: 'sold',
+        loyalty_card_number: reservation.loyalty_card_number as string | undefined,
+        created_at: '',
+        updated_at: '',
+      };
+      remoteResults.push({
+        ticket,
+        depart: localDepartMap.get(schedule.id as string),
+        departureNumber: Number(schedule.departure_number ?? schedule.route_number ?? 0),
+        busPlate: busPlateMap.get(schedule.bus_id as string),
+      });
+    }
+
+    const merged = new Map<string, TicketSearchResult>();
+    for (const result of [...localResults, ...remoteResults]) {
+      merged.set(result.ticket.id, result);
+    }
+    return Array.from(merged.values()).slice(0, 20);
+  } catch {
+    return localResults;
+  }
 }
 
 export async function isSeatAvailable(departId: string, seatNumber: number): Promise<boolean> {

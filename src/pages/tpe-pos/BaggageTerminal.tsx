@@ -12,7 +12,8 @@ import {
   getAllDeparts, getDepartById, type DepartRecord,
 } from '@/services/pos/departService';
 import {
-  getStations, getTicketsForDepart, type StationRef, type TicketRecord,
+  getStations, getTicketsForDepart, searchTicketsBySuffix,
+  type StationRef, type TicketRecord, type TicketSearchResult,
 } from '@/services/pos/ticketService';
 import {
   registerBagage, getBagagesForDepart, findTicketByNumber,
@@ -216,7 +217,7 @@ export default function BaggageTerminal() {
                 onDone={loadDeparts}
               />
             )}
-            {view === 'search' && <SearchView />}
+            {view === 'search' && <SearchView stationId={session.station_id} />}
             {view === 'history' && (
               <HistoryView session={session} />
             )}
@@ -700,28 +701,43 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
 // ── SEARCH (ticket search by last 4 chars across all departs) ─────────────────
 
-function SearchView() {
+interface SearchViewProps {
+  stationId: string;
+}
+
+function resultDepartureNumber(
+  depart: DepartRecord | undefined,
+  results: TicketSearchResult[],
+  ticketId: string,
+): string {
+  if (depart?.departure_number) return String(depart.departure_number);
+  const result = results.find(item => item.ticket.id === ticketId);
+  return result?.departureNumber ? String(result.departureNumber) : '—';
+}
+
+function resultBusPlate(
+  depart: DepartRecord | undefined,
+  results: TicketSearchResult[],
+  ticketId: string,
+): string {
+  if (depart?.bus_plate) return depart.bus_plate;
+  const result = results.find(item => item.ticket.id === ticketId);
+  return result?.busPlate ?? '—';
+}
+
+function SearchView({ stationId }: SearchViewProps) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<{ ticket: TicketRecord; depart: DepartRecord | undefined }[]>([]);
+  const [results, setResults] = useState<TicketSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
 
   const handleSearch = async () => {
     const q = query.trim().toLowerCase();
-    if (q.length < 3) return;
+    if (q.length !== 4) return;
     setSearching(true);
     setSearched(false);
     try {
-      const allTickets = await getAll<TicketRecord>('tickets');
-      const allDeparts = await getAll<DepartRecord>('departs');
-      const matched = allTickets
-        .filter(t => t.status !== 'cancelled' && t.ticket_number.toLowerCase().endsWith(q))
-        .map(t => ({
-          ticket: t,
-          depart: allDeparts.find(d => d.id === t.depart_id),
-        }))
-        .slice(0, 20);
-      setResults(matched);
+      setResults(await searchTicketsBySuffix(q, stationId));
     } catch {
       setResults([]);
     } finally {
@@ -755,14 +771,14 @@ function SearchView() {
             onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
             className="w-full px-4 py-3 rounded-xl border-2 text-base outline-none transition-colors"
             style={{ borderColor: '#E2EAE5', backgroundColor: 'white' }}
-            placeholder="Ex: 0001"
-            maxLength={12}
+            placeholder="Ex: 4A89"
+            maxLength={4}
           />
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#9CA3AF' }} />
         </div>
         <button
           onClick={handleSearch}
-          disabled={query.trim().length < 3 || searching}
+          disabled={query.trim().length !== 4 || searching}
           className="px-5 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center gap-2"
           style={{ backgroundColor: '#7C3AED' }}
         >
@@ -791,13 +807,11 @@ function SearchView() {
                   {ticket.ticket_number} — Siège {ticket.seat_number}
                 </p>
                 <p className="text-xs truncate" style={{ color: '#6B7280' }}>
-                  {ticket.destination} · {ticket.passenger_name || '—'}
+                  {ticket.destination || 'Destination non renseignée'} · {ticket.passenger_name || 'Passager non renseigné'}
                 </p>
-                {depart && (
-                  <p className="text-xs mt-0.5 truncate" style={{ color: '#9CA3AF' }}>
-                    Départ #{depart.route_number} · {depart.bus_plate}
-                  </p>
-                )}
+                <p className="text-xs mt-0.5 truncate" style={{ color: '#6B7280' }}>
+                  Départ #{resultDepartureNumber(depart, results, ticket.id)} · Siège {ticket.seat_number || '—'} · Car {resultBusPlate(depart, results, ticket.id)}
+                </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-sm font-bold" style={{ color: '#0B7439' }}>
