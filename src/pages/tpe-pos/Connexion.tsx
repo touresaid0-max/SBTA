@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Loader2, AlertCircle, CheckCircle, Luggage } from 'lucide-react';
-import { login, type POSLoginResult } from '@/services/pos/offlineAuth';
+import { Lock, User, LogIn, Loader2, AlertCircle, CheckCircle, Luggage, ShieldAlert } from 'lucide-react';
+import { login, getCurrentSession, logoutPOS, type POSLoginResult } from '@/services/pos/offlineAuth';
 import { refreshAllReferentiels } from '@/services/pos/referentiels';
 import { isOnline } from '@/services/pos/syncEngine';
+import { supabase } from '@/services/supabase';
+import { db, type SessionRecord } from '@/services/pos/db';
 
 export default function TPEConnexion() {
   const navigate = useNavigate();
@@ -24,6 +26,16 @@ export default function TPEConnexion() {
     return () => window.removeEventListener('keydown', handler);
   });
 
+  // Guard: if a non-bagagiste session is already active, force logout so they can't access TPE.
+  useEffect(() => {
+    (async () => {
+      const s = await getCurrentSession();
+      if (s && s.role !== 'bagagiste') {
+        await logoutPOS();
+      }
+    })();
+  }, []);
+
   const handleLogin = async () => {
     if (!email.trim() || !password) return;
     setLoading(true);
@@ -32,16 +44,47 @@ export default function TPEConnexion() {
 
     const result: POSLoginResult = await login(email.trim(), password);
 
-    if (result.success) {
-      setLoginMode(true);
-      if (!result.offline) {
-        try { await refreshAllReferentiels(); } catch { /* non-critical */ }
-      }
-      setTimeout(() => navigate('/tpe-pos/accueil'), 400);
-    } else {
+    if (!result.success) {
       setError(result.error ?? 'Erreur de connexion');
       setLoading(false);
+      return;
     }
+
+    // Role gate: only bagagiste can use the TPE.
+    if (result.session?.role !== 'bagagiste') {
+      await logoutPOS();
+      setError('Accès refusé : cet espace est réservé aux bagagistes. Votre profil n\'est pas autorisé.');
+      setLoading(false);
+      return;
+    }
+
+    // Enrich session with company name for display.
+    if (result.session.station_id) {
+      try {
+        const { data: station } = await supabase
+          .from('stations')
+          .select('id, name, companies!stations_company_id_fkey(name)')
+          .eq('id', result.session.station_id)
+          .maybeSingle();
+        if (station) {
+          const companyName = (station.companies as { name?: string } | null)?.name;
+          const enriched: SessionRecord = {
+            ...result.session,
+            station_name: station.name ?? result.session.station_name,
+          } as SessionRecord;
+          (enriched as any).company_name = companyName ?? undefined;
+          await db.session.put(enriched);
+        }
+      } catch {
+        // non-critical — station name from login is sufficient
+      }
+    }
+
+    setLoginMode(true);
+    if (!result.offline) {
+      try { await refreshAllReferentiels(); } catch { /* non-critical */ }
+    }
+    setTimeout(() => navigate('/tpe-pos/accueil'), 400);
   };
 
   return (
@@ -139,7 +182,15 @@ export default function TPEConnexion() {
           </button>
         </form>
 
-        <p className="text-center text-xs mt-6" style={{ color: '#9CA3AF' }}>
+        <div
+          className="mt-6 rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+        >
+          <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>Accès réservé aux bagagistes. Autres profils non autorisés.</span>
+        </div>
+
+        <p className="text-center text-xs mt-4" style={{ color: '#9CA3AF' }}>
           Entrée = valider · Échap = annuler
         </p>
       </div>

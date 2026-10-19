@@ -22,18 +22,50 @@ import { PrintService } from '@/services/pos/printService';
 import { getAll } from '@/services/pos/offlineStore';
 import { formatCurrency } from '@/utils/formatCurrency';
 import { getTarifForDestination } from '@/services/pos/ticketService';
+import { supabase } from '@/services/supabase';
 
 type View = 'home' | 'register' | 'search' | 'history';
 
 export default function BaggageTerminal() {
   const navigate = useNavigate();
-  const { session, logout } = usePOSSession();
+  const { session, logout, loading: sessionLoading } = usePOSSession();
   const { status, syncing, pendingCount, bannerLabel } = useConnection();
   useAutoSync(session?.station_id);
 
   const [view, setView] = useState<View>('home');
   const [departs, setDeparts] = useState<DepartRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [companyName, setCompanyName] = useState<string | undefined>();
+
+  // Role guard: only bagagiste may use the TPE. Any other role is kicked to the TPE login.
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (session && session.role !== 'bagagiste') {
+      logout();
+      navigate('/tpe-pos/connexion', { replace: true });
+    }
+  }, [session, sessionLoading, logout, navigate]);
+
+  // Fetch company name for display.
+  useEffect(() => {
+    if (!session?.station_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('stations')
+          .select('companies!stations_company_id_fkey(name)')
+          .eq('id', session.station_id)
+          .maybeSingle();
+        if (!cancelled) {
+          setCompanyName((data?.companies as { name?: string } | null)?.name);
+        }
+      } catch {
+        // non-critical
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.station_id]);
 
   const loadDeparts = useCallback(async () => {
     if (!session?.station_id) { setLoading(false); return; }
@@ -57,7 +89,7 @@ export default function BaggageTerminal() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/guichet/connexion');
+    navigate('/tpe-pos/connexion', { replace: true });
   };
 
   // Connection indicator
@@ -120,24 +152,41 @@ export default function BaggageTerminal() {
 
       {/* Main content */}
       <main className="flex-1 px-4 py-4 sm:px-6 max-w-2xl mx-auto w-full">
-        {view === 'home' && (
-          <HomeView
-            departs={departs}
-            loading={loading}
-            onSelectView={setView}
-            stationName={session?.station_name ?? 'Gare'}
-          />
-        )}
-        {view === 'register' && (
-          <RegisterView
-            departs={departs}
-            session={session}
-            onDone={loadDeparts}
-          />
-        )}
-        {view === 'search' && <SearchView />}
-        {view === 'history' && (
-          <HistoryView session={session} />
+        {sessionLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#0B7439' }} />
+          </div>
+        ) : !session || session.role !== 'bagagiste' ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <AlertCircle className="w-10 h-10 mb-3" style={{ color: '#DC2626' }} />
+            <p className="text-sm font-medium" style={{ color: '#6B7280' }}>
+              Accès refusé — profil bagagiste requis.
+            </p>
+          </div>
+        ) : (
+          <>
+            {view === 'home' && (
+              <HomeView
+                departs={departs}
+                loading={loading}
+                onSelectView={setView}
+                stationName={session?.station_name ?? 'Gare'}
+                bagagisteName={session?.full_name ?? 'Bagagiste'}
+                companyName={companyName}
+              />
+            )}
+            {view === 'register' && (
+              <RegisterView
+                departs={departs}
+                session={session}
+                onDone={loadDeparts}
+              />
+            )}
+            {view === 'search' && <SearchView />}
+            {view === 'history' && (
+              <HistoryView session={session} />
+            )}
+          </>
         )}
       </main>
     </div>
@@ -151,9 +200,11 @@ interface HomeViewProps {
   loading: boolean;
   onSelectView: (v: View) => void;
   stationName: string;
+  bagagisteName: string;
+  companyName?: string;
 }
 
-function HomeView({ departs, loading, onSelectView, stationName }: HomeViewProps) {
+function HomeView({ departs, loading, onSelectView, stationName, bagagisteName, companyName }: HomeViewProps) {
   const tiles: { label: string; icon: typeof Luggage; view: View; color: string; bg: string }[] = [
     { label: 'Enregistrer bagage', icon: Luggage, view: 'register', color: '#0B7439', bg: '#D1FAE5' },
     { label: 'Rechercher ticket', icon: Search, view: 'search', color: '#7C3AED', bg: '#EDE9FE' },
@@ -171,7 +222,10 @@ function HomeView({ departs, loading, onSelectView, stationName }: HomeViewProps
           <Luggage className="w-8 h-8" strokeWidth={2.5} />
         </div>
         <h1 className="text-xl font-bold leading-tight">Terminal Bagage TPE</h1>
-        <p className="text-sm opacity-85 mt-0.5">{stationName}</p>
+        <p className="text-sm font-semibold opacity-95 mt-1">{bagagisteName}</p>
+        <p className="text-xs opacity-85 mt-0.5">
+          {stationName}{companyName ? ` · ${companyName}` : ''}
+        </p>
       </div>
 
       {/* Departure count indicator */}
