@@ -8,6 +8,19 @@ import type { ScheduledBus } from '@/components/parcel/BusSelector'
 import { setPrintingGuard } from '@/store/authStore'
 import { getPrintCustomization } from '@/services/printCustomization'
 
+async function loadImageDataUrl(url: string): Promise<string> {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Logo loading failed: ${response.status}`)
+
+  const blob = await response.blob()
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => reject(reader.error ?? new Error('Logo conversion failed'))
+    reader.readAsDataURL(blob)
+  })
+}
+
 function generateQRDataUrl(value: string, size = 100): Promise<string> {
   return new Promise((resolve) => {
     const container = document.createElement('div')
@@ -54,7 +67,13 @@ function formatRecipientPhone(phone: string): string {
 export async function printParcelTicket(data: ParcelReceiptData, copyType: 'client' | 'agency' | 'both' = 'both') {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
   const qrDataUrl = data.courier_qr_enabled ? await generateQRDataUrl(data.parcel_code, 100) : ''
-  const logoUrl = window.location.origin + '/logosbta00-1.JPG'
+  const logoSourceUrl = window.location.origin + '/logosbta00-1.JPG'
+  let logoUrl = logoSourceUrl
+  try {
+    logoUrl = await loadImageDataUrl(logoSourceUrl)
+  } catch {
+    logoUrl = logoSourceUrl
+  }
   const customization = await getPrintCustomization()
   const customNotes = customization.parcel_notes
   const notesHtml = customNotes.length > 0
@@ -288,7 +307,7 @@ ${copies.map(copyNum => `
   <div class="copy-label">${copyNum === 1 ? 'EXEMPLAIRE CLIENT' : 'EXEMPLAIRE AGENCE'}</div>
   <div class="header">
     <div class="logo-container">
-      <img class="logo-img" id="logo-img-${copyNum}" src="${logoUrl}" alt="SBTA" onerror="this.style.display='none';">
+      <img class="logo-img" id="logo-img-${copyNum}" src="${logoUrl}" alt="SBTA">
     </div>
     <div class="header-right">
       <div><span class="label">VILLE EXP :</span>&nbsp;&nbsp;<span class="value">${escHtml(data.origin_agent_phone ?? '')}</span></div>
