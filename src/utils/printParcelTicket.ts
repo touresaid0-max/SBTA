@@ -181,6 +181,11 @@ export async function printParcelTicket(data: ParcelReceiptData, copyType: 'clie
     font-weight: bold;
     font-size: 10px;
   }
+  .person-grid .cell-phone {
+    font-size: 9px;
+    font-weight: bold;
+    margin-top: 0.5mm;
+  }
   .fin-row {
     display: flex;
     justify-content: space-between;
@@ -313,10 +318,12 @@ ${copies.map(copyNum => `
     <div class="cell">
       <div class="cell-label">EXPEDITEUR</div>
       <div class="cell-value">${escHtml(data.sender_name.toUpperCase())}</div>
+      <div class="cell-phone">Tel : ${escHtml(data.sender_phone ?? '')}</div>
     </div>
     <div class="cell">
       <div class="cell-label">DESTINATAIRE</div>
       <div class="cell-value">${escHtml(data.recipient_name.toUpperCase())}</div>
+      <div class="cell-phone">Tel : ${escHtml(data.recipient_phone ?? '')}</div>
     </div>
   </div>
 
