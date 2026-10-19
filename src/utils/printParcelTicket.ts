@@ -46,6 +46,11 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+function formatRecipientPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  return digits.length >= 10 ? digits.slice(-10) : phone
+}
+
 export async function printParcelTicket(data: ParcelReceiptData, copyType: 'client' | 'agency' | 'both' = 'both') {
   const totalRecu = data.delivery_fee + data.sms_tracking_fee
   const qrDataUrl = data.courier_qr_enabled ? await generateQRDataUrl(data.parcel_code, 100) : ''
@@ -323,7 +328,7 @@ ${copies.map(copyNum => `
     <div class="cell">
       <div class="cell-label">DESTINATAIRE</div>
       <div class="cell-value">${escHtml(data.recipient_name.toUpperCase())}</div>
-      <div class="cell-phone">Tel : ${escHtml(data.recipient_phone ?? '')}</div>
+      <div class="cell-phone">Tel : ${escHtml(formatRecipientPhone(data.recipient_phone ?? ''))}</div>
     </div>
   </div>
 
