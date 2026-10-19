@@ -170,7 +170,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     seats_total: s.seats_total ?? ((s.seats_available ?? 0) + (s.seats_reserved ?? 0)) ?? 0,
     seats_from: 1,
     seats_sold: s.seats_reserved ?? 0,
-    station_id: s.departure_station_id ?? s.station_id ?? null,
+    station_id: s.departure_station_id ?? null,
     station_name: s.station_name ?? null,
     counter_id: s.counter_id ?? null,
     company_id: s.company_id ?? null,
@@ -205,7 +205,7 @@ function mapRemoteReservationToLocalTicket(r: Record<string, unknown>): Record<s
     seat_number: firstSeat,
     seat_numbers: seatNumbers,
     destination: r.destination_city_name ?? '',
-    destination_id: r.destination_city_id ?? null,
+    destination_id: null,
     passenger_name: r.passenger_name ?? '',
     passenger_phone: r.passenger_phone ?? '',
     price: Number(r.total_price ?? 0),
@@ -309,7 +309,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
 
       const { data: remoteReservations, error: resError } = await supabase
         .from('reservations')
-        .select('id, schedule_id, seat_numbers, total_price, total_seats, passenger_name, passenger_phone, status, booking_reference, destination_city_name, destination_city_id, loyalty_card_number')
+        .select('id, schedule_id, seat_numbers, total_price, total_seats, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number')
         .in('schedule_id', scheduleIds)
         .order('created_at', { ascending: true });
 

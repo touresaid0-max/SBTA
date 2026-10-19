@@ -90,8 +90,8 @@ export async function searchTicketsBySuffix(
   try {
     const { data: schedules, error: scheduleError } = await supabase
       .from('schedules')
-      .select('id, departure_station_id, station_id, station_name, route_number, departure_number, route_name, departure_datetime, bus_id')
-      .or(`departure_station_id.eq.${stationId},station_id.eq.${stationId}`);
+      .select('id, departure_station_id, route_number, departure_number, route_name, departure_datetime, bus_id')
+      .eq('departure_station_id', stationId);
     if (scheduleError) throw scheduleError;
 
     const scheduleRows = schedules ?? [];
@@ -104,7 +104,7 @@ export async function searchTicketsBySuffix(
     const [{ data: reservations, error: reservationError }, { data: buses }] = await Promise.all([
       supabase
         .from('reservations')
-        .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, destination_city_id, loyalty_card_number')
+        .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number')
         .in('schedule_id', scheduleIds)
         .not('status', 'eq', 'annulee'),
       busIds.length > 0
@@ -130,7 +130,7 @@ export async function searchTicketsBySuffix(
         seat_number: Number.isFinite(seatNumber) ? seatNumber : 0,
         seat_numbers: seatNumbers,
         destination: String(reservation.destination_city_name ?? ''),
-        destination_id: reservation.destination_city_id as string | undefined,
+        destination_id: undefined,
         passenger_name: String(reservation.passenger_name ?? ''),
         passenger_phone: String(reservation.passenger_phone ?? ''),
         price: Number(reservation.total_price ?? 0),

@@ -58,14 +58,13 @@ export default function BaggageTerminal() {
       try {
         const { data: sbh } = await supabase
           .from('station_baggage_handlers')
-          .select('station_id, stations!inner(id, name, companies!stations_company_id_fkey(name))')
+          .select('station_id, stations!inner(id, name)')
           .eq('handler_id', session.user_id)
           .limit(1)
           .maybeSingle();
         if (cancelled || !sbh) return;
-        const st = sbh.stations as { id: string; name: string; companies?: { name?: string } | null } | null;
+        const st = sbh.stations as { id: string; name: string } | null;
         if (!st?.id) return;
-        setCompanyName(st.companies?.name);
 
         // If the authoritative station differs from the cached session, update it in place.
         if (st.id !== session.station_id || st.name !== session.station_name) {
@@ -79,28 +78,6 @@ export default function BaggageTerminal() {
     })();
     return () => { cancelled = true; };
   }, [session?.user_id, session?.role]);
-
-  // Fetch company name for display (fallback when junction sync didn't return it).
-  useEffect(() => {
-    if (!session?.station_id) return;
-    let cancelled = false;
-    (async () => {
-      if (companyName) return; // already set via junction sync
-      try {
-        const { data } = await supabase
-          .from('stations')
-          .select('companies!stations_company_id_fkey(name)')
-          .eq('id', session.station_id)
-          .maybeSingle();
-        if (!cancelled) {
-          setCompanyName((data?.companies as { name?: string } | null)?.name);
-        }
-      } catch {
-        // non-critical
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [session?.station_id, companyName]);
 
   const loadDeparts = useCallback(async () => {
     if (!session?.station_id) { setLoading(false); return; }

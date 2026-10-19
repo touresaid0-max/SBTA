@@ -63,16 +63,14 @@ export default function TPEConnexion() {
       try {
         const { data: station } = await supabase
           .from('stations')
-          .select('id, name, companies!stations_company_id_fkey(name)')
+          .select('id, name')
           .eq('id', result.session.station_id)
           .maybeSingle();
         if (station) {
-          const companyName = (station.companies as { name?: string } | null)?.name;
           const enriched: SessionRecord = {
             ...result.session,
             station_name: station.name ?? result.session.station_name,
           } as SessionRecord;
-          (enriched as any).company_name = companyName ?? undefined;
           await db.session.put(enriched);
         }
       } catch {
