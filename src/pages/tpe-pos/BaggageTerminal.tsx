@@ -324,12 +324,13 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [departTickets, setDepartTickets] = useState<TicketRecord[]>([]);
+  const [ticketSearching, setTicketSearching] = useState(false);
 
   useEffect(() => {
     getStations().then(setStations).catch(() => {});
   }, []);
 
-  // Load tickets for selected depart (for ticket linking search)
+  // Load cached tickets for the selected departure; online search supplements this list.
   useEffect(() => {
     if (!selectedDepart) { setDepartTickets([]); return; }
     getTicketsForDepart(selectedDepart.id).then(setDepartTickets).catch(() => {});
@@ -346,16 +347,31 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
     })();
   }, [selectedDepart, destinationId]);
 
-  // Ticket search by last 4 characters
+  // Ticket search by last 4 characters, scoped to the selected departure.
   useEffect(() => {
-    if (!withTicket || !ticketSearch.trim()) { setTicketResults([]); return; }
+    if (!withTicket || ticketSearch.trim().length !== 4 || !selectedDepart) {
+      setTicketResults([]);
+      setTicketSearching(false);
+      return;
+    }
+
+    let active = true;
     const q = ticketSearch.trim().toLowerCase();
-    const results = departTickets.filter(t =>
-      t.status !== 'cancelled' &&
-      t.ticket_number.toLowerCase().endsWith(q),
-    );
-    setTicketResults(results);
-  }, [ticketSearch, departTickets, withTicket]);
+    setTicketSearching(true);
+    searchTicketsBySuffix(q, selectedDepart.station_id, selectedDepart.id)
+      .then(results => {
+        if (!active) return;
+        setTicketResults(results.map(result => result.ticket));
+      })
+      .catch(() => {
+        if (active) setTicketResults([]);
+      })
+      .finally(() => {
+        if (active) setTicketSearching(false);
+      });
+
+    return () => { active = false; };
+  }, [ticketSearch, selectedDepart, withTicket]);
 
   const handleSelectTicket = (ticket: TicketRecord) => {
     setLinkedTicket(ticket);
@@ -531,6 +547,9 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
               />
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#9CA3AF' }} />
             </div>
+            {ticketSearching && (
+              <p className="text-xs mt-2" style={{ color: '#6B7280' }}>Recherche en cours...</p>
+            )}
             {ticketResults.length > 0 && (
               <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto">
                 {ticketResults.map(t => (
@@ -556,8 +575,8 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                 ))}
               </div>
             )}
-            {ticketSearch.trim().length >= 4 && ticketResults.length === 0 && !linkedTicket && (
-              <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>Aucun ticket trouvé</p>
+            {ticketSearch.trim().length === 4 && ticketResults.length === 0 && !linkedTicket && !ticketSearching && (
+              <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>Aucun ticket trouvé pour ce départ</p>
             )}
             {linkedTicket && (
               <div className="mt-2 rounded-lg p-2.5 flex items-center gap-2" style={{ backgroundColor: '#EDE9FE' }}>
