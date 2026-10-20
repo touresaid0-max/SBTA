@@ -91,7 +91,7 @@ export async function searchTicketsBySuffix(
     const likeSuffix = normalizedSuffix.replace(/[\\%_]/g, char => `\\${char}`);
     const { data: reservations, error: reservationError } = await supabase
       .from('reservations')
-      .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number, schedules!inner(id, departure_station_id, route_number, departure_number, bus_id)')
+      .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, schedules!inner(id, departure_station_id, route_number, departure_number, bus_id)')
       .eq('schedules.departure_station_id', stationId)
       .ilike('booking_reference', `%${likeSuffix}`)
       .not('status', 'eq', 'annulee')
@@ -135,7 +135,6 @@ export async function searchTicketsBySuffix(
         print_ticket: true,
         payment_method: 'cash',
         status: 'sold',
-        loyalty_card_number: reservation.loyalty_card_number as string | undefined,
         created_at: '',
         updated_at: '',
       };
