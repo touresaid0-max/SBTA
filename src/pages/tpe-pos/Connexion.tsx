@@ -16,6 +16,33 @@ export default function TPEConnexion() {
   const [loginMode, setLoginMode] = useState<boolean | null>(null);
 
   useEffect(() => {
+    const existingManifests = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="manifest"]'));
+    existingManifests.forEach((link) => link.remove());
+
+    const manifest = document.createElement('link');
+    manifest.rel = 'manifest';
+    manifest.href = '/tpe-pos/manifest.webmanifest';
+    manifest.dataset.tpePwa = 'true';
+    document.head.appendChild(manifest);
+
+    const themeColor = document.createElement('meta');
+    themeColor.name = 'theme-color';
+    themeColor.content = '#0B7439';
+    themeColor.dataset.tpePwa = 'true';
+    document.head.appendChild(themeColor);
+
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker.register('/tpe-pos/sw.js', { scope: '/tpe-pos/' });
+    }
+
+    return () => {
+      manifest.remove();
+      themeColor.remove();
+      existingManifests.forEach((link) => document.head.appendChild(link));
+    };
+  }, []);
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -41,6 +68,12 @@ export default function TPEConnexion() {
     setLoading(true);
     setError('');
     setLoginMode(null);
+
+    if (!isOnline()) {
+      setError('Une connexion Internet est nécessaire pour se connecter.');
+      setLoading(false);
+      return;
+    }
 
     const result: POSLoginResult = await login(email.trim(), password);
 
@@ -104,7 +137,7 @@ export default function TPEConnexion() {
           style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}
         >
           <CheckCircle className="w-4 h-4" />
-          {isOnline() ? 'En ligne — connexion au serveur' : 'Hors ligne — vérification locale'}
+          {isOnline() ? 'En ligne — connexion au serveur' : 'Hors ligne — Internet requis pour la connexion'}
         </div>
 
         {error && (

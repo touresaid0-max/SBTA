@@ -1,0 +1,29 @@
+{
+  "name": "SBTA TPE Bagage",
+  "short_name": "TPE Bagage",
+  "description": "Terminal de paiement électronique SBTA pour les bagages",
+  "start_url": "/tpe-pos/connexion",
+  "scope": "/tpe-pos/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0B7439",
+  "background_color": "#F4F7F5",
+  "icons": [
+    {
+      "src": "/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
