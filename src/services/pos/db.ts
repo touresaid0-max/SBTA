@@ -75,6 +75,7 @@ export interface TicketRecord {
   id: string;
   depart_id: string;
   ticket_number: string;
+  bus_plate?: string;
   seat_number: number;
   seat_numbers: string[];
   destination: string;

@@ -314,6 +314,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
   const [ticketSearch, setTicketSearch] = useState('');
   const [ticketResults, setTicketResults] = useState<TicketRecord[]>([]);
   const [linkedTicket, setLinkedTicket] = useState<TicketRecord | null>(null);
+  const [ticketBusPlate, setTicketBusPlate] = useState('');
   const [declaredValue, setDeclaredValue] = useState(0);
   const [price, setPrice] = useState(0);
   const [destinationId, setDestinationId] = useState('');
@@ -375,7 +376,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
     searchTicketsBySuffix(q, selectedDepart.station_id, selectedDepart.id)
       .then(results => {
         if (!active) return;
-        setTicketResults(results.map(result => result.ticket));
+        setTicketResults(results.map(result => ({ ...result.ticket, bus_plate: result.busPlate ?? result.depart?.bus_plate })));
       })
       .catch(() => {
         if (active) setTicketResults([]);
@@ -389,6 +390,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
   const handleSelectTicket = (ticket: TicketRecord) => {
     setLinkedTicket(ticket);
+    setTicketBusPlate(ticket.bus_plate ?? selectedDepart?.bus_plate ?? '');
     setTicketSearch(ticket.ticket_number);
     setTicketResults([]);
     setOwnerName(ticket.passenger_name || ownerName);
@@ -419,6 +421,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
         withTicket,
         withTicketReport: false,
         ticketNumber: linkedTicket?.ticket_number,
+        busPlate: ticketBusPlate || selectedDepart.bus_plate,
         price,
         destination: destName,
         description: declaredValue > 0
@@ -441,6 +444,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
       setWithTicket(false);
       setTicketSearch('');
       setLinkedTicket(null);
+      setTicketBusPlate('');
       setTicketResults([]);
       setDeclaredValue(0);
       setPrice(0);
@@ -541,6 +545,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
               if (!e.target.checked) {
                 setTicketSearch('');
                 setLinkedTicket(null);
+                setTicketBusPlate('');
                 setTicketResults([]);
               }
             }}
@@ -614,7 +619,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                     </p>
                   </div>
                   <button
-                    onClick={() => { setLinkedTicket(null); setTicketSearch(''); }}
+                    onClick={() => { setLinkedTicket(null); setTicketBusPlate(''); setTicketSearch(''); }}
                     className="flex-shrink-0"
                     aria-label="Désélectionner le ticket"
                   >
@@ -670,7 +675,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
             <label className={fieldLabel} style={{ color: '#6B7280' }}>Immatriculation</label>
             <input
               type="text"
-              value={selectedDepart.bus_plate ?? ''}
+              value={ticketBusPlate || selectedDepart.bus_plate || ''}
               disabled
               className={fieldInput}
               style={{ ...fieldStyle, opacity: 0.7 }}

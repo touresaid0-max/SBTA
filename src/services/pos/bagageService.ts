@@ -27,6 +27,7 @@ export interface RegisterBagageParams {
   withTicket: boolean;
   withTicketReport: boolean;
   ticketNumber?: string;
+  busPlate?: string;
   price: number;
   destination: string;
   description: string;
@@ -58,7 +59,7 @@ export async function registerBagage(params: RegisterBagageParams): Promise<Baga
     price: params.price,
     destination: params.destination,
     description: params.description,
-    car_plate: depart.bus_plate ?? '',
+    car_plate: params.busPlate ?? depart.bus_plate ?? '',
     owner_name: params.ownerName,
     owner_phone: params.ownerPhone,
     print_bagage: params.printBagage,
