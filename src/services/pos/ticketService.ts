@@ -54,6 +54,8 @@ export interface TicketSearchResult {
   depart?: DepartRecord;
   departureNumber?: number;
   busPlate?: string;
+  routeId?: string;
+  routeName?: string;
 }
 
 function matchesTicketSuffix(ticketNumber: string, suffix: string): boolean {
@@ -83,6 +85,8 @@ export async function searchTicketsBySuffix(
       ...result,
       departureNumber: result.depart?.departure_number,
       busPlate: result.depart?.bus_plate,
+      routeId: result.depart?.route_id,
+      routeName: result.depart?.route_name,
     }));
 
   if (!isOnline()) return localResults;
@@ -91,14 +95,14 @@ export async function searchTicketsBySuffix(
     const likeSuffix = normalizedSuffix.replace(/[\\%_]/g, char => `\\${char}`);
     const { data: reservations, error: reservationError } = await supabase
       .from('reservations')
-      .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, schedules!inner(id, departure_station_id, route_number, departure_number, bus_id)')
+      .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, schedules!inner(id, departure_station_id, route_id, route_number, departure_number, bus_id)')
       .eq('schedules.departure_station_id', stationId)
       .ilike('booking_reference', `%${likeSuffix}`)
       .not('status', 'eq', 'annulee')
       .limit(20);
     if (reservationError) throw reservationError;
 
-    type ScheduleRow = { id: string; departure_station_id: string; route_number: number | null; departure_number: number | null; bus_id: string | null };
+    type ScheduleRow = { id: string; departure_station_id: string; route_id: string | null; route_number: number | null; departure_number: number | null; bus_id: string | null };
     const scheduleRows = (reservations ?? [])
       .map(reservation => reservation.schedules as unknown as ScheduleRow | null)
       .filter((schedule): schedule is ScheduleRow => Boolean(schedule));
@@ -143,6 +147,7 @@ export async function searchTicketsBySuffix(
         depart: localDepartMap.get(schedule.id),
         departureNumber: Number(schedule.departure_number ?? schedule.route_number ?? 0) || undefined,
         busPlate: schedule.bus_id ? busPlateMap.get(schedule.bus_id) : undefined,
+        routeId: schedule.route_id ?? undefined,
       });
     }
 

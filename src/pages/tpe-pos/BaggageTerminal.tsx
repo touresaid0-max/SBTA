@@ -25,7 +25,7 @@ import { formatCurrency } from '@/utils/formatCurrency';
 import { getTarifForDestination } from '@/services/pos/ticketService';
 import { supabase } from '@/services/supabase';
 
-type View = 'home' | 'register' | 'search' | 'history';
+type View = 'home' | 'register' | 'search' | 'link' | 'history';
 
 export default function BaggageTerminal() {
   const navigate = useNavigate();
@@ -34,6 +34,7 @@ export default function BaggageTerminal() {
   useAutoSync(session?.station_id);
 
   const [view, setView] = useState<View>('home');
+  const [linkResult, setLinkResult] = useState<TicketSearchResult | null>(null);
   const [departs, setDeparts] = useState<DepartRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -193,7 +194,20 @@ export default function BaggageTerminal() {
                 onDone={loadDeparts}
               />
             )}
-            {view === 'search' && <SearchView stationId={session.station_id} />}
+            {view === 'search' && (
+              <SearchView
+                stationId={session.station_id}
+                onLink={(result) => { setLinkResult(result); setView('link'); }}
+              />
+            )}
+            {view === 'link' && linkResult && (
+              <LinkView
+                result={linkResult}
+                session={session}
+                onDone={() => { setLinkResult(null); setView('home'); }}
+                onBack={() => { setLinkResult(null); setView('search'); }}
+              />
+            )}
             {view === 'history' && (
               <HistoryView session={session} />
             )}
@@ -679,6 +693,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
 interface SearchViewProps {
   stationId: string;
+  onLink: (result: TicketSearchResult) => void;
 }
 
 function resultDepartureNumber(
@@ -701,7 +716,7 @@ function resultBusPlate(
   return result?.busPlate ?? '—';
 }
 
-function SearchView({ stationId }: SearchViewProps) {
+function SearchView({ stationId, onLink }: SearchViewProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TicketSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -772,13 +787,16 @@ function SearchView({ stationId }: SearchViewProps) {
 
       {results.length > 0 && (
         <div className="space-y-2">
-          {results.map(({ ticket, depart }) => (
+          {results.map(({ ticket, depart, departureNumber, busPlate }) => (
             <div
               key={ticket.id}
               className="rounded-xl p-3 flex items-center justify-between"
               style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}
             >
-              <div className="min-w-0 flex-1">
+              <button
+                onClick={() => onLink(results.find(r => r.ticket.id === ticket.id)!)}
+                className="min-w-0 flex-1 text-left"
+              >
                 <p className="text-sm font-bold truncate" style={{ color: '#1A2E22' }}>
                   {ticket.ticket_number} — Siège {ticket.seat_number}
                 </p>
@@ -786,18 +804,26 @@ function SearchView({ stationId }: SearchViewProps) {
                   {ticket.destination || 'Destination non renseignée'} · {ticket.passenger_name || 'Passager non renseigné'}
                 </p>
                 <p className="text-xs mt-0.5 truncate" style={{ color: '#6B7280' }}>
-                  Départ #{resultDepartureNumber(depart, results, ticket.id)} · Siège {ticket.seat_number || '—'} · Car {resultBusPlate(depart, results, ticket.id)}
+                  Départ #{departureNumber ?? resultDepartureNumber(depart, results, ticket.id)} · Siège {ticket.seat_number || '—'} · Car {busPlate ?? resultBusPlate(depart, results, ticket.id)}
                 </p>
-              </div>
+              </button>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-sm font-bold" style={{ color: '#0B7439' }}>
                   {formatCurrency(ticket.price)}
                 </span>
+                <button
+                  onClick={() => onLink(results.find(r => r.ticket.id === ticket.id)!)}
+                  className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-[#D1FAE5]"
+                  style={{ backgroundColor: '#D1FAE5', color: '#0B7439' }}
+                  aria-label="Enregistrer bagage"
+                >
+                  <Luggage className="w-4 h-4" />
+                </button>
                 {depart && (
                   <button
                     onClick={() => handleReprint(ticket, depart)}
                     className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-[#F4F7F5]"
-                    style={{ backgroundColor: '#D1FAE5', color: '#0B7439' }}
+                    style={{ backgroundColor: '#E2EAE5', color: '#0B7439' }}
                     aria-label="Réimprimer"
                   >
                     <Printer className="w-4 h-4" />
@@ -808,6 +834,303 @@ function SearchView({ stationId }: SearchViewProps) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── LINK (register baggage from a found ticket) ──────────────────────────────
+
+interface LinkViewProps {
+  result: TicketSearchResult;
+  session: ReturnType<typeof usePOSSession>['session'];
+  onDone: () => void;
+  onBack: () => void;
+}
+
+function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
+  const { ticket, depart, departureNumber, busPlate, routeId, routeName } = result;
+  const [stations, setStations] = useState<StationRef[]>([]);
+  const [destinationId, setDestinationId] = useState('');
+  const [destinationName, setDestinationName] = useState(ticket.destination ?? '');
+  const [price, setPrice] = useState(0);
+  const [declaredValue, setDeclaredValue] = useState(0);
+  const [description, setDescription] = useState('');
+  const [ownerName, setOwnerName] = useState(ticket.passenger_name ?? '');
+  const [ownerPhone, setOwnerPhone] = useState(ticket.passenger_phone ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    getStations().then(setStations).catch(() => {});
+  }, []);
+
+  // Try to pre-select destination matching the ticket destination text
+  useEffect(() => {
+    if (ticket.destination && stations.length > 0) {
+      const match = stations.find(s =>
+        s.name.toLowerCase().includes(ticket.destination.toLowerCase()) ||
+        ticket.destination.toLowerCase().includes(s.name.toLowerCase()),
+      );
+      if (match) {
+        setDestinationId(match.id);
+        setDestinationName(match.name);
+      }
+    }
+  }, [stations, ticket.destination]);
+
+  // Auto-calculate baggage price from tarif when destination changes
+  useEffect(() => {
+    if (!routeId || !destinationId) return;
+    (async () => {
+      const tarif = await getTarifForDestination(routeId, destinationId);
+      if (tarif && tarif.price > 0) {
+        setPrice(tarif.price);
+      }
+    })();
+  }, [routeId, destinationId]);
+
+  const handleSubmit = async () => {
+    if (price <= 0) { setError('Veuillez saisir un prix valide'); return; }
+    if (!destinationId && !destinationName) { setError('Veuillez sélectionner une destination'); return; }
+
+    setError('');
+    setSuccess('');
+    setSaving(true);
+    try {
+      const station = stations.find(s => s.id === destinationId);
+      const destName = station?.name ?? destinationName;
+
+      // Ensure a local depart record exists so registerBagage can proceed.
+      // For online tickets the depart may not be cached locally.
+      let localDepart = depart;
+      if (!localDepart) {
+        const { db: idb } = await import('@/services/pos/db');
+        const today = new Date().toISOString().slice(0, 10);
+        const stub: DepartRecord = {
+          id: ticket.depart_id,
+          departure_number: departureNumber ?? 1,
+          route_id: routeId ?? '',
+          route_name: routeName ?? ticket.destination ?? '',
+          route_number: departureNumber ?? 1,
+          bus_id: '',
+          bus_plate: busPlate ?? '',
+          driver_id: '',
+          departure_datetime: `${today}T00:00:00`,
+          departure_date: today,
+          departure_time: '',
+          is_ac: false,
+          status: 'planifie',
+          seats_total: 0,
+          seats_from: 1,
+          seats_sold: 0,
+          station_id: session?.station_id ?? '',
+          station_name: session?.station_name,
+          cloture: false,
+          mt_ticket: 0,
+          mt_bagage: 0,
+          tot_depense: 0,
+          solde: 0,
+          caisse: 0,
+          breakdown_transfer: 0,
+          confirmed: false,
+          cancelled: false,
+        };
+        await idb.departs.put(stub);
+        localDepart = stub;
+      }
+
+      const bagage = await registerBagage({
+        departId: localDepart.id,
+        withTicket: true,
+        withTicketReport: false,
+        ticketNumber: ticket.ticket_number,
+        price,
+        destination: destName,
+        description,
+        ownerName,
+        ownerPhone,
+        printBagage: true,
+      });
+
+      PrintService.printBagage({
+        bagage,
+        depart: localDepart,
+        stationName: session?.station_name,
+      });
+
+      setSuccess(`Bagage enregistré — ${bagage.bagage_number}`);
+      setTimeout(() => onDone(), 2000);
+    } catch (err: any) {
+      setError(err?.message ?? 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fieldLabel = 'block text-xs font-bold mb-1';
+  const fieldInput = 'w-full px-3 py-2.5 rounded-lg border-2 text-sm outline-none transition-colors';
+  const fieldStyle = { borderColor: '#E2EAE5', backgroundColor: 'white' };
+
+  return (
+    <div className="space-y-4">
+      {/* Trip info from the found ticket */}
+      <div className="rounded-xl p-4" style={{ backgroundColor: '#EDE9FE', border: '1px solid #C4B5FD' }}>
+        <div className="flex items-center gap-2 mb-2">
+          <TicketIcon className="w-4 h-4" style={{ color: '#7C3AED' }} />
+          <span className="text-sm font-bold" style={{ color: '#5B21B6' }}>Ticket BUS</span>
+        </div>
+        <p className="text-base font-bold" style={{ color: '#1A2E22' }}>{ticket.ticket_number}</p>
+        <div className="grid grid-cols-2 gap-2 mt-2 text-xs" style={{ color: '#4C1D95' }}>
+          <p><span className="font-bold">Départ:</span> #{departureNumber ?? '—'}</p>
+          <p><span className="font-bold">Siège:</span> {ticket.seat_number || '—'}</p>
+          <p><span className="font-bold">Destination:</span> {ticket.destination || '—'}</p>
+          <p><span className="font-bold">Car:</span> {busPlate ?? '—'}</p>
+          <p className="col-span-2"><span className="font-bold">Passager:</span> {ticket.passenger_name || '—'}</p>
+          {ticket.passenger_phone && (
+            <p className="col-span-2"><span className="font-bold">Contact:</span> {ticket.passenger_phone}</p>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-sm" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2 text-sm font-medium" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>
+          <CheckCircle className="w-4 h-4 flex-shrink-0" /> {success}
+        </div>
+      )}
+
+      {/* Baggage form */}
+      <div className="rounded-xl p-4 space-y-3" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+        <div className="grid grid-cols-2 gap-3">
+          {/* Destination */}
+          <div className="col-span-2">
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Destination</label>
+            <select
+              value={destinationId}
+              onChange={e => {
+                setDestinationId(e.target.value);
+                const st = stations.find(s => s.id === e.target.value);
+                setDestinationName(st?.name ?? '');
+              }}
+              className={fieldInput}
+              style={fieldStyle}
+            >
+              <option value="">{ticket.destination || 'Sélectionner...'}</option>
+              {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+
+          {/* Price */}
+          <div>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Montant à payer (FCFA)</label>
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                value={price || ''}
+                onChange={e => setPrice(parseInt(e.target.value) || 0)}
+                className={fieldInput}
+                style={fieldStyle}
+                placeholder="0"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: '#9CA3AF' }}>F</span>
+            </div>
+          </div>
+
+          {/* Declared value */}
+          <div>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Valeur déclarée (FCFA)</label>
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                value={declaredValue || ''}
+                onChange={e => setDeclaredValue(parseInt(e.target.value) || 0)}
+                className={fieldInput}
+                style={fieldStyle}
+                placeholder="0"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: '#9CA3AF' }}>F</span>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="col-span-2">
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Description du bagage</label>
+            <input
+              type="text"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              className={fieldInput}
+              style={fieldStyle}
+              placeholder="Ex: 1 sac, 1 valise..."
+            />
+          </div>
+
+          {/* Owner name */}
+          <div>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Nom et prénoms du client</label>
+            <input
+              type="text"
+              value={ownerName}
+              onChange={e => setOwnerName(e.target.value)}
+              className={fieldInput}
+              style={fieldStyle}
+              placeholder="Propriétaire"
+            />
+          </div>
+
+          {/* Owner phone */}
+          <div>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Contact</label>
+            <input
+              type="tel"
+              value={ownerPhone}
+              onChange={e => setOwnerPhone(e.target.value)}
+              className={fieldInput}
+              style={fieldStyle}
+              placeholder="Téléphone"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-3">
+        <button
+          onClick={onBack}
+          disabled={saving}
+          className="flex-1 py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60"
+          style={{ backgroundColor: '#F4F7F5', color: '#6B7280', border: '1px solid #E2EAE5' }}
+        >
+          <ArrowLeft className="w-5 h-5" />
+          Retour
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={saving || price <= 0 || (!destinationId && !destinationName)}
+          className="flex-[2] py-4 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          style={{ backgroundColor: '#0B7439' }}
+        >
+          {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+          Valider
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={saving || price <= 0 || (!destinationId && !destinationName)}
+          className="flex-1 py-4 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          style={{ backgroundColor: '#1D6FA4' }}
+        >
+          <Printer className="w-5 h-5" />
+          Imprimer
+        </button>
+      </div>
     </div>
   );
 }
