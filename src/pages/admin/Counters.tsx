@@ -10,6 +10,7 @@ interface Counter {
   assigned_user_id: string | null;
   manager_id: string | null;
   is_active: boolean;
+  courrier_enabled: boolean;
   stations?: {
     name: string;
     cities?: {
@@ -59,7 +60,8 @@ export default function Counters() {
     station_id: '',
     assigned_user_id: '',
     manager_id: '',
-    is_active: true
+    is_active: true,
+    courrier_enabled: false
   });
 
   // Station autocomplete state
@@ -214,7 +216,8 @@ export default function Counters() {
       station_id: counter.station_id,
       assigned_user_id: counter.assigned_user_id || '',
       manager_id: counter.manager_id || '',
-      is_active: counter.is_active
+      is_active: counter.is_active,
+      courrier_enabled: counter.courrier_enabled
     });
     loadStationChefs(counter.station_id);
     setEditingId(counter.id);
@@ -244,7 +247,8 @@ export default function Counters() {
       station_id: '',
       assigned_user_id: '',
       manager_id: '',
-      is_active: true
+      is_active: true,
+      courrier_enabled: false
     });
     setStationChefs([]);
     setStationSearch('');
@@ -462,6 +466,17 @@ export default function Counters() {
                     </p>
                   </div>
                 )}
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="courrier_enabled"
+                    checked={formData.courrier_enabled}
+                    onChange={(e) => setFormData({ ...formData, courrier_enabled: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="courrier_enabled" className="font-medium">COURRIER</label>
+                </div>
 
                 <div className="flex items-center gap-2">
                   <input

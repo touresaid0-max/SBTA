@@ -22,7 +22,7 @@ export default function POSAccueil() {
   const navigate = useNavigate();
   const { session, logout } = usePOSSession();
   const [pendingRamassage, setPendingRamassage] = useState(0);
-  const [courrierEnabled, setCourrierEnabled] = useState(false);
+  const courrierEnabled = session?.courrier_enabled === true;
   useAutoSync(session?.station_id);
 
   useEffect(() => {
@@ -47,20 +47,6 @@ export default function POSAccueil() {
       }, load)
       .subscribe();
     return () => { cancelled = true; supabase.removeChannel(ch); };
-  }, [session?.station_id]);
-
-  useEffect(() => {
-    if (!session?.station_id) { setCourrierEnabled(false); return; }
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from('stations')
-        .select('courrier_enabled')
-        .eq('id', session.station_id)
-        .maybeSingle();
-      if (!cancelled) setCourrierEnabled(!!(data as any)?.courrier_enabled);
-    })();
-    return () => { cancelled = true; };
   }, [session?.station_id]);
 
   const allTiles: TileConfig[] = [

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
@@ -267,7 +267,7 @@ import POSRamassage from './pages/pos/Ramassage';
 import POSRamassageNouveau from './pages/pos/RamassageNouveau';
 import POSConvois from './pages/pos/Convois';
 import POSParametres from './pages/pos/Parametres';
-import { POSSessionProvider } from './services/pos/POSSessionContext';
+import { POSSessionProvider, usePOSSession } from './services/pos/POSSessionContext';
 import { ConnectionProvider } from './services/pos/ConnectionContext';
 import { ConnectionProvider as CourrierConnectionProvider } from './services/courrier/ConnectionContext';
 
@@ -282,6 +282,13 @@ import KioskReports from './pages/kiosk/KioskReports';
 import KioskLogin from './pages/kiosk/KioskLogin';
 import KioskTransactions from './pages/kiosk/KioskTransactions';
 import KioskQRCodes from './pages/kiosk/KioskQRCodes';
+
+function CourrierAccessGuard({ children }: { children: ReactNode }) {
+  const { session, loading } = usePOSSession();
+  if (loading) return null;
+  if (!session?.courrier_enabled) return <Navigate to="/guichet/accueil" replace />;
+  return <>{children}</>;
+}
 
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
   return (
@@ -621,10 +628,10 @@ function App() {
             <Route path="convois" element={<POSConvois />} />
             <Route path="parametres" element={<POSParametres />} />
             {/* ── Courrier accessible from POS guichet when station has courrier_enabled ── */}
-            <Route path="courrier" element={<CourrierConnectionProvider><AgentColisDashboard /></CourrierConnectionProvider>} />
-            <Route path="courrier/new" element={<CourrierConnectionProvider><NewParcelForm /></CourrierConnectionProvider>} />
-            <Route path="courrier/parcels/:id" element={<CourrierConnectionProvider><ParcelDetail /></CourrierConnectionProvider>} />
-            <Route path="courrier/scan" element={<CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider>} />
+            <Route path="courrier" element={<CourrierAccessGuard><CourrierConnectionProvider><AgentColisDashboard /></CourrierConnectionProvider></CourrierAccessGuard>} />
+            <Route path="courrier/new" element={<CourrierAccessGuard><CourrierConnectionProvider><NewParcelForm /></CourrierConnectionProvider></CourrierAccessGuard>} />
+            <Route path="courrier/parcels/:id" element={<CourrierAccessGuard><CourrierConnectionProvider><ParcelDetail /></CourrierConnectionProvider></CourrierAccessGuard>} />
+            <Route path="courrier/scan" element={<CourrierAccessGuard><CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider></CourrierAccessGuard>} />
           </Route>
 
           {/* TPE-POS module — TPE-optimized baggage terminal, offline-first, reuses POS infrastructure */}

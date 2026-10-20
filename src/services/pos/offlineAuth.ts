@@ -86,7 +86,7 @@ export async function login(email: string, password: string): Promise<POSLoginRe
         try {
           const { data: counter } = await supabase
             .from('counters')
-            .select('id, counter_number, station_id, stations!inner(name)')
+            .select('id, counter_number, station_id, courrier_enabled, stations!inner(name)')
             .eq('assigned_user_id', user.id)
             .eq('is_active', true)
             .maybeSingle();
@@ -94,6 +94,7 @@ export async function login(email: string, password: string): Promise<POSLoginRe
           if (counter) {
             session.counter_id = counter.id;
             session.counter_number = counter.counter_number as string;
+            session.courrier_enabled = counter.courrier_enabled === true;
 
             if (!session.station_id && counter.station_id) {
               session.station_id = counter.station_id;
