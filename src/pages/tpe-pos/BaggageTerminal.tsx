@@ -337,6 +337,19 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
     getTicketsForDepart(selectedDepart.id).then(setDepartTickets).catch(() => {});
   }, [selectedDepart]);
 
+  useEffect(() => {
+    if (!linkedTicket || !stations.length) return;
+    const matchingStation = stations.find(station =>
+      linkedTicket.destination_id === station.id ||
+      station.name.toLowerCase() === linkedTicket.destination.trim().toLowerCase() ||
+      station.name.toLowerCase().includes(linkedTicket.destination.trim().toLowerCase()),
+    );
+    if (matchingStation) {
+      setDestinationId(matchingStation.id);
+      setDestinationName(matchingStation.name);
+    }
+  }, [linkedTicket, stations]);
+
   // Auto-calculate price when destination changes
   useEffect(() => {
     if (!selectedDepart || !destinationId) return;
@@ -380,10 +393,13 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
     setTicketResults([]);
     setOwnerName(ticket.passenger_name || ownerName);
     setOwnerPhone(ticket.passenger_phone || ownerPhone);
-    if (ticket.destination_id) {
-      setDestinationId(ticket.destination_id);
-    }
-    setDestinationName(ticket.destination || destinationName);
+    const matchingStation = stations.find(station =>
+      ticket.destination_id === station.id ||
+      station.name.toLowerCase() === ticket.destination.trim().toLowerCase() ||
+      station.name.toLowerCase().includes(ticket.destination.trim().toLowerCase()),
+    );
+    setDestinationId(ticket.destination_id ?? matchingStation?.id ?? '');
+    setDestinationName(matchingStation?.name ?? ticket.destination);
   };
 
   const handleSubmit = async () => {
@@ -624,10 +640,11 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                 const st = stations.find(s => s.id === e.target.value);
                 setDestinationName(st?.name ?? '');
               }}
+              disabled={Boolean(linkedTicket)}
               className={fieldInput}
-              style={fieldStyle}
+              style={{ ...fieldStyle, opacity: linkedTicket ? 0.7 : 1 }}
             >
-              <option value="">Sélectionner...</option>
+              <option value="">{destinationName || 'Sélectionner...'}</option>
               {stations
                 .filter(s => s.id !== selectedDepart.station_id)
                 .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -648,9 +665,32 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
             />
           </div>
 
+          {/* Bus and seat from the selected ticket */}
+          <div>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Immatriculation</label>
+            <input
+              type="text"
+              value={selectedDepart.bus_plate ?? ''}
+              disabled
+              className={fieldInput}
+              style={{ ...fieldStyle, opacity: 0.7 }}
+            />
+          </div>
+          <div>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Siège</label>
+            <input
+              type="text"
+              value={linkedTicket?.seat_number ? String(linkedTicket.seat_number) : ''}
+              disabled
+              className={fieldInput}
+              style={{ ...fieldStyle, opacity: 0.7 }}
+              placeholder="—"
+            />
+          </div>
+
           {/* Price */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Prix (FCFA)</label>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Montant à payer (FCFA)</label>
             <div className="relative">
               <input
                 type="number"
@@ -663,18 +703,6 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: '#9CA3AF' }}>F</span>
             </div>
-          </div>
-
-          {/* Car (auto) */}
-          <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Car</label>
-            <input
-              type="text"
-              value={selectedDepart.bus_plate ?? ''}
-              disabled
-              className={fieldInput}
-              style={{ ...fieldStyle, opacity: 0.6 }}
-            />
           </div>
 
           {/* Description */}
