@@ -28,6 +28,7 @@ export interface RegisterBagageParams {
   withTicketReport: boolean;
   ticketNumber?: string;
   busPlate?: string;
+  linkedSeatNumber?: number | string;
   price: number;
   destination: string;
   description: string;
@@ -53,7 +54,7 @@ export async function registerBagage(params: RegisterBagageParams): Promise<Baga
     bagage_number: bagageNumber,
     ticket_id: linkedTicket?.id,
     ticket_number: linkedTicket?.ticket_number ?? params.ticketNumber,
-    linked_seat_number: linkedTicket?.seat_number,
+    linked_seat_number: linkedTicket?.seat_number ?? params.linkedSeatNumber,
     with_ticket: params.withTicket,
     with_ticket_report: params.withTicketReport,
     price: params.price,

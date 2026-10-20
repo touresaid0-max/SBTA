@@ -422,6 +422,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
         withTicketReport: false,
         ticketNumber: linkedTicket?.ticket_number,
         busPlate: ticketBusPlate || selectedDepart.bus_plate,
+        linkedSeatNumber: linkedTicket?.seat_number,
         price,
         destination: destName,
         description: declaredValue > 0
