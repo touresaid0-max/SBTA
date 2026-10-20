@@ -1246,18 +1246,21 @@ export default function Stations() {
                   </label>
                 </div>
 
-                <div className="flex items-center gap-2 p-4 border rounded-lg" style={{ backgroundColor: 'var(--neutral-50)' }}>
+                <div
+                  className="flex items-center gap-2 p-4 border rounded-lg opacity-60 cursor-not-allowed"
+                  style={{ backgroundColor: 'var(--neutral-100)', borderColor: 'var(--neutral-200)' }}
+                >
                   <input
                     type="checkbox"
                     id="courrier_enabled"
                     checked={formData.courrier_enabled}
-                    onChange={(e) => setFormData({ ...formData, courrier_enabled: e.target.checked })}
-                    className="w-4 h-4"
+                    disabled
+                    className="w-4 h-4 cursor-not-allowed"
                   />
-                  <label htmlFor="courrier_enabled" className="font-medium">
+                  <label htmlFor="courrier_enabled" className="font-medium cursor-not-allowed" style={{ color: 'var(--neutral-600)' }}>
                     COURRIER
                   </label>
-                  <p className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-xs ml-2" style={{ color: 'var(--neutral-500)' }}>
                     Active la carte Courrier pour tous les guichets de cette gare
                   </p>
                 </div>
