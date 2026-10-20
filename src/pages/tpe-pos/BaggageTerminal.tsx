@@ -29,14 +29,13 @@ type View = 'home' | 'register' | 'search' | 'history';
 
 export default function BaggageTerminal() {
   const navigate = useNavigate();
-  const { session, logout, loading: sessionLoading } = usePOSSession();
+  const { session, logout, refresh, loading: sessionLoading } = usePOSSession();
   const { status, syncing, pendingCount, bannerLabel } = useConnection();
   useAutoSync(session?.station_id);
 
   const [view, setView] = useState<View>('home');
   const [departs, setDeparts] = useState<DepartRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [companyName, setCompanyName] = useState<string | undefined>();
 
   // Role guard: only bagagiste may use the TPE. Any other role is kicked to the TPE login.
   useEffect(() => {
@@ -63,7 +62,7 @@ export default function BaggageTerminal() {
           .limit(1)
           .maybeSingle();
         if (cancelled || !sbh) return;
-        const st = sbh.stations as { id: string; name: string } | null;
+        const st = sbh.stations as unknown as { id: string; name: string } | null;
         if (!st?.id) return;
 
         // If the authoritative station differs from the cached session, update it in place.
@@ -71,6 +70,7 @@ export default function BaggageTerminal() {
           const { db: idb } = await import('@/services/pos/db');
           const updated = { ...session, station_id: st.id, station_name: st.name };
           await idb.session.put(updated);
+          if (!cancelled) await refresh();
         }
       } catch {
         // non-critical — fall back to cached session values
@@ -184,7 +184,6 @@ export default function BaggageTerminal() {
                 onSelectView={setView}
                 stationName={session?.station_name ?? 'Gare'}
                 bagagisteName={session?.full_name ?? 'Bagagiste'}
-                companyName={companyName}
               />
             )}
             {view === 'register' && (

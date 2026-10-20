@@ -88,30 +88,24 @@ export async function searchTicketsBySuffix(
   if (!isOnline()) return localResults;
 
   try {
-    const { data: schedules, error: scheduleError } = await supabase
-      .from('schedules')
-      .select('id, departure_station_id, route_number, departure_number, route_name, departure_datetime, bus_id')
-      .eq('departure_station_id', stationId);
-    if (scheduleError) throw scheduleError;
-
-    const scheduleRows = schedules ?? [];
-    if (scheduleRows.length === 0) return localResults;
-
-    const scheduleIds = scheduleRows.map(schedule => schedule.id as string);
-    const busIds = scheduleRows
-      .map(schedule => schedule.bus_id as string | null)
-      .filter((busId): busId is string => Boolean(busId));
-    const [{ data: reservations, error: reservationError }, { data: buses }] = await Promise.all([
-      supabase
-        .from('reservations')
-        .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number')
-        .in('schedule_id', scheduleIds)
-        .not('status', 'eq', 'annulee'),
-      busIds.length > 0
-        ? supabase.from('buses').select('id, registration_number').in('id', busIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+    const likeSuffix = normalizedSuffix.replace(/[\\%_]/g, char => `\\${char}`);
+    const { data: reservations, error: reservationError } = await supabase
+      .from('reservations')
+      .select('id, schedule_id, seat_numbers, total_price, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number, schedules!inner(id, departure_station_id, route_number, departure_number, bus_id)')
+      .eq('schedules.departure_station_id', stationId)
+      .ilike('booking_reference', `%${likeSuffix}`)
+      .not('status', 'eq', 'annulee')
+      .limit(20);
     if (reservationError) throw reservationError;
+
+    type ScheduleRow = { id: string; departure_station_id: string; route_number: number | null; departure_number: number | null; bus_id: string | null };
+    const scheduleRows = (reservations ?? [])
+      .map(reservation => reservation.schedules as unknown as ScheduleRow | null)
+      .filter((schedule): schedule is ScheduleRow => Boolean(schedule));
+    const busIds = [...new Set(scheduleRows.map(schedule => schedule.bus_id).filter((busId): busId is string => Boolean(busId)))];
+    const { data: buses } = busIds.length > 0
+      ? await supabase.from('buses').select('id, registration_number').in('id', busIds)
+      : { data: [] as { id: string; registration_number: string }[] };
 
     const busPlateMap = new Map((buses ?? []).map(bus => [bus.id as string, bus.registration_number as string]));
     const remoteResults: TicketSearchResult[] = [];
@@ -119,7 +113,7 @@ export async function searchTicketsBySuffix(
       const ticketNumber = String(reservation.booking_reference ?? reservation.id ?? '');
       if (!matchesTicketSuffix(ticketNumber, normalizedSuffix)) continue;
 
-      const schedule = scheduleRows.find(row => row.id === reservation.schedule_id);
+      const schedule = reservation.schedules as unknown as ScheduleRow | null;
       if (!schedule) continue;
       const seatNumbers = Array.isArray(reservation.seat_numbers) ? reservation.seat_numbers as string[] : [];
       const seatNumber = Number.parseInt(seatNumbers[0] ?? '0', 10);
@@ -147,9 +141,9 @@ export async function searchTicketsBySuffix(
       };
       remoteResults.push({
         ticket,
-        depart: localDepartMap.get(schedule.id as string),
-        departureNumber: Number(schedule.departure_number ?? schedule.route_number ?? 0),
-        busPlate: busPlateMap.get(schedule.bus_id as string),
+        depart: localDepartMap.get(schedule.id),
+        departureNumber: Number(schedule.departure_number ?? schedule.route_number ?? 0) || undefined,
+        busPlate: schedule.bus_id ? busPlateMap.get(schedule.bus_id) : undefined,
       });
     }
 
