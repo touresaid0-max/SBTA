@@ -263,8 +263,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 }
 
 export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
-  // 42 columns stay inside the printable area of a 58 mm POSPrinter.
-  const w = settings.width_mm === 80 ? 52 : 42;
+  const w = settings.width_mm === 80 ? 52 : 44;
   const { bagage, depart, stationName } = data;
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
   const value = (input: string | number | null | undefined) => String(input ?? '').trim();
@@ -305,15 +304,13 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
 
   const renderBlock = (isSouche: boolean): void => {
     parts.push(setAlign('left'));
-    if (!isSouche && logo) {
+    if (logo) {
       parts.push(setAlign('center'), rasterImage(logo), lineFeed());
-    } else if (!isSouche) {
+    } else {
       parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
     }
-    if (!isSouche) {
-      parts.push(setBold(true), ...center("Societe Bonkoungou Transport de L'Agneby"), setBold(false));
-      parts.push(setBold(true), ...center(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
-    }
+    parts.push(setBold(true), ...center("Societe Bonkoungou Transport de L'Agneby"), setBold(false));
+    parts.push(setBold(true), ...center(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
     parts.push(...separator());
     if (isSouche) {
       parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SOUCHE'), setNormal(), setFontB(), setBold(false));
@@ -342,7 +339,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   parts.push(setBold(true), ...line('DECOUPER ICI'), setBold(false));
   parts.push(...line('- - - - - - - - - - - - - - - - - - - - - - - - '.slice(0, w)));
   renderBlock(true);
-  parts.push(setAlign('left'), lineFeed(2));
+  parts.push(lineFeed(2));
   if (settings.auto_cut) parts.push(cutPaper());
   return concat(...parts);
 }

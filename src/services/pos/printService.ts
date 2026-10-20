@@ -419,22 +419,8 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .printed { text-align: center; font-size: 8.5px; font-weight: 700; padding: 2px 0; white-space: nowrap; }
   .tear { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 3px 0; font-size: 8.5px; font-weight: 800; letter-spacing: 2px; }
   .tear::before, .tear::after { content: ''; flex: 1 1 auto; border-top: 1px dashed #000; height: 0; }
-  .ticket-frame {
-    border: 1px solid #000;
-    padding: 4px 5px;
-    width: 100%;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  .hdr, .title, .souche, .sep, .row, .route, .printed, .tear {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  @media print {
-    html, body { width: ${settings.width_mm}mm; margin: 0; padding: 0; }
-    body { background: #fff; }
-    .ticket-frame { width: 100% !important; }
-  }
+  .ticket-frame { border: 1px solid #000; padding: 4px 5px; }
+  @media print { body { margin: 0 auto; padding: 0; background: #fff; } }
 </style></head><body>
   <div class="ticket-frame">
     ${ticketBlock(false)}
