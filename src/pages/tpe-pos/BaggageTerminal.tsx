@@ -314,6 +314,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
   const [ticketSearch, setTicketSearch] = useState('');
   const [ticketResults, setTicketResults] = useState<TicketRecord[]>([]);
   const [linkedTicket, setLinkedTicket] = useState<TicketRecord | null>(null);
+  const [declaredValue, setDeclaredValue] = useState(0);
   const [price, setPrice] = useState(0);
   const [destinationId, setDestinationId] = useState('');
   const [destinationName, setDestinationName] = useState('');
@@ -404,7 +405,9 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
         ticketNumber: linkedTicket?.ticket_number,
         price,
         destination: destName,
-        description,
+        description: declaredValue > 0
+          ? `${description}${description ? ' · ' : ''}Valeur déclarée : ${formatCurrency(declaredValue)}`
+          : description,
         ownerName,
         ownerPhone,
         printBagage: true,
@@ -423,6 +426,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
       setTicketSearch('');
       setLinkedTicket(null);
       setTicketResults([]);
+      setDeclaredValue(0);
       setPrice(0);
       setDestinationId('');
       setDestinationName('');
@@ -579,22 +583,28 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
               <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>Aucun ticket trouvé pour ce départ</p>
             )}
             {linkedTicket && (
-              <div className="mt-2 rounded-lg p-2.5 flex items-center gap-2" style={{ backgroundColor: '#EDE9FE' }}>
-                <Link2 className="w-4 h-4 flex-shrink-0" style={{ color: '#7C3AED' }} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold truncate" style={{ color: '#5B21B6' }}>
-                    {linkedTicket.ticket_number} — Siège {linkedTicket.seat_number}
-                  </p>
-                  <p className="text-xs truncate" style={{ color: '#7C3AED' }}>
-                    {linkedTicket.destination} · {linkedTicket.passenger_name}
-                  </p>
+              <div className="mt-3 rounded-xl p-3 space-y-2" style={{ backgroundColor: '#F3F0FF', border: '1px solid #C4B5FD' }}>
+                <div className="flex items-start gap-2">
+                  <Link2 className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#7C3AED' }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold truncate" style={{ color: '#5B21B6' }}>
+                      Ticket sélectionné : {linkedTicket.ticket_number}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: '#6D28D9' }}>
+                      Siège {linkedTicket.seat_number || '—'} · Destination {linkedTicket.destination || '—'}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: '#6D28D9' }}>
+                      Passager : {linkedTicket.passenger_name || 'Non renseigné'} · Car {selectedDepart.bus_plate || '—'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setLinkedTicket(null); setTicketSearch(''); }}
+                    className="flex-shrink-0"
+                    aria-label="Désélectionner le ticket"
+                  >
+                    <X className="w-4 h-4" style={{ color: '#7C3AED' }} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => { setLinkedTicket(null); setTicketSearch(''); }}
-                  className="flex-shrink-0"
-                >
-                  <X className="w-4 h-4" style={{ color: '#7C3AED' }} />
-                </button>
               </div>
             )}
           </div>
@@ -622,6 +632,20 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                 .filter(s => s.id !== selectedDepart.station_id)
                 .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+          </div>
+
+          {/* Declared value */}
+          <div>
+            <label className={fieldLabel} style={{ color: '#6B7280' }}>Valeur déclarée (FCFA)</label>
+            <input
+              type="number"
+              min={0}
+              value={declaredValue || ''}
+              onChange={e => setDeclaredValue(parseInt(e.target.value) || 0)}
+              className={fieldInput}
+              style={fieldStyle}
+              placeholder="0"
+            />
           </div>
 
           {/* Price */}
@@ -966,7 +990,9 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
         ticketNumber: ticket.ticket_number,
         price,
         destination: destName,
-        description,
+        description: declaredValue > 0
+          ? `${description}${description ? ' · ' : ''}Valeur déclarée : ${formatCurrency(declaredValue)}`
+          : description,
         ownerName,
         ownerPhone,
         printBagage: true,
