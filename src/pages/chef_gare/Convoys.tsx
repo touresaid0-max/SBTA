@@ -232,6 +232,7 @@ export default function Convoys() {
           supabase
             .from('buses')
             .select('id, registration_number, model, capacity, company_id, company:company_id(id, name)')
+            .is('archived_at', null)
             .order('registration_number'),
           supabase
             .from('users').select('id, full_name, phone')

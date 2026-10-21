@@ -10,7 +10,7 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
     return (data ?? []).map((r: any) => ({ id: r.id, name: r.name, origin_station_id: r.origin_station_id, destination_station_id: r.destination_station_id, destination_city_id: r.destination_city_id, base_price: Number(r.base_price ?? 0), is_active: r.is_active }));
   },
   vehicules: async () => {
-    const { data, error } = await supabase.from('buses').select('id, registration_number, capacity, company_id, status, brand, model, seats_sold_from').in('status', ['disponible', 'en_service']).order('registration_number');
+    const { data, error } = await supabase.from('buses').select('id, registration_number, capacity, company_id, status, brand, model, seats_sold_from').in('status', ['disponible', 'en_service']).is('archived_at', null).order('registration_number');
     if (error) throw error;
     return (data ?? []).map((b: any) => ({ id: b.id, plate_number: b.registration_number, capacity: b.capacity, company_id: b.company_id, status: b.status, brand: b.brand, model: b.model, seats_sold_from: b.seats_sold_from ?? 1 }));
   },

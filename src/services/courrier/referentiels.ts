@@ -59,6 +59,7 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
     const { data: buses } = await supabase
       .from('buses')
       .select('id, registration_number, company_id')
+      .is('archived_at', null)
       .order('registration_number');
     if (buses) {
       await db.referentiels.put({

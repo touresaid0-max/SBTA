@@ -119,7 +119,7 @@ export default function Schedules() {
           `)
           .order('departure_datetime', { ascending: false }),
         supabase.from('routes').select('id, name').eq('is_active', true).order('name'),
-        supabase.from('buses').select('id, registration_number, capacity').eq('status', 'disponible').order('registration_number'),
+        supabase.from('buses').select('id, registration_number, capacity').eq('status', 'disponible').is('archived_at', null).order('registration_number'),
         supabase.from('users').select('id, full_name').eq('role', 'chauffeur').eq('is_active', true).order('full_name')
       ]);
 

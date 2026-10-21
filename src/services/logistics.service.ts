@@ -269,6 +269,7 @@ export async function fetchBuses(): Promise<LogisticsBus[]> {
   const { data, error } = await supabase
     .from('buses')
     .select('id, registration_number, brand, manufacturer, model, total_seats, company_id, status, is_active')
+    .is('archived_at', null)
     .order('registration_number', { ascending: true })
   if (error) throw error
   return data ?? []

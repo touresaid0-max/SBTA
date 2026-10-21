@@ -253,6 +253,7 @@ export default function POSConvois() {
             .from('buses')
             .select('id, registration_number, model, capacity, company_id, company:company_id(id, name)')
             .in('status', ['disponible', 'en_service'])
+            .is('archived_at', null)
             .order('registration_number'),
           supabase
             .from('users').select('id, full_name, phone')

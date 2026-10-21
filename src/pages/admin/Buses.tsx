@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw, MousePointerClick, Wrench, PowerOff, Power, X, Copy } from 'lucide-react';
+import { Bus, Plus, CreditCard as Edit2, Eye, Search, Calendar, AlertTriangle, LayoutGrid, RefreshCw, MousePointerClick, Wrench, PowerOff, Power, X, Copy, Archive, ArchiveRestore, Trash2, History } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '../../store/authStore';
 import StatusBadge from '../../components/shared/StatusBadge';
 import AdminSeatManagement from '../../components/bus/AdminSeatManagement';
 import FillRateBar from '../../components/bus/FillRateBar';
@@ -54,8 +55,12 @@ interface BusData {
   seats_sold_from?: number;
   lower_deck_config_id?: string;
   upper_deck_config_id?: string;
+  archived_at?: string | null;
+  archived_by?: string | null;
+  archive_reason?: string | null;
   companies?: { name: string };
   bus_seat_config?: SeatConfigDetail;
+  archiver_email?: string | null;
 }
 
 interface Company {
@@ -112,6 +117,15 @@ export default function Buses() {
   const [statusModalMode, setStatusModalMode] = useState<'maintenance' | 'deactivate' | 'reactivate'>('maintenance');
   const [statusNote, setStatusNote] = useState('');
   const [statusSaving, setStatusSaving] = useState(false);
+  const [archiveModalBus, setArchiveModalBus] = useState<BusData | null>(null);
+  const [archiveReason, setArchiveReason] = useState('');
+  const [archiveSaving, setArchiveSaving] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedBuses, setArchivedBuses] = useState<BusData[]>([]);
+  const [loadingArchived, setLoadingArchived] = useState(false);
+  const [restoreModalBus, setRestoreModalBus] = useState<BusData | null>(null);
+  const [restoreSaving, setRestoreSaving] = useState(false);
+  const user = useAuthStore((s) => s.user);
 
   const [filters, setFilters] = useState({
     company: '',
@@ -133,6 +147,7 @@ export default function Buses() {
         supabase
           .from('buses')
           .select('*, companies(name), bus_seat_config!buses_seat_config_id_fkey(id, name, total_capacity, seat_layout, grid_layout, rows, left_columns, right_columns, back_row, has_back_row, back_row_seats, aisle_after_columns, total_columns, driver_position, deck_level)')
+          .is('archived_at', null)
           .order('registration_number'),
         supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
         supabase.from('bus_seat_config').select('id, name, total_capacity').order('name'),
@@ -152,6 +167,92 @@ export default function Buses() {
       toast.error('Erreur de chargement');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadArchivedBuses = async () => {
+    setLoadingArchived(true);
+    try {
+      const { data, error } = await supabase
+        .from('buses')
+        .select('*, companies(name)')
+        .not('archived_at', 'is', null)
+        .order('archived_at', { ascending: false });
+      if (error) throw error;
+      const archived = data || [];
+      const archiverIds = archived.map((b: any) => b.archived_by).filter(Boolean);
+      let archiverMap: Record<string, string> = {};
+      if (archiverIds.length > 0) {
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, email')
+          .in('id', archiverIds);
+        if (usersData) {
+          archiverMap = Object.fromEntries(usersData.map((u: any) => [u.id, u.email]));
+        }
+      }
+      setArchivedBuses(archived.map((b: any) => ({ ...b, archiver_email: b.archived_by ? (archiverMap[b.archived_by] || '—') : '—' })));
+    } catch {
+      toast.error('Erreur lors du chargement des bus archivés');
+    } finally {
+      setLoadingArchived(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!archiveModalBus) return;
+    setArchiveSaving(true);
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('buses')
+        .update({
+          archived_at: new Date().toISOString(),
+          archived_by: authData.user?.id || null,
+          archive_reason: archiveReason.trim() || null,
+          is_active: false,
+          status: 'hors_service',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', archiveModalBus.id);
+      if (error) throw error;
+      toast.success('Bus archivé avec succès');
+      setArchiveModalBus(null);
+      setArchiveReason('');
+      loadData();
+      if (showArchived) loadArchivedBuses();
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de l\'archivage');
+    } finally {
+      setArchiveSaving(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!restoreModalBus) return;
+    setRestoreSaving(true);
+    try {
+      const { error } = await supabase
+        .from('buses')
+        .update({
+          archived_at: null,
+          archived_by: null,
+          archive_reason: null,
+          is_active: true,
+          status: 'disponible',
+          status_note: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', restoreModalBus.id);
+      if (error) throw error;
+      toast.success('Bus restauré avec succès');
+      setRestoreModalBus(null);
+      loadData();
+      loadArchivedBuses();
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de la restauration');
+    } finally {
+      setRestoreSaving(false);
     }
   };
 
@@ -662,6 +763,15 @@ export default function Buses() {
                         <Power className="w-4 h-4" style={{ color: '#0B7439' }} />
                       </button>
                     ) : null}
+                    {bus.status === 'hors_service' ? (
+                      <button
+                        onClick={() => setArchiveModalBus(bus)}
+                        className="p-2 hover:bg-gray-100 rounded-lg"
+                        title="Archiver le bus"
+                      >
+                        <Archive className="w-4 h-4" style={{ color: '#6B7280' }} />
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -939,6 +1049,221 @@ export default function Buses() {
                 {statusModalMode === 'maintenance' && 'Mettre en maintenance'}
                 {statusModalMode === 'deactivate' && 'Désactiver'}
                 {statusModalMode === 'reactivate' && 'Réactiver'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Archived Buses Section */}
+      <div className="mt-8">
+        <button
+          onClick={() => {
+            if (!showArchived) loadArchivedBuses();
+            setShowArchived(!showArchived);
+          }}
+          className="w-full flex items-center justify-between p-4 bg-white rounded-xl border hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Archive className="w-5 h-5" style={{ color: '#6B7280' }} />
+            <span className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>
+              Archives des bus supprimés
+            </span>
+            {archivedBuses.length > 0 && (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium text-white" style={{ backgroundColor: '#6B7280' }}>
+                {archivedBuses.length}
+              </span>
+            )}
+          </div>
+          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            {showArchived ? 'Masquer' : 'Afficher'}
+          </span>
+        </button>
+
+        {showArchived && (
+          <div className="mt-4 bg-white rounded-xl border overflow-hidden">
+            {loadingArchived ? (
+              <div className="text-center py-12">
+                <p style={{ color: 'var(--text-secondary)' }}>Chargement des bus archivés...</p>
+              </div>
+            ) : archivedBuses.length === 0 ? (
+              <div className="text-center py-12">
+                <Archive className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--neutral-400)' }} />
+                <p style={{ color: 'var(--text-secondary)' }}>Aucun bus archivé</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1000px] table-auto">
+                  <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
+                    <tr>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Immatriculation</th>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Marque/Modèle</th>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Société</th>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Capacité</th>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Date d'archivage</th>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Archivé par</th>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Motif</th>
+                      <th className="text-left p-4 font-semibold whitespace-nowrap">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archivedBuses.map((bus) => (
+                      <tr key={bus.id} className="border-t hover:bg-gray-50">
+                        <td className="p-4 whitespace-nowrap">
+                          <span className="font-bold" style={{ color: 'var(--text-secondary)' }}>{bus.registration_number}</span>
+                        </td>
+                        <td className="p-4 min-w-[150px]" style={{ color: 'var(--text-secondary)' }}>{bus.brand} {bus.model}</td>
+                        <td className="p-4 min-w-[120px]" style={{ color: 'var(--text-secondary)' }}>{bus.companies?.name}</td>
+                        <td className="p-4 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{bus.capacity} pl</td>
+                        <td className="p-4 whitespace-nowrap text-sm" style={{ color: 'var(--text-secondary)' }}>
+                          {bus.archived_at ? new Date(bus.archived_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </td>
+                        <td className="p-4 whitespace-nowrap text-sm" style={{ color: 'var(--text-secondary)' }}>
+                          {bus.archiver_email || '—'}
+                        </td>
+                        <td className="p-4 min-w-[200px]">
+                          {bus.archive_reason ? (
+                            <p className="text-sm max-w-[200px] truncate" style={{ color: 'var(--text-secondary)' }} title={bus.archive_reason}>
+                              {bus.archive_reason}
+                            </p>
+                          ) : (
+                            <span style={{ color: 'var(--neutral-400)' }}>—</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <button
+                            onClick={() => setRestoreModalBus(bus)}
+                            className="p-2 hover:bg-green-50 rounded-lg"
+                            title="Restaurer le bus"
+                          >
+                            <ArchiveRestore className="w-4 h-4" style={{ color: '#0B7439' }} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Archive Confirmation Modal */}
+      {archiveModalBus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Archive className="w-5 h-5" style={{ color: '#6B7280' }} />
+                Archiver le bus
+              </h3>
+              <button onClick={() => { setArchiveModalBus(null); setArchiveReason(''); }} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-secondary)' }}>
+                <Bus className="w-8 h-8" style={{ color: 'var(--primary)' }} />
+                <div>
+                  <p className="font-semibold">{archiveModalBus.registration_number}</p>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {archiveModalBus.brand} {archiveModalBus.model} — {archiveModalBus.capacity} places
+                  </p>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+                <p className="text-sm" style={{ color: '#374151' }}>
+                  Ce bus sera <strong>archivé définitivement</strong> et retiré de toutes les listes actives :
+                  départs, ventes de tickets, convois et autres modules.
+                  Les données historiques (ventes, dépenses, rapports) seront conservées.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Motif de l'archivage <span className="text-gray-400 text-xs">(optionnel)</span>
+                </label>
+                <textarea
+                  value={archiveReason}
+                  onChange={(e) => setArchiveReason(e.target.value)}
+                  rows={2}
+                  placeholder="Ex : Bus vendu, réforme définitive, mise à la casse..."
+                  className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  style={{ borderColor: 'var(--border)' }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-5 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button
+                onClick={() => { setArchiveModalBus(null); setArchiveReason(''); }}
+                className="px-4 py-2 text-sm font-medium rounded-lg border hover:bg-gray-50"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleArchive}
+                disabled={archiveSaving}
+                className="px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 flex items-center gap-2"
+                style={{ backgroundColor: '#6B7280' }}
+              >
+                {archiveSaving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                <Archive className="w-4 h-4" />
+                Archiver définitivement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Confirmation Modal */}
+      {restoreModalBus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <ArchiveRestore className="w-5 h-5" style={{ color: '#0B7439' }} />
+                Restaurer le bus
+              </h3>
+              <button onClick={() => setRestoreModalBus(null)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-secondary)' }}>
+                <Bus className="w-8 h-8" style={{ color: 'var(--primary)' }} />
+                <div>
+                  <p className="font-semibold">{restoreModalBus.registration_number}</p>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {restoreModalBus.brand} {restoreModalBus.model} — {restoreModalBus.capacity} places
+                  </p>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-green-50 border border-green-200">
+                <p className="text-sm" style={{ color: '#065F46' }}>
+                  Le bus sera <strong>restauré</strong> et redeviendra <strong>Disponible</strong>.
+                  Il sera à nouveau sélectionnable dans tous les modules (départs, ventes, convois...).
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-5 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button
+                onClick={() => setRestoreModalBus(null)}
+                className="px-4 py-2 text-sm font-medium rounded-lg border hover:bg-gray-50"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleRestore}
+                disabled={restoreSaving}
+                className="px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 flex items-center gap-2"
+                style={{ backgroundColor: '#0B7439' }}
+              >
+                {restoreSaving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                <ArchiveRestore className="w-4 h-4" />
+                Restaurer
               </button>
             </div>
           </div>
