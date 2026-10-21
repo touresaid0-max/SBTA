@@ -433,7 +433,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
         printBagage: true,
       });
 
-      PrintService.printBagage({
+      PrintService.printTpeBagage({
         bagage,
         depart: selectedDepart,
         stationName: session?.station_name,
@@ -819,7 +819,7 @@ function SearchView({ stationId, onLink }: SearchViewProps) {
     const bagages = await getBagagesForDepart(depart.id);
     const linked = bagages.find(b => b.ticket_number === ticket.ticket_number);
     if (linked) {
-      PrintService.printBagage({ bagage: linked, depart, stationName: depart.station_name });
+      PrintService.printTpeBagage({ bagage: linked, depart, stationName: depart.station_name });
     }
   };
 
@@ -1032,7 +1032,7 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
         printBagage: true,
       });
 
-      PrintService.printBagage({
+      PrintService.printTpeBagage({
         bagage,
         depart: localDepart,
         stationName: session?.station_name,
@@ -1257,7 +1257,7 @@ function HistoryView({ session }: HistoryViewProps) {
   const handleReprint = (bagage: BagageRecord) => {
     const depart = departs.get(bagage.depart_id);
     if (!depart) return;
-    PrintService.printBagage({ bagage, depart, stationName: session?.station_name });
+    PrintService.printTpeBagage({ bagage, depart, stationName: session?.station_name });
   };
 
   return (

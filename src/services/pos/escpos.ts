@@ -344,6 +344,68 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   return concat(...parts);
 }
 
+export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
+  const w = 32;
+  const { bagage, depart, stationName } = data;
+  const value = (input: string | number | null | undefined): string => String(input ?? '').trim();
+  const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
+  const nowIso = new Date().toISOString();
+  const printed = formatDateTime(nowIso);
+  const departDate = formatDateTime(depart.departure_datetime || nowIso);
+  const [dDate, dTime] = departDate.split(' ');
+  const stripStationLabel = (s: string): string => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
+  const origin = stripStationLabel((stationName || depart.station_name || '').toUpperCase()) || '—';
+  const destination = stripStationLabel(value(bagage.destination).toUpperCase()) || '—';
+  const departureNumber = value(depart.route_number) || value(depart.departure_number) || '—';
+  const seat = bagage.with_ticket && value(bagage.linked_seat_number) ? value(bagage.linked_seat_number) : '—';
+  const car = value(bagage.car_plate || depart.bus_plate).toUpperCase() || '—';
+  const bagageNumber = value(bagage.bagage_number) || '—';
+  const owner = value(bagage.owner_name).toUpperCase() || '—';
+  const contact = value(bagage.owner_phone) || '—';
+  const description = value(bagage.description).replace(/\s+/g, ' ');
+  const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
+  const line = (input = ''): Uint8Array[] => [text(input.slice(0, w)), lineFeed()];
+  const centered = (input: string): Uint8Array[] => {
+    const clipped = input.slice(0, w);
+    return line(' '.repeat(Math.max(0, Math.floor((w - clipped.length) / 2))) + clipped);
+  };
+  const separator = (): Uint8Array[] => line('-'.repeat(w));
+  const pair = (left: string, right: string): Uint8Array[] => {
+    const leftText = left.slice(0, w);
+    const rightText = right.slice(0, w - leftText.length - 1);
+    const gap = Math.max(1, w - leftText.length - rightText.length);
+    return line(`${leftText}${' '.repeat(gap)}${rightText}`);
+  };
+  const render = (souche: boolean): void => {
+    if (souche) {
+      parts.push(setAlign('center'), setBold(true), ...line('SOUCHE'), setBold(false));
+    } else if (logo) {
+      parts.push(setAlign('center'), rasterImage(logo), lineFeed());
+      parts.push(setBold(true), ...centered("Societe Bonkoungou Transport de L'Agneby"), setBold(false));
+      parts.push(setBold(true), ...centered(`Tel ${data.phoneLine || '01 14 34 60 / 01 14 34 87'}`), setBold(false));
+      parts.push(setBold(true), ...centered('TICKET BAGAGE'), setBold(false));
+    } else {
+      parts.push(setAlign('center'), setBold(true), ...centered('SBTA'), ...centered('TICKET BAGAGE'), setBold(false));
+    }
+    parts.push(setAlign('left'), ...separator());
+    parts.push(setBold(true), ...pair('DEPART :', `N° ${departureNumber}`), setBold(false));
+    parts.push(setBold(true), ...centered(`${origin} => ${destination}`), setBold(false), ...separator());
+    parts.push(setBold(true), ...pair(`SIEGE : ${seat}`, `PRIX : ${price}`), setBold(false), ...separator());
+    parts.push(setBold(true), ...line(`CAR : ${car}`), ...line(`N°BAG : ${bagageNumber}`), setBold(false), ...separator());
+    parts.push(setBold(true), ...pair(`DATE : ${dDate}`, `HEURE : ${dTime || '—'}`), setBold(false));
+    if (description && description !== '__deleted__') parts.push(...line(`DESCRIPTION : ${description}`));
+    parts.push(...separator(), setBold(true), ...line(`PROPRIETAIRE : ${owner}`), ...line(`CONTACT : ${contact}`), setBold(false), ...separator());
+    parts.push(setAlign('center'), ...line(`Imprime le : ${printed}`), setAlign('left'));
+  };
+
+  render(false);
+  parts.push(setAlign('center'), ...line('-'.repeat(w)), setBold(true), ...line('DECOUPER ICI'), setBold(false), ...line('-'.repeat(w)));
+  render(true);
+  parts.push(lineFeed(2));
+  if (settings.auto_cut) parts.push(cutPaper());
+  return concat(...parts);
+}
+
 export function buildESCPOS(
   type: PrintableType,
   data: PrintTicketData | PrintBagageData,

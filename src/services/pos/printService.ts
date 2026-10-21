@@ -1,5 +1,5 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization } from '../printCustomization';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
@@ -431,6 +431,70 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
 </body></html>`;
 }
 
+function buildHTMLTpeBagage(data: PrintBagageData): string {
+  const { bagage, depart, stationName, phoneLine } = data;
+  const value = (input: string | number | null | undefined): string => String(input ?? '').trim();
+  const formatMoney = (amount: number): string => `${amount.toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
+  const departureDate = formatDateTime(depart.departure_datetime || new Date().toISOString()).split(' ');
+  const printed = formatDateTime(new Date().toISOString());
+  const stripStationLabel = (input: string): string => input.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
+  const origin = stripStationLabel((stationName || depart.station_name || '').toUpperCase()) || '—';
+  const destination = stripStationLabel(value(bagage.destination).toUpperCase()) || '—';
+  const departureNumber = value(depart.route_number) || value(depart.departure_number) || '—';
+  const seat = bagage.with_ticket && value(bagage.linked_seat_number) ? value(bagage.linked_seat_number) : '—';
+  const car = value(bagage.car_plate || depart.bus_plate).toUpperCase() || '—';
+  const owner = value(bagage.owner_name).toUpperCase() || '—';
+  const contact = value(bagage.owner_phone) || '—';
+  const description = value(bagage.description);
+  const bagageNumber = value(bagage.bagage_number) || '—';
+  const row = (left: string, right: string): string => `<div class="row"><span>${escapeHtml(left)}</span><strong>${escapeHtml(right)}</strong></div>`;
+  const block = (souche: boolean): string => `
+    <section class="copy${souche ? ' souche-copy' : ''}">
+      ${souche ? '<div class="souche-title">SOUCHE</div>' : `<img class="logo" src="${BAGAGE_LOGO_SRC}" alt="SBTA"><div class="company">Société Bonkoungou Transport de L'Agneby</div><div class="phone">Tel ${escapeHtml(phoneLine || '01 14 34 60 / 01 14 34 87')}</div><div class="title">TICKET BAGAGE</div>`}
+      <div class="separator"></div>
+      ${row('DEPART :', `N° ${departureNumber}`)}
+      <div class="route">${escapeHtml(origin)} <span>=&gt;</span> ${escapeHtml(destination)}</div>
+      <div class="separator"></div>
+      ${row(`SIEGE : ${seat}`, `PRIX : ${formatMoney(Number(bagage.price || 0))}`)}
+      <div class="separator"></div>
+      ${row('CAR :', car)}
+      ${row('N°BAG :', bagageNumber)}
+      <div class="separator"></div>
+      ${row(`DATE : ${departureDate[0] || '—'}`, `HEURE : ${departureDate[1] || '—'}`)}
+      ${description && description !== '__deleted__' ? `<div class="single"><span>DESCRIPTION :</span> <strong>${escapeHtml(description)}</strong></div>` : ''}
+      <div class="separator"></div>
+      <div class="single">PROPRIETAIRE : <strong>${escapeHtml(owner)}</strong></div>
+      <div class="single">CONTACT : <strong>${escapeHtml(contact)}</strong></div>
+      <div class="separator"></div>
+      <div class="printed">Imprimé le : ${escapeHtml(printed)}</div>
+    </section>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket bagage TPE</title><style>
+    @page { size: 58mm auto; margin: 0; }
+    * { box-sizing: border-box; color: #000; font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; }
+    html, body { width: 58mm; background: #fff; }
+    body { width: 54mm; margin: 0 auto; padding: 1mm 0; font-size: 9.5px; line-height: 1.15; font-weight: 700; }
+    .copy { width: 54mm; break-inside: avoid; page-break-inside: avoid; }
+    .logo { display: block; width: 28mm; max-height: 19mm; object-fit: contain; margin: 0 auto 1mm; }
+    .company, .phone, .title, .souche-title, .route, .printed { text-align: center; }
+    .company { font-size: 7.5px; white-space: nowrap; }
+    .phone { font-size: 8.5px; margin-top: 1px; }
+    .title { font-size: 13px; letter-spacing: .7px; margin: 2mm 0 1mm; }
+    .souche-title { font-size: 13px; font-style: italic; letter-spacing: 1px; padding: 2mm 0 1mm; }
+    .separator { border-top: 1px dashed #000; margin: 1.5mm 0; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; min-width: 0; padding: 1mm 0; font-size: 9.5px; }
+    .row span { min-width: 0; }
+    .row strong { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+    .route { font-size: 10.5px; font-weight: 900; overflow-wrap: anywhere; padding: 1mm 0; }
+    .route span { padding: 0 1mm; }
+    .single { padding: 1mm 0; overflow-wrap: anywhere; }
+    .printed { font-size: 7.5px; padding: 1mm 0 0; }
+    .tear { display: flex; align-items: center; gap: 1mm; justify-content: center; height: 7mm; font-size: 7px; letter-spacing: 1px; break-inside: avoid; page-break-inside: avoid; }
+    .tear::before, .tear::after { content: ''; flex: 1; border-top: 1px dashed #000; }
+    @media print { html, body { width: 58mm !important; } body { margin: 0 auto !important; padding: 1mm 0 !important; } }
+  </style></head><body>${block(false)}<div class="tear">DECOUPER ICI</div>${block(true)}<script>window.onload=function(){window.print();window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},400);});}</script></body></html>`;
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -461,16 +525,7 @@ function makeQRText(data: string): string {
   return svg;
 }
 
-async function printBrowser(payload: PrintPayload, settings: PrintSettings): Promise<boolean> {
-  let html: string;
-  if (payload.type === 'ticket' && payload.ticket) {
-    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
-  } else if (payload.type === 'bagage' && payload.bagage) {
-    html = buildHTMLBagage({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
-  } else {
-    return false;
-  }
-
+async function printHTMLDocument(html: string): Promise<boolean> {
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';
@@ -495,11 +550,7 @@ async function printBrowser(payload: PrintPayload, settings: PrintSettings): Pro
       setTimeout(() => iframe.remove(), 1500);
       resolve(ok);
     };
-
-    // Resolve when print dialog closes (afterprint) or on timeout fallback
-    if (cw) {
-      cw.addEventListener('afterprint', () => finish(true), { once: true });
-    }
+    if (cw) cw.addEventListener('afterprint', () => finish(true), { once: true });
     setTimeout(() => {
       try {
         cw?.focus();
@@ -508,10 +559,22 @@ async function printBrowser(payload: PrintPayload, settings: PrintSettings): Pro
         finish(false);
         return;
       }
-      // Fallback timeout: if afterprint never fires (some browsers), resolve after 2s
       setTimeout(() => finish(true), 2000);
     }, 300);
   });
+}
+
+async function printBrowser(payload: PrintPayload, settings: PrintSettings): Promise<boolean> {
+  let html: string;
+  if (payload.type === 'ticket' && payload.ticket) {
+    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
+  } else if (payload.type === 'bagage' && payload.bagage) {
+    html = buildHTMLBagage({ bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
+  } else {
+    return false;
+  }
+
+  return printHTMLDocument(html);
 }
 
 export const PrintService = {
@@ -533,6 +596,23 @@ export const PrintService = {
       stationName: data.stationName,
       phoneLine: data.phoneLine,
     });
+  },
+
+  async printTpeBagage(data: PrintBagageData): Promise<boolean> {
+    const settings = await getPrintSettings();
+    const tpeSettings = { ...settings, width_mm: 58 as const, auto_cut: true };
+    const payload: PrintBagageData = {
+      bagage: data.bagage,
+      depart: data.depart,
+      stationName: data.stationName,
+      phoneLine: data.phoneLine,
+    };
+    const logo = await loadBagageLogoRaster(160);
+    const escposData = buildTpeBagageESCPOS(payload, tpeSettings, logo);
+    if (await sendWebSerial(escposData)) return true;
+    if (await sendWebUSB(escposData)) return true;
+    if (await sendQzTray(escposData, tpeSettings)) return true;
+    return printHTMLDocument(buildHTMLTpeBagage(payload));
   },
 
   async print(data: PrintTicketData): Promise<boolean> {
