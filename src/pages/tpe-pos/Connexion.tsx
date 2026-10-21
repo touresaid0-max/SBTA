@@ -120,58 +120,58 @@ export default function TPEConnexion() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4" style={{ backgroundColor: '#F4F7F5' }}>
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div
-            className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-4"
+            className="w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-4"
             style={{ backgroundColor: '#0B7439', color: 'white' }}
           >
-            <Luggage className="w-10 h-10" strokeWidth={2.2} />
+            <Luggage className="w-12 h-12" strokeWidth={2.2} />
           </div>
-          <h1 className="text-2xl font-bold" style={{ color: '#1A2E22' }}>TPE Bagage SBTA</h1>
-          <p className="text-sm mt-1" style={{ color: '#6B7280' }}>Terminal de paiement électronique</p>
+          <h1 className="text-3xl font-bold" style={{ color: '#1A2E22' }}>TPE Bagage SBTA</h1>
+          <p className="text-base mt-1.5" style={{ color: '#6B7280' }}>Terminal de paiement électronique</p>
         </div>
 
         <div
-          className="rounded-xl px-3 py-2 mb-4 flex items-center gap-2 text-xs font-medium"
+          className="rounded-xl px-4 py-3 mb-5 flex items-center gap-2.5 text-sm font-medium"
           style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}
         >
-          <CheckCircle className="w-4 h-4" />
+          <CheckCircle className="w-5 h-5" />
           {isOnline() ? 'En ligne — connexion au serveur' : 'Hors ligne — Internet requis pour la connexion'}
         </div>
 
         {error && (
           <div
-            className="rounded-xl px-3 py-2.5 mb-4 flex items-start gap-2 text-sm"
+            className="rounded-xl px-4 py-3 mb-5 flex items-start gap-2.5 text-base"
             style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}
           >
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {loginMode && (
           <div
-            className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-medium"
+            className="rounded-xl px-4 py-3 mb-5 flex items-center gap-2.5 text-base font-medium"
             style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}
           >
-            <CheckCircle className="w-4 h-4 flex-shrink-0" />
+            <CheckCircle className="w-5 h-5 flex-shrink-0" />
             Connexion réussie
           </div>
         )}
 
-        <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} className="space-y-5">
           <div>
-            <label className="block text-xs font-bold mb-1.5" style={{ color: '#6B7280' }}>
+            <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
               Identifiant
             </label>
             <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#9CA3AF' }} />
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6" style={{ color: '#9CA3AF' }} />
               <input
                 type="text"
                 value={email}
                 onChange={e => { setEmail(e.target.value); setError(''); }}
-                className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 text-base outline-none transition-colors"
+                className="w-full pl-13 pr-4 py-4.5 rounded-xl border-2 text-lg outline-none transition-colors"
                 style={{ borderColor: '#E2EAE5', backgroundColor: 'white' }}
                 onFocus={e => e.currentTarget.style.borderColor = '#0B7439'}
                 onBlur={e => e.currentTarget.style.borderColor = '#E2EAE5'}
@@ -183,16 +183,16 @@ export default function TPEConnexion() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold mb-1.5" style={{ color: '#6B7280' }}>
+            <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
               Mot de passe
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#9CA3AF' }} />
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6" style={{ color: '#9CA3AF' }} />
               <input
                 type="password"
                 value={password}
                 onChange={e => { setPassword(e.target.value); setError(''); }}
-                className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 text-base outline-none transition-colors"
+                className="w-full pl-13 pr-4 py-4.5 rounded-xl border-2 text-lg outline-none transition-colors"
                 style={{ borderColor: '#E2EAE5', backgroundColor: 'white' }}
                 onFocus={e => e.currentTarget.style.borderColor = '#0B7439'}
                 onBlur={e => e.currentTarget.style.borderColor = '#E2EAE5'}
@@ -205,23 +205,23 @@ export default function TPEConnexion() {
           <button
             type="submit"
             disabled={loading || !email.trim() || !password}
-            className="w-full py-4 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 disabled:opacity-60 transition-opacity"
+            className="w-full py-5 rounded-xl font-bold text-white text-lg flex items-center justify-center gap-2.5 disabled:opacity-60 transition-opacity"
             style={{ backgroundColor: '#0B7439' }}
           >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <LogIn className="w-6 h-6" />}
             {loading ? 'Connexion...' : 'Se connecter'}
           </button>
         </form>
 
         <div
-          className="mt-6 rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
+          className="mt-8 rounded-xl px-4 py-3.5 flex items-start gap-2.5 text-sm"
           style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
         >
-          <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <ShieldAlert className="w-5 h-5 mt-0.5 flex-shrink-0" />
           <span>Accès réservé aux bagagistes. Autres profils non autorisés.</span>
         </div>
 
-        <p className="text-center text-xs mt-4" style={{ color: '#9CA3AF' }}>
+        <p className="text-center text-sm mt-5" style={{ color: '#9CA3AF' }}>
           Entrée = valider · Échap = annuler
         </p>
       </div>

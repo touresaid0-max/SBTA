@@ -114,65 +114,65 @@ export default function BaggageTerminal() {
     <div className="min-h-screen flex flex-col bg-[#F4F7F5]">
       {/* Header — SBTA green, compact for TPE */}
       <header
-        className="px-4 py-3 sticky top-0 z-30 flex items-center justify-between"
+        className="px-5 py-4 sticky top-0 z-30 flex items-center justify-between"
         style={{ backgroundColor: '#0B7439', color: 'white' }}
       >
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           {view !== 'home' && (
             <button
               onClick={() => setView('home')}
-              className="flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0 transition-colors hover:bg-white/15"
+              className="flex items-center justify-center w-12 h-12 rounded-lg flex-shrink-0 transition-colors hover:bg-white/15"
               aria-label="Retour"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-6 h-6" />
             </button>
           )}
           <div className="min-w-0">
-            <p className="text-sm font-bold leading-tight truncate">SBTA · TPE Bagage</p>
-            <p className="text-xs opacity-80 leading-tight truncate">
+            <p className="text-base font-bold leading-tight truncate">SBTA · TPE Bagage</p>
+            <p className="text-sm opacity-85 leading-tight truncate">
               {session?.station_name ?? 'Gare'} — {session?.full_name ?? 'Agent'}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2.5 flex-shrink-0">
           <div
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold"
             style={{ backgroundColor: connColor }}
           >
-            <connIcon className={`w-3.5 h-3.5 ${connAnimate ? 'animate-spin' : ''}`} />
+            <connIcon className={`w-5 h-5 ${connAnimate ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">
               {pendingCount > 0 ? `${pendingCount} en attente` : status === 'offline' ? 'Hors ligne' : 'En ligne'}
             </span>
           </div>
           <button
             onClick={handleLogout}
-            className="flex items-center justify-center w-10 h-10 rounded-lg transition-colors hover:bg-white/15"
+            className="flex items-center justify-center w-12 h-12 rounded-lg transition-colors hover:bg-white/15"
             aria-label="Déconnexion"
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="w-6 h-6" />
           </button>
         </div>
       </header>
 
       {/* Connection banner */}
       <div
-        className="flex items-center gap-2 px-4 py-1.5 text-xs font-medium text-white"
+        className="flex items-center gap-2.5 px-5 py-2 text-sm font-medium text-white"
         style={{ backgroundColor: connColor }}
       >
-        <connIcon className={`w-3.5 h-3.5 flex-shrink-0 ${connAnimate ? 'animate-spin' : ''}`} />
+        <connIcon className={`w-4.5 h-4.5 flex-shrink-0 ${connAnimate ? 'animate-spin' : ''}`} />
         <span className="truncate">{bannerLabel}</span>
       </div>
 
       {/* Main content */}
-      <main className="flex-1 px-4 py-4 sm:px-6 max-w-2xl mx-auto w-full">
+      <main className="flex-1 px-5 py-5 sm:px-8 max-w-2xl mx-auto w-full">
         {sessionLoading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#0B7439' }} />
+            <Loader2 className="w-10 h-10 animate-spin" style={{ color: '#0B7439' }} />
           </div>
         ) : !session || session.role !== 'bagagiste' ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <AlertCircle className="w-10 h-10 mb-3" style={{ color: '#DC2626' }} />
-            <p className="text-sm font-medium" style={{ color: '#6B7280' }}>
+            <AlertCircle className="w-12 h-12 mb-4" style={{ color: '#DC2626' }} />
+            <p className="text-base font-medium" style={{ color: '#6B7280' }}>
               Accès refusé — profil bagagiste requis.
             </p>
           </div>
@@ -237,55 +237,55 @@ function HomeView({ departs, loading, onSelectView, stationName, bagagisteName, 
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       {/* SBTA brand block */}
       <div
-        className="rounded-2xl p-5 text-center"
+        className="rounded-2xl p-7 text-center"
         style={{ background: 'linear-gradient(135deg, #0B7439 0%, #0E8D44 100%)', color: 'white' }}
       >
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
-          <Luggage className="w-8 h-8" strokeWidth={2.5} />
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+          <Luggage className="w-10 h-10" strokeWidth={2.5} />
         </div>
-        <h1 className="text-xl font-bold leading-tight">Terminal Bagage TPE</h1>
-        <p className="text-sm font-semibold opacity-95 mt-1">{bagagisteName}</p>
-        <p className="text-xs opacity-85 mt-0.5">
+        <h1 className="text-2xl font-bold leading-tight">Terminal Bagage TPE</h1>
+        <p className="text-base font-semibold opacity-95 mt-1.5">{bagagisteName}</p>
+        <p className="text-sm opacity-85 mt-1">
           {stationName}{companyName ? ` · ${companyName}` : ''}
         </p>
       </div>
 
       {/* Departure count indicator */}
-      <div className="rounded-xl p-3 flex items-center justify-between" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-        <div className="flex items-center gap-2">
-          <Package className="w-4 h-4" style={{ color: '#0B7439' }} />
-          <span className="text-xs font-bold" style={{ color: '#6B7280' }}>Départs actifs aujourd'hui</span>
+      <div className="rounded-xl p-4 flex items-center justify-between" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+        <div className="flex items-center gap-2.5">
+          <Package className="w-5 h-5" style={{ color: '#0B7439' }} />
+          <span className="text-sm font-bold" style={{ color: '#6B7280' }}>Départs actifs aujourd'hui</span>
         </div>
         {loading ? (
-          <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0B7439' }} />
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#0B7439' }} />
         ) : (
-          <span className="text-sm font-bold" style={{ color: '#0B7439' }}>{departs.length}</span>
+          <span className="text-lg font-bold" style={{ color: '#0B7439' }}>{departs.length}</span>
         )}
       </div>
 
       {/* Action tiles — large, TPE-friendly */}
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-5">
         {tiles.map(tile => {
           const Icon = tile.icon;
           return (
             <button
               key={tile.view}
               onClick={() => onSelectView(tile.view)}
-              className="flex items-center gap-4 p-5 rounded-2xl border-2 transition-all active:scale-[0.98] hover:shadow-md min-h-[88px]"
+              className="flex items-center gap-5 p-6 rounded-2xl border-2 transition-all active:scale-[0.98] hover:shadow-md min-h-[96px]"
               style={{ backgroundColor: 'white', borderColor: '#E2EAE5' }}
             >
               <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+                className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
                 style={{ backgroundColor: tile.bg, color: tile.color }}
               >
-                <Icon className="w-7 h-7" strokeWidth={2.2} />
+                <Icon className="w-8 h-8" strokeWidth={2.2} />
               </div>
               <div className="text-left min-w-0">
-                <p className="text-base font-bold leading-tight" style={{ color: '#1A2E22' }}>{tile.label}</p>
-                <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
+                <p className="text-lg font-bold leading-tight" style={{ color: '#1A2E22' }}>{tile.label}</p>
+                <p className="text-sm mt-1" style={{ color: '#6B7280' }}>
                   {tile.view === 'register' && 'Nouveau bagage + impression reçu'}
                   {tile.view === 'search' && 'Recherche par 4 derniers caractères'}
                   {tile.view === 'history' && 'Bagages enregistrés aujourd\'hui'}
@@ -462,38 +462,38 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
     }
   };
 
-  const fieldLabel = 'block text-xs font-bold mb-1';
-  const fieldInput = 'w-full px-3 py-2.5 rounded-lg border-2 text-sm outline-none transition-colors';
+  const fieldLabel = 'block text-sm font-bold mb-1.5';
+  const fieldInput = 'w-full px-4 py-3.5 rounded-xl border-2 text-base outline-none transition-colors';
   const fieldStyle = { borderColor: '#E2EAE5', backgroundColor: 'white' };
 
   // Step 1: select depart
   if (!selectedDepart) {
     return (
-      <div className="space-y-3">
-        <h2 className="text-lg font-bold" style={{ color: '#1A2E22' }}>Sélectionner un départ</h2>
+      <div className="space-y-4">
+        <h2 className="text-xl font-bold" style={{ color: '#1A2E22' }}>Sélectionner un départ</h2>
         {departs.length === 0 ? (
-          <div className="text-center py-12 rounded-xl" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-            <Package className="w-10 h-10 mx-auto mb-2" style={{ color: '#9CA3AF' }} />
-            <p className="text-sm" style={{ color: '#6B7280' }}>Aucun départ actif aujourd'hui</p>
+          <div className="text-center py-14 rounded-xl" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+            <Package className="w-12 h-12 mx-auto mb-3" style={{ color: '#9CA3AF' }} />
+            <p className="text-base" style={{ color: '#6B7280' }}>Aucun départ actif aujourd'hui</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {departs.map(d => (
               <button
                 key={d.id}
                 onClick={() => setSelectedDepart(d)}
-                className="w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all active:scale-[0.98] hover:shadow-sm text-left"
+                className="w-full flex items-center justify-between p-5 rounded-xl border-2 transition-all active:scale-[0.98] hover:shadow-sm text-left"
                 style={{ backgroundColor: 'white', borderColor: '#E2EAE5' }}
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-bold truncate" style={{ color: '#1A2E22' }}>
+                  <p className="text-base font-bold truncate" style={{ color: '#1A2E22' }}>
                     Départ #{d.route_number} — {d.route_name}
                   </p>
-                  <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
+                  <p className="text-sm mt-1" style={{ color: '#6B7280' }}>
                     {d.bus_plate} · {d.departure_time}
                   </p>
                 </div>
-                <ArrowLeft className="w-5 h-5 rotate-180 flex-shrink-0" style={{ color: '#0B7439' }} />
+                <ArrowLeft className="w-6 h-6 rotate-180 flex-shrink-0" style={{ color: '#0B7439' }} />
               </button>
             ))}
           </div>
@@ -504,39 +504,39 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
   // Step 2: baggage form
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Depart summary */}
       <div
-        className="rounded-xl p-3 flex items-center justify-between"
+        className="rounded-xl p-4 flex items-center justify-between"
         style={{ backgroundColor: '#0B7439', color: 'white' }}
       >
         <div className="min-w-0">
-          <p className="text-sm font-bold truncate">Départ #{selectedDepart.route_number}</p>
-          <p className="text-xs opacity-85 truncate">{selectedDepart.route_name} · {selectedDepart.bus_plate}</p>
+          <p className="text-base font-bold truncate">Départ #{selectedDepart.route_number}</p>
+          <p className="text-sm opacity-85 truncate">{selectedDepart.route_name} · {selectedDepart.bus_plate}</p>
         </div>
         <button
           onClick={() => setSelectedDepart(null)}
-          className="flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0 transition-colors hover:bg-white/15"
+          className="flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0 transition-colors hover:bg-white/15"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5" />
         </button>
       </div>
 
       {error && (
-        <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-sm" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
-          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+        <div className="rounded-xl px-4 py-3 flex items-start gap-2.5 text-base" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
       {success && (
-        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2 text-sm font-medium" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>
-          <CheckCircle className="w-4 h-4 flex-shrink-0" /> {success}
+        <div className="rounded-xl px-4 py-3 flex items-center gap-2.5 text-base font-medium" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>
+          <CheckCircle className="w-5 h-5 flex-shrink-0" /> {success}
         </div>
       )}
 
       {/* Ticket linking */}
-      <div className="rounded-xl p-4" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-        <label className="flex items-center gap-2 cursor-pointer mb-3">
+      <div className="rounded-xl p-5" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+        <label className="flex items-center gap-3 cursor-pointer mb-4">
           <input
             type="checkbox"
             checked={withTicket}
@@ -549,15 +549,15 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                 setTicketResults([]);
               }
             }}
-            className="w-5 h-5"
+            className="w-6 h-6"
             style={{ accentColor: '#0B7439' }}
           />
-          <span className="text-sm font-bold" style={{ color: '#1A2E22' }}>Avec ticket (lier à un passager)</span>
+          <span className="text-base font-bold" style={{ color: '#1A2E22' }}>Avec ticket (lier à un passager)</span>
         </label>
 
         {withTicket && (
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>
+            <label className={fieldLabel} style={{ color: '#374151' }}>
               Rechercher ticket — 4 derniers caractères
             </label>
             <div className="relative">
@@ -570,30 +570,30 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                 placeholder="Ex: 0001"
                 maxLength={10}
               />
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#9CA3AF' }} />
+              <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#9CA3AF' }} />
             </div>
             {ticketSearching && (
-              <p className="text-xs mt-2" style={{ color: '#6B7280' }}>Recherche en cours...</p>
+              <p className="text-sm mt-2" style={{ color: '#6B7280' }}>Recherche en cours...</p>
             )}
             {ticketResults.length > 0 && (
-              <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto">
+              <div className="mt-3 space-y-2 max-h-56 overflow-y-auto">
                 {ticketResults.map(t => (
                   <button
                     key={t.id}
                     onClick={() => handleSelectTicket(t)}
-                    className="w-full flex items-center gap-2 p-2.5 rounded-lg border text-left transition-colors hover:bg-[#F4F7F5]"
+                    className="w-full flex items-center gap-3 p-3.5 rounded-lg border text-left transition-colors hover:bg-[#F4F7F5]"
                     style={{ borderColor: '#E2EAE5', backgroundColor: '#FAFBFA' }}
                   >
-                    <TicketIcon className="w-4 h-4 flex-shrink-0" style={{ color: '#7C3AED' }} />
+                    <TicketIcon className="w-5 h-5 flex-shrink-0" style={{ color: '#7C3AED' }} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold truncate" style={{ color: '#1A2E22' }}>
+                      <p className="text-sm font-bold truncate" style={{ color: '#1A2E22' }}>
                         {t.ticket_number} — Siège {t.seat_number}
                       </p>
-                      <p className="text-xs truncate" style={{ color: '#6B7280' }}>
+                      <p className="text-sm truncate" style={{ color: '#6B7280' }}>
                         {t.destination} · {t.passenger_name}
                       </p>
                     </div>
-                    <span className="text-xs font-bold flex-shrink-0" style={{ color: '#0B7439' }}>
+                    <span className="text-sm font-bold flex-shrink-0" style={{ color: '#0B7439' }}>
                       {formatCurrency(t.price)}
                     </span>
                   </button>
@@ -601,20 +601,20 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
               </div>
             )}
             {ticketSearch.trim().length === 4 && ticketResults.length === 0 && !linkedTicket && !ticketSearching && (
-              <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>Aucun ticket trouvé pour ce départ</p>
+              <p className="text-sm mt-2" style={{ color: '#9CA3AF' }}>Aucun ticket trouvé pour ce départ</p>
             )}
             {linkedTicket && (
-              <div className="mt-3 rounded-xl p-3 space-y-2" style={{ backgroundColor: '#F3F0FF', border: '1px solid #C4B5FD' }}>
-                <div className="flex items-start gap-2">
-                  <Link2 className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#7C3AED' }} />
+              <div className="mt-4 rounded-xl p-4 space-y-2.5" style={{ backgroundColor: '#F3F0FF', border: '1px solid #C4B5FD' }}>
+                <div className="flex items-start gap-2.5">
+                  <Link2 className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: '#7C3AED' }} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold truncate" style={{ color: '#5B21B6' }}>
+                    <p className="text-sm font-bold truncate" style={{ color: '#5B21B6' }}>
                       Ticket sélectionné : {linkedTicket.ticket_number}
                     </p>
-                    <p className="text-xs mt-1" style={{ color: '#6D28D9' }}>
+                    <p className="text-sm mt-1" style={{ color: '#6D28D9' }}>
                       Siège {linkedTicket.seat_number || '—'} · Destination {linkedTicket.destination || '—'}
                     </p>
-                    <p className="text-xs mt-0.5" style={{ color: '#6D28D9' }}>
+                    <p className="text-sm mt-0.5" style={{ color: '#6D28D9' }}>
                       Passager : {linkedTicket.passenger_name || 'Non renseigné'} · Car {selectedDepart.bus_plate || '—'}
                     </p>
                   </div>
@@ -623,7 +623,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                     className="flex-shrink-0"
                     aria-label="Désélectionner le ticket"
                   >
-                    <X className="w-4 h-4" style={{ color: '#7C3AED' }} />
+                    <X className="w-5 h-5" style={{ color: '#7C3AED' }} />
                   </button>
                 </div>
               </div>
@@ -633,11 +633,11 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
       </div>
 
       {/* Bagage form */}
-      <div className="rounded-xl p-4 space-y-3" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-        <div className="grid grid-cols-2 gap-3">
+      <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+        <div className="grid grid-cols-2 gap-4">
           {/* Destination */}
           <div className="col-span-2">
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Destination</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Destination</label>
             <select
               value={destinationId}
               onChange={e => {
@@ -658,7 +658,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
           {/* Declared value */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Valeur déclarée (FCFA)</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Valeur déclarée (FCFA)</label>
             <input
               type="number"
               min={0}
@@ -672,7 +672,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
           {/* Bus and seat from the selected ticket */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Immatriculation</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Immatriculation</label>
             <input
               type="text"
               value={ticketBusPlate || selectedDepart.bus_plate || ''}
@@ -682,7 +682,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
             />
           </div>
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Siège</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Siège</label>
             <input
               type="text"
               value={linkedTicket?.seat_number ? String(linkedTicket.seat_number) : ''}
@@ -695,7 +695,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
           {/* Price */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Montant à payer (FCFA)</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Montant à payer (FCFA)</label>
             <div className="relative">
               <input
                 type="number"
@@ -706,13 +706,13 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
                 style={fieldStyle}
                 placeholder="0"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: '#9CA3AF' }}>F</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold" style={{ color: '#9CA3AF' }}>F</span>
             </div>
           </div>
 
           {/* Description */}
           <div className="col-span-2">
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Description</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Description</label>
             <input
               type="text"
               value={description}
@@ -725,7 +725,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
           {/* Owner name */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Nom et prénoms</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Nom et prénoms</label>
             <input
               type="text"
               value={ownerName}
@@ -738,7 +738,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
 
           {/* Owner phone */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Contact</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Contact</label>
             <input
               type="tel"
               value={ownerPhone}
@@ -755,10 +755,10 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
       <button
         onClick={handleSubmit}
         disabled={saving || price <= 0 || (!destinationId && !destinationName)}
-        className="w-full py-4 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+        className="w-full py-5 rounded-xl font-bold text-white text-lg disabled:opacity-60 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
         style={{ backgroundColor: '#0B7439' }}
       >
-        {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+        {saving ? <Loader2 className="w-6 h-6 animate-spin" /> : <Plus className="w-6 h-6" />}
         Enregistrer & Imprimer
       </button>
     </div>
@@ -823,86 +823,86 @@ function SearchView({ stationId, onLink }: SearchViewProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold" style={{ color: '#1A2E22' }}>Rechercher un ticket</h2>
-      <p className="text-sm" style={{ color: '#6B7280' }}>
+    <div className="space-y-5">
+      <h2 className="text-xl font-bold" style={{ color: '#1A2E22' }}>Rechercher un ticket</h2>
+      <p className="text-base" style={{ color: '#6B7280' }}>
         Saisissez les 4 derniers caractères du numéro de ticket.
       </p>
 
-      <div className="flex gap-2">
+      <div className="flex gap-3">
         <div className="relative flex-1">
           <input
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-            className="w-full px-4 py-3 rounded-xl border-2 text-base outline-none transition-colors"
+            className="w-full px-4 py-4 rounded-xl border-2 text-lg outline-none transition-colors"
             style={{ borderColor: '#E2EAE5', backgroundColor: 'white' }}
             placeholder="Ex: 4A89"
             maxLength={4}
           />
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#9CA3AF' }} />
+          <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: '#9CA3AF' }} />
         </div>
         <button
           onClick={handleSearch}
           disabled={query.trim().length !== 4 || searching}
-          className="px-5 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center gap-2"
+          className="px-6 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center gap-2"
           style={{ backgroundColor: '#7C3AED' }}
         >
-          {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+          {searching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
           OK
         </button>
       </div>
 
       {searched && results.length === 0 && (
-        <div className="text-center py-12 rounded-xl" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-          <Search className="w-10 h-10 mx-auto mb-2" style={{ color: '#9CA3AF' }} />
-          <p className="text-sm" style={{ color: '#6B7280' }}>Aucun ticket trouvé</p>
+        <div className="text-center py-14 rounded-xl" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+          <Search className="w-12 h-12 mx-auto mb-3" style={{ color: '#9CA3AF' }} />
+          <p className="text-base" style={{ color: '#6B7280' }}>Aucun ticket trouvé</p>
         </div>
       )}
 
       {results.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {results.map(({ ticket, depart, departureNumber, busPlate }) => (
             <div
               key={ticket.id}
-              className="rounded-xl p-3 flex items-center justify-between"
+              className="rounded-xl p-4 flex items-center justify-between"
               style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}
             >
               <button
                 onClick={() => onLink(results.find(r => r.ticket.id === ticket.id)!)}
                 className="min-w-0 flex-1 text-left"
               >
-                <p className="text-sm font-bold truncate" style={{ color: '#1A2E22' }}>
+                <p className="text-base font-bold truncate" style={{ color: '#1A2E22' }}>
                   {ticket.ticket_number} — Siège {ticket.seat_number}
                 </p>
-                <p className="text-xs truncate" style={{ color: '#6B7280' }}>
+                <p className="text-sm truncate" style={{ color: '#6B7280' }}>
                   {ticket.destination || 'Destination non renseignée'} · {ticket.passenger_name || 'Passager non renseigné'}
                 </p>
-                <p className="text-xs mt-0.5 truncate" style={{ color: '#6B7280' }}>
+                <p className="text-sm mt-1 truncate" style={{ color: '#6B7280' }}>
                   Départ #{departureNumber ?? resultDepartureNumber(depart, results, ticket.id)} · Siège {ticket.seat_number || '—'} · Car {busPlate ?? resultBusPlate(depart, results, ticket.id)}
                 </p>
               </button>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-sm font-bold" style={{ color: '#0B7439' }}>
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                <span className="text-base font-bold" style={{ color: '#0B7439' }}>
                   {formatCurrency(ticket.price)}
                 </span>
                 <button
                   onClick={() => onLink(results.find(r => r.ticket.id === ticket.id)!)}
-                  className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-[#D1FAE5]"
+                  className="flex items-center justify-center w-11 h-11 rounded-lg transition-colors hover:bg-[#D1FAE5]"
                   style={{ backgroundColor: '#D1FAE5', color: '#0B7439' }}
                   aria-label="Enregistrer bagage"
                 >
-                  <Luggage className="w-4 h-4" />
+                  <Luggage className="w-5 h-5" />
                 </button>
                 {depart && (
                   <button
                     onClick={() => handleReprint(ticket, depart)}
-                    className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-[#F4F7F5]"
+                    className="flex items-center justify-center w-11 h-11 rounded-lg transition-colors hover:bg-[#F4F7F5]"
                     style={{ backgroundColor: '#E2EAE5', color: '#0B7439' }}
                     aria-label="Réimprimer"
                   >
-                    <Printer className="w-4 h-4" />
+                    <Printer className="w-5 h-5" />
                   </button>
                 )}
               </div>
@@ -1045,20 +1045,20 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
     }
   };
 
-  const fieldLabel = 'block text-xs font-bold mb-1';
-  const fieldInput = 'w-full px-3 py-2.5 rounded-lg border-2 text-sm outline-none transition-colors';
+  const fieldLabel = 'block text-sm font-bold mb-1.5';
+  const fieldInput = 'w-full px-4 py-3.5 rounded-xl border-2 text-base outline-none transition-colors';
   const fieldStyle = { borderColor: '#E2EAE5', backgroundColor: 'white' };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Trip info from the found ticket */}
-      <div className="rounded-xl p-4" style={{ backgroundColor: '#EDE9FE', border: '1px solid #C4B5FD' }}>
-        <div className="flex items-center gap-2 mb-2">
-          <TicketIcon className="w-4 h-4" style={{ color: '#7C3AED' }} />
-          <span className="text-sm font-bold" style={{ color: '#5B21B6' }}>Ticket BUS</span>
+      <div className="rounded-xl p-5" style={{ backgroundColor: '#EDE9FE', border: '1px solid #C4B5FD' }}>
+        <div className="flex items-center gap-2.5 mb-3">
+          <TicketIcon className="w-5 h-5" style={{ color: '#7C3AED' }} />
+          <span className="text-base font-bold" style={{ color: '#5B21B6' }}>Ticket BUS</span>
         </div>
-        <p className="text-base font-bold" style={{ color: '#1A2E22' }}>{ticket.ticket_number}</p>
-        <div className="grid grid-cols-2 gap-2 mt-2 text-xs" style={{ color: '#4C1D95' }}>
+        <p className="text-lg font-bold" style={{ color: '#1A2E22' }}>{ticket.ticket_number}</p>
+        <div className="grid grid-cols-2 gap-2 mt-3 text-sm" style={{ color: '#4C1D95' }}>
           <p><span className="font-bold">Départ:</span> #{departureNumber ?? '—'}</p>
           <p><span className="font-bold">Siège:</span> {ticket.seat_number || '—'}</p>
           <p><span className="font-bold">Destination:</span> {ticket.destination || '—'}</p>
@@ -1071,23 +1071,23 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
       </div>
 
       {error && (
-        <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-sm" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
-          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+        <div className="rounded-xl px-4 py-3 flex items-start gap-2.5 text-base" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
       {success && (
-        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2 text-sm font-medium" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>
-          <CheckCircle className="w-4 h-4 flex-shrink-0" /> {success}
+        <div className="rounded-xl px-4 py-3 flex items-center gap-2.5 text-base font-medium" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>
+          <CheckCircle className="w-5 h-5 flex-shrink-0" /> {success}
         </div>
       )}
 
       {/* Baggage form */}
-      <div className="rounded-xl p-4 space-y-3" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-        <div className="grid grid-cols-2 gap-3">
+      <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+        <div className="grid grid-cols-2 gap-4">
           {/* Destination */}
           <div className="col-span-2">
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Destination</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Destination</label>
             <select
               value={destinationId}
               onChange={e => {
@@ -1105,7 +1105,7 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
 
           {/* Price */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Montant à payer (FCFA)</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Montant à payer (FCFA)</label>
             <div className="relative">
               <input
                 type="number"
@@ -1116,13 +1116,13 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
                 style={fieldStyle}
                 placeholder="0"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: '#9CA3AF' }}>F</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold" style={{ color: '#9CA3AF' }}>F</span>
             </div>
           </div>
 
           {/* Declared value */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Valeur déclarée (FCFA)</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Valeur déclarée (FCFA)</label>
             <div className="relative">
               <input
                 type="number"
@@ -1133,13 +1133,13 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
                 style={fieldStyle}
                 placeholder="0"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold" style={{ color: '#9CA3AF' }}>F</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold" style={{ color: '#9CA3AF' }}>F</span>
             </div>
           </div>
 
           {/* Description */}
           <div className="col-span-2">
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Description du bagage</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Description du bagage</label>
             <input
               type="text"
               value={description}
@@ -1152,7 +1152,7 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
 
           {/* Owner name */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Nom et prénoms du client</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Nom et prénoms du client</label>
             <input
               type="text"
               value={ownerName}
@@ -1165,7 +1165,7 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
 
           {/* Owner phone */}
           <div>
-            <label className={fieldLabel} style={{ color: '#6B7280' }}>Contact</label>
+            <label className={fieldLabel} style={{ color: '#374151' }}>Contact</label>
             <input
               type="tel"
               value={ownerPhone}
@@ -1179,32 +1179,32 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-3">
+      <div className="flex gap-4">
         <button
           onClick={onBack}
           disabled={saving}
-          className="flex-1 py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60"
+          className="flex-1 py-5 rounded-xl font-bold text-base flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-60"
           style={{ backgroundColor: '#F4F7F5', color: '#6B7280', border: '1px solid #E2EAE5' }}
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-6 h-6" />
           Retour
         </button>
         <button
           onClick={handleSubmit}
           disabled={saving || price <= 0 || (!destinationId && !destinationName)}
-          className="flex-[2] py-4 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          className="flex-[2] py-5 rounded-xl font-bold text-white text-lg disabled:opacity-60 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
           style={{ backgroundColor: '#0B7439' }}
         >
-          {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+          {saving ? <Loader2 className="w-6 h-6 animate-spin" /> : <CheckCircle className="w-6 h-6" />}
           Valider
         </button>
         <button
           onClick={handleSubmit}
           disabled={saving || price <= 0 || (!destinationId && !destinationName)}
-          className="flex-1 py-4 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          className="flex-1 py-5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
           style={{ backgroundColor: '#1D6FA4' }}
         >
-          <Printer className="w-5 h-5" />
+          <Printer className="w-6 h-6" />
           Imprimer
         </button>
       </div>
@@ -1259,76 +1259,76 @@ function HistoryView({ session }: HistoryViewProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold" style={{ color: '#1A2E22' }}>Historique bagages</h2>
+    <div className="space-y-5">
+      <h2 className="text-xl font-bold" style={{ color: '#1A2E22' }}>Historique bagages</h2>
 
       {/* KPI */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl p-4" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-          <div className="flex items-center gap-2 mb-1">
-            <Package className="w-4 h-4" style={{ color: '#0B7439' }} />
-            <span className="text-xs font-bold" style={{ color: '#6B7280' }}>Bagages</span>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-xl p-5" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+          <div className="flex items-center gap-2.5 mb-1.5">
+            <Package className="w-5 h-5" style={{ color: '#0B7439' }} />
+            <span className="text-sm font-bold" style={{ color: '#6B7280' }}>Bagages</span>
           </div>
-          <p className="text-2xl font-bold" style={{ color: '#1A2E22' }}>{bagages.length}</p>
+          <p className="text-3xl font-bold" style={{ color: '#1A2E22' }}>{bagages.length}</p>
         </div>
-        <div className="rounded-xl p-4" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-          <div className="flex items-center gap-2 mb-1">
-            <Luggage className="w-4 h-4" style={{ color: '#7C3AED' }} />
-            <span className="text-xs font-bold" style={{ color: '#6B7280' }}>Recettes</span>
+        <div className="rounded-xl p-5" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+          <div className="flex items-center gap-2.5 mb-1.5">
+            <Luggage className="w-5 h-5" style={{ color: '#7C3AED' }} />
+            <span className="text-sm font-bold" style={{ color: '#6B7280' }}>Recettes</span>
           </div>
-          <p className="text-2xl font-bold" style={{ color: '#0B7439' }}>{formatCurrency(totalRevenue)}</p>
+          <p className="text-3xl font-bold" style={{ color: '#0B7439' }}>{formatCurrency(totalRevenue)}</p>
         </div>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#0B7439' }} />
+        <div className="flex items-center justify-center py-14">
+          <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#0B7439' }} />
         </div>
       ) : bagages.length === 0 ? (
-        <div className="text-center py-12 rounded-xl" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
-          <Luggage className="w-10 h-10 mx-auto mb-2" style={{ color: '#9CA3AF' }} />
-          <p className="text-sm" style={{ color: '#6B7280' }}>Aucun bagage enregistré aujourd'hui</p>
+        <div className="text-center py-14 rounded-xl" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+          <Luggage className="w-12 h-12 mx-auto mb-3" style={{ color: '#9CA3AF' }} />
+          <p className="text-base" style={{ color: '#6B7280' }}>Aucun bagage enregistré aujourd'hui</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {bagages.map(b => {
             const depart = departs.get(b.depart_id);
             return (
               <div
                 key={b.id}
-                className="rounded-xl p-3 flex items-center justify-between"
+                className="rounded-xl p-4 flex items-center justify-between"
                 style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold truncate" style={{ color: '#1A2E22' }}>
+                  <p className="text-base font-bold truncate" style={{ color: '#1A2E22' }}>
                     {b.bagage_number}
                   </p>
-                  <p className="text-xs truncate" style={{ color: '#6B7280' }}>
+                  <p className="text-sm truncate" style={{ color: '#6B7280' }}>
                     {b.destination} · {b.owner_name || '—'}
                   </p>
                   {depart && (
-                    <p className="text-xs mt-0.5 truncate" style={{ color: '#9CA3AF' }}>
+                    <p className="text-sm mt-1 truncate" style={{ color: '#9CA3AF' }}>
                       Départ #{depart.route_number} · {depart.bus_plate}
                     </p>
                   )}
                   {b.with_ticket && (
-                    <span className="inline-flex items-center gap-1 mt-1 text-xs font-bold" style={{ color: '#7C3AED' }}>
-                      <Link2 className="w-3 h-3" /> {b.ticket_number}
+                    <span className="inline-flex items-center gap-1 mt-1.5 text-sm font-bold" style={{ color: '#7C3AED' }}>
+                      <Link2 className="w-4 h-4" /> {b.ticket_number}
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-sm font-bold" style={{ color: '#0B7439' }}>
+                <div className="flex items-center gap-2.5 flex-shrink-0">
+                  <span className="text-base font-bold" style={{ color: '#0B7439' }}>
                     {formatCurrency(b.price)}
                   </span>
                   {depart && (
                     <button
                       onClick={() => handleReprint(b)}
-                      className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-[#F4F7F5]"
+                      className="flex items-center justify-center w-11 h-11 rounded-lg transition-colors hover:bg-[#F4F7F5]"
                       style={{ backgroundColor: '#D1FAE5', color: '#0B7439' }}
                       aria-label="Réimprimer"
                     >
-                      <Printer className="w-4 h-4" />
+                      <Printer className="w-5 h-5" />
                     </button>
                   )}
                 </div>
