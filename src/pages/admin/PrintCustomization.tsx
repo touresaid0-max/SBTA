@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Save, Plus, Trash2, RotateCcw, Ticket, Package, Luggage } from 'lucide-react'
+import { Loader2, Save, Plus, Trash2, RotateCcw, Ticket, Package, Luggage, Smartphone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   getPrintCustomization,
@@ -65,6 +65,11 @@ const GROUPED_SECTIONS = [
     icon: <Luggage className="w-6 h-6" />,
     sections: SECTIONS.filter(s => s.key === 'baggage_notes'),
   },
+  {
+    title: 'TPE-POS — Ticket Bagage 58mm',
+    icon: <Smartphone className="w-6 h-6" />,
+    sections: [],
+  },
 ]
 
 export default function PrintCustomizationPage() {
@@ -92,7 +97,8 @@ export default function PrintCustomizationPage() {
     JSON.stringify(data.bus_ticket_phones) !== JSON.stringify(original.bus_ticket_phones) ||
     JSON.stringify(data.bus_ticket_notes) !== JSON.stringify(original.bus_ticket_notes) ||
     JSON.stringify(data.parcel_notes) !== JSON.stringify(original.parcel_notes) ||
-    JSON.stringify(data.baggage_notes) !== JSON.stringify(original.baggage_notes)
+    JSON.stringify(data.baggage_notes) !== JSON.stringify(original.baggage_notes) ||
+    (data.tpe_baggage_notice ?? '') !== (original.tpe_baggage_notice ?? '')
   )
 
   const updateLine = (section: SectionKey, index: number, value: string) => {
@@ -133,6 +139,7 @@ export default function PrintCustomizationPage() {
         bus_ticket_notes: data.bus_ticket_notes.map(s => s.trim()).filter(Boolean),
         parcel_notes: data.parcel_notes.map(s => s.trim()).filter(Boolean),
         baggage_notes: data.baggage_notes.map(s => s.trim()).filter(Boolean),
+        tpe_baggage_notice: (data.tpe_baggage_notice ?? '').trim(),
       }
       const saved = await savePrintCustomization(cleaned)
       setData(saved)
@@ -199,63 +206,90 @@ export default function PrintCustomizationPage() {
             </h2>
           </div>
 
-          <div className="space-y-6">
-            {group.sections.map(section => (
-              <div key={section.key}>
-                <div className="mb-2">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {section.label}
-                  </h3>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                    {section.description}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  {data && data[section.key].length === 0 && (
-                    <p className="text-xs italic py-2" style={{ color: 'var(--text-muted)' }}>
-                      Aucun texte configuré. Cliquez sur « Ajouter » pour en ajouter un.
-                    </p>
-                  )}
-                  {data && data[section.key].map((line, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <span className="text-xs font-mono w-6 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
-                        {index + 1}.
-                      </span>
-                      <input
-                        type="text"
-                        value={line}
-                        onChange={e => updateLine(section.key, index, e.target.value)}
-                        placeholder={section.placeholder}
-                        className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
-                        style={{
-                          backgroundColor: 'var(--surface-raised)',
-                          border: '1px solid var(--border)',
-                          color: 'var(--text-primary)',
-                        }}
-                      />
-                      <button
-                        onClick={() => removeLine(section.key, index)}
-                        className="p-2 rounded-lg flex-shrink-0 hover:bg-red-50 transition-colors"
-                        style={{ color: 'var(--error)' }}
-                        title="Supprimer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => addLine(section.key)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                    style={{ color: 'var(--primary)' }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Ajouter un texte
-                  </button>
-                </div>
+          {group.title.startsWith('TPE-POS') ? (
+            <div>
+              <div className="mb-2">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Mention légale en bas du ticket
+                </h3>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Texte affiché en bas du Ticket BAGAGE du TPE-POS uniquement (imprimante 58 mm). Le texte s'adapte automatiquement à la largeur du ticket.
+                </p>
               </div>
-            ))}
-          </div>
+              <textarea
+                value={data?.tpe_baggage_notice ?? ''}
+                onChange={e => setData(prev => prev ? { ...prev, tpe_baggage_notice: e.target.value } : prev)}
+                placeholder="Le client doit déclarer la valeur réelle des biens expédiés…"
+                rows={6}
+                className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y"
+                style={{
+                  backgroundColor: 'var(--surface-raised)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'Arial, sans-serif',
+                  lineHeight: 1.4,
+                }}
+              />
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {group.sections.map(section => (
+                <div key={section.key}>
+                  <div className="mb-2">
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {section.label}
+                    </h3>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {section.description}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {data && data[section.key].length === 0 && (
+                      <p className="text-xs italic py-2" style={{ color: 'var(--text-muted)' }}>
+                        Aucun texte configuré. Cliquez sur « Ajouter » pour en ajouter un.
+                      </p>
+                    )}
+                    {data && data[section.key].map((line, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-xs font-mono w-6 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+                          {index + 1}.
+                        </span>
+                        <input
+                          type="text"
+                          value={line}
+                          onChange={e => updateLine(section.key, index, e.target.value)}
+                          placeholder={section.placeholder}
+                          className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{
+                            backgroundColor: 'var(--surface-raised)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--text-primary)',
+                          }}
+                        />
+                        <button
+                          onClick={() => removeLine(section.key, index)}
+                          className="p-2 rounded-lg flex-shrink-0 hover:bg-red-50 transition-colors"
+                          style={{ color: 'var(--error)' }}
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => addLine(section.key)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                      style={{ color: 'var(--primary)' }}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Ajouter un texte
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ))}
 

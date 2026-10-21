@@ -6,8 +6,12 @@ export interface PrintCustomization {
   bus_ticket_notes: string[]
   parcel_notes: string[]
   baggage_notes: string[]
+  tpe_baggage_notice: string | null
   updated_at: string | null
 }
+
+const DEFAULT_TPE_BAGGAGE_NOTICE =
+  "Le client doit declarer la valeur reelle des biens expedies, moyennant des frais equivalents a 10% des couts d'expedition (justificatif si necessaire). En cas de perte, la compagnie dispose de deux (2) semaines pour les recherches. Si elles echouent, un remboursement de 50% de la valeur declaree sera effectue sous deux (2) semaines supplementaires.";
 
 const DEFAULTS: PrintCustomization = {
   id: 1,
@@ -25,6 +29,7 @@ const DEFAULTS: PrintCustomization = {
     "AUCUN REMBOURSEMENT N'EST POSSIBLE APRES ENCAISSEMENT.",
     "NB : PASSE UN DELAI DE 14 JOURS, SBTA N'EST PAS RESPONSABLE EN CAS DE PERTE DE COLIS.",
   ],
+  tpe_baggage_notice: DEFAULT_TPE_BAGGAGE_NOTICE,
   updated_at: null,
 }
 
@@ -45,13 +50,13 @@ export async function getPrintCustomization(): Promise<PrintCustomization> {
     return { ...DEFAULTS }
   }
 
-  cached = data as PrintCustomization
+  cached = { ...DEFAULTS, ...data } as PrintCustomization
   cacheTime = Date.now()
   return cached
 }
 
 export async function savePrintCustomization(
-  updates: Partial<Pick<PrintCustomization, 'bus_ticket_phones' | 'bus_ticket_notes' | 'parcel_notes' | 'baggage_notes'>>,
+  updates: Partial<Pick<PrintCustomization, 'bus_ticket_phones' | 'bus_ticket_notes' | 'parcel_notes' | 'baggage_notes' | 'tpe_baggage_notice'>>,
 ): Promise<PrintCustomization> {
   const { data, error } = await supabase
     .from('print_customization')

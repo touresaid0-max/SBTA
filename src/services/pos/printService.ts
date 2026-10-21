@@ -431,7 +431,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
 </body></html>`;
 }
 
-function buildHTMLTpeBagage(data: PrintBagageData): string {
+function buildHTMLTpeBagage(data: PrintBagageData, notice?: string | null): string {
   const { bagage, depart, stationName, phoneLine } = data;
   const value = (input: string | number | null | undefined): string => String(input ?? '').trim();
   const formatMoney = (amount: number): string => `${amount.toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
@@ -467,6 +467,7 @@ function buildHTMLTpeBagage(data: PrintBagageData): string {
       <div class="single">CONTACT : <strong>${escapeHtml(contact)}</strong></div>
       <div class="separator"></div>
       <div class="printed">Imprimé le : ${escapeHtml(printed)}</div>
+      ${notice && notice.trim() ? `<div class="separator"></div><div class="notice">${escapeHtml(notice.trim())}</div>` : ''}
     </section>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket bagage TPE</title><style>
@@ -489,6 +490,7 @@ function buildHTMLTpeBagage(data: PrintBagageData): string {
     .route span { padding: 0 1mm; }
     .single { padding: 1mm 0; overflow-wrap: anywhere; }
     .printed { font-size: 7.5px; padding: 1mm 0 0; }
+    .notice { font-size: 6.5px; line-height: 1.3; text-align: justify; padding: 1mm 0; overflow-wrap: anywhere; word-break: normal; }
     .tear { display: flex; align-items: center; gap: 1mm; justify-content: center; height: 7mm; font-size: 7px; letter-spacing: 1px; break-inside: avoid; page-break-inside: avoid; }
     .tear::before, .tear::after { content: ''; flex: 1; border-top: 1px dashed #000; }
     @media print { html, body { width: 58mm !important; } body { margin: 0 auto !important; padding: 1mm 0 !important; } }
@@ -601,6 +603,7 @@ export const PrintService = {
   async printTpeBagage(data: PrintBagageData): Promise<boolean> {
     const settings = await getPrintSettings();
     const tpeSettings = { ...settings, width_mm: 58 as const, auto_cut: true };
+    const customization = await getPrintCustomization();
     const payload: PrintBagageData = {
       bagage: data.bagage,
       depart: data.depart,
@@ -608,11 +611,11 @@ export const PrintService = {
       phoneLine: data.phoneLine,
     };
     const logo = await loadBagageLogoRaster(160);
-    const escposData = buildTpeBagageESCPOS(payload, tpeSettings, logo);
+    const escposData = buildTpeBagageESCPOS(payload, tpeSettings, logo, customization.tpe_baggage_notice);
     if (await sendWebSerial(escposData)) return true;
     if (await sendWebUSB(escposData)) return true;
     if (await sendQzTray(escposData, tpeSettings)) return true;
-    return printHTMLDocument(buildHTMLTpeBagage(payload));
+    return printHTMLDocument(buildHTMLTpeBagage(payload, customization.tpe_baggage_notice));
   },
 
   async print(data: PrintTicketData): Promise<boolean> {

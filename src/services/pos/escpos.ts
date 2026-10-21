@@ -344,7 +344,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   return concat(...parts);
 }
 
-export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSettings, logo?: RasterImage | null): Uint8Array {
+export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSettings, logo?: RasterImage | null, notice?: string | null): Uint8Array {
   const w = 32;
   const { bagage, depart, stationName } = data;
   const value = (input: string | number | null | undefined): string => String(input ?? '').trim();
@@ -396,6 +396,19 @@ export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSetti
     if (description && description !== '__deleted__') parts.push(...line(`DESCRIPTION : ${description}`));
     parts.push(...separator(), setBold(true), ...line(`PROPRIETAIRE : ${owner}`), ...line(`CONTACT : ${contact}`), setBold(false), ...separator());
     parts.push(setAlign('center'), ...line(`Imprime le : ${printed}`), setAlign('left'));
+    if (notice && notice.trim()) {
+      const words = notice.trim().split(/\s+/);
+      let current = '';
+      for (const word of words) {
+        if (current.length + 1 + word.length <= w) {
+          current = current ? current + ' ' + word : word;
+        } else {
+          parts.push(...line(current));
+          current = word;
+        }
+      }
+      if (current) parts.push(...line(current));
+    }
   };
 
   render(false);
