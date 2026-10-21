@@ -394,6 +394,8 @@ export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSetti
     parts.push(setBold(true), ...line(`CAR : ${car}`), ...line(`N°BAG : ${bagageNumber}`), setBold(false), ...separator());
     parts.push(setBold(true), ...pair(`DATE : ${dDate}`, `HEURE : ${dTime || '—'}`), setBold(false));
     if (description && description !== '__deleted__') parts.push(...line(`DESCRIPTION : ${description}`));
+    const declared = Number(bagage.declared_value || 0);
+    if (declared > 0) parts.push(setBold(true), ...pair('VALEUR DECLAREE:', `${declared.toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`), setBold(false), ...separator());
     parts.push(...separator(), setBold(true), ...line(`PROPRIETAIRE : ${owner}`), ...line(`CONTACT : ${contact}`), setBold(false), ...separator());
     parts.push(setAlign('center'), ...line(`Imprime le : ${printed}`), setAlign('left'));
     if (notice && notice.trim()) {

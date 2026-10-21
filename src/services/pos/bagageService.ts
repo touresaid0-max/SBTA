@@ -32,6 +32,7 @@ export interface RegisterBagageParams {
   price: number;
   destination: string;
   description: string;
+  declaredValue?: number;
   ownerName: string;
   ownerPhone: string;
   printBagage: boolean;
@@ -64,6 +65,7 @@ export async function registerBagage(params: RegisterBagageParams): Promise<Baga
     owner_name: params.ownerName,
     owner_phone: params.ownerPhone,
     print_bagage: params.printBagage,
+    declared_value: params.declaredValue ?? 0,
     station_id: depart.station_id,
     counter_id: depart.counter_id,
   });

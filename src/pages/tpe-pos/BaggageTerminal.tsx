@@ -425,9 +425,8 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
         linkedSeatNumber: linkedTicket?.seat_number,
         price,
         destination: destName,
-        description: declaredValue > 0
-          ? `${description}${description ? ' · ' : ''}Valeur déclarée : ${formatCurrency(declaredValue)}`
-          : description,
+        description: description,
+        declaredValue,
         ownerName,
         ownerPhone,
         printBagage: true,
@@ -1024,9 +1023,8 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
         ticketNumber: ticket.ticket_number,
         price,
         destination: destName,
-        description: declaredValue > 0
-          ? `${description}${description ? ' · ' : ''}Valeur déclarée : ${formatCurrency(declaredValue)}`
-          : description,
+        description: description,
+        declaredValue,
         ownerName,
         ownerPhone,
         printBagage: true,

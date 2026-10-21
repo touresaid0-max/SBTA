@@ -462,6 +462,7 @@ function buildHTMLTpeBagage(data: PrintBagageData, notice?: string | null): stri
       <div class="separator"></div>
       ${row(`DATE : ${departureDate[0] || '—'}`, `HEURE : ${departureDate[1] || '—'}`)}
       ${description && description !== '__deleted__' ? `<div class="single"><span>DESCRIPTION :</span> <strong>${escapeHtml(description)}</strong></div>` : ''}
+      ${Number(bagage.declared_value || 0) > 0 ? `${row('VALEUR DECLAREE :', formatMoney(Number(bagage.declared_value)))}<div class="separator"></div>` : ''}
       <div class="separator"></div>
       <div class="single">PROPRIETAIRE : <strong>${escapeHtml(owner)}</strong></div>
       <div class="single">CONTACT : <strong>${escapeHtml(contact)}</strong></div>
