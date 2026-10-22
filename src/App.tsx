@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
@@ -288,6 +288,28 @@ function CourrierAccessGuard({ children }: { children: ReactNode }) {
   if (loading) return null;
   if (!session?.courrier_enabled) return <Navigate to="/guichet/accueil" replace />;
   return <>{children}</>;
+}
+
+function GuichetRoleGuard() {
+  const { session, loading } = usePOSSession();
+  if (loading) return null;
+  if (!session) return <Navigate to="/guichet/connexion" replace />;
+  if (session.role !== 'guichetier') {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-subtle)' }}>
+        <div className="text-center p-8 rounded-lg shadow-lg max-w-md w-full" style={{ backgroundColor: 'var(--surface)' }}>
+          <h2 className="text-2xl font-semibold mb-3" style={{ color: 'var(--danger)' }}>Accès non autorisé</h2>
+          <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
+            Cet espace est réservé aux guichetiers. Votre profil ({session.role}) n'est pas autorisé à accéder au Guichet POS.
+          </p>
+          <Link to="/guichet/connexion" className="px-6 py-2 rounded-lg font-medium inline-block" style={{ backgroundColor: 'var(--primary)', color: 'var(--text-on-primary)' }}>
+            Retour à la connexion
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  return <Outlet />;
 }
 
 function StatusPage({ title, message, linkTo, linkLabel }: { title: string; message: string; linkTo: string; linkLabel: string }) {
@@ -613,7 +635,7 @@ function App() {
 
           {/* POS /guichet module — LOT 0+1: additive, standalone layout, offline-first */}
           <Route path="/guichet/connexion" element={<ConnectionProvider><POSConnexion /></ConnectionProvider>} />
-          <Route path="/guichet" element={<ConnectionProvider><POSSessionProvider /></ConnectionProvider>}>
+          <Route path="/guichet" element={<ConnectionProvider><POSSessionProvider><GuichetRoleGuard /></POSSessionProvider></ConnectionProvider>}>
             <Route path="accueil" element={<POSAccueil />} />
             <Route path="depart/nouveau" element={<POSDepartNouveau />} />
             <Route path="departs" element={<POSDeparts />} />

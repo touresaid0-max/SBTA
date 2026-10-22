@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
-import { login, type POSLoginResult } from '@/services/pos/offlineAuth';
+import { Lock, User, LogIn, Loader2, AlertCircle, CheckCircle, ShieldAlert } from 'lucide-react';
+import { login, logoutPOS, type POSLoginResult } from '@/services/pos/offlineAuth';
 import { refreshAllReferentiels } from '@/services/pos/referentiels';
 import { isOnline } from '@/services/pos/syncEngine';
 
@@ -24,6 +24,17 @@ export default function POSConnexion() {
     return () => window.removeEventListener('keydown', handler);
   });
 
+  // Guard: if a non-guichetier session is already active, force logout so they can't access the Guichet POS.
+  useEffect(() => {
+    (async () => {
+      const { getCurrentSession } = await import('@/services/pos/offlineAuth');
+      const s = await getCurrentSession();
+      if (s && s.role !== 'guichetier') {
+        await logoutPOS();
+      }
+    })();
+  }, []);
+
   const handleLogin = async () => {
     if (!email.trim() || !password) return;
     setLoading(true);
@@ -33,6 +44,13 @@ export default function POSConnexion() {
     const result: POSLoginResult = await login(email.trim(), password);
 
     if (result.success) {
+      // Role gate: only guichetier can use the Guichet POS.
+      if (result.session?.role !== 'guichetier') {
+        await logoutPOS();
+        setError('Accès refusé : cet espace est réservé aux guichetiers. Votre profil n\'est pas autorisé.');
+        setLoading(false);
+        return;
+      }
       setLoginMode(true);
       if (!result.offline) {
         try { await refreshAllReferentiels(); } catch { /* non-critical */ }
@@ -145,6 +163,14 @@ export default function POSConnexion() {
         <p className="text-center text-xs mt-6" style={{ color: 'var(--text-muted)' }}>
           Entrée = valider · Échap = annuler
         </p>
+
+        <div
+          className="mt-6 rounded-xl px-4 py-3.5 flex items-start gap-2.5 text-xs"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+        >
+          <ShieldAlert className="w-5 h-5 mt-0.5 flex-shrink-0" />
+          <span>Accès réservé aux guichetiers. Autres profils non autorisés.</span>
+        </div>
       </div>
     </div>
   );
