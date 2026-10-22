@@ -12,8 +12,17 @@ const BAGAGE_LOGO_SRC = '/logosbta001.JPG';
 async function loadLogoRaster(src: string, widthDots: number): Promise<RasterImage | null> {
   try {
     const img = new Image();
+    const loaded = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Logo introuvable'));
+    });
     img.src = src;
-    await img.decode();
+    if (img.complete && img.naturalWidth > 0) {
+      await img.decode().catch(() => undefined);
+    } else {
+      await loaded;
+      await img.decode().catch(() => undefined);
+    }
     if (!img.naturalWidth || !img.naturalHeight) return null;
     const width = Math.floor(widthDots / 8) * 8;
     const height = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * width));
@@ -554,8 +563,16 @@ async function printHTMLDocument(html: string): Promise<boolean> {
       resolve(ok);
     };
     if (cw) cw.addEventListener('afterprint', () => finish(true), { once: true });
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
+        const images = Array.from(doc.images);
+        await Promise.all(images.map(image => {
+          if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+          return new Promise<void>(resolve => {
+            image.addEventListener('load', () => resolve(), { once: true });
+            image.addEventListener('error', () => resolve(), { once: true });
+          });
+        }));
         cw?.focus();
         cw?.print();
       } catch {

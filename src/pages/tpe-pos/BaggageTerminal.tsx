@@ -825,12 +825,19 @@ function SearchView({ stationId, onLink }: SearchViewProps) {
     }
   };
 
-  const handleReprint = async (ticket: TicketRecord, depart: DepartRecord | undefined) => {
+  const handleReprint = async (result: TicketSearchResult) => {
+    const { ticket, depart, busPlate } = result;
     if (!depart) return;
     const bagages = await getBagagesForDepart(depart.id);
     const linked = bagages.find(b => b.ticket_number === ticket.ticket_number);
     if (linked) {
-      PrintService.printTpeBagage({ bagage: linked, depart, stationName: depart.station_name });
+      const bagage = {
+        ...linked,
+        with_ticket: true,
+        linked_seat_number: ticket.seat_number,
+        car_plate: busPlate ?? ticket.bus_plate ?? depart.bus_plate ?? linked.car_plate,
+      };
+      PrintService.printTpeBagage({ bagage, depart, stationName: depart.station_name });
     }
   };
 
@@ -909,7 +916,7 @@ function SearchView({ stationId, onLink }: SearchViewProps) {
                 </button>
                 {depart && (
                   <button
-                    onClick={() => handleReprint(ticket, depart)}
+                    onClick={() => handleReprint({ ticket, depart, departureNumber, busPlate })}
                     className="flex items-center justify-center w-11 h-11 rounded-lg transition-colors hover:bg-[#F4F7F5]"
                     style={{ backgroundColor: '#E2EAE5', color: '#0B7439' }}
                     aria-label="Réimprimer"
@@ -1033,6 +1040,8 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
         withTicket: true,
         withTicketReport: false,
         ticketNumber: ticket.ticket_number,
+        busPlate: busPlate ?? depart?.bus_plate,
+        linkedSeatNumber: ticket.seat_number,
         price,
         destination: destName,
         description: description,
