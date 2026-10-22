@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Luggage, Search, Printer, Plus, CheckCircle, AlertCircle,
   Loader2, Wifi, WifiOff, RefreshCw, LogOut, ArrowLeft,
   Ticket as TicketIcon, Link2, History, Package, X,
+  MapPin, Calendar, Phone, User, FileText, Tag,
 } from 'lucide-react';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { useConnection } from '@/services/pos/ConnectionContext';
@@ -25,7 +26,7 @@ import { formatCurrency } from '@/utils/formatCurrency';
 import { getTarifForDestination } from '@/services/pos/ticketService';
 import { supabase } from '@/services/supabase';
 
-type View = 'home' | 'register' | 'search' | 'link' | 'history';
+type View = 'home' | 'register' | 'search' | 'link' | 'history' | 'detail';
 
 export default function BaggageTerminal() {
   const navigate = useNavigate();
@@ -35,6 +36,7 @@ export default function BaggageTerminal() {
 
   const [view, setView] = useState<View>('home');
   const [linkResult, setLinkResult] = useState<TicketSearchResult | null>(null);
+  const [selectedBagage, setSelectedBagage] = useState<BagageRecord | null>(null);
   const [departs, setDeparts] = useState<DepartRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -209,7 +211,17 @@ export default function BaggageTerminal() {
               />
             )}
             {view === 'history' && (
-              <HistoryView session={session} />
+              <HistoryView
+                session={session}
+                onOpenDetail={(b) => { setSelectedBagage(b); setView('detail'); }}
+              />
+            )}
+            {view === 'detail' && selectedBagage && (
+              <BagageDetailView
+                bagage={selectedBagage}
+                session={session}
+                onBack={() => { setSelectedBagage(null); setView('history'); }}
+              />
             )}
           </>
         )}
@@ -1216,9 +1228,10 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
 
 interface HistoryViewProps {
   session: ReturnType<typeof usePOSSession>['session'];
+  onOpenDetail: (b: BagageRecord) => void;
 }
 
-function HistoryView({ session }: HistoryViewProps) {
+function HistoryView({ session, onOpenDetail }: HistoryViewProps) {
   const [bagages, setBagages] = useState<BagageRecord[]>([]);
   const [departs, setDeparts] = useState<Map<string, DepartRecord>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -1299,7 +1312,10 @@ function HistoryView({ session }: HistoryViewProps) {
                 className="rounded-xl p-4 flex items-center justify-between"
                 style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}
               >
-                <div className="min-w-0 flex-1">
+                <button
+                  onClick={() => onOpenDetail(b)}
+                  className="min-w-0 flex-1 text-left"
+                >
                   <p className="text-base font-bold truncate" style={{ color: '#1A2E22' }}>
                     {b.bagage_number}
                   </p>
@@ -1316,7 +1332,7 @@ function HistoryView({ session }: HistoryViewProps) {
                       <Link2 className="w-4 h-4" /> {b.ticket_number}
                     </span>
                   )}
-                </div>
+                </button>
                 <div className="flex items-center gap-2.5 flex-shrink-0">
                   <span className="text-base font-bold" style={{ color: '#0B7439' }}>
                     {formatCurrency(b.price)}
@@ -1337,6 +1353,200 @@ function HistoryView({ session }: HistoryViewProps) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── BAGAGE DETAIL ─────────────────────────────────────────────────────────────
+
+interface BagageDetailViewProps {
+  bagage: BagageRecord;
+  session: ReturnType<typeof usePOSSession>['session'];
+  onBack: () => void;
+}
+
+function BagageDetailView({ bagage, session, onBack }: BagageDetailViewProps) {
+  const [depart, setDepart] = useState<DepartRecord | null>(null);
+  const [ticket, setTicket] = useState<TicketRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await getDepartById(bagage.depart_id);
+        if (d) setDepart(d);
+        if (bagage.with_ticket && bagage.ticket_number) {
+          const tickets = await getTicketsForDepart(bagage.depart_id);
+          const linked = tickets.find(t => t.ticket_number === bagage.ticket_number);
+          if (linked) setTicket(linked);
+        }
+      } catch {
+        // non-critical
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [bagage]);
+
+  const handleReprint = () => {
+    if (!depart) return;
+    PrintService.printTpeBagage({ bagage, depart, stationName: session?.station_name });
+  };
+
+  const formatDateTime = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('fr-FR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+    } catch {
+      return iso;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#0B7439' }} />
+      </div>
+    );
+  }
+
+  const departStatus = depart?.status || '—';
+  const statusLabel: Record<string, string> = {
+    planifie: 'Planifié',
+    en_cours: 'En cours',
+    termine: 'Terminé',
+    annule: 'Annulé',
+    convoi: 'Convoi',
+    retard: 'Retard',
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Header card */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'linear-gradient(135deg, #0B7439 0%, #0E8D44 100%)', color: 'white' }}
+      >
+        <div className="flex items-center gap-3 mb-2">
+          <Luggage className="w-7 h-7" strokeWidth={2.2} />
+          <h2 className="text-xl font-bold">Fiche bagage</h2>
+        </div>
+        <p className="text-lg font-bold">{bagage.bagage_number}</p>
+        {bagage.with_ticket && bagage.ticket_number && (
+          <div className="flex items-center gap-2 mt-2">
+            <Link2 className="w-4 h-4" />
+            <span className="text-sm font-medium opacity-95">Ticket lié : {bagage.ticket_number}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Ticket & reference info */}
+      <DetailSection title="Ticket et référence" icon={TicketIcon}>
+        <DetailRow label="N° bagage" value={bagage.bagage_number} />
+        <DetailRow label="N° ticket" value={bagage.with_ticket ? (bagage.ticket_number || '—') : 'Sans ticket'} />
+        {bagage.linked_seat_number != null && (
+          <DetailRow label="Siège lié" value={String(bagage.linked_seat_number)} />
+        )}
+        {ticket && (
+          <>
+            <DetailRow label="Réf. ticket" value={ticket.ticket_number} />
+            <DetailRow label="Prix ticket" value={formatCurrency(ticket.price)} />
+          </>
+        )}
+      </DetailSection>
+
+      {/* Sender & recipient */}
+      <DetailSection title="Expéditeur et destinataire" icon={User}>
+        <DetailRow label="Nom du propriétaire" value={bagage.owner_name || 'Non renseigné'} />
+        <DetailRow label="Contact" value={bagage.owner_phone || 'Non renseigné'} />
+        {ticket && (
+          <>
+            <DetailRow label="Passager (ticket)" value={ticket.passenger_name || 'Non renseigné'} />
+            <DetailRow label="Contact passager" value={ticket.passenger_phone || 'Non renseigné'} />
+          </>
+        )}
+      </DetailSection>
+
+      {/* Trip info */}
+      <DetailSection title="Voyage" icon={MapPin}>
+        <DetailRow label="Gare de départ" value={depart?.station_name || session?.station_name || '—'} />
+        <DetailRow label="Destination" value={bagage.destination || '—'} />
+        {depart && (
+          <>
+            <DetailRow label="Itinéraire" value={depart.route_name || '—'} />
+            <DetailRow label="N° départ" value={`#${depart.route_number}`} />
+            <DetailRow label="Immatriculation" value={depart.bus_plate || bagage.car_plate || '—'} />
+            <DetailRow label="Chauffeur" value={depart.driver_name || '—'} />
+            <DetailRow label="Date/heure départ" value={depart.departure_datetime ? formatDateTime(depart.departure_datetime) : '—'} />
+            <DetailRow label="Statut départ" value={statusLabel[departStatus] ?? departStatus} />
+          </>
+        )}
+      </DetailSection>
+
+      {/* Bagage description */}
+      <DetailSection title="Description du bagage" icon={FileText}>
+        <DetailRow label="Description" value={bagage.description || 'Non renseignée'} />
+        <DetailRow label="Avec ticket" value={bagage.with_ticket ? 'Oui' : 'Non'} />
+      </DetailSection>
+
+      {/* Financial info */}
+      <DetailSection title="Informations financières" icon={Tag}>
+        <DetailRow label="Montant payé" value={formatCurrency(bagage.price)} />
+        <DetailRow label="Valeur déclarée" value={bagage.declared_value ? formatCurrency(bagage.declared_value) : 'Non déclarée'} />
+      </DetailSection>
+
+      {/* Agent & timestamps */}
+      <DetailSection title="Enregistrement" icon={Calendar}>
+        <DetailRow label="Agent" value={session?.full_name || '—'} />
+        <DetailRow label="Gare" value={session?.station_name || '—'} />
+        <DetailRow label="Date/heure" value={formatDateTime(bagage.created_at)} />
+      </DetailSection>
+
+      {/* Action buttons */}
+      <div className="flex gap-4">
+        <button
+          onClick={onBack}
+          className="flex-1 py-5 rounded-xl font-bold text-base flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
+          style={{ backgroundColor: '#F4F7F5', color: '#6B7280', border: '1px solid #E2EAE5' }}
+        >
+          <ArrowLeft className="w-6 h-6" />
+          Retour à l'historique
+        </button>
+        {depart && (
+          <button
+            onClick={handleReprint}
+            className="flex-1 py-5 rounded-xl font-bold text-white text-base flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
+            style={{ backgroundColor: '#0B7439' }}
+          >
+            <Printer className="w-6 h-6" />
+            Imprimer le reçu
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailSection({ title, icon: Icon, children }: { title: string; icon: typeof FileText; children: ReactNode }) {
+  return (
+    <div className="rounded-xl p-5" style={{ backgroundColor: 'white', border: '1px solid #E2EAE5' }}>
+      <div className="flex items-center gap-2.5 mb-4">
+        <Icon className="w-5 h-5" style={{ color: '#0B7439' }} />
+        <h3 className="text-base font-bold" style={{ color: '#1A2E22' }}>{title}</h3>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-0.5 sm:gap-3">
+      <span className="text-sm font-medium flex-shrink-0" style={{ color: '#6B7280' }}>{label}</span>
+      <span className="text-sm font-bold text-right sm:text-right break-words min-w-0" style={{ color: '#1A2E22' }}>{value}</span>
     </div>
   );
 }
