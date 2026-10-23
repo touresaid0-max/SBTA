@@ -108,7 +108,12 @@ export default function CarburantFuelStations() {
       if (citiesRes.error) throw citiesRes.error;
       if (assocRes.error) throw assocRes.error;
 
-      const cities = (citiesRes.data as City[]) || [];
+      const cities = ((citiesRes.data as City[]) || []).map(city => ({
+        ...city,
+        name: city.name ?? '',
+        region: city.region ?? '',
+        country: city.country ?? '',
+      }));
       setAllCities(cities);
 
       const cityById: Record<string, City> = {};
