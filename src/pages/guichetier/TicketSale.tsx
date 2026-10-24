@@ -26,6 +26,8 @@ import OfflineQueue from '../../components/guichetier/OfflineQueue';
 import { printBaggageTicket, generateBaggageNumber, type BaggageTicketData } from '../../utils/printBaggageTicket';
 import { generateBookingReference } from '../../utils/generateBookingReference';
 import { getTicketPhoneLine } from '../../services/ticketPhones.service';
+import { PrintService } from '../../services/pos/printService';
+import type { BagageRecord, DepartRecord } from '../../services/pos/db';
 
 interface City { id: string; name: string; }
 interface Station { id: string; name: string; city_id: string; }
@@ -212,6 +214,7 @@ export default function TicketSale() {
   type BaggageMode = 'none' | 'avec_ticket' | 'avec_ticket_reporte' | 'sans_ticket';
   const [baggageForm, setBaggageForm] = useState<{
     mode: BaggageMode;
+    tpe_pos: boolean;
     has_ticket: boolean;
     destination: string;
     price: number;
@@ -223,6 +226,7 @@ export default function TicketSale() {
     owner_phone: string;
   }>({
     mode: 'none',
+    tpe_pos: false,
     has_ticket: false,
     destination: '',
     price: 0,
@@ -789,6 +793,11 @@ export default function TicketSale() {
     if (!validateSaleInputs()) return;
     if (!selectedSchedule) return;
 
+    if (baggageForm.tpe_pos && !isOnline) {
+      toast.error('Le mode TPE POS nécessite une connexion internet');
+      return;
+    }
+
     if (baggageForm.mode === 'avec_ticket') {
       if (!isOnline) {
         toast.error('Le bagage avec ticket nécessite une connexion pour être associé au billet');
@@ -976,13 +985,71 @@ export default function TicketSale() {
           owner_name: baggageForm.owner_name.trim() || passenger.name.trim(),
           owner_phone: baggageForm.owner_phone.trim() || passenger.phone.trim(),
           has_ticket: true,
+          payment_status: baggageForm.tpe_pos ? 'en_attente' : 'paye',
           counter_id: myCounterId,
           station_id: myStationId,
           sold_by: user!.id,
         });
       if (bagError) throw bagError;
 
-      baggageData = {
+      if (baggageForm.tpe_pos) {
+        const tpeBagage: BagageRecord = {
+          id: reservation.id,
+          depart_id: selectedSchedule.id,
+          bagage_number: baggageNumber,
+          ticket_id: reservation.id,
+          ticket_number: reference,
+          linked_seat_number: seatStr,
+          with_ticket: true,
+          with_ticket_report: false,
+          price: baggageForm.price,
+          destination: baggageDestination,
+          description: baggageForm.description.trim() || '',
+          car_plate: busReg || '',
+          owner_name: baggageForm.owner_name.trim() || passenger.name.trim(),
+          owner_phone: baggageForm.owner_phone.trim() || passenger.phone.trim(),
+          print_bagage: true,
+          declared_value: 0,
+          station_id: myStationId ?? undefined,
+          counter_id: myCounterId ?? undefined,
+          payment_status: 'en_attente',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        const tpeDepart: DepartRecord = {
+          id: selectedSchedule.id,
+          departure_number: departureNumber ?? 0,
+          route_id: selectedSchedule.route.id,
+          route_name: selectedSchedule.route_name,
+          route_number: departureNumber ?? 0,
+          bus_id: selectedSchedule.bus_id,
+          bus_plate: busReg ?? '',
+          driver_id: '',
+          departure_datetime: selectedSchedule.departure_datetime,
+          departure_date: selectedSchedule.departure_datetime.slice(0, 10),
+          departure_time: selectedSchedule.departure_datetime.slice(11, 16),
+          is_ac: false,
+          station_id: myStationId ?? '',
+          station_name: myStationName ?? '',
+          status: 'planifie',
+          seats_total: selectedSchedule.buses?.total_seats ?? 0,
+          seats_from: 1,
+          seats_sold: selectedSchedule.seats_reserved ?? 0,
+          cloture: false,
+          mt_ticket: 0,
+          mt_bagage: 0,
+          tot_depense: 0,
+          solde: 0,
+          caisse: 0,
+          breakdown_transfer: 0,
+          confirmed: false,
+          cancelled: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        await PrintService.printTpeBagage({ bagage: tpeBagage, depart: tpeDepart, stationName: myStationName ?? undefined }, true);
+      } else {
+        baggageData = {
         baggage_number: baggageNumber,
         destination: baggageDestination,
         price: baggageForm.price,
@@ -995,6 +1062,7 @@ export default function TicketSale() {
         station_name: myStationName || 'SBTA',
         mode_label: 'Avec ticket',
       };
+      }
     }
 
     setConfirmedTicket({
@@ -1504,6 +1572,7 @@ export default function TicketSale() {
           owner_name: baggageForm.owner_name.trim(),
           owner_phone: baggageForm.owner_phone.trim(),
           has_ticket: baggageForm.mode === 'avec_ticket' || baggageForm.mode === 'avec_ticket_reporte',
+          payment_status: baggageForm.tpe_pos ? 'en_attente' : 'paye',
           counter_id: myCounterId,
           station_id: myStationId,
           sold_by: user!.id,
@@ -1525,10 +1594,68 @@ export default function TicketSale() {
         mode_label: modeLabel,
       };
 
-      printBaggageTicket({ ...ticketData, phoneLine: ticketPhoneLine });
-      toast.success('Ticket bagage imprime');
+      if (baggageForm.tpe_pos) {
+        const tpeBagage: BagageRecord = {
+          id: baggageNumber,
+          depart_id: selectedSchedule?.id ?? '',
+          bagage_number: baggageNumber,
+          linked_seat_number: baggageForm.seat_number || undefined,
+          with_ticket: baggageForm.mode === 'avec_ticket' || baggageForm.mode === 'avec_ticket_reporte',
+          with_ticket_report: baggageForm.mode === 'avec_ticket_reporte',
+          price: baggageForm.price,
+          destination: baggageForm.destination.trim(),
+          description: baggageForm.description.trim(),
+          car_plate: baggageForm.bus_registration.trim(),
+          owner_name: baggageForm.owner_name.trim(),
+          owner_phone: baggageForm.owner_phone.trim(),
+          print_bagage: true,
+          declared_value: 0,
+          station_id: myStationId ?? undefined,
+          counter_id: myCounterId ?? undefined,
+          payment_status: 'en_attente',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        const tpeDepart: DepartRecord = {
+          id: selectedSchedule?.id ?? '',
+          departure_number: departureNumber ?? 0,
+          route_id: selectedSchedule?.route.id ?? '',
+          route_name: selectedSchedule?.route_name ?? '',
+          route_number: departureNumber ?? 0,
+          bus_id: selectedSchedule?.bus_id ?? '',
+          bus_plate: baggageForm.bus_registration.trim(),
+          driver_id: '',
+          departure_datetime: selectedSchedule?.departure_datetime ?? new Date().toISOString(),
+          departure_date: (selectedSchedule?.departure_datetime ?? new Date().toISOString()).slice(0, 10),
+          departure_time: (selectedSchedule?.departure_datetime ?? '').slice(11, 16),
+          is_ac: false,
+          station_id: myStationId ?? '',
+          station_name: myStationName ?? '',
+          status: 'planifie',
+          seats_total: selectedSchedule?.buses?.total_seats ?? 0,
+          seats_from: 1,
+          seats_sold: selectedSchedule?.seats_reserved ?? 0,
+          cloture: false,
+          mt_ticket: 0,
+          mt_bagage: 0,
+          tot_depense: 0,
+          solde: 0,
+          caisse: 0,
+          breakdown_transfer: 0,
+          confirmed: false,
+          cancelled: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        await PrintService.printTpeBagage({ bagage: tpeBagage, depart: tpeDepart, stationName: myStationName ?? undefined }, true);
+        toast.success('Bagage enregistré — paiement à confirmer au guichet');
+      } else {
+        await printBaggageTicket({ ...ticketData, phoneLine: ticketPhoneLine });
+        toast.success('Ticket bagage imprime');
+      }
 
       setBaggageForm({
+        mode: 'none', tpe_pos: false,
         has_ticket: false, destination: '', price: 0, seat_number: '',
         departure_number: '', bus_registration: '', description: '',
         owner_name: '', owner_phone: '',
@@ -1603,7 +1730,7 @@ export default function TicketSale() {
     setAlightingStations([]);
     setShowBaggage(false);
     setBaggageForm({
-      mode: 'none', has_ticket: false, destination: '', price: 0, seat_number: '',
+      mode: 'none', tpe_pos: false, has_ticket: false, destination: '', price: 0, seat_number: '',
       departure_number: '', bus_registration: '', description: '',
       owner_name: '', owner_phone: '',
     });
@@ -1620,7 +1747,7 @@ export default function TicketSale() {
     setSelectedTransitPrice(null);
     setShowBaggage(false);
     setBaggageForm({
-      mode: 'none', has_ticket: false, destination: '', price: 0, seat_number: '',
+      mode: 'none', tpe_pos: false, has_ticket: false, destination: '', price: 0, seat_number: '',
       departure_number: '', bus_registration: '', description: '',
       owner_name: '', owner_phone: '',
     });
@@ -2334,8 +2461,18 @@ export default function TicketSale() {
 
                 {showBaggage && (
                   <div className="px-4 pb-4 space-y-3 border-t" style={{ borderColor: 'var(--border)' }}>
-                    {/* Mode selection — exclusive checkboxes */}
+                    {/* Mode selection */}
                     <div className="pt-3 flex items-center gap-5 flex-wrap">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={baggageForm.tpe_pos}
+                          onChange={e => setBaggageForm(prev => ({ ...prev, tpe_pos: e.target.checked }))}
+                          className="w-4 h-4 rounded"
+                          style={{ accentColor: '#1D6FA4' }}
+                        />
+                        <span className="text-xs font-bold" style={{ color: '#1D6FA4' }}>TPE POS</span>
+                      </label>
                       {([
                         { value: 'avec_ticket' as BaggageMode, label: 'Avec ticket' },
                         { value: 'avec_ticket_reporte' as BaggageMode, label: 'Avec ticket reporte' },
@@ -2469,7 +2606,13 @@ export default function TicketSale() {
                       </div>
                     </div>
 
-                    {baggageForm.mode === 'avec_ticket' ? (
+                    {baggageForm.tpe_pos ? (
+                      <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
+                        style={{ backgroundColor: '#E8F2F8', color: '#1D6FA4' }}>
+                        <Luggage className="w-3.5 h-3.5 flex-shrink-0" />
+                        Le ticket bagage sera imprimé provisoirement et le paiement sera confirmé au guichet.
+                      </div>
+                    ) : baggageForm.mode === 'avec_ticket' ? (
                       <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
                         style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
                         <Luggage className="w-3.5 h-3.5 flex-shrink-0" />
@@ -2486,7 +2629,7 @@ export default function TicketSale() {
                         {baggageProcessing ? (
                           <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Traitement...</>
                         ) : (
-                          <><Printer className="w-4 h-4" />Imprimer ticket bagage</>
+                          <><Printer className="w-4 h-4" />{baggageForm.tpe_pos ? 'Enregistrer le bagage TPE POS' : 'Imprimer ticket bagage'}</>
                         )}
                       </button>
                     )}
