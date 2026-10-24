@@ -111,11 +111,12 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
   const scopedBagages = hasAllocations && stationId
     ? bagages.filter(b => {
         if (b.description === '__deleted__') return false;
+        if (b.payment_status === 'en_attente') return false;
         if (b.ticket_id && stationTicketIds.has(b.ticket_id)) return true;
         if (b.ticket_id) return false;
         return stationId === depart.station_id;
       })
-    : bagages.filter(b => b.description !== '__deleted__');
+    : bagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
 
   const scopedDepenses = hasAllocations && stationId
     ? depenses.filter(d => d.description !== '__deleted__' && d.station_id === stationId)
@@ -362,11 +363,12 @@ export default function POSDeparts() {
         const scopedBagages = hasAllocations && session?.station_id
           ? dBagages.filter(b => {
               if (b.description === '__deleted__') return false;
+              if (b.payment_status === 'en_attente') return false;
               if (b.ticket_id && stationTicketIds.has(b.ticket_id)) return true;
               if (b.ticket_id) return false;
               return session.station_id === d.station_id;
             })
-          : dBagages.filter(b => b.description !== '__deleted__');
+          : dBagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
         const totalTicket = active.reduce((s, t) => s + t.price, 0);
         const totalBaggage = scopedBagages.reduce((s, b) => s + b.price, 0);
         const valid = hasAllocations && session?.station_id

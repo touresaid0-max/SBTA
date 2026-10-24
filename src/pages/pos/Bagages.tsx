@@ -96,7 +96,7 @@ export default function POSBagages() {
   }, [bagages, tickets, hasAllocations, stationRange, session?.station_id, depart?.station_id]);
 
   const bagageTotal = useMemo(() => {
-    return scopedBagages.reduce((sum, b) => sum + b.price, 0);
+    return scopedBagages.filter(b => b.payment_status !== 'en_attente').reduce((sum, b) => sum + b.price, 0);
   }, [scopedBagages]);
 
   const handleFindTicket = async () => {
@@ -247,7 +247,7 @@ export default function POSBagages() {
               style={{ backgroundColor: '#1D6FA4' }}
             >
               <Luggage className="w-4 h-4" />
-              TPE-POS
+              BAGAGE TPE POS
             </button>
           </div>
         </div>
@@ -497,6 +497,7 @@ export default function POSBagages() {
       {showTpePos && (
         <TpePosPendingBaggage
           stationId={session?.station_id}
+          counterId={session?.counter_id}
           onClose={() => setShowTpePos(false)}
         />
       )}

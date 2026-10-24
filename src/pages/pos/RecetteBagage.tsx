@@ -71,8 +71,9 @@ export default function POSRecetteBagage() {
       try {
         const { data, error: err } = await supabase
           .from('baggage_tickets')
-          .select('id, baggage_number, destination, price, created_at, bus_registration, departure_number, owner_name, has_ticket')
+          .select('id, baggage_number, destination, price, created_at, bus_registration, departure_number, owner_name, has_ticket, payment_status')
           .eq('sold_by', session.user_id)
+          .eq('payment_status', 'paye')
           .gte('created_at', range.from.toISOString())
           .lte('created_at', range.to.toISOString())
           .order('created_at', { ascending: false });

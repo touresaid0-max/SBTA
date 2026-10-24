@@ -6,8 +6,9 @@ import {
 import { supabase } from '@/services/supabase';
 import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
-import { getDepartById } from '@/services/pos/departService';
+import { getDepartById, updateDepart } from '@/services/pos/departService';
 import { getAll, localUpdate } from '@/services/pos/offlineStore';
+import { getBagagesForDepart } from '@/services/pos/bagageService';
 import type { BagageRecord, DepartRecord } from '@/services/pos/db';
 import toast from 'react-hot-toast';
 
@@ -38,10 +39,11 @@ interface PendingBaggage {
 
 interface Props {
   stationId?: string;
+  counterId?: string;
   onClose: () => void;
 }
 
-export default function TpePosPendingBaggage({ stationId, onClose }: Props) {
+export default function TpePosPendingBaggage({ stationId, counterId, onClose }: Props) {
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<PendingBaggage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -194,6 +196,7 @@ export default function TpePosPendingBaggage({ stationId, onClose }: Props) {
     try {
       const { data, error } = await supabase.rpc('confirm_baggage_payment', {
         p_baggage_id: selected.id,
+        p_counter_id: counterId ?? null,
       });
 
       if (error) throw error;
@@ -211,6 +214,25 @@ export default function TpePosPendingBaggage({ stationId, onClose }: Props) {
         }
       } catch {
         // non-critical — local DB may not have this baggage
+      }
+
+      // Recalculate depart financial totals so the now-paid baggage is recognized
+      try {
+        if (data?.schedule_id) {
+          const depart = await getDepartById(data.schedule_id);
+          if (depart) {
+            const allBagages = await getBagagesForDepart(data.schedule_id);
+            const paidBagages = allBagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
+            const newMtBagage = paidBagages.reduce((sum, b) => sum + b.price, 0);
+            await updateDepart(data.schedule_id, {
+              mt_bagage: newMtBagage,
+              solde: depart.mt_ticket + newMtBagage - depart.tot_depense,
+              caisse: depart.mt_ticket + newMtBagage - depart.tot_depense,
+            });
+          }
+        }
+      } catch {
+        // non-critical — depart may not exist locally
       }
 
       // Build depart record for printing

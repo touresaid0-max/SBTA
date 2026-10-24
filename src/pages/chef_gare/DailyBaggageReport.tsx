@@ -108,8 +108,9 @@ export default function DailyBaggageReport() {
       const dayEnd = new Date(`${selectedDate}T23:59:59`);
       const { data: baggages } = await supabase
         .from('baggage_tickets')
-        .select('id, baggage_number, destination, price, owner_name, has_ticket')
+        .select('id, baggage_number, destination, price, owner_name, has_ticket, payment_status')
         .eq('station_id', stationId)
+        .eq('payment_status', 'paye')
         .gte('created_at', dayStart.toISOString())
         .lte('created_at', dayEnd.toISOString())
         .order('created_at', { ascending: false });
@@ -228,8 +229,9 @@ export default function DailyBaggageReport() {
       const dayEnd = new Date(`${selectedDate}T23:59:59`);
       const { data: baggages } = await supabase
         .from('baggage_tickets')
-        .select('price')
+        .select('price, payment_status')
         .eq('station_id', stationId)
+        .eq('payment_status', 'paye')
         .gte('created_at', dayStart.toISOString())
         .lte('created_at', dayEnd.toISOString());
       const finalRevenue = (baggages ?? []).reduce((s, b) => s + (b.price || 0), 0);

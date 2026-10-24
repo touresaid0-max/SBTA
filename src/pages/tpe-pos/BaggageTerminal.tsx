@@ -1280,7 +1280,7 @@ function HistoryView({ session, onOpenDetail }: HistoryViewProps) {
   }, [session?.station_id]);
 
   const totalRevenue = useMemo(() =>
-    bagages.reduce((sum, b) => sum + b.price, 0), [bagages]);
+    bagages.filter(b => b.payment_status !== 'en_attente').reduce((sum, b) => sum + b.price, 0), [bagages]);
 
   const handleReprint = (bagage: BagageRecord) => {
     const depart = departs.get(bagage.depart_id);

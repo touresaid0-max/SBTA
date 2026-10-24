@@ -144,8 +144,9 @@ export default function BaggageReportDashboard() {
     const dayEnd = new Date(`${report.report_date}T23:59:59`);
     const { data } = await supabase
       .from('baggage_tickets')
-      .select('id, baggage_number, destination, price, owner_name, has_ticket')
+      .select('id, baggage_number, destination, price, owner_name, has_ticket, payment_status')
       .eq('station_id', report.station_id)
+      .eq('payment_status', 'paye')
       .gte('created_at', dayStart.toISOString())
       .lte('created_at', dayEnd.toISOString())
       .order('created_at', { ascending: false });

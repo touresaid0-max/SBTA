@@ -64,8 +64,9 @@ export default function BagagisteBaggageReport() {
       const { start, end } = getRange(period);
       const { data, error } = await supabase
         .from('baggage_tickets')
-        .select('id, baggage_number, destination, price, seat_number, has_ticket, bus_registration, owner_name, owner_phone, created_at')
+        .select('id, baggage_number, destination, price, seat_number, has_ticket, bus_registration, owner_name, owner_phone, created_at, payment_status')
         .eq('sold_by', user.id)
+        .eq('payment_status', 'paye')
         .gte('created_at', start.toISOString())
         .lte('created_at', end.toISOString())
         .order('created_at', { ascending: false });

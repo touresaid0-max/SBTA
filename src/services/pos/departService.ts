@@ -195,7 +195,7 @@ export function computeStationScopedTotals(
       .filter(d => d.depart_id === depart.id && d.description !== '__deleted__')
       .reduce((s, d) => s + d.amount, 0);
     const ticketsForDepart = tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled');
-    const bagagesForDepart = bagages.filter(b => b.depart_id === depart.id && b.description !== '__deleted__');
+    const bagagesForDepart = bagages.filter(b => b.depart_id === depart.id && b.description !== '__deleted__' && b.payment_status !== 'en_attente');
     const grossTicket = ticketsForDepart.reduce((s, t) => s + t.price, 0);
     const breakdownTransfer = depart.breakdown_transfer ?? 0;
     const mtTicket = grossTicket - breakdownTransfer;
@@ -227,6 +227,7 @@ export function computeStationScopedTotals(
   const stationBagages = bagages.filter(b => {
     if (b.depart_id !== depart.id) return false;
     if (b.description === '__deleted__') return false;
+    if (b.payment_status === 'en_attente') return false;
     if (b.ticket_id && stationTicketIds.has(b.ticket_id)) return true;
     if (b.ticket_id) return false;
     return stationId === primaryStationId;

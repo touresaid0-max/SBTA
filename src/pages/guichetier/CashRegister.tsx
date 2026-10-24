@@ -247,7 +247,8 @@ export default function CashRegister() {
 
       let query = supabase
         .from('baggage_tickets')
-        .select('id, baggage_number, destination, price, seat_number, departure_number, bus_registration, description, owner_name, owner_phone, has_ticket, created_at')
+        .select('id, baggage_number, destination, price, seat_number, departure_number, bus_registration, description, owner_name, owner_phone, has_ticket, created_at, payment_status')
+        .eq('payment_status', 'paye')
         .gte('created_at', startDate.toISOString())
         .lte('created_at', endDate.toISOString())
         .order('created_at', { ascending: false });

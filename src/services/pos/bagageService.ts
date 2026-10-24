@@ -73,7 +73,8 @@ export async function registerBagage(params: RegisterBagageParams): Promise<Baga
   });
 
   const allBagages = await getBagagesForDepart(params.departId);
-  const newMtBagage = allBagages.reduce((sum, b) => sum + b.price, 0);
+  const paidBagages = allBagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
+  const newMtBagage = paidBagages.reduce((sum, b) => sum + b.price, 0);
   await updateDepart(params.departId, {
     mt_bagage: newMtBagage,
     solde: depart.mt_ticket + newMtBagage - depart.tot_depense,
@@ -96,7 +97,8 @@ export async function deleteBagage(bagageId: string): Promise<void> {
   await localUpdate<BagageRecord>('bagages', bagageId, { ...bagage, destination: bagage.destination, description: '__deleted__' } as Partial<BagageRecord>);
   const depart = await getDepartById(bagage.depart_id);
   if (depart) {
-    const remaining = (await getBagagesForDepart(bagage.depart_id)).filter(b => b.id !== bagageId);
+    const remaining = (await getBagagesForDepart(bagage.depart_id))
+      .filter(b => b.id !== bagageId && b.description !== '__deleted__' && b.payment_status !== 'en_attente');
     const newMtBagage = remaining.reduce((sum, b) => sum + b.price, 0);
     await updateDepart(bagage.depart_id, {
       mt_bagage: newMtBagage,
