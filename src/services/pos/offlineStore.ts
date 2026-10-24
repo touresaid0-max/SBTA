@@ -37,6 +37,10 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
     const remoteMappable = ['depart_id', 'seat_number', 'seat_numbers', 'destination', 'destination_id', 'passenger_name', 'passenger_phone', 'price', 'status'];
     return keys.some(k => remoteMappable.includes(k));
   }
+  if (entity === 'bagages') {
+    const remoteMappable = ['payment_status', 'paid_at', 'paid_by', 'destination', 'price', 'description', 'owner_name', 'owner_phone'];
+    return keys.some(k => remoteMappable.includes(k));
+  }
   return false;
 }
 

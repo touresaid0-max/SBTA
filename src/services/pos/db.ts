@@ -118,6 +118,9 @@ export interface BagageRecord {
   declared_value: number;
   station_id?: string;
   counter_id?: string;
+  payment_status: 'paye' | 'en_attente';
+  paid_at?: string;
+  paid_by?: string;
   created_at: string;
   updated_at: string;
   synced?: boolean;
@@ -214,6 +217,8 @@ export interface SessionRecord {
   login_at: string;
   offline: boolean;
   password_hash?: string;
+  tpe_pos_enabled?: boolean;
+  tpe_mode?: 'sans_guichet' | 'avec_guichet';
 }
 
 export type PrintBackend = 'webserial' | 'webusb' | 'qztray' | 'browser';

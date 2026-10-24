@@ -73,6 +73,8 @@ export async function createAccountByAdmin(params: {
   send_welcome_email: boolean;
   assigned_route_ids?: string[];
   assistance_gp?: boolean;
+  tpe_pos_enabled?: boolean;
+  tpe_mode?: 'sans_guichet' | 'avec_guichet';
 }) {
   const { data: { session } } = await supabase.auth.getSession();
 

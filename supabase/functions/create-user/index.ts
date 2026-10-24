@@ -83,6 +83,8 @@ Deno.serve(async (req: Request) => {
       assigned_route_ids,
       send_invitation,
       assistance_gp,
+      tpe_pos_enabled,
+      tpe_mode,
     } = body;
 
     if (!role) {
@@ -211,6 +213,8 @@ Deno.serve(async (req: Request) => {
       is_active: !send_invitation,
       assistance_gp: role === "gerant_principal" && assistance_gp === true,
       is_self_registered: false,
+      tpe_pos_enabled: role === "bagagiste" && tpe_pos_enabled === true,
+      tpe_mode: role === "bagagiste" && tpe_pos_enabled === true ? (tpe_mode === "avec_guichet" ? "avec_guichet" : "sans_guichet") : "sans_guichet",
       created_by: caller.id,
       invitation_token: invitationToken,
       invitation_expires_at: invitationToken

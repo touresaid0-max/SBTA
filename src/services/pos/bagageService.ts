@@ -36,6 +36,7 @@ export interface RegisterBagageParams {
   ownerName: string;
   ownerPhone: string;
   printBagage: boolean;
+  paymentStatus?: 'paye' | 'en_attente';
 }
 
 export async function registerBagage(params: RegisterBagageParams): Promise<BagageRecord> {
@@ -68,6 +69,7 @@ export async function registerBagage(params: RegisterBagageParams): Promise<Baga
     declared_value: params.declaredValue ?? 0,
     station_id: depart.station_id,
     counter_id: depart.counter_id,
+    payment_status: params.paymentStatus ?? 'paye',
   });
 
   const allBagages = await getBagagesForDepart(params.departId);

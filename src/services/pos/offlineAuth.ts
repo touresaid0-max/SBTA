@@ -35,6 +35,20 @@ export async function login(email: string, password: string): Promise<POSLoginRe
 
       const passwordHash = await hashPassword(password);
 
+      // TPE-POS authorization check for bagagistes
+      if (user.role === 'bagagiste') {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('tpe_pos_enabled, tpe_mode')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (!profile?.tpe_pos_enabled) {
+          return { success: false, error: 'Accès TPE-POS non autorisé. Contactez votre administrateur.' };
+        }
+        (user as any).tpe_pos_enabled = true;
+        (user as any).tpe_mode = profile.tpe_mode ?? 'sans_guichet';
+      }
+
       // Bagagistes: the authoritative station assignment lives in
       // station_baggage_handlers (managed in Administration → Gestion des
       // comptes utilisateurs). The users.station_id column is stale for some
@@ -74,6 +88,8 @@ export async function login(email: string, password: string): Promise<POSLoginRe
         login_at: new Date().toISOString(),
         offline: false,
         password_hash: passwordHash,
+        tpe_pos_enabled: (user as any).tpe_pos_enabled as boolean | undefined,
+        tpe_mode: (user as any).tpe_mode as 'sans_guichet' | 'avec_guichet' | undefined,
       };
 
       await db.session.clear();

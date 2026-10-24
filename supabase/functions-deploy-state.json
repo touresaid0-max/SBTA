@@ -1,0 +1,69 @@
+{
+  "projectId": "65718212",
+  "functions": {
+    "admin-create-account": {
+      "hasChanged": false,
+      "hash": "d1db040c47f8c76bc99e1aad2af182e6a9a94e631b5fed6e8d4669fe9659c948"
+    },
+    "bootstrap-reset-passwords": {
+      "hasChanged": false,
+      "hash": "d3c23d1fd23992c070e707d3f8baa395daf66e45fb2b0bd7ab5cf6715b511c71"
+    },
+    "calculate-route-distance": {
+      "hasChanged": false,
+      "hash": "33c4f860df2094a2865330a0afd37ec7e5f7931a9124e8d09a06ef0f4af4c17b"
+    },
+    "create-user": {
+      "hasChanged": false,
+      "hash": "08ddf09a0799e8194d35ba9078bda1ebb3562c31c5ea75d14a796ffebc9c5ce1"
+    },
+    "create-user-with-password": {
+      "hasChanged": false,
+      "hash": "25727b9ec6c90b6395575b3350a80810ac670f133e3293c71a776a5547ae493c"
+    },
+    "logistique-drivers": {
+      "hasChanged": false,
+      "hash": "307ab7317de356cf8f26865ab5b94d525f193352270c50b7ae13e282febf3533"
+    },
+    "mobile-otp": {
+      "hasChanged": false,
+      "hash": "f55396507c419bb425e6dc938ce4ca5b98866d4b4f3ba9d3775d4c544e8bc58d"
+    },
+    "reset-user-password": {
+      "hasChanged": false,
+      "hash": "51e9af3f1e1e146c2e87cae23feeb2d15cf7bc2aed8c9db9adb25c2045b83f87"
+    },
+    "rh-create-employee": {
+      "hasChanged": false,
+      "hash": "a0a10811a14af2cae3c314b6aab518e96af4a1e5b75a6908767a8c0cb99515c5"
+    },
+    "send-parcel-sms": {
+      "hasChanged": false,
+      "hash": "1fc8a33a0d70bf5a3c2a10e951fefbefc44735635e6eeb5a3ac052f8b11cebce"
+    },
+    "update-user-email": {
+      "hasChanged": false,
+      "hash": "dc11430149e5e44d7a4e5c1aa873aedebcd8fb33e972ad9ddf449c45f2e8e6c9"
+    },
+    "update-user-role": {
+      "hasChanged": false,
+      "hash": "816a674f7e945008102474a268faa170702bc7c3c6f14d9ed52b2a4e00753d6a"
+    },
+    "validate-ticket-sale": {
+      "hasChanged": false,
+      "hash": "769a1ee530ae51ec4f9206ec0ed6ee1809e8972168c8af7bc379a62775899a8e"
+    },
+    "wave-create-checkout": {
+      "hasChanged": false,
+      "hash": "1e14406f69ea32a7ee09ea0e21b3593c189a5020ee97be6ea9b6e4d7c4fb1ec7"
+    },
+    "wave-verify-payment": {
+      "hasChanged": false,
+      "hash": "b1ee42e0b46a3ecfd62056c00fea1cf4618ad44e80684c92ff486815a10d3b18"
+    },
+    "wave-webhook": {
+      "hasChanged": false,
+      "hash": "eebf7b4dfc362ecbcc6bf5fcd9c8a698781f872277a7c77f2760ae35f0fd61f6"
+    }
+  }
+}

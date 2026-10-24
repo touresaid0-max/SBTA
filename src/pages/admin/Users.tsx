@@ -113,6 +113,8 @@ const emptyForm = () => ({
   colis_direction: [] as string[],
   assigned_route_ids: [] as string[],
   assistance_gp: false,
+  tpe_pos_enabled: false,
+  tpe_mode: 'sans_guichet' as 'sans_guichet' | 'avec_guichet',
 });
 
 type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
@@ -297,6 +299,12 @@ export default function Users() {
         if (formData.role === 'gerant_principal') {
           payload.assistance_gp = formData.assistance_gp;
         }
+        if (formData.role === 'bagagiste') {
+          payload.tpe_pos_enabled = formData.tpe_pos_enabled;
+          if (formData.tpe_pos_enabled) {
+            payload.tpe_mode = formData.tpe_mode;
+          }
+        }
 
         const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
           method: 'POST',
@@ -359,6 +367,13 @@ export default function Users() {
         } else {
           updateData.assistance_gp = false;
         }
+        if (formData.role === 'bagagiste') {
+          updateData.tpe_pos_enabled = formData.tpe_pos_enabled;
+          updateData.tpe_mode = formData.tpe_pos_enabled ? formData.tpe_mode : 'sans_guichet';
+        } else {
+          updateData.tpe_pos_enabled = false;
+          updateData.tpe_mode = 'sans_guichet';
+        }
         const { error } = await supabase.from('users').update(updateData).eq('id', editingUser.id);
         if (error) throw error;
         // assigned_route_ids is stored on employees; its database trigger syncs counter_routes.
@@ -410,6 +425,8 @@ export default function Users() {
       colis_direction: user.colis_direction ?? [],
       assigned_route_ids: [],
       assistance_gp: (user as any).assistance_gp ?? false,
+      tpe_pos_enabled: (user as any).tpe_pos_enabled ?? false,
+      tpe_mode: ((user as any).tpe_mode ?? 'sans_guichet') as 'sans_guichet' | 'avec_guichet',
       password: '',
       send_invitation: false,
       status: user.status || 'active',
@@ -1111,6 +1128,44 @@ export default function Users() {
                       </span>
                     </span>
                   </label>
+                </div>
+              )}
+              {formData.role === 'bagagiste' && (
+                <div className="p-4 rounded-lg" style={{ backgroundColor: '#f0faf4', border: '1px solid #0B7439' }}>
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.tpe_pos_enabled}
+                      onChange={(e) => setFormData({ ...formData, tpe_pos_enabled: e.target.checked })}
+                      className="w-4 h-4 mt-0.5 rounded"
+                      style={{ accentColor: '#0B7439' }}
+                    />
+                    <span className="text-sm" style={{ color: '#0B7439' }}>
+                      <span className="font-medium">Autorisation TPE-POS</span>
+                      <span className="block text-xs mt-1" style={{ color: '#4A6B55' }}>
+                        Autorise ce bagagiste à accéder au terminal TPE-POS. Si non coché, l'accès au TPE-POS sera refusé à la connexion.
+                      </span>
+                    </span>
+                  </label>
+                  {formData.tpe_pos_enabled && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-bold mb-1" style={{ color: '#0B7439' }}>Mode de fonctionnement <span style={{ color: '#AF3029' }}>*</span></label>
+                      <select
+                        value={formData.tpe_mode}
+                        onChange={(e) => setFormData({ ...formData, tpe_mode: e.target.value as 'sans_guichet' | 'avec_guichet' })}
+                        className="w-full px-3 py-2 rounded-lg border bg-white"
+                        style={{ borderColor: '#0B7439' }}
+                      >
+                        <option value="sans_guichet">TPE sans guichet</option>
+                        <option value="avec_guichet">TPE avec guichet</option>
+                      </select>
+                      <p className="text-xs mt-1.5" style={{ color: '#4A6B55' }}>
+                        {formData.tpe_mode === 'sans_guichet'
+                          ? 'Le bagagiste encaisse le paiement directement et imprime le ticket définitif.'
+                          : 'Le bagagiste enregistre le bagage en attente de paiement. Le guichetier confirme le paiement et imprime le ticket définitif.'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               {editingUser && (

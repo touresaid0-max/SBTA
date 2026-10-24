@@ -344,7 +344,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   return concat(...parts);
 }
 
-export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSettings, logo?: RasterImage | null, notice?: string | null): Uint8Array {
+export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSettings, logo?: RasterImage | null, notice?: string | null, provisional?: boolean): Uint8Array {
   const w = 32;
   const { bagage, depart, stationName } = data;
   const value = (input: string | number | null | undefined): string => String(input ?? '').trim();
@@ -413,9 +413,15 @@ export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSetti
     }
   };
 
-  render(false);
+  const renderWithBanner = (souche: boolean): void => {
+    render(souche);
+    if (provisional) {
+      parts.push(setAlign('center'), setBold(true), ...line('** EN ATTENTE **'), ...line('** DE PAIEMENT **'), setBold(false), setAlign('left'));
+    }
+  };
+  renderWithBanner(false);
   parts.push(setAlign('center'), ...line('-'.repeat(w)), setBold(true), ...line('DECOUPER ICI'), setBold(false), ...line('-'.repeat(w)));
-  render(true);
+  renderWithBanner(true);
   parts.push(lineFeed(2));
   if (settings.auto_cut) parts.push(cutPaper());
   return concat(...parts);

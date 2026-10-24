@@ -175,8 +175,26 @@ function mapBagageInsert(payload: Record<string, unknown>): Record<string, unkno
     has_ticket: p.with_ticket ?? false,
     station_id: p.station_id ?? null,
     counter_id: p.counter_id ?? null,
+    declared_value: p.declared_value ?? 0,
+    payment_status: p.payment_status ?? 'paye',
     created_at: p.created_at ?? nowIso(),
   };
+}
+
+function mapBagageUpdate(payload: Record<string, unknown>): Record<string, unknown> | null {
+  const p = payload;
+  const result: Record<string, unknown> = {};
+  if (p.payment_status !== undefined) result.payment_status = p.payment_status;
+  if (p.paid_at !== undefined) result.paid_at = p.paid_at;
+  if (p.paid_by !== undefined) result.paid_by = p.paid_by;
+  if (p.destination !== undefined) result.destination = p.destination;
+  if (p.price !== undefined) result.price = p.price;
+  if (p.description !== undefined) result.description = p.description;
+  if (p.owner_name !== undefined) result.owner_name = p.owner_name;
+  if (p.owner_phone !== undefined) result.owner_phone = p.owner_phone;
+  result.updated_at = nowIso();
+  if (Object.keys(result).length <= 1) return null;
+  return result;
 }
 
 const EXPENSE_TYPE_MAP: Record<string, string> = {
@@ -443,10 +461,11 @@ async function executeUpdate(store: StoreName, id: string, patch: Record<string,
     remotePayload = mapDepartUpdate({ id, ...patch });
   } else if (store === 'tickets') {
     remotePayload = mapTicketUpdate({ id, ...patch });
+  } else if (store === 'bagages') {
+    remotePayload = mapBagageUpdate({ id, ...patch });
   }
 
   if (!remotePayload) return;
-
   const { error } = await supabase.from(table).update(remotePayload).eq('id', id);
   if (error && !error.message.includes('0 rows')) throw error;
 }

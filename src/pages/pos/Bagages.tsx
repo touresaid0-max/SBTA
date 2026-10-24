@@ -12,10 +12,11 @@ import { PrintService } from '@/services/pos/printService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
   AlertCircle, CheckCircle, Loader2, Plus, Lock,
-  Package, Link2, Search,
+  Package, Link2, Search, Luggage,
   Ticket as TicketIcon,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -42,6 +43,7 @@ export default function POSBagages() {
   const [ownerPhone, setOwnerPhone] = useState('');
   const [printBagage, setPrintBagage] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showTpePos, setShowTpePos] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!departId) return;
@@ -215,6 +217,7 @@ export default function POSBagages() {
   }
 
   return (
+    <>
     <POSLayout showBack stationName={session?.station_name} activeRoute={`Bagages — Départ #${depart.route_number} (${depart.route_name ?? ''})`}>
       <div className="max-w-5xl mx-auto">
         {/* Cloture warning banner */}
@@ -233,9 +236,19 @@ export default function POSBagages() {
             <span style={{ color: 'var(--text-secondary)' }}>·</span>
             <span style={{ color: 'var(--text-secondary)' }}>{depart.bus_plate}</span>
           </div>
-          <div className="text-sm">
-            <span className="font-bold" style={{ color: 'var(--text-muted)' }}>MT Bagage: </span>
-            <span className="font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(bagageTotal)}</span>
+          <div className="flex items-center gap-3">
+            <div className="text-sm">
+              <span className="font-bold" style={{ color: 'var(--text-muted)' }}>MT Bagage: </span>
+              <span className="font-bold" style={{ color: 'var(--success)' }}>{formatCurrency(bagageTotal)}</span>
+            </div>
+            <button
+              onClick={() => setShowTpePos(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold text-sm text-white transition-colors"
+              style={{ backgroundColor: '#1D6FA4' }}
+            >
+              <Luggage className="w-4 h-4" />
+              TPE-POS
+            </button>
           </div>
         </div>
 
@@ -480,5 +493,13 @@ export default function POSBagages() {
         </div>
       </div>
     </POSLayout>
+
+      {showTpePos && (
+        <TpePosPendingBaggage
+          stationId={session?.station_id}
+          onClose={() => setShowTpePos(false)}
+        />
+      )}
+    </>
   );
 }

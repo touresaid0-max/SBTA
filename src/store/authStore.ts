@@ -47,6 +47,8 @@ export interface UserProfile {
   driver_performance_level?: string;
   is_active?: boolean;
   assistance_gp?: boolean;
+  tpe_pos_enabled?: boolean;
+  tpe_mode?: 'sans_guichet' | 'avec_guichet';
 }
 
 interface AuthState {

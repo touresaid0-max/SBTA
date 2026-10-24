@@ -71,9 +71,12 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
   const [routeSearch, setRouteSearch] = useState('');
   const [routeOpen, setRouteOpen] = useState(false);
   const [assistanceGp, setAssistanceGp] = useState(false);
+  const [tpePosEnabled, setTpePosEnabled] = useState(false);
+  const [tpeMode, setTpeMode] = useState<'sans_guichet' | 'avec_guichet'>('sans_guichet');
 
   const isGuichetier = employee.role === 'guichetier';
   const isGerantPrincipal = employee.role === 'gerant_principal';
+  const isBagagiste = employee.role === 'bagagiste';
 
   useEffect(() => {
     if (!isGuichetier) return;
@@ -109,6 +112,7 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
         send_welcome_email: sendWelcomeEmail,
         ...(isGuichetier ? { assigned_route_ids: selectedRouteIds } : {}),
         ...(isGerantPrincipal ? { assistance_gp: assistanceGp } : {}),
+        ...(isBagagiste ? { tpe_pos_enabled: tpePosEnabled, tpe_mode: tpePosEnabled ? tpeMode : 'sans_guichet' } : {}),
       });
       toast.success(`Compte créé pour ${employee.first_name} ${employee.last_name}`);
       onSuccess();
@@ -264,6 +268,49 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Option TPE-POS (bagagiste only) */}
+          {isBagagiste && (
+            <div className="rounded-xl p-3 border" style={{ backgroundColor: '#F0FAF4', borderColor: '#0B7439' }}>
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="tpe_pos_enabled"
+                  checked={tpePosEnabled}
+                  onChange={(e) => setTpePosEnabled(e.target.checked)}
+                  className="w-4 h-4 rounded mt-0.5"
+                  style={{ accentColor: '#0B7439' }}
+                />
+                <div>
+                  <label htmlFor="tpe_pos_enabled" className="text-sm font-medium cursor-pointer" style={{ color: '#1A2E22' }}>
+                    Autorisation TPE-POS
+                  </label>
+                  <p className="text-xs mt-0.5" style={{ color: '#4A6B55' }}>
+                    Autorise ce bagagiste à accéder au terminal TPE-POS.
+                  </p>
+                </div>
+              </div>
+              {tpePosEnabled && (
+                <div className="mt-3 ml-7">
+                  <label className="block text-xs font-bold mb-1" style={{ color: '#0B7439' }}>Mode de fonctionnement <span style={{ color: '#AF3029' }}>*</span></label>
+                  <select
+                    value={tpeMode}
+                    onChange={(e) => setTpeMode(e.target.value as 'sans_guichet' | 'avec_guichet')}
+                    className="w-full px-3 py-2 rounded-lg border bg-white"
+                    style={{ borderColor: '#0B7439' }}
+                  >
+                    <option value="sans_guichet">TPE sans guichet</option>
+                    <option value="avec_guichet">TPE avec guichet</option>
+                  </select>
+                  <p className="text-xs mt-1.5" style={{ color: '#4A6B55' }}>
+                    {tpeMode === 'sans_guichet'
+                      ? 'Le bagagiste encaisse le paiement directement et imprime le ticket définitif.'
+                      : 'Le bagagiste enregistre le bagage en attente de paiement. Le guichetier confirme le paiement et imprime le ticket définitif.'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
