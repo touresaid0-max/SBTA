@@ -192,8 +192,7 @@ function mapBagageUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.description !== undefined) result.description = p.description;
   if (p.owner_name !== undefined) result.owner_name = p.owner_name;
   if (p.owner_phone !== undefined) result.owner_phone = p.owner_phone;
-  result.updated_at = nowIso();
-  if (Object.keys(result).length <= 1) return null;
+  if (Object.keys(result).length === 0) return null;
   return result;
 }
 
