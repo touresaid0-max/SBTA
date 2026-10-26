@@ -25,6 +25,7 @@ import {
   Package, Banknote, XCircle, ArrowRightLeft, Unlock, X, Home, BusFront,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
 import { fetchScheduleSeatMap } from '@/services/seatMap.service';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
@@ -67,6 +68,7 @@ export default function POSVente() {
 
   // Vente avec structure — shows the real bus seat layout
   const [structureMode, setStructureMode] = useState(false);
+  const [showTpePosPending, setShowTpePosPending] = useState(false);
   const [seatMap, setSeatMap] = useState<ScheduleSeatMap | null>(null);
   const [seatMapError, setSeatMapError] = useState('');
   const [structSelectedSeats, setStructSelectedSeats] = useState<StructSeat[]>([]);
@@ -1389,13 +1391,30 @@ export default function POSVente() {
             </div>
 
             {/* ── Bagage block ── */}
+            {showTpePosPending && (
+              <TpePosPendingBaggage
+                stationId={session?.station_id}
+                counterId={session?.counter_id}
+                onClose={() => setShowTpePosPending(false)}
+              />
+            )}
             <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               {/* Header + mode selectors */}
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                   <Package className="w-4 h-4" /> Bagage
                 </h3>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showTpePosPending}
+                      onChange={e => setShowTpePosPending(e.target.checked)}
+                      className="w-4 h-4"
+                      style={{ accentColor: 'var(--success)' }}
+                    />
+                    <span className="text-xs font-bold" style={{ color: showTpePosPending ? 'var(--success)' : 'var(--text-secondary)' }}>BAGAGE TPE POS</span>
+                  </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
