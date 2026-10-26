@@ -83,7 +83,7 @@ export default function POSBagages() {
   const stationRange = hasAllocations && session?.station_id ? getSeatRangeForStation(depart!, session.station_id) : null;
 
   const scopedBagages = useMemo(() => {
-    const active = bagages.filter(b => b.description !== '__deleted__');
+    const active = bagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
     if (!hasAllocations || !stationRange) return active;
     const scopedTicketIds = new Set(
       tickets.filter(t => t.seat_number >= stationRange.from && t.seat_number <= stationRange.to).map(t => t.id)

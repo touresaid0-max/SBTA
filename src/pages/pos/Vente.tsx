@@ -397,10 +397,11 @@ export default function POSVente() {
   }, [tickets, hasAllocations, stationRange, receivedTransferSeats]);
 
   const scopedBagages = useMemo(() => {
-    if (!hasAllocations) return bagages.filter(b => b.description !== '__deleted__');
+    if (!hasAllocations) return bagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
     const scopedTicketIds = new Set(scopedTickets.map(t => t.id));
     return bagages.filter(b => {
       if (b.description === '__deleted__') return false;
+      if (b.payment_status === 'en_attente') return false;
       if (b.ticket_id && scopedTicketIds.has(b.ticket_id)) return true;
       if (b.ticket_id) return false;
       return session?.station_id === depart?.station_id;
