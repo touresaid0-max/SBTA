@@ -63,8 +63,7 @@ export default function TpePosPendingBaggage({ stationId, counterId, onClose }: 
           seat_number, departure_number, bus_registration, description,
           owner_name, owner_phone, has_ticket, declared_value,
           station_id, counter_id, sold_by, created_at, payment_status,
-          stations!inner(name),
-          users!baggage_tickets_sold_by_fkey(full_name)
+          stations!inner(name)
         `)
         .eq('payment_status', 'en_attente');
 
@@ -100,8 +99,21 @@ export default function TpePosPendingBaggage({ stationId, counterId, onClose }: 
         created_at: row.created_at,
         payment_status: row.payment_status,
         station_name: row.stations?.name ?? '—',
-        agent_name: row.users?.full_name ?? '—',
+        agent_name: '—',
       }));
+
+      const bagagisteIds = [...new Set(normalized.map(r => r.sold_by).filter(Boolean))];
+      if (bagagisteIds.length > 0) {
+        const { data: bagagistes, error: bagagistesError } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .in('id', bagagisteIds);
+        if (bagagistesError) throw bagagistesError;
+        const bagagisteMap = new Map((bagagistes ?? []).map((user: { id: string; full_name: string | null }) => [user.id, user.full_name]));
+        normalized.forEach(r => {
+          r.agent_name = bagagisteMap.get(r.sold_by) ?? '—';
+        });
+      }
 
       // Fetch ticket numbers for linked baggage
       const reservationIds = normalized
@@ -144,7 +156,7 @@ export default function TpePosPendingBaggage({ stationId, counterId, onClose }: 
     } finally {
       setLoading(false);
     }
-  }, [search, stationId]);
+  }, [search, stationId, counterId]);
 
   useEffect(() => {
     doSearch();
