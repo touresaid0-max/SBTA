@@ -84,8 +84,11 @@ export default function BagagisteBaggageSale() {
   const [form, setForm] = useState<BaggageForm>(EMPTY_FORM);
   const [processing, setProcessing] = useState(false);
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
+  const [tpeMode, setTpeMode] = useState<'sans_guichet' | 'avec_guichet'>('sans_guichet');
+  const [tpeCounterId, setTpeCounterId] = useState<string | null>(null);
 
   const stationName = stations.find(s => s.id === stationId)?.name || 'SBTA';
+  const deferredTpe = tpeMode === 'avec_guichet';
 
   const loadStations = useCallback(async () => {
     if (!user?.id) return;
@@ -110,6 +113,21 @@ export default function BagagisteBaggageSale() {
   }, [user?.id]);
 
   useEffect(() => { loadStations(); }, [loadStations]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('users')
+      .select('tpe_pos_enabled, tpe_mode, tpe_counter_id')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.tpe_pos_enabled && data.tpe_mode === 'avec_guichet') {
+          setTpeMode('avec_guichet');
+          setTpeCounterId(data.tpe_counter_id ?? null);
+        }
+      });
+  }, [user?.id]);
 
   const loadDepartures = useCallback(async () => {
     if (!stationId) { setDepartures([]); return; }
@@ -284,9 +302,10 @@ export default function BagagisteBaggageSale() {
           owner_name: form.owner_name.trim(),
           owner_phone: form.owner_phone.trim(),
           has_ticket: form.mode === 'avec_ticket' || form.mode === 'avec_ticket_reporte',
-          counter_id: null,
+          counter_id: deferredTpe ? tpeCounterId : null,
           station_id: stationId,
           sold_by: user!.id,
+          payment_status: deferredTpe ? 'en_attente' : 'paye',
         });
       if (error) throw error;
 
@@ -305,7 +324,9 @@ export default function BagagisteBaggageSale() {
       };
 
       printBaggageTicket(ticketData);
-      toast.success('Ticket bagage imprimé');
+      toast.success(deferredTpe
+        ? 'Bagage enregistré — paiement à confirmer au guichet'
+        : 'Ticket bagage imprimé');
       resetForm();
       loadRecentSales();
     } catch (err: any) {

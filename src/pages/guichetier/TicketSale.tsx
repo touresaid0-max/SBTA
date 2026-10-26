@@ -23,6 +23,7 @@ import { offlineStore, type CachedSchedule } from '../../services/offlineStore';
 import { offlineSyncService } from '../../services/offlineSync';
 import OfflineBanner from '../../components/guichetier/OfflineBanner';
 import OfflineQueue from '../../components/guichetier/OfflineQueue';
+import TpePosPendingBaggage from '../../components/pos/TpePosPendingBaggage';
 import { printBaggageTicket, generateBaggageNumber, type BaggageTicketData } from '../../utils/printBaggageTicket';
 import { generateBookingReference } from '../../utils/generateBookingReference';
 import { getTicketPhoneLine } from '../../services/ticketPhones.service';
@@ -210,6 +211,7 @@ export default function TicketSale() {
   });
 
   const [showBaggage, setShowBaggage] = useState(false);
+  const [showTpePosPending, setShowTpePosPending] = useState(false);
   const [showPassengerInfo, setShowPassengerInfo] = useState(false);
   type BaggageMode = 'none' | 'avec_ticket' | 'avec_ticket_reporte' | 'sans_ticket';
   const [baggageForm, setBaggageForm] = useState<{
@@ -2466,8 +2468,11 @@ export default function TicketSale() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={baggageForm.tpe_pos}
-                          onChange={e => setBaggageForm(prev => ({ ...prev, tpe_pos: e.target.checked }))}
+                          checked={showTpePosPending}
+                          onChange={e => {
+                            setShowTpePosPending(e.target.checked);
+                            if (e.target.checked) setBaggageForm(prev => ({ ...prev, tpe_pos: false }));
+                          }}
                           className="w-4 h-4 rounded"
                           style={{ accentColor: '#1D6FA4' }}
                         />
@@ -2897,6 +2902,14 @@ export default function TicketSale() {
           onClose={() => setShowQueue(false)}
           onSyncNow={syncNow}
           onDelete={deleteTicket}
+        />
+      )}
+
+      {showTpePosPending && (
+        <TpePosPendingBaggage
+          stationId={myStationId ?? undefined}
+          counterId={myCounterId ?? undefined}
+          onClose={() => setShowTpePosPending(false)}
         />
       )}
     </div>

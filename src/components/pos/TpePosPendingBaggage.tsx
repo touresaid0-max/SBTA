@@ -71,6 +71,9 @@ export default function TpePosPendingBaggage({ stationId, counterId, onClose }: 
       if (stationId) {
         query = query.eq('station_id', stationId);
       }
+      if (counterId) {
+        query = query.eq('counter_id', counterId);
+      }
 
       const { data, error } = await query.order('created_at', { ascending: false }).limit(50);
 

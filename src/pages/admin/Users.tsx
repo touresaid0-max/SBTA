@@ -39,6 +39,7 @@ interface UserRow {
   license_category?: string;
   technician_type_id?: string;
   technician_type_nom?: string;
+  tpe_counter_id?: string;
   colis_direction?: string[] | null;
   driver_avg_rating?: number;
   driver_total_hours?: number;
@@ -90,6 +91,7 @@ const LICENSE_CATEGORIES = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 interface Company { id: string; name: string }
 interface Station { id: string; name: string }
+interface Counter { id: string; station_id: string; counter_number: string; is_active: boolean }
 interface Route { id: string; name: string; base_price: number }
 
 const emptyForm = () => ({
@@ -115,6 +117,7 @@ const emptyForm = () => ({
   assistance_gp: false,
   tpe_pos_enabled: false,
   tpe_mode: 'sans_guichet' as 'sans_guichet' | 'avec_guichet',
+  tpe_counter_id: '',
 });
 
 type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
@@ -126,6 +129,7 @@ export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
+  const [counters, setCounters] = useState<Counter[]>([]);
   const [techTypes, setTechTypes] = useState<GarageTypeTechnicien[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -154,7 +158,7 @@ export default function Users() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const [usersRes, empRes, companiesRes, stationsRes, routesRes, techTypesRes] = await Promise.all([
+      const [usersRes, empRes, companiesRes, stationsRes, countersRes, routesRes, techTypesRes] = await Promise.all([
         supabase
           .from('users')
           .select('*, companies(name), organizations!users_organization_id_fkey(name)')
@@ -167,6 +171,7 @@ export default function Users() {
           .order('created_at', { ascending: false }),
         supabase.from('companies').select('id, name').order('name'),
         supabase.from('stations').select('id, name').eq('is_active', true).order('name'),
+        supabase.from('counters').select('id, station_id, counter_number, is_active').eq('is_active', true).order('counter_number'),
         supabase.from('routes').select('id, name, base_price').eq('is_active', true).order('name'),
         fetchTypesTechniciens(),
       ]);
@@ -174,6 +179,7 @@ export default function Users() {
       if (usersRes.error) throw usersRes.error;
       setCompanies(companiesRes.data ?? []);
       if (stationsRes.data) setStations(stationsRes.data);
+      if (countersRes.data) setCounters(countersRes.data as Counter[]);
       if (routesRes.data) setRoutes(routesRes.data as Route[]);
       if (techTypesRes) setTechTypes(techTypesRes);
 
@@ -265,6 +271,10 @@ export default function Users() {
         if (OPERATIONAL_ROLES.includes(formData.role) && !formData.company_id) { toast.error('La société est obligatoire'); return; }
         if (formData.role === 'comptable' && comptableAssignedCompanies.length === 0) { toast.error('Affectez au moins une société au comptable'); return; }
         if (REQUIRES_STATION.includes(formData.role) && !formData.station_id) { toast.error("La gare d'affectation est obligatoire pour ce poste"); return; }
+        if (formData.role === 'bagagiste' && formData.tpe_pos_enabled && formData.tpe_mode === 'avec_guichet' && (!formData.station_id || !formData.tpe_counter_id)) {
+          toast.error('Sélectionnez la gare et le guichet POS pour le mode TPE avec guichet');
+          return;
+        }
 
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) { toast.error('Session expirée.'); return; }
@@ -303,6 +313,10 @@ export default function Users() {
           payload.tpe_pos_enabled = formData.tpe_pos_enabled;
           if (formData.tpe_pos_enabled) {
             payload.tpe_mode = formData.tpe_mode;
+            payload.tpe_counter_id = formData.tpe_mode === 'avec_guichet' ? (formData.tpe_counter_id || null) : null;
+          } else {
+            payload.tpe_mode = 'sans_guichet';
+            payload.tpe_counter_id = null;
           }
         }
 
@@ -370,6 +384,7 @@ export default function Users() {
         if (formData.role === 'bagagiste') {
           updateData.tpe_pos_enabled = formData.tpe_pos_enabled;
           updateData.tpe_mode = formData.tpe_pos_enabled ? formData.tpe_mode : 'sans_guichet';
+          updateData.tpe_counter_id = formData.tpe_pos_enabled && formData.tpe_mode === 'avec_guichet' ? (formData.tpe_counter_id || null) : null;
         } else {
           updateData.tpe_pos_enabled = false;
           updateData.tpe_mode = 'sans_guichet';
@@ -427,6 +442,7 @@ export default function Users() {
       assistance_gp: (user as any).assistance_gp ?? false,
       tpe_pos_enabled: (user as any).tpe_pos_enabled ?? false,
       tpe_mode: ((user as any).tpe_mode ?? 'sans_guichet') as 'sans_guichet' | 'avec_guichet',
+      tpe_counter_id: (user as any).tpe_counter_id || '',
       password: '',
       send_invitation: false,
       status: user.status || 'active',
@@ -1164,6 +1180,23 @@ export default function Users() {
                           ? 'Le bagagiste encaisse le paiement directement et imprime le ticket définitif.'
                           : 'Le bagagiste enregistre le bagage en attente de paiement. Le guichetier confirme le paiement et imprime le ticket définitif.'}
                       </p>
+                      {formData.tpe_mode === 'avec_guichet' && (
+                        <div className="mt-3">
+                          <label className="block text-xs font-bold mb-1" style={{ color: '#0B7439' }}>Guichet POS de rattachement <span style={{ color: '#AF3029' }}>*</span></label>
+                          <select
+                            value={formData.tpe_counter_id}
+                            onChange={(e) => setFormData({ ...formData, tpe_counter_id: e.target.value })}
+                            className="w-full px-3 py-2 rounded-lg border bg-white"
+                            style={{ borderColor: '#0B7439' }}
+                            required={formData.tpe_pos_enabled && formData.tpe_mode === 'avec_guichet'}
+                          >
+                            <option value="">— Sélectionner le guichet POS —</option>
+                            {counters.filter(counter => !formData.station_id || counter.station_id === formData.station_id).map(counter => (
+                              <option key={counter.id} value={counter.id}>Guichet {counter.counter_number}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
