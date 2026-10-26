@@ -109,6 +109,18 @@ interface PrintPayload {
   phoneLine?: string;
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timeoutId = window.setTimeout(() => resolve(fallback), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+}
+
 async function sendWebSerial(data: Uint8Array): Promise<boolean> {
   const nav = navigator as any;
   if (!nav.serial) return false;
@@ -650,29 +662,29 @@ export const PrintService = {
 
     // For bagage, always try ESC/POS thermal printers first (regardless of backend setting)
     if (payload.type === 'bagage') {
-      const ok = await sendWebSerial(escposData);
+      const ok = await withTimeout(sendWebSerial(escposData), 1500, false);
       if (ok) return true;
-      const okUsb = await sendWebUSB(escposData);
+      const okUsb = await withTimeout(sendWebUSB(escposData), 1500, false);
       if (okUsb) return true;
-      const okQz = await sendQzTray(escposData, settings);
+      const okQz = await withTimeout(sendQzTray(escposData, settings), 3000, false);
       if (okQz) return true;
       return printBrowser(payload, settings);
     }
 
     // Try backends in order of preference
     if (settings.backend === 'webserial') {
-      const ok = await sendWebSerial(escposData);
+      const ok = await withTimeout(sendWebSerial(escposData), 1500, false);
       if (ok) return true;
       // fall through to browser
     }
 
     if (settings.backend === 'webusb') {
-      const ok = await sendWebUSB(escposData);
+      const ok = await withTimeout(sendWebUSB(escposData), 1500, false);
       if (ok) return true;
     }
 
     if (settings.backend === 'qztray') {
-      const ok = await sendQzTray(escposData, settings);
+      const ok = await withTimeout(sendQzTray(escposData, settings), 3000, false);
       if (ok) return true;
     }
 
