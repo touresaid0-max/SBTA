@@ -1,5 +1,5 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization } from '../printCustomization';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
@@ -621,21 +621,14 @@ export const PrintService = {
   },
 
   async printTpeBagage(data: PrintBagageData, provisional?: boolean): Promise<boolean> {
-    const settings = await getPrintSettings();
-    const tpeSettings = { ...settings, width_mm: 58 as const, auto_cut: true };
-    const customization = await getPrintCustomization();
-    const payload: PrintBagageData = {
+    void provisional;
+    return this._print({
+      type: 'bagage',
       bagage: data.bagage,
       depart: data.depart,
       stationName: data.stationName,
       phoneLine: data.phoneLine,
-    };
-    const logo = await loadBagageLogoRaster(160);
-    const escposData = buildTpeBagageESCPOS(payload, tpeSettings, logo, customization.tpe_baggage_notice, provisional);
-    if (await sendWebSerial(escposData)) return true;
-    if (await sendWebUSB(escposData)) return true;
-    if (await sendQzTray(escposData, tpeSettings)) return true;
-    return printHTMLDocument(buildHTMLTpeBagage(payload, customization.tpe_baggage_notice, provisional));
+    });
   },
 
   async print(data: PrintTicketData): Promise<boolean> {
