@@ -1,6 +1,7 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
 import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization } from '../printCustomization';
+import { setPrintingGuard } from '@/store/authStore';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
 
@@ -634,13 +635,18 @@ export const PrintService = {
 
   async printTpeBagage(data: PrintBagageData, provisional?: boolean): Promise<boolean> {
     void provisional;
-    return this._print({
-      type: 'bagage',
-      bagage: data.bagage,
-      depart: data.depart,
-      stationName: data.stationName,
-      phoneLine: data.phoneLine,
-    });
+    setPrintingGuard(true);
+    try {
+      return await this._print({
+        type: 'bagage',
+        bagage: data.bagage,
+        depart: data.depart,
+        stationName: data.stationName,
+        phoneLine: data.phoneLine,
+      });
+    } finally {
+      setPrintingGuard(false);
+    }
   },
 
   async print(data: PrintTicketData): Promise<boolean> {
