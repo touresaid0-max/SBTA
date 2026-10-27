@@ -6,6 +6,7 @@ import {
   getAllDeparts, updateDepart, type DepartRecord,
   type VehiculeRef, type ChauffeurRef,
   seatsLibres,
+  seatsCommercialisables,
   getSeatRangeForStation,
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
   getVehicules, getChauffeurs, getGares,
@@ -60,7 +61,7 @@ function toRow(d: DepartRecord, tickets: TicketRecord[], stationId?: string): De
   }
   return {
     ...d,
-    seats_allocated: d.seats_total,
+    seats_allocated: seatsCommercialisables(d),
     seats_sold_station: d.seats_sold,
     seats_libres: seatsLibres(d),
     solde_calc: d.mt_ticket - d.tot_depense,
@@ -179,7 +180,7 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
     }
   } catch { /* keep defaults */ }
 
-  const totalSeats = seatRange ? seatRange.to - seatRange.from + 1 : depart.seats_total;
+  const totalSeats = seatRange ? seatRange.to - seatRange.from + 1 : seatsCommercialisables(depart);
   const data: BordereauDepartData = {
     station_name: depart.station_name ?? '',
     departure_number: depart.route_number ?? depart.departure_number,

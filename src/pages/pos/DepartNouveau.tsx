@@ -127,7 +127,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
           setLigneId(parent.route_id);
           setDriverId(parent.driver_id);
           setSeatsTotal(parent.seats_total);
-          setSeatsFrom(range.from);
+          setSeatsFrom(Math.max(bus?.seats_sold_from ?? 1, range.from));
           setDepartureDate(parent.departure_date);
           setDepartureTime(parent.departure_time);
           setConvoyeurId(parent.convoyeur_id ?? '');

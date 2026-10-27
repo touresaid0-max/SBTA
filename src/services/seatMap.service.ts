@@ -48,7 +48,8 @@ export async function fetchScheduleSeatMap(
         bus_deck_type,
         seat_config_id,
         lower_deck_config_id,
-        upper_deck_config_id
+        upper_deck_config_id,
+        seats_sold_from
       ),
       routes (
         base_price
@@ -69,6 +70,7 @@ export async function fetchScheduleSeatMap(
   }
 
   const isImperial = bus?.bus_deck_type === 'imperial'
+  const seatsSoldFrom = Math.max(1, Number(bus?.seats_sold_from ?? 1))
 
   let rawConfig: any = null
 
@@ -136,13 +138,14 @@ export async function fetchScheduleSeatMap(
         const lock = lockMap[seat.id]
         let status: SeatStatus = 'available'
         let lock_expires_at: string | undefined
+        if (Number(seat.id) < seatsSoldFrom) status = 'out_of_service'
 
-        if (occupied) {
+        if (status === 'available' && occupied) {
           status = currentUser && occupied.client_id === currentUser.id ? 'my_reservation'
             : occupied.status === 'embarque' ? 'boarding' : 'occupied'
-        } else if (online) {
+        } else if (status === 'available' && online) {
           status = 'online_reserved'
-        } else if (lock) {
+        } else if (status === 'available' && lock) {
           lock_expires_at = lock.expires_at
           status = currentUser && lock.locked_by === currentUser.id ? 'locked_by_me' : 'locked'
         }
@@ -257,7 +260,7 @@ export async function fetchScheduleSeatMap(
       let status: SeatStatus = 'available'
       let lock_expires_at: string | undefined
 
-      if (seat.type === 'hors_service') {
+      if (seat.type === 'hors_service' || Number(seat.id) < seatsSoldFrom) {
         status = 'out_of_service'
       } else if (occupied) {
         status = currentUser && occupied.client_id === currentUser.id ? 'my_reservation'

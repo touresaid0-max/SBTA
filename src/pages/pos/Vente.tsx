@@ -11,7 +11,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
+import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibres, seatsLibresForStation, seatsCommercialisables, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
@@ -369,11 +369,11 @@ export default function POSVente() {
       const libres = seatsLibresForStation(tickets, depart, session.station_id);
       return Math.max(0, libres - lockedSeats.length);
     }
-    return depart.seats_total - depart.seats_sold;
+    return seatsLibres(depart);
   }, [depart, tickets, allowedSeatRange, session?.station_id, lockedSeats]);
 
   const stationSeatsAllocated = useMemo(() => {
-    if (!depart || !session?.station_id) return depart?.seats_total ?? 0;
+    if (!depart || !session?.station_id) return depart ? seatsCommercialisables(depart) : 0;
     return seatsAllocatedForStation(depart, session.station_id);
   }, [depart, session?.station_id]);
 

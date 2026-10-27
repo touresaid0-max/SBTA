@@ -136,15 +136,9 @@ export async function getDepartById(id: string): Promise<DepartRecord | undefine
 }
 
 export function seatsAllocatedForStation(d: DepartRecord, stationId: string): number {
-  let base: number;
-  if (!d.seat_allocations || d.seat_allocations.length === 0) {
-    base = d.seats_total;
-  } else {
-    const alloc = d.seat_allocations.find(a => a.station_id === stationId);
-    if (!alloc) base = d.seats_total;
-    else base = alloc.seat_to - alloc.seat_from + 1;
-  }
-  return base + getReceivedTransferSeatsForStation(d, stationId).length;
+  const range = getSeatRangeForStation(d, stationId);
+  const base = range ? range.to - range.from + 1 : 0;
+  return Math.max(0, base) + getReceivedTransferSeatsForStation(d, stationId).length;
 }
 
 export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
@@ -156,14 +150,19 @@ export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d:
   return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && inSeatPool(t.seat_number)).length;
 }
 
+export function seatsCommercialisables(d: DepartRecord): number {
+  const sellableFrom = Math.max(1, d.seats_from || 1);
+  return Math.max(0, d.seats_total - sellableFrom + 1);
+}
+
 export function seatsLibres(d: DepartRecord): number {
-  return d.seats_total - d.seats_sold;
+  return Math.max(0, seatsCommercialisables(d) - d.seats_sold);
 }
 
 export function seatsLibresForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
   const allocated = seatsAllocatedForStation(d, stationId);
   const sold = seatsVendusForStation(tickets, d, stationId);
-  return allocated - sold;
+  return Math.max(0, allocated - sold);
 }
 
 export function computeSolde(d: DepartRecord): number {
@@ -385,15 +384,17 @@ export function getSeatRangeForStation(
   depart: DepartRecord,
   stationId: string,
 ): { from: number; to: number } | null {
+  const sellableFrom = Math.max(1, depart.seats_from || 1);
   if (!depart.seat_allocations || depart.seat_allocations.length === 0) {
     if (depart.station_id === stationId) {
-      return { from: depart.seats_from, to: depart.seats_total };
+      return sellableFrom <= depart.seats_total ? { from: sellableFrom, to: depart.seats_total } : null;
     }
     return null;
   }
   const alloc = depart.seat_allocations.find(a => a.station_id === stationId);
   if (!alloc) return null;
-  return { from: alloc.seat_from, to: alloc.seat_to };
+  const from = Math.max(sellableFrom, alloc.seat_from);
+  return from <= alloc.seat_to ? { from, to: alloc.seat_to } : null;
 }
 
 export function isSeatAllowedForStation(

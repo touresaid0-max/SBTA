@@ -158,6 +158,8 @@ function computeArrivalDatetime(departureIso: string): string {
 }
 
 function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, unknown> {
+  const bus = s.buses as { seats_sold_from?: number } | null | undefined;
+  const seatsSoldFrom = Math.max(1, Number(bus?.seats_sold_from ?? 1));
   const depIso = s.departure_datetime as string;
   const depDate = depIso ? depIso.slice(0, 10) : new Date().toISOString().slice(0, 10);
   const depTime = depIso ? depIso.slice(11, 16) : '00:00';
@@ -172,7 +174,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     departure_time: depTime,
     status: s.status ?? 'planifie',
     seats_total: s.seats_total ?? ((s.seats_available ?? 0) + (s.seats_reserved ?? 0)) ?? 0,
-    seats_from: 1,
+    seats_from: seatsSoldFrom,
     seats_sold: s.seats_reserved ?? 0,
     station_id: s.departure_station_id ?? null,
     station_name: s.station_name ?? null,
@@ -266,7 +268,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
 
     let scheduleQuery = supabase
       .from('schedules')
-      .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate')
+      .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, buses:bus_id(seats_sold_from)')
       .gte('departure_datetime', `${todayStr}T00:00:00`)
       .order('departure_datetime', { ascending: true });
 
@@ -289,7 +291,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
             solde: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
             caisse: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
             seat_allocations: existing.seat_allocations,
-            seats_from: existing.seats_from,
+            seats_from: localRecord.seats_from,
             seats_total: existing.seats_total,
             bus_plate: existing.bus_plate,
             bus_name: existing.bus_name,

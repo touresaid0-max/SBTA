@@ -37,7 +37,8 @@ export default function SeatSelector({ scheduleId, basePrice, onSeatSelect, sele
         .select(`
           id,
           buses:bus_id (
-            seat_config_id
+            seat_config_id,
+            seats_sold_from
           )
         `)
         .eq('id', scheduleId)
@@ -46,6 +47,7 @@ export default function SeatSelector({ scheduleId, basePrice, onSeatSelect, sele
       if (scheduleError) throw scheduleError;
 
       const seatConfigId = schedule.buses?.seat_config_id;
+      const seatsSoldFrom = Math.max(1, Number(schedule.buses?.seats_sold_from ?? 1));
       if (!seatConfigId) throw new Error('Configuration de sièges non trouvée');
 
       const { data: config, error: configError } = await supabase
@@ -77,7 +79,7 @@ export default function SeatSelector({ scheduleId, basePrice, onSeatSelect, sele
   };
 
   const getSeatStatus = (seat: Seat) => {
-    if (seat.type === 'driver' || seat.type === 'disabled') return 'unavailable';
+    if (seat.type === 'driver' || seat.type === 'disabled' || Number(seat.number) < seatsSoldFrom) return 'unavailable';
     if (reservedSeats.includes(seat.number)) return 'reserved';
     if (selectedSeat === seat.number) return 'selected';
     return 'available';
