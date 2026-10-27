@@ -450,7 +450,7 @@ function RegisterView({ departs, session, onDone }: RegisterViewProps) {
         bagage,
         depart: selectedDepart,
         stationName: session?.station_name,
-      }, isDeferred);
+      });
 
       setSuccess(isDeferred
         ? `Bagage enregistré en attente — ${bagage.bagage_number}`
@@ -841,7 +841,7 @@ function SearchView({ stationId, onLink }: SearchViewProps) {
         linked_seat_number: ticket.seat_number,
         car_plate: busPlate ?? ticket.bus_plate ?? depart.bus_plate ?? linked.car_plate,
       };
-      PrintService.printTpeBagage({ bagage, depart, stationName: depart.station_name }, (linked as BagageRecord).payment_status === 'en_attente');
+      PrintService.printTpeBagage({ bagage, depart, stationName: depart.station_name });
     }
   };
 
@@ -1061,7 +1061,7 @@ function LinkView({ result, session, onDone, onBack }: LinkViewProps) {
         bagage,
         depart: localDepart,
         stationName: session?.station_name,
-      }, isDeferred);
+      });
 
       setSuccess(isDeferred
         ? `Bagage enregistré en attente — ${bagage.bagage_number}`
@@ -1285,7 +1285,7 @@ function HistoryView({ session, onOpenDetail }: HistoryViewProps) {
   const handleReprint = (bagage: BagageRecord) => {
     const depart = departs.get(bagage.depart_id);
     if (!depart) return;
-    PrintService.printTpeBagage({ bagage, depart, stationName: session?.station_name }, bagage.payment_status === 'en_attente');
+    PrintService.printTpeBagage({ bagage, depart, stationName: session?.station_name });
   };
 
   return (
@@ -1407,7 +1407,7 @@ function BagageDetailView({ bagage, session, onBack }: BagageDetailViewProps) {
 
   const handleReprint = () => {
     if (!depart) return;
-    PrintService.printTpeBagage({ bagage, depart, stationName: session?.station_name }, bagage.payment_status === 'en_attente');
+    PrintService.printTpeBagage({ bagage, depart, stationName: session?.station_name });
   };
 
   const formatDateTime = (iso: string) => {

@@ -1,5 +1,5 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization } from '../printCustomization';
 import { setPrintingGuard } from '@/store/authStore';
 import type { BordereauDepartData } from '@/types/counter.types';
@@ -108,7 +108,6 @@ interface PrintPayload {
   depart: DepartRecord;
   stationName?: string;
   phoneLine?: string;
-  tpe?: { notice: string | null; provisional: boolean };
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
@@ -606,9 +605,7 @@ async function printBrowser(payload: PrintPayload, settings: PrintSettings): Pro
     html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
   } else if (payload.type === 'bagage' && payload.bagage) {
     const bagageData = { bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine };
-    html = payload.tpe
-      ? buildHTMLTpeBagage(bagageData, payload.tpe.notice, payload.tpe.provisional)
-      : buildHTMLBagage(bagageData, settings);
+    html = buildHTMLBagage(bagageData, settings);
   } else {
     return false;
   }
@@ -637,18 +634,10 @@ export const PrintService = {
     });
   },
 
-  async printTpeBagage(data: PrintBagageData, provisional?: boolean): Promise<boolean> {
-    const customization = await getPrintCustomization();
+  async printTpeBagage(data: PrintBagageData): Promise<boolean> {
     setPrintingGuard(true);
     try {
-      return await this._print({
-        type: 'bagage',
-        bagage: data.bagage,
-        depart: data.depart,
-        stationName: data.stationName,
-        phoneLine: data.phoneLine,
-        tpe: { notice: customization.tpe_baggage_notice, provisional: provisional ?? false },
-      });
+      return await this.printBagage(data);
     } finally {
       setPrintingGuard(false);
     }
@@ -667,9 +656,7 @@ export const PrintService = {
     } else if (payload.type === 'bagage' && payload.bagage) {
       const logo = await loadBagageLogoRaster(settings.width_mm === 80 ? 208 : 160);
       const bagageData = { bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine };
-      escposData = payload.tpe
-        ? buildTpeBagageESCPOS(bagageData, settings, logo, payload.tpe.notice, payload.tpe.provisional)
-        : buildBagageESCPOS(bagageData, settings, logo);
+      escposData = buildBagageESCPOS(bagageData, settings, logo);
     } else {
       return false;
     }

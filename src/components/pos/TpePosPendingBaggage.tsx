@@ -327,7 +327,7 @@ export default function TpePosPendingBaggage({ stationId, counterId, onClose }: 
         bagage: bagageRecord,
         depart,
         stationName: selected.station_name,
-      }, false);
+      });
 
       toast.success(`Paiement confirmé — ${data.baggage_number}`);
       setSelected(null);
