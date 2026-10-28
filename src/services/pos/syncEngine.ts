@@ -167,7 +167,7 @@ function mapBagageInsert(payload: Record<string, unknown>): Record<string, unkno
     reservation_id: p.ticket_id ?? null,
     destination: p.destination ?? '',
     price: p.price ?? 0,
-    seat_number: null,
+    seat_number: p.with_ticket && p.linked_seat_number != null && String(p.linked_seat_number) !== '' ? String(p.linked_seat_number) : null,
     bus_registration: p.car_plate ?? null,
     description: p.description ?? null,
     owner_name: p.owner_name ?? '',

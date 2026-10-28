@@ -643,6 +643,7 @@ export default function POSVente() {
         description: bagDescription,
         ownerName: bagOwnerName || 'N/A',
         ownerPhone: bagOwnerPhone || '',
+        linkedSeatNumber: resolvedSeat || undefined,
         printBagage: true,
       });
 
