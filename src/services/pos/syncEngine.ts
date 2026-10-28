@@ -437,7 +437,7 @@ async function generateUniqueBagageNumber(): Promise<string> {
       .limit(1);
     if (!qErr && data && data.length > 0) {
       const lastNum = data[0].baggage_number as string;
-      const match = lastNum.match(/(\d+)-1\/(\d+)$/);
+      const match = lastNum.match(new RegExp(`^${datePart}(\\d{5})-1\\/\\d+$`));
       if (match) {
         const nextSeq = parseInt(match[1], 10) + 1;
         const seqStr = String(nextSeq).padStart(5, '0');
