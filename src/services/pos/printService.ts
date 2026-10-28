@@ -436,6 +436,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .row .val { flex: 1 1 auto; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .row.car-row { font-size: 8.8px; letter-spacing: -0.2px; gap: 2px; }
   .row.car-row .lbl, .row.car-row .val { white-space: nowrap; overflow: visible; text-overflow: clip; }
+  .row.car-row .val b { overflow-wrap: anywhere; }
   .row b { font-weight: 900; }
   .route { text-align: center; font-size: 12px; font-weight: 900; padding: 2px 0; letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .route .arrow { font-weight: 900; margin: 0 3px; }
