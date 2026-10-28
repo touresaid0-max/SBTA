@@ -9,6 +9,7 @@ import { formatCurrency } from '@/utils/formatCurrency';
 import { getDepartById, updateDepart } from '@/services/pos/departService';
 import { getAll, localUpdate } from '@/services/pos/offlineStore';
 import { getBagagesForDepart } from '@/services/pos/bagageService';
+import { setPrintingGuard } from '@/store/authStore';
 import type { BagageRecord, DepartRecord } from '@/services/pos/db';
 import toast from 'react-hot-toast';
 
@@ -323,11 +324,16 @@ export default function TpePosPendingBaggage({ stationId, counterId, onClose }: 
         updated_at: new Date().toISOString(),
       };
 
-      await PrintService.printTpeBagage({
-        bagage: bagageRecord,
-        depart,
-        stationName: selected.station_name,
-      }, false);
+      setPrintingGuard(true);
+      try {
+        await PrintService.printBagage({
+          bagage: bagageRecord,
+          depart,
+          stationName: selected.station_name,
+        });
+      } finally {
+        setPrintingGuard(false);
+      }
 
       toast.success(`Paiement confirmé — ${data.baggage_number}`);
       setSelected(null);
