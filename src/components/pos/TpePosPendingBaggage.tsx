@@ -324,22 +324,20 @@ export default function TpePosPendingBaggage({ stationId, counterId, onClose }: 
         updated_at: new Date().toISOString(),
       };
 
-      setPrintingGuard(true);
-      try {
-        await PrintService.printBagage({
-          bagage: bagageRecord,
-          depart,
-          stationName: selected.station_name,
-        });
-      } finally {
-        setPrintingGuard(false);
-      }
-
       toast.success(`Paiement confirmé — ${data.baggage_number}`);
       setSelected(null);
       setSearch('');
       setSearched(false);
       doSearch();
+
+      setPrintingGuard(true);
+      PrintService.printBagage({
+        bagage: bagageRecord,
+        depart,
+        stationName: selected.station_name,
+      })
+        .catch(() => toast.error('Impression du ticket impossible'))
+        .finally(() => setPrintingGuard(false));
     } catch (err: any) {
       const msg = err?.message ?? 'Erreur';
       if (msg.includes('déjà') || msg.includes('already')) {

@@ -585,8 +585,10 @@ async function printHTMLDocument(html: string): Promise<boolean> {
         await Promise.all(images.map(image => {
           if (image.complete && image.naturalWidth > 0) return Promise.resolve();
           return new Promise<void>(resolve => {
-            image.addEventListener('load', () => resolve(), { once: true });
-            image.addEventListener('error', () => resolve(), { once: true });
+            const done = () => resolve();
+            image.addEventListener('load', done, { once: true });
+            image.addEventListener('error', done, { once: true });
+            setTimeout(done, 3000);
           });
         }));
         cw?.focus();
