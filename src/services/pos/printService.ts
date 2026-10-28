@@ -386,6 +386,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const seatRaw = bagage.with_ticket ? (bagage.linked_seat_number ?? '') : '';
   const seatStr = seatRaw !== '' && seatRaw !== null && seatRaw !== undefined ? String(seatRaw) : '0';
   const v = (s: string | number | null | undefined) => escapeHtml(String(s ?? ''));
+  const bagagePrintWidth = settings.width_mm + 4;
 
   const ticketBlock = (isSouche: boolean) => `
     ${!isSouche ? `
@@ -417,10 +418,10 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-  @page { size: ${settings.width_mm}mm auto; margin: 0; }
+  @page { size: ${bagagePrintWidth}mm auto; margin: 0; }
   * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif; font-stretch: condensed; margin: 0; padding: 0; box-sizing: border-box; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: ${settings.width_mm}mm; margin: 0; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
+  body { width: ${bagagePrintWidth}mm; margin: 0; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
   .hdr { padding: 2px 0 3px; }
   .hdr-brand { text-align: center; line-height: 1.05; min-width: 0; }
   .brand-logo { display: flex; justify-content: center; }
@@ -435,8 +436,8 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .row .lbl { flex: 0 0 auto; white-space: nowrap; }
   .row .val { flex: 1 1 auto; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .row.car-row { font-size: 8.8px; letter-spacing: -0.2px; gap: 2px; }
-  .row.car-row .lbl, .row.car-row .val { white-space: nowrap; overflow: visible; text-overflow: clip; }
-  .row.car-row .val b { overflow-wrap: anywhere; }
+  .row.car-row .lbl { white-space: nowrap; }
+  .row.car-row .val { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
   .row b { font-weight: 900; }
   .route { text-align: center; font-size: 12px; font-weight: 900; padding: 2px 0; letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .route .arrow { font-weight: 900; margin: 0 3px; }
