@@ -481,6 +481,10 @@ export default function POSVente() {
     );
   };
 
+  // Seats of the dropdown that can still be sold (not sold, not transferred away)
+  const freeSeatNumbers = sellableSeatNumbers.filter(n => !soldSeats.includes(n) && !lockedSeats.includes(n));
+  const allFreeSelected = freeSeatNumbers.length > 0 && freeSeatNumbers.every(n => selectedSeats.includes(n));
+
   const handleSell = async () => {
     if (!depart || !departId) return;
     if (depart.cancelled) { setError('Ce départ est annulé — vente impossible'); return; }
@@ -550,7 +554,7 @@ export default function POSVente() {
       setTimeout(() => setSuccess(''), 4000);
 
       if (printTicket) {
-        await printTicketsSequentially(soldTickets, depart, session?.station_name);
+        await printTicketsBatch(soldTickets, depart, session?.station_name);
       }
     } catch (err: any) {
       setError(err?.message ?? 'Erreur lors de la vente');
@@ -559,20 +563,19 @@ export default function POSVente() {
     }
   };
 
-  const printTicketsSequentially = async (ticketsToPrint: TicketRecord[], dep: DepartRecord, stName?: string) => {
+  // All tickets of a sale go out as one print job (one dialog in browser mode)
+  const printTicketsBatch = async (ticketsToPrint: TicketRecord[], dep: DepartRecord, stName?: string) => {
     setPrinting(true);
     setPrintError('');
-    const failed: TicketRecord[] = [];
-    for (const ticket of ticketsToPrint) {
-      try {
-        const ok = await PrintService.printTicket({ ticket, depart: dep, stationName: stName, phoneLine: ticketPhoneLine });
-        if (!ok) { failed.push(ticket); }
-      } catch {
-        failed.push(ticket);
-      }
+    let ok = false;
+    try {
+      ok = await PrintService.printTickets({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine });
+    } catch {
+      ok = false;
     }
+    const failed = ok ? [] : ticketsToPrint;
     // Mark successfully printed tickets as printed
-    const succeeded = ticketsToPrint.filter(t => !failed.some(f => f.id === t.id));
+    const succeeded = ok ? ticketsToPrint : [];
     for (const ticket of succeeded) {
       await localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: new Date().toISOString() });
     }
@@ -597,7 +600,7 @@ export default function POSVente() {
       setPendingReprint([]);
       return;
     }
-    await printTicketsSequentially(unprinted, depart, session?.station_name);
+    await printTicketsBatch(unprinted, depart, session?.station_name);
   };
 
   // Reprint (DUPLICATA) tickets authorized by the admin — each authorization is single-use
@@ -607,18 +610,19 @@ export default function POSVente() {
     setError('');
     let reprinted = 0;
     const failedSeats: number[] = [];
-    for (const ticket of ticketsToReprint) {
+    const authorized = ticketsToReprint.filter(t => reprintAuthByTicket.has(t.id));
+    let ok = false;
+    try {
+      ok = await PrintService.printTickets({ tickets: authorized, depart, stationName: session?.station_name, phoneLine: ticketPhoneLine, duplicate: true });
+    } catch {
+      ok = false;
+    }
+    for (const ticket of authorized) {
       const auth = reprintAuthByTicket.get(ticket.id);
-      if (!auth) continue;
-      try {
-        const ok = await PrintService.printTicket({ ticket, depart, stationName: session?.station_name, phoneLine: ticketPhoneLine, duplicate: true });
-        if (!ok) { failedSeats.push(ticket.seat_number); continue; }
-        const result = await consumeReprint(auth.id);
-        if (result.success) reprinted++;
-        else failedSeats.push(ticket.seat_number);
-      } catch {
-        failedSeats.push(ticket.seat_number);
-      }
+      if (!ok || !auth) { failedSeats.push(ticket.seat_number); continue; }
+      const result = await consumeReprint(auth.id);
+      if (result.success) reprinted++;
+      else failedSeats.push(ticket.seat_number);
     }
     await loadReprintAuths();
     setPrinting(false);
@@ -1378,16 +1382,23 @@ export default function POSVente() {
                   {seatDropdownOpen && (
                     <div
                       className="absolute z-50 mt-1 rounded-xl shadow-lg overflow-hidden"
-                      style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)', width: '220px', maxHeight: '280px', overflowY: 'auto' }}
+                      style={{ backgroundColor: 'var(--surface)', border: '2px solid var(--primary)', width: '280px', maxHeight: '280px', overflowY: 'auto' }}
                     >
                       {/* Header */}
                       <div className="px-3 py-2 flex items-center justify-between sticky top-0" style={{ backgroundColor: 'var(--surface-raised)', borderBottom: '1px solid var(--border)' }}>
                         <span className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>
                           {selectedSeats.length} sélectionné(s)
                         </span>
-                        {selectedSeats.length > 0 && (
-                          <button type="button" onClick={() => setSelectedSeats([])} className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Effacer</button>
-                        )}
+                        <div className="flex items-center gap-3">
+                          {!allFreeSelected && freeSeatNumbers.length > 0 && (
+                            <button type="button" onClick={() => setSelectedSeats([...freeSeatNumbers].sort((a, b) => a - b))} className="text-xs font-bold" style={{ color: 'var(--primary)' }}>
+                              Tout sélectionner ({freeSeatNumbers.length})
+                            </button>
+                          )}
+                          {selectedSeats.length > 0 && (
+                            <button type="button" onClick={() => setSelectedSeats([])} className="text-xs font-bold" style={{ color: 'var(--danger)' }}>Effacer</button>
+                          )}
+                        </div>
                       </div>
                       {/* Seat list */}
                       {sellableSeatNumbers.map(n => {

@@ -1,6 +1,6 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
-import { getPrintCustomization } from '../printCustomization';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, concat, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { getPrintCustomization, type PrintCustomization } from '../printCustomization';
 import { setPrintingGuard } from '@/store/authStore';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
@@ -104,6 +104,8 @@ type PrintBackendType = 'ticket' | 'bagage';
 interface PrintPayload {
   type: PrintBackendType;
   ticket?: TicketRecord;
+  /** Several tickets sent as one print job (multi-seat sale) */
+  tickets?: TicketRecord[];
   bagage?: BagageRecord;
   depart: DepartRecord;
   stationName?: string;
@@ -215,10 +217,8 @@ async function sendQzTray(data: Uint8Array, settings: PrintSettings): Promise<bo
   });
 }
 
-async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): Promise<string> {
-  const { ticket, depart, stationName, phoneLine: overridePhone, duplicate } = data;
-  const mm = settings.width_mm;
-  const customization = await getPrintCustomization();
+function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCustomization): string {
+  const { ticket, depart, phoneLine: overridePhone, duplicate } = data;
   const phoneLine = overridePhone || customization.bus_ticket_phones[0] || 'Tel 01 14 34 60 / 01 14 34 87';
   const customNotes = customization.bus_ticket_notes;
 
@@ -298,6 +298,19 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   </div>
 </div>`;
 
+  return `<div class="ticket-container">
+    ${block(false, true)}
+    <div class="tear-zone">✂ ✂ ✂</div>
+    ${block(true, false)}
+  </div>`;
+}
+
+/** One HTML document for one or more tickets — a single print dialog, one page per ticket. */
+async function buildHTMLTickets(list: PrintTicketData[], settings: PrintSettings): Promise<string> {
+  const mm = settings.width_mm;
+  const customization = await getPrintCustomization();
+  const containers = list.map(data => buildHTMLTicketContainer(data, customization)).join('\n  <div class="ticket-break"></div>\n  ');
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title><style>
   @page { size: ${mm}mm auto; margin: 0; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -357,14 +370,11 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
   @media print {
     body { margin: 0; padding: 0; background: #fff; }
     .ticket-container { width: ${mm}mm !important; margin: 0 auto !important; padding: 0; }
+    .ticket-break { break-after: page; page-break-after: always; height: 0; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style></head><body>
-  <div class="ticket-container">
-    ${block(false, true)}
-    <div class="tear-zone">✂ ✂ ✂</div>
-    ${block(true, false)}
-  </div>
+  ${containers}
   <script>window.onload=function(){window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},600);});}</script>
 </body></html>`;
 }
@@ -606,10 +616,15 @@ async function printHTMLDocument(html: string): Promise<boolean> {
   });
 }
 
+function payloadTickets(payload: PrintPayload): TicketRecord[] {
+  return payload.tickets ?? (payload.ticket ? [payload.ticket] : []);
+}
+
 async function printBrowser(payload: PrintPayload, settings: PrintSettings): Promise<boolean> {
   let html: string;
-  if (payload.type === 'ticket' && payload.ticket) {
-    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine, duplicate: payload.duplicate }, settings);
+  const ticketList = payloadTickets(payload);
+  if (payload.type === 'ticket' && ticketList.length > 0) {
+    html = await buildHTMLTickets(ticketList.map(ticket => ({ ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine, duplicate: payload.duplicate })), settings);
   } else if (payload.type === 'bagage' && payload.bagage) {
     const bagageData = { bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine };
     html = payload.tpe
@@ -627,6 +642,19 @@ export const PrintService = {
     return this._print({
       type: 'ticket',
       ticket: data.ticket,
+      depart: data.depart,
+      stationName: data.stationName,
+      phoneLine: data.phoneLine,
+      duplicate: data.duplicate,
+    });
+  },
+
+  /** Print several tickets of the same départ as a single job (one dialog in browser mode). */
+  async printTickets(data: Omit<PrintTicketData, 'ticket'> & { tickets: TicketRecord[] }): Promise<boolean> {
+    if (data.tickets.length === 0) return true;
+    return this._print({
+      type: 'ticket',
+      tickets: data.tickets,
       depart: data.depart,
       stationName: data.stationName,
       phoneLine: data.phoneLine,
@@ -668,9 +696,11 @@ export const PrintService = {
   async _print(payload: PrintPayload): Promise<boolean> {
     const settings = await getPrintSettings();
     let escposData: Uint8Array;
-    if (payload.type === 'ticket' && payload.ticket) {
+    const ticketList = payloadTickets(payload);
+    if (payload.type === 'ticket' && ticketList.length > 0) {
       const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
-      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine, duplicate: payload.duplicate }, settings, logo);
+      escposData = concat(...ticketList.map(ticket =>
+        buildTicketESCPOS({ ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine, duplicate: payload.duplicate }, settings, logo)));
     } else if (payload.type === 'bagage' && payload.bagage) {
       const logo = await loadBagageLogoRaster(settings.width_mm === 80 ? 208 : 160);
       const bagageData = { bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine };
@@ -692,20 +722,23 @@ export const PrintService = {
       return printBrowser(payload, settings);
     }
 
-    // Try backends in order of preference
+    // Try backends in order of preference.
+    // A grouped job is larger: scale the timeouts so a slow send does not fall back to
+    // the browser and print the tickets twice.
+    const jobSize = Math.max(1, ticketList.length);
     if (settings.backend === 'webserial') {
-      const ok = await withTimeout(sendWebSerial(escposData), 1500, false);
+      const ok = await withTimeout(sendWebSerial(escposData), 1500 * jobSize, false);
       if (ok) return true;
       // fall through to browser
     }
 
     if (settings.backend === 'webusb') {
-      const ok = await withTimeout(sendWebUSB(escposData), 1500, false);
+      const ok = await withTimeout(sendWebUSB(escposData), 1500 * jobSize, false);
       if (ok) return true;
     }
 
     if (settings.backend === 'qztray') {
-      const ok = await withTimeout(sendQzTray(escposData, settings), 3000, false);
+      const ok = await withTimeout(sendQzTray(escposData, settings), 3000 * jobSize, false);
       if (ok) return true;
     }
 

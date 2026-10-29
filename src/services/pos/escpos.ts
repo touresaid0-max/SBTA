@@ -34,7 +34,7 @@ function text(str: string): Uint8Array {
   return enc.encode(str);
 }
 
-function concat(...arrays: Uint8Array[]): Uint8Array {
+export function concat(...arrays: Uint8Array[]): Uint8Array {
   let total = 0;
   for (const a of arrays) total += a.length;
   const result = new Uint8Array(total);
