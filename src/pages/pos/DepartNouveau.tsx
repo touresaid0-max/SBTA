@@ -9,8 +9,6 @@ import {
   nextDepartureNumber,
   nextRouteNumber,
   validateSeatAllocations,
-  findParentDepartForBus,
-  getSeatRangeForStation,
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
   type SeatAllocation,
   type DepartRecord,
@@ -52,7 +50,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   const [departureNo, setDepartureNo] = useState(0);
   const [linkedParent, setLinkedParent] = useState<DepartRecord | null>(null);
   const [seatRangeInfo, setSeatRangeInfo] = useState<{ from: number; to: number; stationName: string } | null>(null);
-  const [searchingParent, setSearchingParent] = useState(false);
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -106,7 +103,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
 
   const selectedBus = vehicules.find(v => v.id === busId);
 
-  const handleBusChange = async (id: string) => {
+  const handleBusChange = (id: string) => {
     setBusId(id);
     const bus = vehicules.find(v => v.id === id);
     if (bus) {
@@ -115,29 +112,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
     }
     setLinkedParent(null);
     setSeatRangeInfo(null);
-    if (!id || !session?.station_id) return;
-    setSearchingParent(true);
-    try {
-      const parent = await findParentDepartForBus(id, session.station_id);
-      if (parent) {
-        const range = getSeatRangeForStation(parent, session.station_id);
-        if (range) {
-          setLinkedParent(parent);
-          setSeatRangeInfo({ from: range.from, to: range.to, stationName: session.station_name ?? 'Votre gare' });
-          setLigneId(parent.route_id);
-          setDriverId(parent.driver_id);
-          setSeatsTotal(parent.seats_total);
-          setSeatsFrom(Math.max(bus?.seats_sold_from ?? 1, range.from));
-          setDepartureDate(parent.departure_date);
-          setDepartureTime(parent.departure_time);
-          setConvoyeurId(parent.convoyeur_id ?? '');
-        }
-      }
-    } catch {
-      // non-critical
-    } finally {
-      setSearchingParent(false);
-    }
   };
 
   const isLinked = !!linkedParent;
@@ -327,11 +301,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
             {/* Car */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Car *</label>
-              {searchingParent && (
-                <div className="flex items-center gap-2 text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Recherche d'un départ lié...
-                </div>
-              )}
               <AutocompleteSelect
                 options={vehicules.map(v => ({
                   id: v.id,
