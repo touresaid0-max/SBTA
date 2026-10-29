@@ -31,6 +31,10 @@ import { fetchPendingReprints, consumeReprint, type TicketReprintAuthorization }
 import { useConnection } from '@/services/pos/ConnectionContext';
 import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
 
+// A bus can be shared by several stations, each on its own départ: the structure
+// only shows the sales of this départ, never those of the other stations.
+const POS_SEAT_MAP_OPTIONS = { ownScheduleOnly: true };
+
 export default function POSVente() {
   const { id: departId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -185,7 +189,7 @@ export default function POSVente() {
     }
     let cancelled = false;
     setSeatMapError('');
-    fetchScheduleSeatMap(departId)
+    fetchScheduleSeatMap(departId, 'simple', POS_SEAT_MAP_OPTIONS)
       .then(data => { if (!cancelled) setSeatMap(data); })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -319,7 +323,7 @@ export default function POSVente() {
     if (!bagStructureMode || !departId) { return; }
     if (seatMap || seatMapError) return; // already loaded by ticket structureMode
     let cancelled = false;
-    fetchScheduleSeatMap(departId)
+    fetchScheduleSeatMap(departId, 'simple', POS_SEAT_MAP_OPTIONS)
       .then(data => { if (!cancelled) setSeatMap(data); })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -342,7 +346,7 @@ export default function POSVente() {
   const refreshBagSeatMap = useCallback(() => {
     if (!departId) return;
     setBagSeatMapRefreshing(true);
-    fetchScheduleSeatMap(departId)
+    fetchScheduleSeatMap(departId, 'simple', POS_SEAT_MAP_OPTIONS)
       .then(data => { setSeatMap(data); setSeatMapError(''); })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Erreur';

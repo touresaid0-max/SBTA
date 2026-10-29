@@ -29,9 +29,19 @@ export async function getSiblingOccupancy(scheduleId: string): Promise<number> {
   return (data ?? []).reduce((sum, r) => sum + (r.total_seats ?? 1), 0)
 }
 
+export interface FetchSeatMapOptions {
+  /**
+   * Only show the sales of this schedule, not those of sibling schedules
+   * (same bus + same departure time). Used by the POS guichet, where each
+   * station sells on its own départ even when the bus is shared.
+   */
+  ownScheduleOnly?: boolean
+}
+
 export async function fetchScheduleSeatMap(
   scheduleId: string,
-  deckLevel: 'simple' | 'lower' | 'upper' = 'simple'
+  deckLevel: 'simple' | 'lower' | 'upper' = 'simple',
+  options: FetchSeatMapOptions = {}
 ): Promise<ScheduleSeatMap> {
   const { data: schedule, error: scheduleError } = await supabase
     .from('schedules')
@@ -108,7 +118,7 @@ export async function fetchScheduleSeatMap(
       seat_layout: generatedLayout,
     }
 
-    const siblingIds = await getSiblingScheduleIds(scheduleId)
+    const siblingIds = options.ownScheduleOnly ? [scheduleId] : await getSiblingScheduleIds(scheduleId)
 
     const [
       { data: reservations },
@@ -227,7 +237,7 @@ export async function fetchScheduleSeatMap(
     seat_layout: normalizedLayout,
   }
 
-  const siblingIds = await getSiblingScheduleIds(scheduleId)
+  const siblingIds = options.ownScheduleOnly ? [scheduleId] : await getSiblingScheduleIds(scheduleId)
 
   const [
     { data: reservations, error: resError },
