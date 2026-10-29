@@ -109,6 +109,7 @@ interface PrintPayload {
   stationName?: string;
   phoneLine?: string;
   tpe?: { notice: string | null; provisional: boolean };
+  duplicate?: boolean;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
@@ -215,7 +216,7 @@ async function sendQzTray(data: Uint8Array, settings: PrintSettings): Promise<bo
 }
 
 async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): Promise<string> {
-  const { ticket, depart, stationName, phoneLine: overridePhone } = data;
+  const { ticket, depart, stationName, phoneLine: overridePhone, duplicate } = data;
   const mm = settings.width_mm;
   const customization = await getPrintCustomization();
   const phoneLine = overridePhone || customization.bus_ticket_phones[0] || 'Tel 01 14 34 60 / 01 14 34 87';
@@ -245,6 +246,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
 
   const reducedBadge = ticket.is_reduced ? `<div class="badge">** REDUCTION APPLIQUEE **</div>` : '';
   const reportedBadge = ticket.is_reported ? `<div class="badge">** TICKET REPORTE **</div>` : '';
+  const duplicateBadge = duplicate ? `<div class="badge">*** DUPLICATA ***</div>` : '';
 
   const block = (isSouche: boolean, isFirst: boolean) => `
 <div class="ticket-block${isFirst ? ' first' : ' last'}">
@@ -286,7 +288,7 @@ async function buildHTMLTicket(data: PrintTicketData, settings: PrintSettings): 
       <span class="val">HEURE:&nbsp;&nbsp;<b>${escapeHtml(timeStr)}</b></span>
     </div>
   </div>
-  ${reducedBadge}${reportedBadge}
+  ${reducedBadge}${reportedBadge}${duplicateBadge}
   ${!isSouche ? `
   ${customNotes.map(note => `<div class="section notes"><div class="note">${escapeHtml(note)}</div></div>`).join('')}
   ` : ''}
@@ -607,7 +609,7 @@ async function printHTMLDocument(html: string): Promise<boolean> {
 async function printBrowser(payload: PrintPayload, settings: PrintSettings): Promise<boolean> {
   let html: string;
   if (payload.type === 'ticket' && payload.ticket) {
-    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings);
+    html = await buildHTMLTicket({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine, duplicate: payload.duplicate }, settings);
   } else if (payload.type === 'bagage' && payload.bagage) {
     const bagageData = { bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine };
     html = payload.tpe
@@ -628,6 +630,7 @@ export const PrintService = {
       depart: data.depart,
       stationName: data.stationName,
       phoneLine: data.phoneLine,
+      duplicate: data.duplicate,
     });
   },
 
@@ -667,7 +670,7 @@ export const PrintService = {
     let escposData: Uint8Array;
     if (payload.type === 'ticket' && payload.ticket) {
       const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
-      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine }, settings, logo);
+      escposData = buildTicketESCPOS({ ticket: payload.ticket, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine, duplicate: payload.duplicate }, settings, logo);
     } else if (payload.type === 'bagage' && payload.bagage) {
       const logo = await loadBagageLogoRaster(settings.width_mm === 80 ? 208 : 160);
       const bagageData = { bagage: payload.bagage, depart: payload.depart, stationName: payload.stationName, phoneLine: payload.phoneLine };

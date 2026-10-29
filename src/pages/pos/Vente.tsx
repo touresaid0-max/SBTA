@@ -27,6 +27,7 @@ import {
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
 import { fetchScheduleSeatMap } from '@/services/seatMap.service';
+import { fetchPendingReprints, consumeReprint, type TicketReprintAuthorization } from '@/services/ticketReprint.service';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
 
@@ -65,6 +66,8 @@ export default function POSVente() {
   const [pendingReprint, setPendingReprint] = useState<TicketRecord[]>([]);
   const [printing, setPrinting] = useState(false);
   const [ticketPhoneLine, setTicketPhoneLine] = useState<string | undefined>(undefined);
+  // Reprints authorized by the admin from "Gestion des sièges"
+  const [reprintAuths, setReprintAuths] = useState<TicketReprintAuthorization[]>([]);
 
   // Vente avec structure — shows the real bus seat layout
   const [structureMode, setStructureMode] = useState(false);
@@ -160,6 +163,18 @@ export default function POSVente() {
       getTicketPhoneLine(session.counter_id).then(setTicketPhoneLine).catch(() => {});
     }
   }, [session?.counter_id]);
+
+  // Poll reprint authorizations granted by the admin (online only — empty list otherwise)
+  const loadReprintAuths = useCallback(async () => {
+    if (!departId) return;
+    setReprintAuths(await fetchPendingReprints(departId));
+  }, [departId]);
+
+  useEffect(() => {
+    loadReprintAuths();
+    const timer = setInterval(loadReprintAuths, 30_000);
+    return () => clearInterval(timer);
+  }, [loadReprintAuths, lastSyncedAt]);
 
   // Fetch seat map when structure mode is enabled
   useEffect(() => {
@@ -396,6 +411,18 @@ export default function POSVente() {
     });
   }, [tickets, hasAllocations, stationRange, receivedTransferSeats]);
 
+  // Ticket id → pending reprint authorization (POS tickets are synced as reservations with the same id)
+  const reprintAuthByTicket = useMemo(() => {
+    const map = new Map<string, TicketReprintAuthorization>();
+    for (const auth of reprintAuths) {
+      const ticket = scopedTickets.find(t =>
+        t.status !== 'cancelled' &&
+        (t.id === auth.reservation_id || String(t.seat_number) === auth.seat_label));
+      if (ticket) map.set(ticket.id, auth);
+    }
+    return map;
+  }, [reprintAuths, scopedTickets]);
+
   const scopedBagages = useMemo(() => {
     if (!hasAllocations) return bagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
     const scopedTicketIds = new Set(scopedTickets.map(t => t.id));
@@ -572,6 +599,39 @@ export default function POSVente() {
     }
     await printTicketsSequentially(unprinted, depart, session?.station_name);
   };
+
+  // Reprint (DUPLICATA) tickets authorized by the admin — each authorization is single-use
+  const handleAuthorizedReprint = async (ticketsToReprint: TicketRecord[]) => {
+    if (!depart || ticketsToReprint.length === 0) return;
+    setPrinting(true);
+    setError('');
+    let reprinted = 0;
+    const failedSeats: number[] = [];
+    for (const ticket of ticketsToReprint) {
+      const auth = reprintAuthByTicket.get(ticket.id);
+      if (!auth) continue;
+      try {
+        const ok = await PrintService.printTicket({ ticket, depart, stationName: session?.station_name, phoneLine: ticketPhoneLine, duplicate: true });
+        if (!ok) { failedSeats.push(ticket.seat_number); continue; }
+        const result = await consumeReprint(auth.id);
+        if (result.success) reprinted++;
+        else failedSeats.push(ticket.seat_number);
+      } catch {
+        failedSeats.push(ticket.seat_number);
+      }
+    }
+    await loadReprintAuths();
+    setPrinting(false);
+    if (reprinted > 0) {
+      setSuccess(`${reprinted} ticket(s) réimprimé(s) (DUPLICATA)`);
+      setTimeout(() => setSuccess(''), 4000);
+    }
+    if (failedSeats.length > 0) {
+      setError(`Réimpression non aboutie pour le(s) siège(s) ${failedSeats.join(', ')} — vérifiez l'imprimante et la connexion puis réessayez.`);
+    }
+  };
+
+  const ticketsToReprint = scopedTickets.filter(t => reprintAuthByTicket.has(t.id));
 
   const handleTransferSeats = async () => {
     if (!depart || !departId || !session?.station_id) return;
@@ -978,6 +1038,26 @@ export default function POSVente() {
             </button>
           </div>
         )}
+        {ticketsToReprint.length > 0 && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center justify-between gap-3 text-sm" style={{ backgroundColor: 'var(--info-light)', color: 'var(--info)' }}>
+            <div className="flex items-start gap-2 flex-1">
+              <Printer className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                L'administration a autorisé la réimpression de {ticketsToReprint.length} ticket(s) — Siège(s) {ticketsToReprint.map(t => t.seat_number).join(', ')}.
+                Chaque ticket ne peut être réimprimé qu'une fois (DUPLICATA).
+              </span>
+            </div>
+            <button
+              onClick={() => handleAuthorizedReprint(ticketsToReprint)}
+              disabled={printing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap disabled:opacity-50"
+              style={{ backgroundColor: 'var(--info)', color: 'white' }}
+            >
+              {printing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+              Réimprimer ({ticketsToReprint.length})
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Left: Ticket + Bagage list */}
@@ -1012,7 +1092,17 @@ export default function POSVente() {
                           <td className="px-2 py-2 text-xs text-center" style={{ fontWeight: 700, color: 'var(--info)' }}>{t.seat_number}</td>
                           <td className="px-2 py-2 text-xs text-center">{t.is_reported ? 'R' : ''}</td>
                           <td className="px-2 py-2 text-xs text-center">
-                            {t.printed ? (
+                            {reprintAuthByTicket.has(t.id) ? (
+                              <button
+                                onClick={() => handleAuthorizedReprint([t])}
+                                disabled={printing}
+                                className="inline-flex items-center justify-center p-1 rounded-md disabled:opacity-50"
+                                style={{ backgroundColor: 'var(--info)', color: 'white' }}
+                                title="Réimpression autorisée par l'administration — cliquer pour réimprimer (DUPLICATA)"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                            ) : t.printed ? (
                               <span className="inline-flex items-center gap-0.5" style={{ color: 'var(--success)' }} title="Ticket imprimé">
                                 <CheckCircle className="w-3.5 h-3.5" />
                               </span>

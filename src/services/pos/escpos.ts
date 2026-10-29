@@ -8,6 +8,8 @@ export interface PrintTicketData {
   depart: DepartRecord;
   stationName?: string;
   phoneLine?: string;
+  /** Reprint authorized by the admin — printed with a DUPLICATA mention */
+  duplicate?: boolean;
 }
 
 export interface PrintBagageData {
@@ -204,6 +206,9 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   if (ticket.is_reported) {
     parts.push(setBold(true), text(vLine('** TICKET REPORTE **')), lineFeed(), setBold(false));
   }
+  if (data.duplicate) {
+    parts.push(setBold(true), text(vLine('*** DUPLICATA ***')), lineFeed(), setBold(false));
+  }
 
   parts.push(text(`+${'-'.repeat(innerW)}+`), lineFeed());
 
@@ -246,6 +251,9 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   }
   if (ticket.is_reported) {
     parts.push(setBold(true), text(vLine('** TICKET REPORTE **')), lineFeed(), setBold(false));
+  }
+  if (data.duplicate) {
+    parts.push(setBold(true), text(vLine('*** DUPLICATA ***')), lineFeed(), setBold(false));
   }
 
   parts.push(text(`+${'-'.repeat(innerW)}+`), lineFeed());
