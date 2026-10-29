@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Ban, XCircle, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react'
+import { X, Ban, XCircle, AlertTriangle, CheckCircle, Loader2, Printer } from 'lucide-react'
 import { supabase } from '../../services/supabase'
 import { fetchScheduleSeatMap } from '../../services/seatMap.service'
+import { fetchPendingReprints, authorizeReprint, revokeReprint, type TicketReprintAuthorization } from '../../services/ticketReprint.service'
 import type { EnrichedSeat, EnrichedRow, ScheduleSeatMap } from '../../types/seatMap.types'
 import toast from 'react-hot-toast'
 
@@ -11,7 +12,7 @@ interface AdminSeatManagementProps {
   onClose: () => void
 }
 
-type ActionType = 'cancel' | 'deactivate'
+type ActionType = 'cancel' | 'deactivate' | 'reprint'
 
 interface PendingAction {
   seat: EnrichedSeat
@@ -30,6 +31,8 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
   const [reason, setReason] = useState('')
   const [processing, setProcessing] = useState(false)
   const [noSchedule, setNoSchedule] = useState(false)
+  const [pendingReprints, setPendingReprints] = useState<TicketReprintAuthorization[]>([])
+  const [revokingId, setRevokingId] = useState<string | null>(null)
 
   useEffect(() => {
     loadActiveSchedule()
@@ -63,9 +66,28 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
 
   const loadSeatMap = async (schId: string) => {
     setLoading(true)
-    const map = await fetchScheduleSeatMap(schId)
+    const [map, reprints] = await Promise.all([
+      fetchScheduleSeatMap(schId),
+      fetchPendingReprints(schId),
+    ])
     setSeatMap(map)
+    setPendingReprints(reprints)
     setLoading(false)
+  }
+
+  const hasPendingReprint = (seat: EnrichedSeat) =>
+    pendingReprints.some(r => r.reservation_id === seat.reservation_id && r.seat_label === seat.label)
+
+  const handleRevokeReprint = async (authorizationId: string) => {
+    setRevokingId(authorizationId)
+    const result = await revokeReprint(authorizationId)
+    setRevokingId(null)
+    if (result.success) {
+      setPendingReprints(prev => prev.filter(r => r.id !== authorizationId))
+      toast.success('Autorisation de réimpression retirée')
+    } else {
+      toast.error(result.error ?? 'Impossible de retirer l\'autorisation')
+    }
   }
 
   const handleSeatClick = useCallback((seat: EnrichedSeat) => {
@@ -91,7 +113,11 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
     let totalDeducted = 0
 
     for (const seat of selectedSeats) {
-      if (actionType === 'cancel') {
+      if (actionType === 'reprint') {
+        if (seat.status !== 'occupied' || !seat.reservation_id) continue
+        const result = await authorizeReprint(scheduleId, seat.reservation_id, seat.label, reason)
+        if (result.success) successCount++
+      } else if (actionType === 'cancel') {
         if (seat.status !== 'occupied' && seat.status !== 'online_reserved') continue
         if (!seat.reservation_id) continue
         const { data } = await supabase.rpc('admin_cancel_seat', {
@@ -123,9 +149,11 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
     setSelectedSeats([])
 
     if (successCount > 0) {
-      const msg = actionType === 'cancel'
-        ? `${successCount} siège(s) annulé(s) — ${totalDeducted.toLocaleString('fr-CI')} F déduits`
-        : `${successCount} siège(s) désactivé(s)`
+      const msg = actionType === 'reprint'
+        ? `Réimpression autorisée au guichet pour ${successCount} ticket(s)`
+        : actionType === 'cancel'
+          ? `${successCount} siège(s) annulé(s) — ${totalDeducted.toLocaleString('fr-CI')} F déduits`
+          : `${successCount} siège(s) désactivé(s)`
       toast.success(msg)
       if (scheduleId) await loadSeatMap(scheduleId)
     } else {
@@ -138,6 +166,7 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
     if (isSelected) return 'bg-red-500 border-red-600 text-white ring-2 ring-red-400 ring-offset-1 scale-105'
     switch (seat.status) {
       case 'occupied':
+        if (hasPendingReprint(seat)) return 'bg-blue-100 border-blue-500 text-blue-800 hover:bg-red-100 hover:border-red-300 cursor-pointer'
         return 'bg-slate-200 border-slate-400 text-slate-700 hover:bg-red-100 hover:border-red-300 cursor-pointer'
       case 'online_reserved':
         return 'bg-amber-100 border-amber-400 text-amber-800 hover:bg-red-100 hover:border-red-300 cursor-pointer'
@@ -151,7 +180,9 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
   }
 
   const occupiedSelected = selectedSeats.filter(s => s.status === 'occupied' || s.status === 'online_reserved')
+  const reprintableSelected = selectedSeats.filter(s => s.status === 'occupied' && s.reservation_id)
   const canCancel = occupiedSelected.length > 0
+  const canReprint = reprintableSelected.length > 0
   const canDeactivate = selectedSeats.length > 0
 
   if (noSchedule) {
@@ -220,6 +251,7 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-200 border border-slate-400" /> Vendu</span>
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-400" /> Reserv. en ligne</span>
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 border border-gray-300" /> Hors service</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-500" /> Réimpression autorisée</span>
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500 border border-red-600" /> Selection</span>
               </div>
 
@@ -283,6 +315,31 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
                   ))}
                 </div>
               </div>
+
+              {/* Pending reprint authorizations */}
+              {pendingReprints.length > 0 && (
+                <div className="border border-blue-200 bg-blue-50 rounded-xl p-3">
+                  <div className="text-sm font-medium text-blue-900 mb-2 flex items-center gap-2">
+                    <Printer className="w-4 h-4" />
+                    Réimpressions autorisées, en attente au guichet ({pendingReprints.length})
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {pendingReprints.map(r => (
+                      <span key={r.id} className="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 bg-white border border-blue-300 text-blue-900 rounded-md text-xs" title={r.reason ?? undefined}>
+                        Siège {r.seat_label}
+                        <button
+                          onClick={() => handleRevokeReprint(r.id)}
+                          disabled={revokingId === r.id}
+                          className="p-0.5 rounded hover:bg-blue-100 disabled:opacity-50"
+                          title="Retirer l'autorisation"
+                        >
+                          {revokingId === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-12 text-gray-500">Impossible de charger le plan des sièges.</div>
@@ -308,6 +365,15 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
                 >
                   Tout desélectionner
                 </button>
+                {canReprint && (
+                  <button
+                    onClick={() => openAction('reprint')}
+                    className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Autoriser réimpression ({reprintableSelected.length})
+                  </button>
+                )}
                 {canCancel && (
                   <button
                     onClick={() => openAction('cancel')}
@@ -337,7 +403,11 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowActionDialog(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              {actionType === 'cancel' ? (
+              {actionType === 'reprint' ? (
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <Printer className="w-5 h-5 text-blue-600" />
+                </div>
+              ) : actionType === 'cancel' ? (
                 <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
                   <XCircle className="w-5 h-5 text-amber-600" />
                 </div>
@@ -348,16 +418,33 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
               )}
               <div>
                 <h3 className="font-bold text-gray-900">
-                  {actionType === 'cancel' ? 'Confirmer l\'annulation' : 'Confirmer la désactivation'}
+                  {actionType === 'reprint'
+                    ? 'Autoriser la réimpression'
+                    : actionType === 'cancel' ? 'Confirmer l\'annulation' : 'Confirmer la désactivation'}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  {actionType === 'cancel'
-                    ? `${occupiedSelected.length} siège(s) seront libérés et le montant déduit des recettes.`
-                    : `${selectedSeats.length} siège(s) seront marqués hors service et ne pourront plus être vendus.`
+                  {actionType === 'reprint'
+                    ? `Le guichet pourra réimprimer une fois ${reprintableSelected.length} ticket(s), marqué(s) DUPLICATA.`
+                    : actionType === 'cancel'
+                      ? `${occupiedSelected.length} siège(s) seront libérés et le montant déduit des recettes.`
+                      : `${selectedSeats.length} siège(s) seront marqués hors service et ne pourront plus être vendus.`
                   }
                 </p>
               </div>
             </div>
+
+            {actionType === 'reprint' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <div className="text-sm font-medium text-blue-800 mb-1">Tickets à réimprimer :</div>
+                <div className="flex flex-wrap gap-1">
+                  {reprintableSelected.map(s => (
+                    <span key={s.id} className="px-2 py-0.5 bg-blue-200 text-blue-900 rounded text-xs font-medium">
+                      {s.label} {s.passenger_name ? `(${s.passenger_name})` : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {actionType === 'cancel' && occupiedSelected.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
@@ -397,9 +484,11 @@ export default function AdminSeatManagement({ busId, busRegistration, onClose }:
                 onClick={executeAction}
                 disabled={processing || !reason.trim()}
                 className={`flex-1 px-4 py-2 text-sm rounded-lg text-white flex items-center justify-center gap-2 ${
-                  actionType === 'cancel'
-                    ? 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300'
-                    : 'bg-red-600 hover:bg-red-700 disabled:bg-red-300'
+                  actionType === 'reprint'
+                    ? 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300'
+                    : actionType === 'cancel'
+                      ? 'bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300'
+                      : 'bg-red-600 hover:bg-red-700 disabled:bg-red-300'
                 }`}
               >
                 {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
