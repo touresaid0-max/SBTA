@@ -531,7 +531,9 @@ export default function POSVente() {
         destName = (station?.city || station?.name) ?? destination;
       }
 
-      const soldTickets = await sellTickets(selectedSeats, {
+      // One ticket per seat, sold and printed in ascending seat order
+      const seatsToSell = [...new Set(selectedSeats)].sort((a, b) => a - b);
+      const soldTickets = await sellTickets(seatsToSell, {
         departId,
         destination: destName,
         destinationId: destId,
