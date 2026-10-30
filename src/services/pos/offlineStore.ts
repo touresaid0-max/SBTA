@@ -227,20 +227,41 @@ function mapRemoteReservationToLocalTicket(r: Record<string, unknown>): Record<s
   };
 }
 
+// Past-day departures are closed by the database every night (cron job sbta-cloture-minuit).
+// As a fallback, each device asks for it once per day and station, not on every sync.
+const AUTO_TERMINATE_KEY = 'sbta_auto_terminate_day';
+
+function autoTerminateDoneToday(stationId: string | undefined, todayStr: string): boolean {
+  try {
+    return localStorage.getItem(`${AUTO_TERMINATE_KEY}:${stationId ?? 'all'}`) === todayStr;
+  } catch {
+    return false;
+  }
+}
+
+function markAutoTerminateDone(stationId: string | undefined, todayStr: string): void {
+  try {
+    localStorage.setItem(`${AUTO_TERMINATE_KEY}:${stationId ?? 'all'}`, todayStr);
+  } catch { /* storage unavailable: the call is simply repeated next sync */ }
+}
+
 export async function syncDepartsAndTicketsFromServer(stationId?: string): Promise<void> {
   if (!isOnline()) return;
   try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+
     // Auto-close departures from past days (server UTC midnight rollover)
     // This runs BEFORE syncing so closed status is reflected in the pulled data
-    try {
-      await supabase.rpc('auto_terminate_past_schedules', {
-        p_station_id: stationId ?? null,
-      });
-    } catch {
-      // Non-critical: continue with sync even if auto-terminate fails
+    if (!autoTerminateDoneToday(stationId, todayStr)) {
+      try {
+        const { error } = await supabase.rpc('auto_terminate_past_schedules', {
+          p_station_id: stationId ?? null,
+        });
+        if (!error) markAutoTerminateDone(stationId, todayStr);
+      } catch {
+        // Non-critical: continue with sync even if auto-terminate fails
+      }
     }
-
-    const todayStr = new Date().toISOString().slice(0, 10);
 
     // Auto-close locally cached departs from past days that are still open.
     // The server RPC already closed them in Supabase, but local IndexedDB may
@@ -269,10 +290,12 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
     let scheduleQuery = supabase
       .from('schedules')
       .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, buses:bus_id(seats_sold_from)')
-      .gte('departure_datetime', `${todayStr}T00:00:00`)
-      .order('departure_datetime', { ascending: true });
+      .gte('departure_datetime', `${todayStr}T00:00:00`);
+    // Only this station's departures: other stations' ones are never shown here (shared
+    // buses rely on seat allocations kept on the device, not on pulled rows)
+    if (stationId) scheduleQuery = scheduleQuery.eq('departure_station_id', stationId);
 
-    const { data: remoteSchedules, error: schedError } = await scheduleQuery;
+    const { data: remoteSchedules, error: schedError } = await scheduleQuery.order('departure_datetime', { ascending: true });
     if (schedError) throw schedError;
 
     if (remoteSchedules && remoteSchedules.length > 0) {
