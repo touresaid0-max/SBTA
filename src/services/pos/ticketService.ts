@@ -262,13 +262,35 @@ export async function sellTicket(params: SellTicketParams): Promise<TicketRecord
   return ticket;
 }
 
-export async function sellTickets(seats: number[], commonParams: Omit<SellTicketParams, 'seatNumber'>): Promise<TicketRecord[]> {
-  const soldTickets: TicketRecord[] = [];
-  for (const seat of seats) {
-    const ticket = await sellTicket({ ...commonParams, seatNumber: seat });
-    soldTickets.push(ticket);
+/** Error of a multi-seat sale stopped part-way: `soldTickets` were recorded before it. */
+export class PartialSaleError extends Error {
+  constructor(message: string, public soldTickets: TicketRecord[]) {
+    super(message);
+    this.name = 'PartialSaleError';
   }
-  // Single depart update after all inserts
+}
+
+export async function sellTickets(seats: number[], commonParams: Omit<SellTicketParams, 'seatNumber'>): Promise<TicketRecord[]> {
+  // One ticket per seat, each seat once, in ascending seat order
+  const orderedSeats = [...new Set(seats)].sort((a, b) => a - b);
+  if (orderedSeats.length > 1) {
+    // Check every seat before recording anything, so a taken seat does not leave half a sale
+    const taken = new Set((await getTicketsForDepart(commonParams.departId)).map(t => t.seat_number));
+    const conflict = orderedSeats.find(s => taken.has(s));
+    if (conflict !== undefined) throw new Error(`Le siège ${conflict} est déjà vendu`);
+  }
+  const soldTickets: TicketRecord[] = [];
+  let failure: unknown = null;
+  for (const seat of orderedSeats) {
+    try {
+      soldTickets.push(await sellTicket({ ...commonParams, seatNumber: seat }));
+    } catch (err) {
+      failure = err;
+      break;
+    }
+  }
+  if (soldTickets.length === 0) throw failure;
+  // Single depart update after all inserts (also after a partial sale, so the till stays right)
   const depart = await getDepartById(commonParams.departId);
   if (depart) {
     const soldCount = (await getTicketsForDepart(commonParams.departId)).filter(t => t.status !== 'cancelled').length;
@@ -280,6 +302,10 @@ export async function sellTickets(seats: number[], commonParams: Omit<SellTicket
       solde: newMtTicket + depart.mt_bagage - depart.tot_depense,
       caisse: newMtTicket + depart.mt_bagage - depart.tot_depense,
     });
+  }
+  if (failure) {
+    const reason = failure instanceof Error ? failure.message : String(failure);
+    throw new PartialSaleError(`${soldTickets.length} ticket(s) vendu(s), vente interrompue : ${reason}`, soldTickets);
   }
   return soldTickets;
 }

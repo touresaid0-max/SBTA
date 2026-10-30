@@ -662,6 +662,52 @@ export const PrintService = {
     });
   },
 
+  /**
+   * Multi-seat sale: one ticket per seat, printed one after another in seat order,
+   * each followed by a paper cut. Returns the tickets actually printed, so a failure
+   * part-way leaves only the remaining tickets to resume (no ticket printed twice).
+   */
+  async printTicketsSequence(data: Omit<PrintTicketData, 'ticket'> & { tickets: TicketRecord[] }): Promise<TicketRecord[]> {
+    const ordered = [...data.tickets].sort((a, b) => a.seat_number - b.seat_number);
+    if (ordered.length === 0) return [];
+    const settings = await getPrintSettings();
+
+    let send: ((bytes: Uint8Array) => Promise<boolean>) | null = null;
+    if (settings.backend === 'webserial') send = bytes => withTimeout(sendWebSerial(bytes), 1500, false);
+    if (settings.backend === 'webusb') send = bytes => withTimeout(sendWebUSB(bytes), 1500, false);
+    if (settings.backend === 'qztray') send = bytes => withTimeout(sendQzTray(bytes, settings), 3000, false);
+
+    if (send) {
+      const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
+      const cutSettings = { ...settings, auto_cut: true };
+      const printed: TicketRecord[] = [];
+      for (const ticket of ordered) {
+        const bytes = buildTicketESCPOS({ ticket, depart: data.depart, stationName: data.stationName, phoneLine: data.phoneLine }, cutSettings, logo);
+        if (!(await send(bytes))) break;
+        printed.push(ticket);
+      }
+      // The thermal printer took some tickets: the rest is resumed, never sent to the browser too
+      if (printed.length > 0) return printed;
+    }
+
+    // Browser (or no thermal printer reachable): one print job per ticket. The thermal
+    // driver cuts at the end of each job, like a single-ticket sale; page breaks inside
+    // one job are not cut, which left the tickets stuck together.
+    const printed: TicketRecord[] = [];
+    for (const ticket of ordered) {
+      const ok = await printBrowser({
+        type: 'ticket',
+        ticket,
+        depart: data.depart,
+        stationName: data.stationName,
+        phoneLine: data.phoneLine,
+      }, settings);
+      if (!ok) break;
+      printed.push(ticket);
+    }
+    return printed;
+  },
+
   async printBagage(data: PrintBagageData): Promise<boolean> {
     return this._print({
       type: 'bagage',
