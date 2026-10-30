@@ -5,7 +5,7 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getDepartById } from '@/services/pos/departService';
 import { syncDepartsAndTicketsFromServer, localUpdate } from '@/services/pos/offlineStore';
 import {
-  sellTicket, sellTickets, getTicketsForDepart, getSoldSeats,
+  sellTicket, sellTickets, PartialSaleError, getTicketsForDepart, getSoldSeats,
   calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
   type TicketRecord, type StationRef, type TarifRef, type RouteCityStopRef,
 } from '@/services/pos/ticketService';
@@ -562,24 +562,38 @@ export default function POSVente() {
       }
     } catch (err: any) {
       setError(err?.message ?? 'Erreur lors de la vente');
+      // Multi-seat sale stopped part-way: the seats already recorded are shown and printed
+      if (err instanceof PartialSaleError) {
+        setSelectedSeats([]);
+        const [t, s] = await Promise.all([getTicketsForDepart(departId), getSoldSeats(departId)]);
+        setTickets(t); setSoldSeats(s);
+        const updatedDepart = await getDepartById(departId);
+        if (updatedDepart) setDepart(updatedDepart);
+        if (printTicket) await printTicketsBatch(err.soldTickets, depart, session?.station_name);
+      }
     } finally {
       setSelling(false);
     }
   };
 
-  // All tickets of a sale go out as one print job (one dialog in browser mode)
+  // One seat: the usual single-ticket print. Several seats: one ticket per seat, printed
+  // one after another in seat order with a cut between each (one dialog in browser mode).
   const printTicketsBatch = async (ticketsToPrint: TicketRecord[], dep: DepartRecord, stName?: string) => {
     setPrinting(true);
     setPrintError('');
-    let ok = false;
+    let succeeded: TicketRecord[] = [];
     try {
-      ok = await PrintService.printTickets({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine });
+      if (ticketsToPrint.length > 1) {
+        succeeded = await PrintService.printTicketsSequence({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine });
+      } else if (await PrintService.printTickets({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine })) {
+        succeeded = ticketsToPrint;
+      }
     } catch {
-      ok = false;
+      succeeded = [];
     }
-    const failed = ok ? [] : ticketsToPrint;
+    const printedIds = new Set(succeeded.map(t => t.id));
+    const failed = ticketsToPrint.filter(t => !printedIds.has(t.id)).sort((a, b) => a.seat_number - b.seat_number);
     // Mark successfully printed tickets as printed
-    const succeeded = ok ? ticketsToPrint : [];
     for (const ticket of succeeded) {
       await localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: new Date().toISOString() });
     }
@@ -589,8 +603,10 @@ export default function POSVente() {
       setTickets(t);
     }
     setPrinting(false);
+    // Tickets of this job leave the resume list once printed; only the unprinted ones stay
+    const jobIds = new Set(ticketsToPrint.map(t => t.id));
+    setPendingReprint(prev => [...prev.filter(t => !jobIds.has(t.id)), ...failed]);
     if (failed.length > 0) {
-      setPendingReprint(failed);
       setPrintError(`${failed.length} ticket(s) non imprimé(s) — cliquez sur « Reprendre l'impression » pour réessayer.`);
     }
   };
@@ -599,7 +615,7 @@ export default function POSVente() {
     if (pendingReprint.length === 0 || !depart) return;
     setPrintError('');
     // Only retry tickets that haven't been successfully printed yet
-    const unprinted = pendingReprint.filter(t => !t.printed);
+    const unprinted = pendingReprint.filter(t => !t.printed && !tickets.find(x => x.id === t.id)?.printed);
     if (unprinted.length === 0) {
       setPendingReprint([]);
       return;
