@@ -28,7 +28,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
-        navigateFallback: '/guichet/connexion',
+        // Must be a precached file: the SPA shell. The router then opens the requested page.
+        navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/auth/, /^\/realtime/, /^\/login/],
       },
       injectRegister: 'script',
