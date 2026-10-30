@@ -690,15 +690,22 @@ export const PrintService = {
       if (printed.length > 0) return printed;
     }
 
-    // Browser (or no thermal printer reachable): one document, one page per ticket
-    const ok = await printBrowser({
-      type: 'ticket',
-      tickets: ordered,
-      depart: data.depart,
-      stationName: data.stationName,
-      phoneLine: data.phoneLine,
-    }, settings);
-    return ok ? ordered : [];
+    // Browser (or no thermal printer reachable): one print job per ticket. The thermal
+    // driver cuts at the end of each job, like a single-ticket sale; page breaks inside
+    // one job are not cut, which left the tickets stuck together.
+    const printed: TicketRecord[] = [];
+    for (const ticket of ordered) {
+      const ok = await printBrowser({
+        type: 'ticket',
+        ticket,
+        depart: data.depart,
+        stationName: data.stationName,
+        phoneLine: data.phoneLine,
+      }, settings);
+      if (!ok) break;
+      printed.push(ticket);
+    }
+    return printed;
   },
 
   async printBagage(data: PrintBagageData): Promise<boolean> {

@@ -577,7 +577,7 @@ export default function POSVente() {
   };
 
   // One seat: the usual single-ticket print. Several seats: one ticket per seat, printed
-  // one after another in seat order with a cut between each (one dialog in browser mode).
+  // one after another in seat order, each as its own print job so it gets its own cut.
   const printTicketsBatch = async (ticketsToPrint: TicketRecord[], dep: DepartRecord, stName?: string) => {
     setPrinting(true);
     setPrintError('');
