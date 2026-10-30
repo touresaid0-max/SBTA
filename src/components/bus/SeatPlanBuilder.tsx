@@ -169,12 +169,34 @@ function applyCellUpdate(layout: GridLayout, rowIdx: number, colIdx: number, upd
     cell = { ...cell, label: finalLabel, id: finalLabel }
   }
 
+  const relabel = new Map<string, string>()
+  if (isSeat(cell)) {
+    const taken = new Set<string>()
+    layout.forEach((row, ri) => row.cells.forEach((c, ci) => {
+      if (!(ri === rowIdx && ci === colIdx) && isSeat(c)) taken.add(c.label)
+    }))
+    if (taken.has(cell.label)) {
+      if (/^\d+$/.test(cell.label)) {
+        // Shift the contiguous run N, N+1, ... by one so the chosen number becomes free.
+        let n = parseInt(cell.label, 10)
+        while (taken.has(`${n}`)) {
+          relabel.set(`${n}`, `${n + 1}`)
+          n++
+        }
+      } else {
+        let next = nextSeatNumber(layout)
+        while (taken.has(`${next}`) || `${next}` === cell.label) next++
+        relabel.set(cell.label, `${next}`)
+      }
+    }
+  }
+
   return layout.map((row, ri) => ({
     ...row,
     cells: row.cells.map((c, ci) => {
       if (ri === rowIdx && ci === colIdx) return cell
-      if (isSeat(cell) && isSeat(c) && c.label === cell.label) return { ...c, ...EMPTY_CELL }
-      return c
+      const newLabel = isSeat(c) ? relabel.get(c.label) : undefined
+      return newLabel ? { ...c, label: newLabel, id: newLabel } : c
     }),
   }))
 }

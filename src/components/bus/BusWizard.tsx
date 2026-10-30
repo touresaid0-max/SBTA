@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import BusParametersStep, { type BusParameters, type DeckParameters, defaultDeckParameters } from './BusParametersStep'
 import SeatPlanBuilder, { type GridLayout, defaultDeckConfig, countReservableSeats } from './SeatPlanBuilder'
 import BusSummaryStep from './BusSummaryStep'
-import { saveBusWithSeatConfig } from '../../services/busConfig.service'
+import { saveBusWithSeatConfig, buildSeatRemap, remapBusSeatNumbers } from '../../services/busConfig.service'
 
 interface Company {
   id: string
@@ -571,6 +571,20 @@ export default function BusWizard({
         existingLowerConfigId: existingConfig?.lowerConfigId,
         existingUpperConfigId: existingConfig?.upperConfigId,
       })
+
+      if (editingId && existingConfig) {
+        const seatRemap = isSimple
+          ? buildSeatRemap([[existingConfig.simpleLayout, simpleDeck.layout]])
+          : buildSeatRemap([[existingConfig.lowerLayout, lowerDeck.layout], [existingConfig.upperLayout, upperDeck.layout]])
+        try {
+          await remapBusSeatNumbers(editingId, seatRemap)
+        } catch {
+          toast.error('Plan enregistré, mais les réservations existantes n\'ont pas pu être réassociées aux nouveaux numéros')
+          onSaved()
+          onClose()
+          return
+        }
+      }
 
       toast.success(editingId ? 'Bus mis à jour' : 'Bus créé avec succès')
       onSaved()
