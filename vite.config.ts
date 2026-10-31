@@ -28,7 +28,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
-        // Must be a precached file: the SPA shell. The router then opens the requested page.
+        // The SPA shell: it must be a precached file, otherwise the service worker fails
+        // to start (non-precached-url) and the guichet pages cannot open offline.
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/auth/, /^\/realtime/, /^\/login/],
       },
