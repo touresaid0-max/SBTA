@@ -8,13 +8,16 @@ import AdminSeatManagement from '../../components/bus/AdminSeatManagement';
 import FillRateBar from '../../components/bus/FillRateBar';
 import BusWizard from '../../components/bus/BusWizard';
 import { generateSeatLayout } from '../../utils/generateSeatLayout';
+import { fetchAllPages } from '../../utils/fetchAllPages';
 
 interface SeatConfigDetail {
   id: string;
   name: string;
   total_capacity: number;
-  seat_layout: any;
-  grid_layout: any;
+  seat_layout?: any;
+  grid_layout?: any;
+  /** First row of seat_layout, loaded instead of the whole plan for the list */
+  seat_plan_first?: unknown;
   rows: number;
   left_columns: number;
   right_columns: number;
@@ -143,12 +146,16 @@ export default function Buses() {
 
   const loadData = async () => {
     try {
+      // The seat plans (seat_layout, grid_layout) made this list weigh 7.9 MB: the list only asks
+      // whether a plan exists (seat_plan_first); the full plan is loaded when a bus is edited.
       const [busesRes, companiesRes, seatConfigsRes, amenitiesRes] = await Promise.all([
-        supabase
+        fetchAllPages<BusData>((from, to) => supabase
           .from('buses')
-          .select('*, companies(name), bus_seat_config!buses_seat_config_id_fkey(id, name, total_capacity, seat_layout, grid_layout, rows, left_columns, right_columns, back_row, has_back_row, back_row_seats, aisle_after_columns, total_columns, driver_position, deck_level)')
+          .select('*, companies(name), bus_seat_config!buses_seat_config_id_fkey(id, name, total_capacity, seat_plan_first:seat_layout->0, rows, left_columns, right_columns, back_row, has_back_row, back_row_seats, aisle_after_columns, total_columns, driver_position, deck_level)')
           .is('archived_at', null)
-          .order('registration_number'),
+          .order('registration_number')
+          .order('id')
+          .range(from, to)),
         supabase.from('companies').select('id, name, code, parent_id, is_group').order('name'),
         supabase.from('bus_seat_config').select('id, name, total_capacity').order('name'),
         supabase.from('amenities').select('id, name, icon').order('name')
@@ -263,6 +270,12 @@ export default function Buses() {
     setShowWizard(true);
   };
 
+  // Seat plan of one configuration, loaded only when a bus is edited or duplicated
+  const loadGridLayout = async (configId: string) => {
+    const { data } = await supabase.from('bus_seat_config').select('grid_layout').eq('id', configId).maybeSingle();
+    return data?.grid_layout ?? null;
+  };
+
   const handleDuplicate = async (bus: BusData) => {
     setEditingId(null);
     setWizardInitialData({
@@ -303,7 +316,7 @@ export default function Buses() {
         totalRows: cfg.rows ?? 10,
         totalCols,
         seatConfigId: undefined,
-        simpleLayout: cfg.grid_layout ?? null,
+        simpleLayout: await loadGridLayout(cfg.id),
       });
     } else if (deckType === 'imperial' && bus.lower_deck_config_id && bus.upper_deck_config_id) {
       try {
@@ -382,7 +395,7 @@ export default function Buses() {
         totalRows: cfg.rows ?? 10,
         totalCols,
         seatConfigId: cfg.id,
-        simpleLayout: cfg.grid_layout ?? null,
+        simpleLayout: await loadGridLayout(cfg.id),
       });
     } else if (deckType === 'imperial' && bus.lower_deck_config_id && bus.upper_deck_config_id) {
       try {
@@ -424,8 +437,8 @@ export default function Buses() {
   const hasSeatPlan = (bus: BusData): boolean => {
     const cfg = bus.bus_seat_config;
     if (!cfg) return false;
-    if (Array.isArray(cfg.seat_layout) && cfg.seat_layout.length > 0) return true;
-    return false;
+    // First seat row of seat_layout: present only when the plan is a non-empty array
+    return cfg.seat_plan_first != null;
   };
 
   const repairSeatPlan = async (bus: BusData) => {

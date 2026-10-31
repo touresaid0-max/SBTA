@@ -64,6 +64,9 @@ interface ReactivationLog {
   user_full_name: string;
 }
 
+// Departures listed per page
+const PAGE_SIZE = 50;
+
 export default function Schedules() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [routes, setRoutes] = useState<RouteData[]>([]);
@@ -101,43 +104,98 @@ export default function Schedules() {
     status: 'planifie' as 'planifie' | 'en_cours' | 'termine' | 'annule'
   });
 
+  // Departures are read one page at a time, filtered by the database: loading the whole
+  // history (and filtering here) grew every day and was capped at 1 000 rows.
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [loadingPage, setLoadingPage] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState({ route: '', bus: '', driver: '', departure: '', arrival: '' });
+
   useEffect(() => {
-    loadData();
+    loadReferences();
   }, []);
 
-  const loadData = async () => {
+  // Typed filters are applied 300 ms after the last keystroke, from the first page
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next = { route: searchRoute.trim(), bus: searchBus.trim(), driver: searchDriver.trim(), departure: searchDeparture, arrival: searchArrival };
+      setAppliedFilters(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+        setPage(0);
+        return next;
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchRoute, searchBus, searchDriver, searchDeparture, searchArrival]);
+
+  useEffect(() => {
+    loadSchedules();
+  }, [page, appliedFilters]);
+
+  const nextDay = (day: string) => {
+    const d = new Date(`${day}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString();
+  };
+
+  const loadSchedules = async () => {
+    setLoadingPage(true);
     try {
-      const [schedulesRes, routesRes, busesRes, driversRes] = await Promise.all([
-        supabase
-          .from('schedules')
-          .select(`
-            *,
-            routes(name),
-            buses:bus_id(registration_number),
-            drivers:driver_id(full_name),
-            copilots:copilot_id(full_name)
-          `)
-          .order('departure_datetime', { ascending: false }),
+      const f = appliedFilters;
+      let query = supabase
+        .from('schedules')
+        .select(`
+          *,
+          routes(name),
+          buses:bus_id${f.bus ? '!inner' : ''}(registration_number),
+          drivers:driver_id${f.driver ? '!inner' : ''}(full_name),
+          copilots:copilot_id(full_name)
+        `, { count: 'exact' });
+      if (f.route) query = query.ilike('route_name', `%${f.route}%`);
+      if (f.bus) query = query.ilike('buses.registration_number', `%${f.bus}%`);
+      if (f.driver) query = query.ilike('drivers.full_name', `%${f.driver}%`);
+      if (f.departure) query = query.gte('departure_datetime', `${f.departure}T00:00:00Z`).lt('departure_datetime', nextDay(f.departure));
+      if (f.arrival) query = query.gte('arrival_datetime', `${f.arrival}T00:00:00Z`).lt('arrival_datetime', nextDay(f.arrival));
+
+      const from = page * PAGE_SIZE;
+      const { data, count, error } = await query
+        .order('departure_datetime', { ascending: false })
+        .order('id')
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+
+      setSchedules(data || []);
+      setTotal(count ?? 0);
+    } catch (error: any) {
+      toast.error('Erreur de chargement');
+    } finally {
+      setLoadingPage(false);
+      setLoading(false);
+    }
+  };
+
+  const loadReferences = async () => {
+    try {
+      const [routesRes, busesRes, driversRes] = await Promise.all([
         supabase.from('routes').select('id, name').eq('is_active', true).order('name'),
         supabase.from('buses').select('id, registration_number, capacity').eq('status', 'disponible').is('archived_at', null).order('registration_number'),
         supabase.from('users').select('id, full_name').eq('role', 'chauffeur').eq('is_active', true).order('full_name')
       ]);
 
-      if (schedulesRes.error) throw schedulesRes.error;
       if (routesRes.error) throw routesRes.error;
       if (busesRes.error) throw busesRes.error;
       if (driversRes.error) throw driversRes.error;
 
-      setSchedules(schedulesRes.data || []);
       setRoutes(routesRes.data || []);
       setBuses(busesRes.data || []);
       setDrivers(driversRes.data || []);
     } catch (error: any) {
       toast.error('Erreur de chargement');
-    } finally {
-      setLoading(false);
     }
   };
+
+  // After a change: refresh the lists and the current page
+  const loadData = () => Promise.all([loadReferences(), loadSchedules()]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -317,20 +375,9 @@ export default function Schedules() {
     return <div className="p-8">Chargement...</div>;
   }
 
-  const filteredSchedules = schedules.filter(s => {
-    const routeName = (s.route_name || s.routes?.name || '').toLowerCase();
-    const busReg = (s.buses?.registration_number || '').toLowerCase();
-    const driverName = (s.drivers?.full_name || '').toLowerCase();
-    const depDate = s.departure_datetime ? format(new Date(s.departure_datetime), 'yyyy-MM-dd') : '';
-    const arrDate = s.arrival_datetime ? format(new Date(s.arrival_datetime), 'yyyy-MM-dd') : '';
-
-    if (searchRoute && !routeName.includes(searchRoute.toLowerCase())) return false;
-    if (searchBus && !busReg.includes(searchBus.toLowerCase())) return false;
-    if (searchDriver && !driverName.includes(searchDriver.toLowerCase())) return false;
-    if (searchDeparture && depDate !== searchDeparture) return false;
-    if (searchArrival && arrDate !== searchArrival) return false;
-    return true;
-  });
+  const filteredSchedules = schedules;
+  const hasFilters = Object.values(appliedFilters).some(Boolean);
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="p-8">
@@ -340,7 +387,7 @@ export default function Schedules() {
             Planification
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            {filteredSchedules.length} / {schedules.length} horaires
+            {total} horaire{total > 1 ? 's' : ''}{hasFilters ? ' (filtrés)' : ''}
           </p>
         </div>
         <button
@@ -852,11 +899,36 @@ export default function Schedules() {
           <div className="text-center py-12">
             <Calendar className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--neutral-400)' }} />
             <p style={{ color: 'var(--text-secondary)' }}>
-              {schedules.length === 0 ? 'Aucun horaire trouvé' : 'Aucun résultat pour ces filtres'}
+              {hasFilters ? 'Aucun résultat pour ces filtres' : 'Aucun horaire trouvé'}
             </p>
           </div>
         )}
       </div>
+
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+          <span>
+            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} sur {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0 || loadingPage}
+              className="px-3 py-1.5 border border-[#E2E8F0] rounded-lg disabled:opacity-40"
+            >
+              Précédent
+            </button>
+            <span>Page {page + 1} / {pageCount}</span>
+            <button
+              onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+              disabled={page >= pageCount - 1 || loadingPage}
+              className="px-3 py-1.5 border border-[#E2E8F0] rounded-lg disabled:opacity-40"
+            >
+              Suivant
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

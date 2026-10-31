@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { UserRole } from '../../types';
+import { fetchAllPages } from '../../utils/fetchAllPages';
 
 interface UserRow {
   id: string;
@@ -158,17 +159,23 @@ export default function Users() {
 
   const loadUsers = useCallback(async () => {
     try {
+      // Read in pages of 1 000: users and employees are close to Supabase's 1 000-row limit,
+      // beyond which people would silently disappear from the list
       const [usersRes, empRes, companiesRes, stationsRes, countersRes, routesRes, techTypesRes] = await Promise.all([
-        supabase
+        fetchAllPages<any>((from, to) => supabase
           .from('users')
           .select('*, companies(name), organizations!users_organization_id_fkey(name)')
           .neq('role', 'client')
-          .order('created_at', { ascending: false }),
-        supabase
+          .order('created_at', { ascending: false })
+          .order('id')
+          .range(from, to)),
+        fetchAllPages<any>((from, to) => supabase
           .from('employees')
           .select('*, companies(name), technician_type:garage_types_techniciens(id, nom)')
           .neq('account_status', 'pending')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .order('id')
+          .range(from, to)),
         supabase.from('companies').select('id, name').order('name'),
         supabase.from('stations').select('id, name').eq('is_active', true).order('name'),
         supabase.from('counters').select('id, station_id, counter_number, is_active').eq('is_active', true).order('counter_number'),
