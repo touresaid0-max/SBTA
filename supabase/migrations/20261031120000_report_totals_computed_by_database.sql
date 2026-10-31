@@ -17,6 +17,8 @@ lectures qu'elles remplacent ; chacun ne voit que ce qu'il voyait déjà.
 Valeurs de statut : le schéma écrit 'annulee', 'reussie', 'validee', alors que les écrans
 filtraient sur 'cancelled', 'completed', 'validated' (billets annulés comptés, paiements et
 charges toujours à 0). Les deux orthographes sont acceptées ici.
+Carburant : fuel_enlevements n'a pas de colonne status ; l'ancien filtre status = 'valide'
+faisait échouer la lecture (0 L affiché). Tous les enlèvements enregistrés sont comptés.
 */
 
 -- ── Tableau de bord admin ────────────────────────────────────────────────────
@@ -60,9 +62,9 @@ AS $$
       WHERE e.expense_date >= (p_start AT TIME ZONE 'UTC')::date
         AND e.expense_date <= (p_end AT TIME ZONE 'UTC')::date),
     'fuel_liters', (
+      -- fuel_enlevements has no status column: every recorded withdrawal counts
       SELECT coalesce(sum(f.quantity_liters), 0) FROM fuel_enlevements f
-      WHERE f.created_at >= p_start AND f.created_at <= p_end
-        AND f.status = 'valide'),
+      WHERE f.created_at >= p_start AND f.created_at <= p_end),
     'buses_active', (SELECT count(*) FROM buses b WHERE b.is_active),
     'bus_status', (
       SELECT coalesce(jsonb_object_agg(x.status, x.n), '{}'::jsonb)
