@@ -41,37 +41,23 @@ export default function FinancialReport() {
         customEnd ? new Date(customEnd) : undefined
       );
 
-      const [revenueRes, expensesRes, companiesRes] = await Promise.all([
-        supabase
-          .from('reservations')
-          .select('total_price, created_at, schedule:schedule_id(bus_id, buses!inner(company_id, companies!inner(id, name)))')
-          .eq('payment_status', 'payee')
-          .gte('created_at', dateRange.start.toISOString())
-          .lte('created_at', dateRange.end.toISOString()),
-        supabase
-          .from('bus_expenses')
-          .select('amount, bus_id, buses!inner(company_id, companies!inner(id, name))')
-          .eq('status', 'validated')
-          .gte('expense_date', dateRange.start.toISOString().split('T')[0])
-          .lte('expense_date', dateRange.end.toISOString().split('T')[0]),
-        supabase.from('companies').select('id, name')
-      ]);
+      // Totals computed by the database: summing rows here was capped at 1 000 rows per request
+      const { data: stats, error } = await supabase.rpc('get_financial_report_stats', {
+        p_start: dateRange.start.toISOString(),
+        p_end: dateRange.end.toISOString(),
+      });
+      if (error) throw error;
 
-      const revenue = (revenueRes.data || []).reduce((sum, r) => sum + ((r as any).total_price || 0), 0);
-      const expenses = (expensesRes.data || []).reduce((sum, e) => sum + (e.amount || 0), 0);
+      const revenue = Number(stats.revenue);
+      const expenses = Number(stats.expenses);
       const profit = revenue - expenses;
       const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
 
       setKpis({ revenue, expenses, profit, margin });
 
-      const companyStats = (companiesRes.data || []).map(company => {
-        const companyRevenue = (revenueRes.data || [])
-          .filter((r: any) => r.schedule?.buses?.companies?.id === company.id)
-          .reduce((sum: number, r: any) => sum + (r.total_price || 0), 0);
-
-        const companyExpenses = (expensesRes.data || [])
-          .filter((e: any) => e.buses?.companies?.id === company.id)
-          .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+      const companyStats = (stats.by_company as { name: string; revenue: number; expenses: number }[]).map(company => {
+        const companyRevenue = Number(company.revenue);
+        const companyExpenses = Number(company.expenses);
 
         const companyProfit = companyRevenue - companyExpenses;
         const companyMargin = companyRevenue > 0 ? (companyProfit / companyRevenue) * 100 : 0;

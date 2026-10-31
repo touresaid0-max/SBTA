@@ -11,6 +11,21 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 
+// Number of sales listed in the detail table (the export contains all of them)
+const DETAIL_ROWS = 500;
+
+function toSaleRow(r: any) {
+  return {
+    date: format(new Date(r.created_at), 'dd/MM/yyyy HH:mm'),
+    route: r.schedule?.route_name || 'N/A',
+    bus: r.schedule?.bus?.registration_number || 'N/A',
+    class: r.seat_class || 'Standard',
+    tickets: r.seat_numbers?.length || 1,
+    revenue: r.total_price || 0,
+    occupancy: 0
+  };
+}
+
 export default function SalesReport() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -64,6 +79,33 @@ export default function SalesReport() {
     }
   };
 
+  // Paid sales of the period, filtered by the database (company, route, bus)
+  const salesQuery = (dateRange: { start: Date; end: Date }) => {
+    const company = selectedCompany !== 'all';
+    const bus = company || selectedBus !== 'all';
+    const filtered = bus || selectedRoute !== 'all';
+    let query = supabase
+      .from('reservations')
+      .select(`
+        created_at, total_price, seat_numbers,
+        schedule:schedule_id${filtered ? '!inner' : ''} (
+          route_name,
+          bus_id,
+          bus:bus_id${bus ? '!inner' : ''} (
+            registration_number,
+            company_id
+          )
+        )
+      `)
+      .eq('payment_status', 'payee')
+      .gte('created_at', dateRange.start.toISOString())
+      .lte('created_at', dateRange.end.toISOString());
+    if (company) query = query.eq('schedule.bus.company_id', selectedCompany);
+    if (selectedBus !== 'all') query = query.eq('schedule.bus_id', selectedBus);
+    if (selectedRoute !== 'all') query = query.like('schedule.route_name', `%${selectedRoute}%`);
+    return query;
+  };
+
   const loadReportData = async () => {
     try {
       setLoading(true);
@@ -74,97 +116,42 @@ export default function SalesReport() {
         customEnd ? new Date(customEnd) : undefined
       );
 
-      let query = supabase
-        .from('reservations')
-        .select(`
-          *,
-          schedule:schedule_id (
-            route_name,
-            departure_datetime,
-            bus:bus_id (
-              registration_number,
-              capacity,
-              company:company_id (id, name)
-            )
-          )
-        `)
-        .eq('payment_status', 'payee')
-        .gte('created_at', dateRange.start.toISOString())
-        .lte('created_at', dateRange.end.toISOString());
-
-      const { data: reservations, error } = await query;
+      // Totals and chart computed by the database: summing rows here was capped at 1 000 rows
+      const { data: stats, error } = await supabase.rpc('get_sales_report_stats', {
+        p_start: dateRange.start.toISOString(),
+        p_end: dateRange.end.toISOString(),
+        p_company_id: selectedCompany !== 'all' ? selectedCompany : null,
+        p_route: selectedRoute !== 'all' ? selectedRoute : null,
+        p_bus_id: selectedBus !== 'all' ? selectedBus : null,
+      });
 
       if (error) throw error;
 
-      let filteredData = reservations || [];
-
-      if (selectedCompany !== 'all') {
-        filteredData = filteredData.filter(r => r.schedule?.bus?.company?.id === selectedCompany);
-      }
-
-      if (selectedRoute !== 'all') {
-        filteredData = filteredData.filter(r => r.schedule?.route_name.includes(selectedRoute));
-      }
-
-      if (selectedBus !== 'all') {
-        filteredData = filteredData.filter(r => r.schedule?.bus?.id === selectedBus);
-      }
-
-      const totalTickets = filteredData.length;
-      const grossRevenue = filteredData.reduce((sum, r) => sum + ((r as any).total_price || 0), 0);
+      const grossRevenue = Number(stats.gross_revenue);
       const discounts = 0;
       const netRevenue = grossRevenue - discounts;
 
-      const scheduleOccupancy: Record<string, { reserved: number; capacity: number }> = {};
-      filteredData.forEach(r => {
-        const scheduleId = r.schedule_id;
-        if (!scheduleOccupancy[scheduleId]) {
-          scheduleOccupancy[scheduleId] = {
-            reserved: 0,
-            capacity: r.schedule?.bus?.capacity || 50
-          };
-        }
-        scheduleOccupancy[scheduleId].reserved += (r.seat_numbers?.length || 1);
-      });
-
-      const avgOccupancy = Object.values(scheduleOccupancy).length > 0
-        ? Object.values(scheduleOccupancy).reduce((sum, s) => sum + (s.reserved / s.capacity) * 100, 0) / Object.values(scheduleOccupancy).length
-        : 0;
-
       setKpis({
-        ticketsSold: totalTickets,
+        ticketsSold: Number(stats.tickets),
         grossRevenue,
         discounts,
         netRevenue,
-        avgOccupancy
+        avgOccupancy: Number(stats.avg_occupancy)
       });
 
-      const dailyRevenue: Record<string, number> = {};
-      filteredData.forEach(r => {
-        const day = format(new Date(r.created_at), 'yyyy-MM-dd');
-        dailyRevenue[day] = (dailyRevenue[day] || 0) + ((r as any).total_price || 0);
-      });
-
-      const chartData = Object.entries(dailyRevenue)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, revenue]) => ({
-          date: format(new Date(date), 'dd/MM', { locale: fr }),
-          revenus: revenue
-        }));
+      const chartData = (stats.revenue_by_day as { date: string; revenue: number }[]).map(d => ({
+        date: format(new Date(d.date), 'dd/MM', { locale: fr }),
+        revenus: Number(d.revenue)
+      }));
 
       setChartData(chartData);
 
-      const tableData = filteredData.map((r: any) => ({
-        date: format(new Date(r.created_at), 'dd/MM/yyyy HH:mm'),
-        route: r.schedule?.route_name || 'N/A',
-        bus: r.schedule?.bus?.registration_number || 'N/A',
-        class: r.seat_class || 'Standard',
-        tickets: r.seat_numbers?.length || 1,
-        revenue: r.total_price || 0,
-        occupancy: 0
-      }));
-
-      setSalesData(tableData);
+      // Detail table: the most recent sales only (the totals above cover the whole period)
+      const { data: recent, error: detailError } = await salesQuery(dateRange)
+        .order('created_at', { ascending: false })
+        .limit(DETAIL_ROWS);
+      if (detailError) throw detailError;
+      setSalesData((recent || []).map(toSaleRow));
     } catch (error: any) {
       console.error('Erreur chargement rapport:', error);
       toast.error('Erreur de chargement');
@@ -202,9 +189,29 @@ export default function SalesReport() {
     }
   };
 
-  const exportExcel = () => {
-    exportToCSV(salesData, `ventes-${format(new Date(), 'yyyy-MM-dd')}`);
-    toast.success('Export Excel réussi');
+  // The export contains every sale of the period, read 1 000 rows at a time
+  const exportExcel = async () => {
+    try {
+      const dateRange = getDateRangeFromPeriod(
+        period,
+        customStart ? new Date(customStart) : undefined,
+        customEnd ? new Date(customEnd) : undefined
+      );
+      const rows: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await salesQuery(dateRange)
+          .order('created_at', { ascending: false })
+          .range(from, from + 999);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      exportToCSV(rows.map(toSaleRow), `ventes-${format(new Date(), 'yyyy-MM-dd')}`);
+      toast.success('Export Excel réussi');
+    } catch (error: any) {
+      console.error('Erreur export Excel:', error);
+      toast.error('Erreur lors de l\'export');
+    }
   };
 
   return (
@@ -398,6 +405,11 @@ export default function SalesReport() {
       <div className="bg-white rounded-xl border overflow-hidden">
         <div className="p-6 border-b">
           <h3 className="font-bold text-lg">Détail des ventes</h3>
+          {kpis.ticketsSold > salesData.length && (
+            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+              {salesData.length} ventes les plus récentes sur {kpis.ticketsSold} — l'export Excel les contient toutes
+            </p>
+          )}
         </div>
 
         <div className="overflow-x-auto">
