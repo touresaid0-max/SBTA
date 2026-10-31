@@ -54,6 +54,19 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The guichet works without network only once the service worker has downloaded the app
+  // (about 8 MB, the first time): until then, the network must stay on
+  const [offlineReady, setOfflineReady] = useState(
+    () => typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !!navigator.serviceWorker.controller,
+  );
+
+  useEffect(() => {
+    if (offlineReady || !('serviceWorker' in navigator)) return;
+    const onReady = () => { if (navigator.serviceWorker.controller) setOfflineReady(true); };
+    navigator.serviceWorker.addEventListener('controllerchange', onReady);
+    void navigator.serviceWorker.ready.then(onReady);
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', onReady);
+  }, [offlineReady]);
 
   const doCheck = useCallback(async () => {
     const reachable = await pingSupabase();
@@ -90,6 +103,7 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
     }
     if (lastSyncError) return `En ligne — synchronisation à reprendre : ${lastSyncError}`;
     if (pendingCount > 0) return `En ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente`;
+    if (!offlineReady) return 'En ligne — préparation du mode hors ligne, gardez la connexion';
     if (lastSyncedAt) return 'En ligne — Synchronisé';
     return 'En ligne';
   })();
