@@ -227,6 +227,9 @@ function mapRemoteReservationToLocalTicket(r: Record<string, unknown>): Record<s
   };
 }
 
+// Supabase's maximum number of rows per request
+const RESERVATION_PAGE_SIZE = 1000;
+
 // Past-day departures are closed by the database every night (cron job sbta-cloture-minuit).
 // As a fallback, each device asks for it once per day and station, not on every sync.
 const AUTO_TERMINATE_KEY = 'sbta_auto_terminate_day';
@@ -336,11 +339,23 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
         }
       }
 
-      const { data: remoteReservations, error: resError } = await supabase
-        .from('reservations')
-        .select('id, schedule_id, seat_numbers, total_price, total_seats, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number')
-        .in('schedule_id', scheduleIds)
-        .order('created_at', { ascending: true });
+      // Supabase returns at most 1 000 rows per request, and a busy station sells more than that
+      // in a day: read the tickets page by page until the last one. If any page fails, nothing
+      // below is updated, so a departure's cash total is never computed from a partial list.
+      let remoteReservations: any[] | null = [];
+      let resError: unknown = null;
+      for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from('reservations')
+          .select('id, schedule_id, seat_numbers, total_price, total_seats, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number')
+          .in('schedule_id', scheduleIds)
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + RESERVATION_PAGE_SIZE - 1);
+        if (error) { resError = error; remoteReservations = null; break; }
+        remoteReservations.push(...(data ?? []));
+        if (!data || data.length < RESERVATION_PAGE_SIZE) break;
+      }
 
       if (!resError && remoteReservations) {
         for (const r of remoteReservations) {
