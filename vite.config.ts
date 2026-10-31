@@ -7,7 +7,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      // A new version activates as soon as it is downloaded: with 'prompt' and no update button,
+      // a guichet tab left open all day kept running the old version indefinitely.
+      registerType: 'autoUpdate',
       includeAssets: ['logosbta.png', 'logosbta001.JPG'],
       manifest: {
         name: 'Guichet Eafribus',
@@ -31,6 +33,10 @@ export default defineConfig({
         // Must be a precached file: the SPA shell. The router then opens the requested page.
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/auth/, /^\/realtime/, /^\/login/],
+        // Activate the new version right away and take over the open tabs
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
       },
       injectRegister: 'script',
     }),
