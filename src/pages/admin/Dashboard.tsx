@@ -45,7 +45,23 @@ interface BusStatusData {
   'en-attente-pieces': number;
 }
 
-const CHART_COLORS = ['#0B7439', '#2E8B57', '#3B82F6', '#F59E0B', '#EF4444', '#06B6D4', '#10B981'];
+// Result of the get_admin_dashboard_stats database function
+interface AdminDashboardStats {
+  reservations: number;
+  tickets_sold: number;
+  revenue: number;
+  schedules: number;
+  payments: number;
+  expenses: number;
+  fuel_liters: number;
+  buses_active: number;
+  bus_status: Record<string, number>;
+  revenue_by_day: { day: string; revenue: number; tickets: number }[];
+  revenue_by_company: { name: string; value: number }[];
+  revenue_by_route: { name: string; revenue: number; tickets: number }[];
+}
+
+const CHART_COLORS =['#0B7439', '#2E8B57', '#3B82F6', '#F59E0B', '#EF4444', '#06B6D4', '#10B981'];
 
 const INITIAL_KPIS: KPIs = {
   cities: 0, stations: 0, counters: 0, companies: 0, users: 0,
@@ -87,31 +103,18 @@ export default function AdminDashboard() {
       const startISO = range.start.toISOString();
       const endISO = range.end.toISOString();
 
+      // Totals and charts are computed by the database (get_admin_dashboard_stats):
+      // summing rows here was capped at 1 000 rows per request and undercounted.
       const [
         citiesRes, stationsRes, countersRes, companiesRes, usersRes,
-        busesRes, routesRes, schedulesRes, reservationsRes,
-        paymentsRes, expensesRes, fuelRes, fuelStationsRes,
-        fuelTanksRes, garagesRes, recentRes,
+        routesRes, fuelStationsRes, fuelTanksRes, garagesRes, recentRes, statsRes,
       ] = await Promise.all([
         supabase.from('cities').select('id', { count: 'exact', head: true }),
         supabase.from('stations').select('id', { count: 'exact', head: true }),
         supabase.from('counters').select('id', { count: 'exact', head: true }),
         supabase.from('companies').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('users').select('id', { count: 'exact', head: true }),
-        supabase.from('buses').select('status, is_active'),
         supabase.from('routes').select('id', { count: 'exact', head: true }),
-        supabase.from('schedules').select('id', { count: 'exact', head: true })
-          .gte('departure_datetime', startISO).lte('departure_datetime', endISO),
-        supabase.from('reservations').select('total_price, status, seat_numbers')
-          .gte('created_at', startISO).lte('created_at', endISO),
-        supabase.from('payments').select('amount')
-          .gte('created_at', startISO).lte('created_at', endISO)
-          .eq('status', 'completed'),
-        supabase.from('bus_expenses').select('amount')
-          .gte('expense_date', startISO).lte('expense_date', endISO),
-        supabase.from('fuel_enlevements').select('quantity_liters')
-          .gte('created_at', startISO).lte('created_at', endISO)
-          .eq('status', 'valide'),
         supabase.from('fuel_stations').select('id', { count: 'exact', head: true }),
         supabase.from('fuel_tanks').select('id', { count: 'exact', head: true }),
         supabase.from('garages').select('id', { count: 'exact', head: true }),
@@ -119,30 +122,21 @@ export default function AdminDashboard() {
           .select('id, passenger_name, total_price, payment_status, created_at, seat_numbers, status')
           .order('created_at', { ascending: false })
           .limit(8),
+        supabase.rpc('get_admin_dashboard_stats', { p_start: startISO, p_end: endISO }),
       ]);
+      if (statsRes.error) throw statsRes.error;
+      const stats = statsRes.data as AdminDashboardStats;
 
-      const activeBuses = busesRes.data || [];
+      // Database statuses use underscores (en_service), the cards use hyphens (en-service)
       const statusCounts: BusStatusData = {
         disponible: 0, 'en-service': 0, maintenance: 0,
         'panne-garage': 0, 'panne-route': 0, 'en-attente-pieces': 0,
       };
-      activeBuses.forEach(b => {
-        if (b.status in statusCounts) {
-          statusCounts[b.status as keyof BusStatusData]++;
-        }
+      Object.entries(stats.bus_status ?? {}).forEach(([status, n]) => {
+        const key = status.replace(/_/g, '-');
+        if (key in statusCounts) statusCounts[key as keyof BusStatusData] += Number(n);
       });
       setBusStatus(statusCounts);
-
-      const validReservations = (reservationsRes.data || []).filter(r => r.status !== 'cancelled');
-      const totalRevenue = validReservations.reduce((s, r) => s + (r.total_price || 0), 0);
-      const ticketsSold = validReservations.reduce((s, r) => {
-        const seats = r.seat_numbers;
-        if (Array.isArray(seats)) return s + seats.length;
-        return s + 1;
-      }, 0);
-      const totalPayments = (paymentsRes.data || []).reduce((s, p) => s + (p.amount || 0), 0);
-      const totalExpenses = (expensesRes.data || []).reduce((s, e) => s + (e.amount || 0), 0);
-      const totalFuel = (fuelRes.data || []).reduce((s, f) => s + (f.quantity_liters || 0), 0);
 
       setKpis({
         cities: citiesRes.count || 0,
@@ -150,15 +144,15 @@ export default function AdminDashboard() {
         counters: countersRes.count || 0,
         companies: companiesRes.count || 0,
         users: usersRes.count || 0,
-        buses: activeBuses.filter(b => b.is_active).length,
+        buses: Number(stats.buses_active),
         routes: routesRes.count || 0,
-        schedules: schedulesRes.count || 0,
-        reservations: validReservations.length,
-        ticketsSold,
-        revenue: totalRevenue,
-        payments: totalPayments,
-        expenses: totalExpenses,
-        fuelConsumed: totalFuel,
+        schedules: Number(stats.schedules),
+        reservations: Number(stats.reservations),
+        ticketsSold: Number(stats.tickets_sold),
+        revenue: Number(stats.revenue),
+        payments: Number(stats.payments),
+        expenses: Number(stats.expenses),
+        fuelConsumed: Number(stats.fuel_liters),
         fuelStations: fuelStationsRes.count || 0,
         fuelTanks: fuelTanksRes.count || 0,
         garages: garagesRes.count || 0,
@@ -166,11 +160,17 @@ export default function AdminDashboard() {
 
       setRecentReservations(recentRes.data || []);
 
-      await Promise.all([
-        loadRevenueChart(startISO, endISO),
-        loadCompanyChart(startISO, endISO),
-        loadRouteChart(startISO, endISO),
-      ]);
+      setRevenueChart((stats.revenue_by_day ?? []).map(d => ({
+        date: d.day,
+        revenue: Math.round(Number(d.revenue) / 1000),
+        tickets: Number(d.tickets),
+      })));
+      setCompanyChart((stats.revenue_by_company ?? []).map(c => ({ name: c.name, value: Number(c.value) })));
+      setRouteChart((stats.revenue_by_route ?? []).slice(0, 7).map(r => ({
+        name: r.name,
+        revenue: Math.round(Number(r.revenue) / 1000),
+        tickets: Number(r.tickets),
+      })));
     } catch (err: any) {
       console.error(err);
       toast.error('Erreur de chargement du dashboard');
@@ -180,108 +180,26 @@ export default function AdminDashboard() {
     }
   }, [getRange]);
 
-  const loadRevenueChart = async (startISO: string, endISO: string) => {
-    const { data } = await supabase
-      .from('reservations')
-      .select('created_at, total_price, seat_numbers, status')
-      .gte('created_at', startISO)
-      .lte('created_at', endISO)
-      .neq('status', 'cancelled');
-
-    if (!data) return;
-
-    const byDay: Record<string, { revenue: number; tickets: number }> = {};
-    data.forEach(r => {
-      const day = format(new Date(r.created_at), 'dd/MM');
-      if (!byDay[day]) byDay[day] = { revenue: 0, tickets: 0 };
-      byDay[day].revenue += r.total_price || 0;
-      byDay[day].tickets += Array.isArray(r.seat_numbers) ? r.seat_numbers.length : 1;
-    });
-
-    setRevenueChart(
-      Object.entries(byDay).map(([date, vals]) => ({
-        date,
-        revenue: Math.round(vals.revenue / 1000),
-        tickets: vals.tickets,
-      }))
-    );
-  };
-
-  const loadCompanyChart = async (startISO: string, endISO: string) => {
-    const { data: companies } = await supabase
-      .from('companies').select('id, name').eq('is_active', true);
-    if (!companies) return;
-
-    const results = await Promise.all(
-      companies.map(async (company) => {
-        const { data: busList } = await supabase
-          .from('buses').select('id').eq('company_id', company.id);
-        const busIds = busList?.map(b => b.id) || [];
-        if (busIds.length === 0) return { name: company.name, value: 0 };
-
-        const { data: schedules } = await supabase
-          .from('schedules').select('id').in('bus_id', busIds)
-          .gte('departure_datetime', startISO).lte('departure_datetime', endISO);
-        const scheduleIds = schedules?.map(s => s.id) || [];
-        if (scheduleIds.length === 0) return { name: company.name, value: 0 };
-
-        const { data: reservations } = await supabase
-          .from('reservations').select('total_price')
-          .in('schedule_id', scheduleIds).neq('status', 'cancelled');
-
-        const total = reservations?.reduce((s, r) => s + (r.total_price || 0), 0) || 0;
-        return { name: company.name, value: total };
-      })
-    );
-
-    setCompanyChart(results.filter(c => c.value > 0));
-  };
-
-  const loadRouteChart = async (startISO: string, endISO: string) => {
-    const { data: schedules } = await supabase
-      .from('schedules')
-      .select('id, route_id, routes(name)')
-      .gte('departure_datetime', startISO).lte('departure_datetime', endISO);
-
-    if (!schedules || schedules.length === 0) { setRouteChart([]); return; }
-
-    const scheduleIds = schedules.map(s => s.id);
-    const { data: reservations } = await supabase
-      .from('reservations')
-      .select('schedule_id, total_price, seat_numbers')
-      .in('schedule_id', scheduleIds)
-      .neq('status', 'cancelled');
-
-    const routeMap: Record<string, { revenue: number; tickets: number }> = {};
-    schedules.forEach(schedule => {
-      const routeName = (schedule.routes as any)?.name || 'Inconnu';
-      if (!routeMap[routeName]) routeMap[routeName] = { revenue: 0, tickets: 0 };
-
-      reservations?.filter(r => r.schedule_id === schedule.id).forEach(r => {
-        routeMap[routeName].revenue += r.total_price || 0;
-        routeMap[routeName].tickets += Array.isArray(r.seat_numbers) ? r.seat_numbers.length : 1;
-      });
-    });
-
-    setRouteChart(
-      Object.entries(routeMap)
-        .map(([name, vals]) => ({ name, revenue: Math.round(vals.revenue / 1000), tickets: vals.tickets }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 7)
-    );
-  };
-
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   useEffect(() => {
+    // Sales arrive continuously: refresh at most once every 10 s instead of on every change
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; loadData(true); }, 10_000);
+    };
     const channel = supabase
       .channel('admin-dashboard-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => loadData(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => loadData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, scheduleRefresh)
       .subscribe();
-    return () => { channel.unsubscribe(); };
+    return () => {
+      if (timer) clearTimeout(timer);
+      channel.unsubscribe();
+    };
   }, [loadData]);
 
   const kpiCards: {
