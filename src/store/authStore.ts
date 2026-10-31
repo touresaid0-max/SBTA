@@ -112,6 +112,9 @@ export const useAuthStore = create<AuthState>()(
               if (_isPrinting && (event === 'SIGNED_OUT' || (!session && event !== 'SIGNED_IN'))) return;
               if (event === 'SIGNED_IN' && session?.user) {
                 set({ session, isAuthenticated: true });
+                // Supabase re-sends SIGNED_IN each time the tab comes back into view: reload the
+                // profile (4 requests + a write) only when a different user has signed in
+                if (get().user?.id === session.user.id) return;
                 await get().fetchProfile();
               } else if (event === 'SIGNED_OUT') {
                 if (_isPrinting) return;
