@@ -5,51 +5,42 @@ import { Send, Package, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useParams, useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { useAuthStore } from '../../store/authStore';
+import { receivedOf, statusInfo, type PurchaseOrderItem } from '../../services/purchaseOrders';
 
 interface PurchaseOrder {
   id: string;
-  po_number: string;
+  order_number: string;
   supplier_id: string;
+  order_date: string | null;
+  expected_delivery_date: string | null;
   total_amount: number;
   status: string;
-  notes: string;
-  ordered_at: string | null;
-  received_at: string | null;
+  items: PurchaseOrderItem[] | null;
   created_at: string;
   spare_parts_suppliers: {
     name: string;
-    code: string;
-    contact_person: string;
-    phone: string;
-    email: string;
-  };
-  purchase_order_items: {
-    id: string;
-    quantity: number;
-    unit_price: number;
-    total_price: number;
-    received_quantity: number;
-    parts_inventory: {
-      id: string;
-      reference: string;
-      name: string;
-      unit: string;
-      stock_quantity: number;
-    };
-  }[];
+    contact_person: string | null;
+    phone: string | null;
+    email: string | null;
+  } | null;
 }
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const userId = useAuthStore((s) => s.user?.id);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
-  const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({});
+  // Quantity to receive now, per line index
+  const [receivedQuantities, setReceivedQuantities] = useState<Record<number, number>>({});
 
   useEffect(() => {
     loadPurchaseOrder();
   }, [id]);
+
+  const items = purchaseOrder?.items ?? [];
 
   const loadPurchaseOrder = async () => {
     try {
@@ -58,38 +49,25 @@ export default function PurchaseOrderDetail() {
       const { data, error } = await supabase
         .from('spare_parts_purchase_orders')
         .select(`
-          *,
+          id, order_number, supplier_id, order_date, expected_delivery_date,
+          total_amount, status, items, created_at,
           spare_parts_suppliers:supplier_id (
             name,
-            code,
             contact_person,
             phone,
             email
-          ),
-          purchase_order_items:spare_parts_purchase_order_items (
-            id,
-            quantity,
-            unit_price,
-            total_price,
-            received_quantity,
-            parts_inventory:part_id (
-              id,
-              reference,
-              name,
-              unit,
-              stock_quantity
-            )
           )
         `)
         .eq('id', id)
         .single();
 
       if (error) throw error;
-      setPurchaseOrder(data as PurchaseOrder);
+      const order = data as unknown as PurchaseOrder;
+      setPurchaseOrder(order);
 
-      const quantities: Record<string, number> = {};
-      data.purchase_order_items.forEach((item: any) => {
-        quantities[item.id] = item.quantity - item.received_quantity;
+      const quantities: Record<number, number> = {};
+      (order.items ?? []).forEach((item, index) => {
+        quantities[index] = Math.max(0, Number(item.quantity) - receivedOf(item));
       });
       setReceivedQuantities(quantities);
     } catch (error: any) {
@@ -104,101 +82,51 @@ export default function PurchaseOrderDetail() {
     try {
       setSubmitting(true);
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('spare_parts_purchase_orders')
-        .update({
-          status: 'ordered',
-          ordered_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
+        .update({ status: 'validee', validated_by: userId ?? null })
+        .eq('id', id)
+        .select('id');
 
       if (error) throw error;
+      // RLS refuses silently: no row comes back
+      if (!data?.length) throw new Error('Droits insuffisants pour modifier ce bon de commande');
 
       toast.success('Bon de commande marqué comme commandé');
       loadPurchaseOrder();
     } catch (error: any) {
-      toast.error('Erreur lors de la mise à jour');
+      toast.error(error?.message?.startsWith('Droits') ? error.message : 'Erreur lors de la mise à jour');
       console.error(error);
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Movements, stock and received quantities are saved in one database transaction
+  // (receive_purchase_order, migration 20261102140000): nothing is saved if a step fails.
   const handleReceive = async () => {
+    if (!purchaseOrder) return;
     try {
       setSubmitting(true);
 
-      for (const [itemId, qty] of Object.entries(receivedQuantities)) {
-        if (qty <= 0) continue;
+      const lines = Object.entries(receivedQuantities)
+        .map(([index, quantity]) => ({ index: Number(index), quantity }))
+        .filter(line => line.quantity > 0);
 
-        const item = purchaseOrder?.purchase_order_items.find(i => i.id === itemId);
-        if (!item) continue;
+      const { data: newStatus, error } = await supabase.rpc('receive_purchase_order', {
+        p_order_id: purchaseOrder.id,
+        p_lines: lines
+      });
 
-        const newReceivedQty = item.received_quantity + qty;
-
-        const { error: itemError } = await supabase
-          .from('spare_parts_purchase_order_items')
-          .update({
-            received_quantity: newReceivedQty,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', itemId);
-
-        if (itemError) throw itemError;
-
-        const { error: stockError } = await supabase
-          .from('spare_parts_stock_movements')
-          .insert({
-            part_id: item.parts_inventory.id,
-            movement_type: 'in',
-            quantity: qty,
-            reference_type: 'purchase_order',
-            reference_id: id,
-            notes: `Réception BC ${purchaseOrder?.po_number}`,
-            created_at: new Date().toISOString()
-          });
-
-        if (stockError) throw stockError;
-
-        const { error: updateStockError } = await supabase
-          .from('parts_inventory')
-          .update({
-            stock_quantity: item.parts_inventory.stock_quantity + qty,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', item.parts_inventory.id);
-
-        if (updateStockError) throw updateStockError;
-      }
-
-      const allReceived = purchaseOrder?.purchase_order_items.every(
-        item => item.received_quantity + (receivedQuantities[item.id] || 0) >= item.quantity
-      );
-
-      const someReceived = purchaseOrder?.purchase_order_items.some(
-        item => (item.received_quantity + (receivedQuantities[item.id] || 0)) > 0
-      );
-
-      const newStatus = allReceived ? 'completed' : someReceived ? 'partial' : 'ordered';
-
-      const { error: poError } = await supabase
-        .from('spare_parts_purchase_orders')
-        .update({
-          status: newStatus,
-          received_at: allReceived ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
-
-      if (poError) throw poError;
+      if (error) throw error;
 
       toast.success(
-        allReceived ? 'Réception complète effectuée' : 'Réception partielle effectuée'
+        newStatus === 'livree' ? 'Réception complète effectuée' : 'Réception partielle effectuée'
       );
       navigate('/stock/purchase-orders');
     } catch (error: any) {
-      toast.error('Erreur lors de la réception');
+      // Messages raised by the database function are already in French
+      toast.error(error?.code === 'P0001' ? error.message : 'Erreur lors de la réception');
       console.error(error);
     } finally {
       setSubmitting(false);
@@ -227,18 +155,28 @@ export default function PurchaseOrderDetail() {
     );
   }
 
-  const canOrder = purchaseOrder.status === 'draft';
-  const canReceive = purchaseOrder.status === 'ordered' || purchaseOrder.status === 'partial';
+  const canOrder = purchaseOrder.status === 'en_attente';
+  const canReceive = purchaseOrder.status === 'validee';
+  const status = statusInfo(purchaseOrder.status);
+  const supplier = purchaseOrder.spare_parts_suppliers;
 
   return (
     <div className="p-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
-            {purchaseOrder.po_number}
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3" style={{ color: 'var(--text-primary)' }}>
+            {purchaseOrder.order_number}
+            <span
+              className="px-3 py-1 rounded-full text-sm font-semibold"
+              style={{ backgroundColor: status.bg, color: status.color }}
+            >
+              {status.label}
+            </span>
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
             Créé le {format(new Date(purchaseOrder.created_at), 'dd/MM/yyyy à HH:mm')}
+            {purchaseOrder.expected_delivery_date &&
+              ` · Livraison prévue le ${format(new Date(purchaseOrder.expected_delivery_date), 'dd/MM/yyyy')}`}
           </p>
         </div>
 
@@ -249,19 +187,19 @@ export default function PurchaseOrderDetail() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p style={{ color: 'var(--text-secondary)' }}>Nom</p>
-                  <p className="font-bold">{purchaseOrder.spare_parts_suppliers.name}</p>
+                  <p className="font-bold">{supplier?.name ?? '-'}</p>
                 </div>
                 <div>
-                  <p style={{ color: 'var(--text-secondary)' }}>Code</p>
-                  <p className="font-mono font-semibold">{purchaseOrder.spare_parts_suppliers.code}</p>
+                  <p style={{ color: 'var(--text-secondary)' }}>Email</p>
+                  <p className="font-semibold">{supplier?.email || '-'}</p>
                 </div>
                 <div>
                   <p style={{ color: 'var(--text-secondary)' }}>Contact</p>
-                  <p className="font-semibold">{purchaseOrder.spare_parts_suppliers.contact_person}</p>
+                  <p className="font-semibold">{supplier?.contact_person || '-'}</p>
                 </div>
                 <div>
                   <p style={{ color: 'var(--text-secondary)' }}>Téléphone</p>
-                  <p className="font-semibold">{purchaseOrder.spare_parts_suppliers.phone}</p>
+                  <p className="font-semibold">{supplier?.phone || '-'}</p>
                 </div>
               </div>
             </div>
@@ -282,38 +220,41 @@ export default function PurchaseOrderDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {purchaseOrder.purchase_order_items.map(item => (
-                      <tr key={item.id} className="border-t">
-                        <td className="p-2 font-mono">{item.parts_inventory.reference}</td>
-                        <td className="p-2 font-semibold">{item.parts_inventory.name}</td>
-                        <td className="p-2">{item.quantity} {item.parts_inventory.unit}</td>
-                        <td className="p-2">
-                          <span className="font-semibold">{item.received_quantity}</span>
-                          {item.received_quantity >= item.quantity && (
-                            <CheckCircle className="inline w-4 h-4 ml-1 text-green-600" />
-                          )}
-                        </td>
-                        {canReceive && (
+                    {items.map((item, index) => {
+                      const received = receivedOf(item);
+                      return (
+                        <tr key={index} className="border-t">
+                          <td className="p-2 font-mono">{item.part_number}</td>
+                          <td className="p-2 font-semibold">{item.name}</td>
+                          <td className="p-2">{item.quantity}</td>
                           <td className="p-2">
-                            <input
-                              type="number"
-                              min="0"
-                              max={item.quantity - item.received_quantity}
-                              value={receivedQuantities[item.id] || 0}
-                              onChange={(e) =>
-                                setReceivedQuantities({
-                                  ...receivedQuantities,
-                                  [item.id]: parseInt(e.target.value) || 0
-                                })
-                              }
-                              className="w-20 p-1 border rounded"
-                            />
+                            <span className="font-semibold">{received}</span>
+                            {received >= Number(item.quantity) && (
+                              <CheckCircle className="inline w-4 h-4 ml-1 text-green-600" />
+                            )}
                           </td>
-                        )}
-                        <td className="p-2">{formatCurrency(item.unit_price)}</td>
-                        <td className="p-2 font-bold">{formatCurrency(item.total_price)}</td>
-                      </tr>
-                    ))}
+                          {canReceive && (
+                            <td className="p-2">
+                              <input
+                                type="number"
+                                min="0"
+                                max={Math.max(0, Number(item.quantity) - received)}
+                                value={receivedQuantities[index] || 0}
+                                onChange={(e) =>
+                                  setReceivedQuantities({
+                                    ...receivedQuantities,
+                                    [index]: parseInt(e.target.value) || 0
+                                  })
+                                }
+                                className="w-20 p-1 border rounded"
+                              />
+                            </td>
+                          )}
+                          <td className="p-2">{formatCurrency(item.unit_price)}</td>
+                          <td className="p-2 font-bold">{formatCurrency(item.total)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot style={{ backgroundColor: 'var(--neutral-100)' }}>
                     <tr>
@@ -328,13 +269,6 @@ export default function PurchaseOrderDetail() {
                 </table>
               </div>
             </div>
-
-            {purchaseOrder.notes && (
-              <div className="bg-white rounded-xl p-6 border">
-                <h3 className="font-bold mb-4">Notes</h3>
-                <p className="text-sm">{purchaseOrder.notes}</p>
-              </div>
-            )}
           </div>
 
           <div className="space-y-6">

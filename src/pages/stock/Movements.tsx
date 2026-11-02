@@ -1,31 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { Filter, TrendingDown, TrendingUp, Calendar } from 'lucide-react';
+import { Filter, TrendingDown, TrendingUp, Calendar, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Movement {
   id: string;
   part_id: string;
-  movement_type: 'in' | 'out';
+  movement_type: MovementType;
   quantity: number;
-  reference_type: string;
-  reference_id: string;
-  notes: string;
-  stock_before: number;
-  stock_after: number;
+  reference_type: string | null;
+  reference_id: string | null;
+  notes: string | null;
   created_at: string;
-  parts_inventory: {
-    reference: string;
+  spare_parts: {
+    part_number: string;
     name: string;
-    unit: string;
-  };
+  } | null;
 }
 
-const MOVEMENT_TYPES = [
-  { value: 'in', label: 'Entrées', icon: TrendingUp, color: 'var(--success)' },
-  { value: 'out', label: 'Sorties', icon: TrendingDown, color: 'var(--danger)' }
+// Types allowed by the database (spare_parts_stock_movements.movement_type)
+type MovementType = 'entree' | 'sortie' | 'ajustement';
+
+const MOVEMENT_TYPES: { value: MovementType; label: string; plural: string; sign: string; icon: typeof TrendingUp; color: string }[] = [
+  { value: 'entree', label: 'Entrée', plural: 'Entrées', sign: '+', icon: TrendingUp, color: 'var(--success)' },
+  { value: 'sortie', label: 'Sortie', plural: 'Sorties', sign: '-', icon: TrendingDown, color: 'var(--danger)' },
+  { value: 'ajustement', label: 'Ajustement', plural: 'Ajustements', sign: '', icon: RefreshCw, color: 'var(--warning)' }
 ];
+
+const typeInfo = (type: string) => MOVEMENT_TYPES.find(t => t.value === type) ?? MOVEMENT_TYPES[2];
 
 const REFERENCE_TYPES: Record<string, string> = {
   purchase_order: 'Bon de commande',
@@ -45,7 +48,7 @@ export default function Movements() {
   const [filterPart, setFilterPart] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [parts, setParts] = useState<{ id: string; reference: string; name: string }[]>([]);
+  const [parts, setParts] = useState<{ id: string; part_number: string; name: string }[]>([]);
 
   useEffect(() => {
     loadData();
@@ -63,25 +66,24 @@ export default function Movements() {
         supabase
           .from('spare_parts_stock_movements')
           .select(`
-            *,
-            parts_inventory:part_id (
-              reference,
-              name,
-              unit
+            id, part_id, movement_type, quantity, reference_type, reference_id, notes, created_at,
+            spare_parts:part_id (
+              part_number,
+              name
             )
           `)
           .order('created_at', { ascending: false })
           .limit(500),
         supabase
-          .from('parts_inventory')
-          .select('id, reference, name')
+          .from('spare_parts')
+          .select('id, part_number, name')
           .order('name', { ascending: true })
       ]);
 
       if (movementsRes.error) throw movementsRes.error;
       if (partsRes.error) throw partsRes.error;
 
-      setMovements(movementsRes.data || []);
+      setMovements((movementsRes.data || []) as unknown as Movement[]);
       setParts(partsRes.data || []);
     } catch (error: any) {
       toast.error('Erreur de chargement');
@@ -123,23 +125,18 @@ export default function Movements() {
     setFilteredMovements(filtered);
   };
 
-  const getMovementIcon = (type: 'in' | 'out') => {
-    const config = MOVEMENT_TYPES.find(t => t.value === type);
-    if (!config) return null;
+  const getMovementIcon = (type: string) => {
+    const config = typeInfo(type);
     const Icon = config.icon;
     return <Icon className="w-4 h-4" style={{ color: config.color }} />;
   };
 
-  const getMovementLabel = (type: 'in' | 'out') => {
-    return type === 'in' ? 'Entrée' : 'Sortie';
-  };
-
   const totalIn = filteredMovements
-    .filter(m => m.movement_type === 'in')
+    .filter(m => m.movement_type === 'entree')
     .reduce((sum, m) => sum + m.quantity, 0);
 
   const totalOut = filteredMovements
-    .filter(m => m.movement_type === 'out')
+    .filter(m => m.movement_type === 'sortie')
     .reduce((sum, m) => sum + m.quantity, 0);
 
   return (
@@ -191,8 +188,9 @@ export default function Movements() {
             className="px-4 py-2 border rounded-lg"
           >
             <option value="">Tous types</option>
-            <option value="in">Entrées</option>
-            <option value="out">Sorties</option>
+            {MOVEMENT_TYPES.map(t => (
+              <option key={t.value} value={t.value}>{t.plural}</option>
+            ))}
           </select>
 
           <select
@@ -214,7 +212,7 @@ export default function Movements() {
             <option value="">Toutes pièces</option>
             {parts.map(part => (
               <option key={part.id} value={part.id}>
-                {part.reference} - {part.name}
+                {part.part_number} - {part.name}
               </option>
             ))}
           </select>
@@ -276,8 +274,6 @@ export default function Movements() {
                   <th className="text-left p-4 font-semibold">Type</th>
                   <th className="text-left p-4 font-semibold">Pièce</th>
                   <th className="text-left p-4 font-semibold">Quantité</th>
-                  <th className="text-left p-4 font-semibold">Stock avant</th>
-                  <th className="text-left p-4 font-semibold">Stock après</th>
                   <th className="text-left p-4 font-semibold">Référence</th>
                   <th className="text-left p-4 font-semibold">Notes</th>
                 </tr>
@@ -296,37 +292,26 @@ export default function Movements() {
                         {getMovementIcon(movement.movement_type)}
                         <span
                           className="font-semibold"
-                          style={{
-                            color: movement.movement_type === 'in' ? 'var(--success)' : 'var(--danger)'
-                          }}
+                          style={{ color: typeInfo(movement.movement_type).color }}
                         >
-                          {getMovementLabel(movement.movement_type)}
+                          {typeInfo(movement.movement_type).label}
                         </span>
                       </div>
                     </td>
                     <td className="p-4">
-                      <p className="font-semibold">{movement.parts_inventory.name}</p>
+                      <p className="font-semibold">{movement.spare_parts?.name ?? '-'}</p>
                       <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                        {movement.parts_inventory.reference}
+                        {movement.spare_parts?.part_number}
                       </p>
                     </td>
                     <td className="p-4">
                       <p className="font-bold text-lg">
-                        {movement.movement_type === 'in' ? '+' : '-'}{movement.quantity}
+                        {typeInfo(movement.movement_type).sign}{movement.quantity}
                       </p>
-                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {movement.parts_inventory.unit}
-                      </p>
-                    </td>
-                    <td className="p-4">
-                      <p className="font-semibold">{movement.stock_before || '-'}</p>
-                    </td>
-                    <td className="p-4">
-                      <p className="font-semibold">{movement.stock_after || '-'}</p>
                     </td>
                     <td className="p-4">
                       <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100">
-                        {REFERENCE_TYPES[movement.reference_type] || movement.reference_type}
+                        {(movement.reference_type && REFERENCE_TYPES[movement.reference_type]) || movement.reference_type || '-'}
                       </span>
                     </td>
                     <td className="p-4">

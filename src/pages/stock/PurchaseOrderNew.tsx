@@ -4,19 +4,19 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2, Save, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { useAuthStore } from '../../store/authStore';
+import { provisionalOrderNumber, type PurchaseOrderItem } from '../../services/purchaseOrders';
 
 interface Supplier {
   id: string;
-  code: string;
   name: string;
 }
 
 interface Part {
   id: string;
-  reference: string;
+  part_number: string;
   name: string;
-  purchase_price: number;
-  unit: string;
+  unit_price: number | null;
 }
 
 interface OrderItem {
@@ -24,7 +24,6 @@ interface OrderItem {
   part_id: string;
   part_name: string;
   part_reference: string;
-  unit: string;
   quantity: number;
   unit_price: number;
   total_price: number;
@@ -38,7 +37,8 @@ export default function PurchaseOrderNew() {
   const [parts, setParts] = useState<Part[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
-  const [notes, setNotes] = useState('');
+  const [expectedDelivery, setExpectedDelivery] = useState('');
+  const userId = useAuthStore((s) => s.user?.id);
 
   useEffect(() => {
     loadData();
@@ -51,11 +51,11 @@ export default function PurchaseOrderNew() {
       const [suppliersRes, partsRes] = await Promise.all([
         supabase
           .from('spare_parts_suppliers')
-          .select('id, code, name')
+          .select('id, name')
           .order('name', { ascending: true }),
         supabase
-          .from('parts_inventory')
-          .select('id, reference, name, purchase_price, unit')
+          .from('spare_parts')
+          .select('id, part_number, name, unit_price')
           .order('name', { ascending: true })
       ]);
 
@@ -72,12 +72,6 @@ export default function PurchaseOrderNew() {
     }
   };
 
-  const generatePONumber = () => {
-    const year = new Date().getFullYear();
-    const random = Math.floor(10000 + Math.random() * 90000);
-    return `BC-${year}-${random}`;
-  };
-
   const addItem = () => {
     setOrderItems([
       ...orderItems,
@@ -86,7 +80,6 @@ export default function PurchaseOrderNew() {
         part_id: '',
         part_name: '',
         part_reference: '',
-        unit: '',
         quantity: 1,
         unit_price: 0,
         total_price: 0
@@ -109,9 +102,9 @@ export default function PurchaseOrderNew() {
           const part = parts.find(p => p.id === value);
           if (part) {
             updated.part_name = part.name;
-            updated.part_reference = part.reference;
-            updated.unit = part.unit;
-            updated.unit_price = part.purchase_price;
+            updated.part_reference = part.part_number;
+            updated.unit_price = Number(part.unit_price ?? 0);
+            updated.total_price = updated.quantity * updated.unit_price;
           }
         }
 
@@ -128,6 +121,7 @@ export default function PurchaseOrderNew() {
     return orderItems.reduce((sum, item) => sum + item.total_price, 0);
   };
 
+  // 'draft' is saved as en_attente, 'ordered' as validee (the statuses the database accepts)
   const handleSubmit = async (status: 'draft' | 'ordered') => {
     if (!selectedSupplier) {
       toast.error('Veuillez sélectionner un fournisseur');
@@ -148,41 +142,31 @@ export default function PurchaseOrderNew() {
     try {
       setSubmitting(true);
 
-      const poNumber = generatePONumber();
-      const totalAmount = calculateTotal();
-
-      const { data: poData, error: poError } = await supabase
-        .from('spare_parts_purchase_orders')
-        .insert({
-          po_number: poNumber,
-          supplier_id: selectedSupplier,
-          total_amount: totalAmount,
-          status: status,
-          notes: notes,
-          ordered_at: status === 'ordered' ? new Date().toISOString() : null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (poError) throw poError;
-
-      const items = orderItems.map(item => ({
-        purchase_order_id: poData.id,
+      const items: PurchaseOrderItem[] = orderItems.map(item => ({
         part_id: item.part_id,
+        part_number: item.part_reference,
+        name: item.part_name,
         quantity: item.quantity,
         unit_price: item.unit_price,
-        total_price: item.total_price,
+        total: item.total_price,
         received_quantity: 0,
-        created_at: new Date().toISOString()
       }));
 
-      const { error: itemsError } = await supabase
-        .from('spare_parts_purchase_order_items')
-        .insert(items);
+      const { error: poError } = await supabase
+        .from('spare_parts_purchase_orders')
+        .insert({
+          order_number: provisionalOrderNumber(),
+          supplier_id: selectedSupplier,
+          order_date: new Date().toISOString().slice(0, 10),
+          expected_delivery_date: expectedDelivery || null,
+          total_amount: calculateTotal(),
+          status: status === 'ordered' ? 'validee' : 'en_attente',
+          items,
+          created_by: userId ?? null,
+          validated_by: status === 'ordered' ? userId ?? null : null,
+        });
 
-      if (itemsError) throw itemsError;
+      if (poError) throw poError;
 
       toast.success(
         status === 'draft'
@@ -233,7 +217,7 @@ export default function PurchaseOrderNew() {
                 <option value="">Sélectionner un fournisseur</option>
                 {suppliers.map(supplier => (
                   <option key={supplier.id} value={supplier.id}>
-                    {supplier.name} ({supplier.code})
+                    {supplier.name}
                   </option>
                 ))}
               </select>
@@ -284,7 +268,7 @@ export default function PurchaseOrderNew() {
                             <option value="">Sélectionner une pièce</option>
                             {parts.map(part => (
                               <option key={part.id} value={part.id}>
-                                {part.reference} - {part.name}
+                                {part.part_number} - {part.name}
                               </option>
                             ))}
                           </select>
@@ -337,13 +321,12 @@ export default function PurchaseOrderNew() {
             </div>
 
             <div className="bg-white rounded-xl p-6 border">
-              <h3 className="font-bold mb-4">Notes</h3>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+              <h3 className="font-bold mb-4">Livraison prévue</h3>
+              <input
+                type="date"
+                value={expectedDelivery}
+                onChange={(e) => setExpectedDelivery(e.target.value)}
                 className="w-full p-3 border rounded-lg"
-                rows={4}
-                placeholder="Notes ou instructions particulières..."
               />
             </div>
           </div>

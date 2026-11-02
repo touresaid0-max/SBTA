@@ -3,6 +3,8 @@ import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import { AlertTriangle, ShoppingCart, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../../store/authStore';
+import { provisionalOrderNumber } from '../../services/purchaseOrders';
 
 interface LowStockPart {
   id: string;
@@ -12,6 +14,7 @@ interface LowStockPart {
   stock_quantity: number;
   min_stock_level: number;
   unit_price: number;
+  supplier_id: string | null;
 }
 
 interface StockAlertsProps {
@@ -24,6 +27,7 @@ export default function StockAlerts({ showInDashboard = false, maxItems = 10 }: 
   const [loading, setLoading] = useState(true);
   const [lowStockParts, setLowStockParts] = useState<LowStockPart[]>([]);
   const [creatingPO, setCreatingPO] = useState<string | null>(null);
+  const userId = useAuthStore((s) => s.user?.id);
 
   useEffect(() => {
     loadLowStockParts();
@@ -56,60 +60,57 @@ export default function StockAlerts({ showInDashboard = false, maxItems = 10 }: 
     try {
       setCreatingPO(part.id);
 
-      const { data: suppliers, error: suppliersError } = await supabase
-        .from('spare_parts_suppliers')
-        .select('id')
-        .eq('is_preferred', true)
-        .limit(1);
+      // The part's own supplier, otherwise the first active supplier
+      let supplierId = part.supplier_id;
+      if (!supplierId) {
+        const { data: suppliers, error: suppliersError } = await supabase
+          .from('spare_parts_suppliers')
+          .select('id')
+          .eq('is_active', true)
+          .order('name', { ascending: true })
+          .limit(1);
 
-      if (suppliersError) throw suppliersError;
+        if (suppliersError) throw suppliersError;
+        supplierId = suppliers?.[0]?.id ?? null;
+      }
 
-      if (!suppliers || suppliers.length === 0) {
-        toast.error('Aucun fournisseur préféré configuré');
+      if (!supplierId) {
+        toast.error('Aucun fournisseur actif configuré');
         navigate('/stock/suppliers');
         return;
       }
-
-      const year = new Date().getFullYear();
-      const random = Math.floor(10000 + Math.random() * 90000);
-      const poNumber = `BC-${year}-${random}`;
 
       const quantityToOrder = Math.max(
         part.min_stock_level * 2 - part.stock_quantity,
         10
       );
 
-      const totalPrice = quantityToOrder * part.unit_price;
+      const unitPrice = Number(part.unit_price ?? 0);
+      const totalPrice = quantityToOrder * unitPrice;
 
       const { data: poData, error: poError } = await supabase
         .from('spare_parts_purchase_orders')
         .insert({
-          po_number: poNumber,
-          supplier_id: suppliers[0].id,
+          order_number: provisionalOrderNumber(),
+          supplier_id: supplierId,
+          order_date: new Date().toISOString().slice(0, 10),
           total_amount: totalPrice,
-          status: 'draft',
-          notes: `Commande automatique - Stock minimum atteint pour ${part.part_number}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          status: 'en_attente',
+          items: [{
+            part_id: part.id,
+            part_number: part.part_number,
+            name: part.name,
+            quantity: quantityToOrder,
+            unit_price: unitPrice,
+            total: totalPrice,
+            received_quantity: 0
+          }],
+          created_by: userId ?? null
         })
-        .select()
+        .select('id')
         .single();
 
       if (poError) throw poError;
-
-      const { error: itemError } = await supabase
-        .from('spare_parts_purchase_order_items')
-        .insert({
-          purchase_order_id: poData.id,
-          part_id: part.id,
-          quantity: quantityToOrder,
-          unit_price: part.unit_price,
-          total_price: totalPrice,
-          received_quantity: 0,
-          created_at: new Date().toISOString()
-        });
-
-      if (itemError) throw itemError;
 
       toast.success('Bon de commande créé');
       navigate(`/stock/purchase-orders/${poData.id}`);
