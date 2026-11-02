@@ -5,7 +5,7 @@ import { supabase } from '@/services/supabase';
 import { formatCurrency } from '@/utils/formatCurrency';
 import { Package, Loader2, AlertCircle, Calendar as CalendarIcon, Wallet } from 'lucide-react';
 
-type Period = 'day' | 'week' | 'month' | 'year';
+type Period = 'day' | 'yesterday' | 'last7' | 'week' | 'month' | 'last_month' | 'year' | 'custom';
 
 interface BaggageRow {
   id: string;
@@ -19,47 +19,99 @@ interface BaggageRow {
   has_ticket: boolean;
 }
 
-function getPeriodRange(period: Period): { from: Date; to: Date; label: string } {
-  const now = new Date();
-  const to = new Date(now);
-  to.setHours(23, 59, 59, 999);
-  const from = new Date(now);
+const DATE_LONG: Intl.DateTimeFormatOptions = { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' };
+const DATE_SHORT: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
 
-  if (period === 'day') {
-    from.setHours(0, 0, 0, 0);
-    return { from, to, label: from.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) };
-  }
-  if (period === 'week') {
-    const day = from.getDay();
-    const diff = (day === 0 ? -6 : 1) - day;
-    from.setDate(from.getDate() + diff);
-    from.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(from);
-    weekEnd.setDate(from.getDate() + 6);
-    return {
-      from,
-      to,
-      label: `Du ${from.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} au ${weekEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}`,
-    };
-  }
-  if (period === 'month') {
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-    return { from, to, label: from.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) };
-  }
-  from.setMonth(0, 1);
-  from.setHours(0, 0, 0, 0);
-  return { from, to, label: String(from.getFullYear()) };
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+/** YYYY-MM-DD of a local date, the format of the date fields. */
+function toInputDate(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function fromInputDate(value: string): Date {
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function rangeLabel(from: Date, to: Date): string {
+  if (toInputDate(from) === toInputDate(to)) return from.toLocaleDateString('fr-FR', DATE_LONG);
+  return `Du ${from.toLocaleDateString('fr-FR', DATE_SHORT)} au ${to.toLocaleDateString('fr-FR', DATE_SHORT)}`;
+}
+
+function getPeriodRange(period: Period, customFrom: string, customTo: string): { from: Date; to: Date; label: string } {
+  const now = new Date();
+  const today = startOfDay(now);
+  const to = endOfDay(now);
+
+  switch (period) {
+    case 'day':
+      return { from: today, to, label: today.toLocaleDateString('fr-FR', DATE_LONG) };
+    case 'yesterday': {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      return { from: y, to: endOfDay(y), label: y.toLocaleDateString('fr-FR', DATE_LONG) };
+    }
+    case 'last7': {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 6);
+      return { from, to, label: rangeLabel(from, to) };
+    }
+    case 'week': {
+      // Week starting on Monday
+      const from = new Date(today);
+      const day = from.getDay();
+      from.setDate(from.getDate() + (day === 0 ? -6 : 1) - day);
+      return { from, to, label: rangeLabel(from, to) };
+    }
+    case 'month': {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { from, to, label: from.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) };
+    }
+    case 'last_month': {
+      const from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end = endOfDay(new Date(today.getFullYear(), today.getMonth(), 0));
+      return { from, to: end, label: from.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) };
+    }
+    case 'year': {
+      const from = new Date(today.getFullYear(), 0, 1);
+      return { from, to, label: String(from.getFullYear()) };
+    }
+    case 'custom': {
+      let from = customFrom ? fromInputDate(customFrom) : today;
+      let end = customTo ? fromInputDate(customTo) : today;
+      // Dates entered in the wrong order are swapped rather than giving an empty list
+      if (from > end) [from, end] = [end, from];
+      return { from, to: endOfDay(end), label: rangeLabel(from, end) };
+    }
+  }
+}
+
+// Supabase's maximum number of rows per request
+const PAGE_SIZE = 1000;
 
 export default function POSRecetteBagage() {
   const { session } = usePOSSession();
   const [period, setPeriod] = useState<Period>('day');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [rows, setRows] = useState<BaggageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
 
-  const range = useMemo(() => getPeriodRange(period), [period]);
+  const range = useMemo(() => getPeriodRange(period, customFrom, customTo), [period, customFrom, customTo]);
 
   useEffect(() => {
     if (!session?.user_id) return;
@@ -69,20 +121,31 @@ export default function POSRecetteBagage() {
 
     (async () => {
       try {
-        const { data, error: err } = await supabase
-          .from('baggage_tickets')
-          .select('id, baggage_number, destination, price, created_at, bus_registration, departure_number, owner_name, has_ticket, payment_status')
-          .eq('sold_by', session.user_id)
-          .eq('payment_status', 'paye')
-          .gte('created_at', range.from.toISOString())
-          .lte('created_at', range.to.toISOString())
-          .order('created_at', { ascending: false });
+        // Page by page: a month or a year can hold more than 1 000 operations,
+        // and a truncated list would give a wrong total
+        const all: BaggageRow[] = [];
+        let err: { message: string } | null = null;
+        for (let from = 0; ; from += PAGE_SIZE) {
+          const { data, error: pageError } = await supabase
+            .from('baggage_tickets')
+            .select('id, baggage_number, destination, price, created_at, bus_registration, departure_number, owner_name, has_ticket, payment_status')
+            .eq('sold_by', session.user_id)
+            .eq('payment_status', 'paye')
+            .gte('created_at', range.from.toISOString())
+            .lte('created_at', range.to.toISOString())
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, from + PAGE_SIZE - 1);
+          if (pageError) { err = pageError; break; }
+          all.push(...((data ?? []) as BaggageRow[]));
+          if (!data || data.length < PAGE_SIZE) break;
+        }
         if (cancelled) return;
         if (err) {
           setError(err.message);
           setRows([]);
         } else {
-          setRows((data ?? []) as BaggageRow[]);
+          setRows(all);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur inattendue');
@@ -101,10 +164,24 @@ export default function POSRecetteBagage() {
 
   const periodButtons: { key: Period; label: string }[] = [
     { key: 'day', label: 'Jour' },
+    { key: 'yesterday', label: 'Hier' },
+    { key: 'last7', label: '7 derniers jours' },
     { key: 'week', label: 'Semaine' },
     { key: 'month', label: 'Mois' },
+    { key: 'last_month', label: 'Mois dernier' },
     { key: 'year', label: 'Année' },
+    { key: 'custom', label: 'Plage personnalisée' },
   ];
+
+  const selectPeriod = (next: Period) => {
+    // The range starts from the period shown, so it only needs adjusting
+    if (next === 'custom' && !customFrom && !customTo) {
+      setCustomFrom(toInputDate(range.from));
+      setCustomTo(toInputDate(range.to));
+    }
+    setPeriod(next);
+  };
+  const todayInput = toInputDate(new Date());
 
   return (
     <POSLayout showBack stationName={session?.station_name} activeRoute="Recette bagage">
@@ -120,13 +197,13 @@ export default function POSRecetteBagage() {
               Période
             </span>
           </div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {periodButtons.map((p) => {
               const active = period === p.key;
               return (
                 <button
                   key={p.key}
-                  onClick={() => setPeriod(p.key)}
+                  onClick={() => selectPeriod(p.key)}
                   className="py-2 rounded-lg font-bold text-sm transition-all active:scale-95"
                   style={{
                     backgroundColor: active ? 'var(--primary)' : 'var(--surface-raised)',
@@ -139,6 +216,32 @@ export default function POSRecetteBagage() {
               );
             })}
           </div>
+          {period === 'custom' && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Du</span>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo || todayInput}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Au</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                />
+              </label>
+            </div>
+          )}
           <p className="text-xs mt-3 capitalize" style={{ color: 'var(--text-muted)' }}>
             {range.label}
           </p>
