@@ -5,25 +5,21 @@ import { Plus, Eye, Trash2, Package, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { PURCHASE_ORDER_STATUS, statusInfo } from '../../services/purchaseOrders';
 
 interface PurchaseOrder {
   id: string;
-  po_number: string;
+  order_number: string;
   supplier_id: string;
   total_amount: number;
   status: string;
-  ordered_at: string | null;
-  received_at: string | null;
+  order_date: string | null;
+  expected_delivery_date: string | null;
   created_at: string;
+  items: unknown[] | null;
   spare_parts_suppliers: {
     name: string;
-    code: string;
-  };
-  purchase_order_items: {
-    quantity: number;
-    unit_price: number;
-    total_price: number;
-  }[];
+  } | null;
 }
 
 export default function PurchaseOrders() {
@@ -42,21 +38,16 @@ export default function PurchaseOrders() {
       const { data, error } = await supabase
         .from('spare_parts_purchase_orders')
         .select(`
-          *,
+          id, order_number, supplier_id, total_amount, status,
+          order_date, expected_delivery_date, created_at, items,
           spare_parts_suppliers:supplier_id (
-            name,
-            code
-          ),
-          purchase_order_items:spare_parts_purchase_order_items (
-            quantity,
-            unit_price,
-            total_price
+            name
           )
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setPurchaseOrders(data || []);
+      setPurchaseOrders((data || []) as unknown as PurchaseOrder[]);
     } catch (error: any) {
       toast.error('Erreur de chargement');
       console.error(error);
@@ -69,29 +60,25 @@ export default function PurchaseOrders() {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce bon de commande ?')) return;
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('spare_parts_purchase_orders')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
       if (error) throw error;
+      // RLS refuses silently: no row comes back
+      if (!data?.length) throw new Error('Droits insuffisants pour supprimer ce bon de commande');
       toast.success('Bon de commande supprimé');
       loadPurchaseOrders();
     } catch (error: any) {
-      toast.error('Erreur lors de la suppression');
+      toast.error(error?.message?.startsWith('Droits') ? error.message : 'Erreur lors de la suppression');
       console.error(error);
     }
   };
 
   const getStatusBadge = (status: string) => {
-    const styles: Record<string, { bg: string; color: string; label: string }> = {
-      draft: { bg: 'var(--neutral-100)', color: 'var(--text-secondary)', label: 'Brouillon' },
-      ordered: { bg: 'var(--info-light)', color: 'var(--info)', label: 'Commandé' },
-      partial: { bg: 'var(--warning-light)', color: 'var(--warning)', label: 'Réceptionné partiel' },
-      completed: { bg: 'var(--success-light)', color: 'var(--success)', label: 'Réceptionné total' }
-    };
-
-    const style = styles[status] || styles.draft;
+    const style = statusInfo(status);
 
     return (
       <span
@@ -134,10 +121,9 @@ export default function PurchaseOrders() {
             className="px-4 py-2 border rounded-lg"
           >
             <option value="">Tous les statuts</option>
-            <option value="draft">Brouillon</option>
-            <option value="ordered">Commandé</option>
-            <option value="partial">Réceptionné partiel</option>
-            <option value="completed">Réceptionné total</option>
+            {Object.entries(PURCHASE_ORDER_STATUS).map(([value, info]) => (
+              <option key={value} value={value}>{info.label}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -159,7 +145,7 @@ export default function PurchaseOrders() {
                   <th className="text-left p-4 font-semibold">Articles</th>
                   <th className="text-left p-4 font-semibold">Montant total</th>
                   <th className="text-left p-4 font-semibold">Date création</th>
-                  <th className="text-left p-4 font-semibold">Date commande</th>
+                  <th className="text-left p-4 font-semibold">Livraison prévue</th>
                   <th className="text-left p-4 font-semibold">Statut</th>
                   <th className="text-left p-4 font-semibold">Actions</th>
                 </tr>
@@ -168,16 +154,13 @@ export default function PurchaseOrders() {
                 {filteredOrders.map(po => (
                   <tr key={po.id} className="border-t hover:bg-gray-50">
                     <td className="p-4">
-                      <p className="font-mono font-bold">{po.po_number}</p>
+                      <p className="font-mono font-bold">{po.order_number}</p>
                     </td>
                     <td className="p-4">
-                      <p className="font-semibold">{po.spare_parts_suppliers.name}</p>
-                      <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                        {po.spare_parts_suppliers.code}
-                      </p>
+                      <p className="font-semibold">{po.spare_parts_suppliers?.name ?? '-'}</p>
                     </td>
                     <td className="p-4">
-                      <p className="font-semibold">{po.purchase_order_items.length} article(s)</p>
+                      <p className="font-semibold">{(po.items ?? []).length} article(s)</p>
                     </td>
                     <td className="p-4">
                       <p className="font-bold text-lg" style={{ color: 'var(--primary)' }}>
@@ -191,13 +174,8 @@ export default function PurchaseOrders() {
                       </p>
                     </td>
                     <td className="p-4">
-                      {po.ordered_at ? (
-                        <>
-                          <p className="text-sm">{format(new Date(po.ordered_at), 'dd/MM/yyyy')}</p>
-                          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            {format(new Date(po.ordered_at), 'HH:mm')}
-                          </p>
-                        </>
+                      {po.expected_delivery_date ? (
+                        <p className="text-sm">{format(new Date(po.expected_delivery_date), 'dd/MM/yyyy')}</p>
                       ) : (
                         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>-</span>
                       )}
@@ -213,7 +191,7 @@ export default function PurchaseOrders() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {po.status === 'draft' && (
+                        {po.status === 'en_attente' && (
                           <button
                             onClick={() => handleDelete(po.id)}
                             className="p-2 rounded-lg border hover:bg-red-50"

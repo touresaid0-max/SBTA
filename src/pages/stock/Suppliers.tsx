@@ -1,41 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { Plus, CreditCard as Edit2, Trash2, Search, Star, Building2 } from 'lucide-react';
+import { Plus, CreditCard as Edit2, Trash2, Search, Building2, Power } from 'lucide-react';
 
 interface Supplier {
   id: string;
-  code: string;
   name: string;
-  contact_person: string;
-  phone: string;
-  email: string;
-  address: string;
-  country: string;
-  payment_terms: string;
-  is_preferred: boolean;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  is_active: boolean | null;
   created_at: string;
 }
 
-const COUNTRIES = [
-  'Côte d\'Ivoire',
-  'Sénégal',
-  'Mali',
-  'Burkina Faso',
-  'Ghana',
-  'Nigeria',
-  'France',
-  'Autre'
-];
-
-const PAYMENT_TERMS = [
-  'Comptant',
-  '15 jours',
-  '30 jours',
-  '45 jours',
-  '60 jours',
-  '90 jours'
-];
+const EMPTY_FORM = {
+  name: '',
+  contact_person: '',
+  phone: '',
+  email: '',
+  address: '',
+  is_active: true
+};
 
 export default function Suppliers() {
   const [loading, setLoading] = useState(true);
@@ -45,17 +31,7 @@ export default function Suppliers() {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [formData, setFormData] = useState({
-    code: '',
-    name: '',
-    contact_person: '',
-    phone: '',
-    email: '',
-    address: '',
-    country: 'Côte d\'Ivoire',
-    payment_terms: '30 jours',
-    is_preferred: false
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
 
   useEffect(() => {
     loadSuppliers();
@@ -70,11 +46,11 @@ export default function Suppliers() {
       setLoading(true);
       const { data, error } = await supabase
         .from('spare_parts_suppliers')
-        .select('*')
+        .select('id, name, contact_person, phone, email, address, is_active, created_at')
         .order('name', { ascending: true });
 
       if (error) throw error;
-      setSuppliers(data || []);
+      setSuppliers((data || []) as Supplier[]);
     } catch (error: any) {
       toast.error('Erreur de chargement');
       console.error(error);
@@ -90,49 +66,32 @@ export default function Suppliers() {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
         supplier =>
-          supplier.code.toLowerCase().includes(query) ||
           supplier.name.toLowerCase().includes(query) ||
-          supplier.contact_person.toLowerCase().includes(query) ||
-          supplier.email.toLowerCase().includes(query)
+          (supplier.contact_person ?? '').toLowerCase().includes(query) ||
+          (supplier.email ?? '').toLowerCase().includes(query) ||
+          (supplier.phone ?? '').toLowerCase().includes(query)
       );
     }
 
     setFilteredSuppliers(filtered);
   };
 
-  const generateCode = () => {
-    const prefix = 'FRNSR';
-    const timestamp = Date.now().toString().slice(-6);
-    return `${prefix}-${timestamp}`;
-  };
+  const isActive = (supplier: Supplier) => supplier.is_active !== false;
 
   const openModal = (supplier?: Supplier) => {
     if (supplier) {
       setEditingSupplier(supplier);
       setFormData({
-        code: supplier.code,
         name: supplier.name,
-        contact_person: supplier.contact_person,
-        phone: supplier.phone,
-        email: supplier.email,
-        address: supplier.address,
-        country: supplier.country,
-        payment_terms: supplier.payment_terms,
-        is_preferred: supplier.is_preferred
+        contact_person: supplier.contact_person ?? '',
+        phone: supplier.phone ?? '',
+        email: supplier.email ?? '',
+        address: supplier.address ?? '',
+        is_active: isActive(supplier)
       });
     } else {
       setEditingSupplier(null);
-      setFormData({
-        code: generateCode(),
-        name: '',
-        contact_person: '',
-        phone: '',
-        email: '',
-        address: '',
-        country: 'Côte d\'Ivoire',
-        payment_terms: '30 jours',
-        is_preferred: false
-      });
+      setFormData(EMPTY_FORM);
     }
     setShowModal(true);
   };
@@ -145,11 +104,20 @@ export default function Suppliers() {
       return;
     }
 
+    const supplierData = {
+      name: formData.name.trim(),
+      contact_person: formData.contact_person.trim() || null,
+      phone: formData.phone.trim() || null,
+      email: formData.email.trim() || null,
+      address: formData.address.trim() || null,
+      is_active: formData.is_active
+    };
+
     try {
       if (editingSupplier) {
         const { error } = await supabase
           .from('spare_parts_suppliers')
-          .update({ ...formData, updated_at: new Date().toISOString() })
+          .update(supplierData)
           .eq('id', editingSupplier.id);
 
         if (error) throw error;
@@ -157,11 +125,7 @@ export default function Suppliers() {
       } else {
         const { error } = await supabase
           .from('spare_parts_suppliers')
-          .insert({
-            ...formData,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
+          .insert(supplierData);
 
         if (error) throw error;
         toast.success('Fournisseur ajouté');
@@ -188,23 +152,24 @@ export default function Suppliers() {
       toast.success('Fournisseur supprimé');
       loadSuppliers();
     } catch (error: any) {
-      toast.error('Erreur lors de la suppression');
+      toast.error(
+        error?.code === '23503'
+          ? 'Ce fournisseur a des bons de commande : désactivez-le plutôt'
+          : 'Erreur lors de la suppression'
+      );
       console.error(error);
     }
   };
 
-  const togglePreferred = async (supplier: Supplier) => {
+  const toggleActive = async (supplier: Supplier) => {
     try {
       const { error } = await supabase
         .from('spare_parts_suppliers')
-        .update({
-          is_preferred: !supplier.is_preferred,
-          updated_at: new Date().toISOString()
-        })
+        .update({ is_active: !isActive(supplier) })
         .eq('id', supplier.id);
 
       if (error) throw error;
-      toast.success(supplier.is_preferred ? 'Retrait fournisseur préféré' : 'Fournisseur préféré ajouté');
+      toast.success(isActive(supplier) ? 'Fournisseur désactivé' : 'Fournisseur activé');
       loadSuppliers();
     } catch (error: any) {
       toast.error('Erreur lors de la mise à jour');
@@ -253,18 +218,23 @@ export default function Suppliers() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredSuppliers.map(supplier => (
-            <div key={supplier.id} className="bg-white rounded-xl p-6 border hover:shadow-lg transition-shadow">
+            <div
+              key={supplier.id}
+              className={`bg-white rounded-xl p-6 border hover:shadow-lg transition-shadow ${isActive(supplier) ? '' : 'opacity-60'}`}
+            >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-lg">{supplier.name}</h3>
-                    {supplier.is_preferred && (
-                      <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                    )}
-                  </div>
-                  <p className="font-mono text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {supplier.code}
-                  </p>
+                  <h3 className="font-bold text-lg mb-1">{supplier.name}</h3>
+                  <span
+                    className="px-2 py-0.5 rounded text-xs font-semibold"
+                    style={
+                      isActive(supplier)
+                        ? { backgroundColor: 'var(--success-light)', color: 'var(--success)' }
+                        : { backgroundColor: 'var(--neutral-100)', color: 'var(--text-secondary)' }
+                    }
+                  >
+                    {isActive(supplier) ? 'Actif' : 'Inactif'}
+                  </span>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -286,15 +256,17 @@ export default function Suppliers() {
               <div className="space-y-2 mb-4">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-semibold">Contact:</span>
-                  <span>{supplier.contact_person}</span>
+                  <span>{supplier.contact_person || '-'}</span>
                 </div>
 
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-semibold">Téléphone:</span>
-                  <a href={`tel:${supplier.phone}`} className="hover:underline" style={{ color: 'var(--primary)' }}>
-                    {supplier.phone}
-                  </a>
-                </div>
+                {supplier.phone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-semibold">Téléphone:</span>
+                    <a href={`tel:${supplier.phone}`} className="hover:underline" style={{ color: 'var(--primary)' }}>
+                      {supplier.phone}
+                    </a>
+                  </div>
+                )}
 
                 {supplier.email && (
                   <div className="flex items-center gap-2 text-sm">
@@ -305,38 +277,20 @@ export default function Suppliers() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-semibold">Pays:</span>
-                  <span>{supplier.country}</span>
-                </div>
-
                 {supplier.address && (
                   <div className="flex items-start gap-2 text-sm">
                     <span className="font-semibold">Adresse:</span>
                     <span className="flex-1">{supplier.address}</span>
                   </div>
                 )}
-
-                <div className="pt-2 border-t">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-semibold">Conditions:</span>
-                    <span className="px-2 py-1 rounded bg-gray-100 text-xs font-medium">
-                      {supplier.payment_terms}
-                    </span>
-                  </div>
-                </div>
               </div>
 
               <button
-                onClick={() => togglePreferred(supplier)}
-                className={`w-full px-4 py-2 rounded-lg border-2 font-medium flex items-center justify-center gap-2 transition-colors ${
-                  supplier.is_preferred
-                    ? 'border-yellow-400 bg-yellow-50 text-yellow-700'
-                    : 'border-gray-200 hover:bg-gray-50'
-                }`}
+                onClick={() => toggleActive(supplier)}
+                className="w-full px-4 py-2 rounded-lg border-2 font-medium flex items-center justify-center gap-2 transition-colors border-gray-200 hover:bg-gray-50"
               >
-                <Star className={`w-4 h-4 ${supplier.is_preferred ? 'fill-yellow-400' : ''}`} />
-                {supplier.is_preferred ? 'Fournisseur préféré' : 'Marquer comme préféré'}
+                <Power className="w-4 h-4" />
+                {isActive(supplier) ? 'Désactiver' : 'Activer'}
               </button>
             </div>
           ))}
@@ -363,17 +317,6 @@ export default function Suppliers() {
             <form onSubmit={handleSubmit}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div>
-                  <label className="block mb-2 font-medium">Code</label>
-                  <input
-                    type="text"
-                    value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full p-3 border rounded-lg bg-gray-50"
-                    readOnly
-                  />
-                </div>
-
-                <div>
                   <label className="block mb-2 font-medium">Nom *</label>
                   <input
                     type="text"
@@ -396,13 +339,12 @@ export default function Suppliers() {
                 </div>
 
                 <div>
-                  <label className="block mb-2 font-medium">Téléphone *</label>
+                  <label className="block mb-2 font-medium">Téléphone</label>
                   <input
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="w-full p-3 border rounded-lg"
-                    required
                   />
                 </div>
 
@@ -416,19 +358,6 @@ export default function Suppliers() {
                   />
                 </div>
 
-                <div>
-                  <label className="block mb-2 font-medium">Pays</label>
-                  <select
-                    value={formData.country}
-                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                    className="w-full p-3 border rounded-lg"
-                  >
-                    {COUNTRIES.map(country => (
-                      <option key={country} value={country}>{country}</option>
-                    ))}
-                  </select>
-                </div>
-
                 <div className="md:col-span-2">
                   <label className="block mb-2 font-medium">Adresse</label>
                   <textarea
@@ -439,33 +368,16 @@ export default function Suppliers() {
                   />
                 </div>
 
-                <div>
-                  <label className="block mb-2 font-medium">Conditions de paiement</label>
-                  <select
-                    value={formData.payment_terms}
-                    onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
-                    className="w-full p-3 border rounded-lg"
-                  >
-                    {PAYMENT_TERMS.map(term => (
-                      <option key={term} value={term}>{term}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block mb-2 font-medium">Fournisseur préféré</label>
+                <div className="md:col-span-2">
                   <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
                     <input
                       type="checkbox"
-                      checked={formData.is_preferred}
-                      onChange={(e) => setFormData({ ...formData, is_preferred: e.target.checked })}
+                      checked={formData.is_active}
+                      onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                       className="w-5 h-5"
                       style={{ accentColor: 'var(--primary)' }}
                     />
-                    <span className="flex items-center gap-2">
-                      <Star className={`w-4 h-4 ${formData.is_preferred ? 'fill-yellow-400 text-yellow-400' : ''}`} />
-                      Marquer comme préféré
-                    </span>
+                    <span>Fournisseur actif (proposé pour les commandes automatiques)</span>
                   </label>
                 </div>
               </div>
