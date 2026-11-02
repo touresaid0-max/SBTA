@@ -40,6 +40,8 @@ export default function Refunds() {
     try {
       setLoading(true);
 
+      // A refund request is a cancelled ticket ('annulee'); it is refunded once its payment is
+      // 'remboursee'. reservations has no price / payment_method / refund_reason columns.
       let query = supabase
         .from('reservations')
         .select(`
@@ -47,10 +49,8 @@ export default function Refunds() {
           booking_reference,
           passenger_name,
           passenger_phone,
-          price,
-          payment_method,
-          status,
-          refund_reason,
+          total_price,
+          payment_status,
           created_at,
           schedules:schedule_id (
             departure_datetime,
@@ -60,21 +60,28 @@ export default function Refunds() {
             )
           )
         `)
-        .in('status', ['cancelled', 'refunded'])
+        .eq('status', 'annulee')
         .order('created_at', { ascending: false });
 
       if (filter !== 'all') {
         if (filter === 'pending') {
-          query = query.eq('status', 'cancelled');
+          query = query.neq('payment_status', 'remboursee');
         } else if (filter === 'approved') {
-          query = query.eq('status', 'refunded');
+          query = query.eq('payment_status', 'remboursee');
         }
       }
 
       const { data, error } = await query;
 
       if (error) throw error;
-      setRefunds(data as Refund[]);
+      // Keep the page's own vocabulary: 'cancelled' = to refund, 'refunded' = refunded
+      setRefunds((data ?? []).map((r: any) => ({
+        ...r,
+        price: Number(r.total_price ?? 0),
+        payment_method: '',
+        refund_reason: '',
+        status: r.payment_status === 'remboursee' ? 'refunded' : 'cancelled',
+      })) as Refund[]);
     } catch (error: any) {
       toast.error('Erreur de chargement des remboursements');
     } finally {
@@ -91,7 +98,6 @@ export default function Refunds() {
       const { error } = await supabase
         .from('reservations')
         .update({
-          status: 'refunded',
           payment_status: 'remboursee'
         })
         .eq('id', refund.id);
@@ -117,7 +123,7 @@ export default function Refunds() {
       const { error } = await supabase
         .from('reservations')
         .update({
-          status: 'confirmed'
+          status: 'confirmee'
         })
         .eq('id', refund.id);
 
@@ -139,7 +145,7 @@ export default function Refunds() {
       case 'mobile_money': return 'Mobile Money';
       case 'card': return 'Carte bancaire';
       case 'transfer': return 'Virement';
-      default: return method;
+      default: return method || '—';
     }
   };
 

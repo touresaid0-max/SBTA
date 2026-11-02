@@ -95,7 +95,7 @@ export default function ExpensesReport() {
               full_name
             )
           `)
-          .eq('status', 'validated')
+          .eq('status', 'validee')
           .gte('expense_date', startOfMonth.toISOString())
           .order('expense_date', { ascending: false }),
         supabase

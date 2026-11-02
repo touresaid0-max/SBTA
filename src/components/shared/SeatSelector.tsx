@@ -65,7 +65,7 @@ export default function SeatSelector({ scheduleId, basePrice, onSeatSelect, sele
         .from('reservations')
         .select('seat_number')
         .eq('schedule_id', scheduleId)
-        .in('status', ['confirmed', 'paid', 'embarked']);
+        .in('status', ['en_attente', 'confirmee', 'terminee']);
 
       if (reservationsError) throw reservationsError;
 

@@ -41,7 +41,7 @@ export default function BusActivityReport() {
         supabase
           .from('fuel_vouchers')
           .select('*')
-          .eq('status', 'validee')
+          .in('status', ['validated', 'valide_comptable', 'utilise'])
           .gte('created_at', dateRange.start.toISOString())
           .lte('created_at', dateRange.end.toISOString())
       ]);

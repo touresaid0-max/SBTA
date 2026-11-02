@@ -12,6 +12,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import jsPDF from 'jspdf';
 import { useAuthStore } from '../../store/authStore';
 import { printBaggageTicket, type BaggageTicketData } from '../../utils/printBaggageTicket';
+import { fetchAllPages } from '../../utils/fetchAllPages';
 
 interface Transaction {
   id: string;
@@ -116,6 +117,8 @@ export default function CashRegister() {
       const endDate = new Date(selectedDate);
       endDate.setHours(23, 59, 59, 999);
 
+      // Read 1 000 rows at a time: beyond that, the day's cash total would be cut short
+      const page = (from: number, to: number) => {
       let query = supabase
         .from('reservations')
         .select(`
@@ -142,14 +145,15 @@ export default function CashRegister() {
         `)
         .gte('created_at', startDate.toISOString())
         .lte('created_at', endDate.toISOString())
-        .in('payment_status', ['payee', 'en_attente'])
-        .order('created_at', { ascending: false });
+        .in('payment_status', ['payee', 'en_attente']);
 
       if (user?.role === 'guichetier' && user?.id) {
         query = query.eq('booked_by', user.id);
       }
+      return query.order('created_at', { ascending: false }).order('id').range(from, to);
+      };
 
-      const { data, error } = await query;
+      const { data, error } = await fetchAllPages<any>(page);
       if (error) throw error;
 
       const rows = (data ?? []) as unknown as Transaction[];

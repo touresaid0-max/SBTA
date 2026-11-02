@@ -19,6 +19,7 @@ import { printBorderauRecettes } from '@/utils/printBordereau'
 import { printBordereauDepartThermal } from '@/services/pos/printService'
 import type { ScheduleReceiptSummary } from '@/types/counter.types'
 import ChargesModal from '@/components/guichetier/ChargesModal'
+import { fetchAllPages } from '@/utils/fetchAllPages'
 
 interface DailyStats {
   ticketsSold: number
@@ -217,14 +218,17 @@ export default function GuichetierDashboard() {
   const loadDailyStats = async () => {
     const today    = startOfDay(new Date())
     const todayEnd = endOfDay(new Date())
-    let query = supabase
-      .from('reservations')
-      .select('total_price, total_seats, payment_status')
-      .gte('created_at', today.toISOString())
-      .lte('created_at', todayEnd.toISOString())
-      .neq('status', 'annulee')
-    if (authUser?.id) query = query.eq('booked_by', authUser.id)
-    const { data, error } = await query
+    // Read 1 000 rows at a time so the day's totals are never cut short
+    const { data, error } = await fetchAllPages<any>((from, to) => {
+      let query = supabase
+        .from('reservations')
+        .select('total_price, total_seats, payment_status')
+        .gte('created_at', today.toISOString())
+        .lte('created_at', todayEnd.toISOString())
+        .neq('status', 'annulee')
+      if (authUser?.id) query = query.eq('booked_by', authUser.id)
+      return query.order('id').range(from, to)
+    })
     if (error) { console.error('Stats error:', error); return }
     const rows         = data ?? []
     const ticketsSold  = rows.reduce((s, r) => s + (r.total_seats || 1), 0)
