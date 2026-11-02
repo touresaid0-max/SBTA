@@ -461,70 +461,70 @@ WHERE schemaname = 'public'
 ### Test Admin (Déjà validé ✅)
 ```
 Email: admin@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /admin/dashboard
 ```
 
 ### Test DAF
 ```
 Email: daf@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /daf/dashboard
 ```
 
 ### Test Comptable
 ```
 Email: comptable@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /comptable/dashboard
 ```
 
 ### Test Gestionnaire
 ```
 Email: gest.express@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /gestionnaire/dashboard
 ```
 
 ### Test Planificateur
 ```
 Email: planif1@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /planificateur/dashboard
 ```
 
 ### Test Guichetier
 ```
 Email: guichet1@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /guichetier/dashboard
 ```
 
 ### Test Chauffeur
 ```
 Email: chauffeur1@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /chauffeur/dashboard
 ```
 
 ### Test Chef Garage
 ```
 Email: chefgarage1@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /garage/dashboard
 ```
 
 ### Test Mécanicien
 ```
 Email: meca1@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /mecanicien/dashboard
 ```
 
 ### Test Pompiste
 ```
 Email: pompiste1@sbta.ci
-Password: Password123!
+Password: (voir le gestionnaire de mots de passe)
 Attendu: /pompiste/dashboard
 ```
 

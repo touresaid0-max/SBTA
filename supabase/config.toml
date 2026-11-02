@@ -1,9 +1,6 @@
 [functions.admin-create-account]
 verify_jwt = true
 
-[functions.bootstrap-reset-passwords]
-verify_jwt = true
-
 [functions.calculate-route-distance]
 verify_jwt = true
 

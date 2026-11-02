@@ -4,7 +4,7 @@
 
 ### Admin - Accès Complet
 - **Email**: `admin@sbta.ci`
-- **Mot de passe**: `Admin@SBTA2026`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `admin`
 - **Dashboard**: `/admin/dashboard`
 - **Accès**:
@@ -23,7 +23,7 @@
 
 ### DAF (Directeur Administratif et Financier)
 - **Email**: `daf@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `daf`
 - **Dashboard**: `/daf/dashboard`
 - **Accès**:
@@ -36,7 +36,7 @@
 
 ### Comptable
 - **Email**: `comptable@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `comptable`
 - **Dashboard**: `/comptable/dashboard`
 - **Accès**:
@@ -53,7 +53,7 @@
 
 ### Gestionnaire SBTA Express
 - **Email**: `gest.express@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `gestionnaire`
 - **Société**: SBTA Express
 - **Dashboard**: `/gestionnaire/dashboard`
@@ -67,14 +67,14 @@
 
 ### Gestionnaire Trans-Ivoire
 - **Email**: `gest.transi@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `gestionnaire`
 - **Société**: Trans-Ivoire
 - **Dashboard**: `/gestionnaire/dashboard`
 
 ### Gestionnaire Confort Ligne
 - **Email**: `gest.confort@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `gestionnaire`
 - **Société**: Confort Ligne
 - **Dashboard**: `/gestionnaire/dashboard`
@@ -85,7 +85,7 @@
 
 ### Chauffeur 1 - Jean Kouassi (SBTA Express)
 - **Email**: `chauffeur1@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `chauffeur`
 - **Dashboard**: `/chauffeur/dashboard`
 - **Badge**: Gold (4.5★ - 8500 points)
@@ -99,28 +99,28 @@
 
 ### Chauffeur 2 - Mohamed Traoré (Trans-Ivoire)
 - **Email**: `chauffeur2@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `chauffeur`
 - **Dashboard**: `/chauffeur/dashboard`
 - **Badge**: Platinum (4.8★ - 12000 points)
 
 ### Chauffeur 3 - Ama Koné (SBTA Express)
 - **Email**: `chauffeur3@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `chauffeur`
 - **Dashboard**: `/chauffeur/dashboard`
 - **Badge**: Silver (4.2★ - 4500 points)
 
 ### Chauffeur 4 - Yao Kouadio (Confort Ligne)
 - **Email**: `chauffeur4@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `chauffeur`
 - **Dashboard**: `/chauffeur/dashboard`
 - **Badge**: Bronze (3.8★ - 1200 points)
 
 ### Chauffeur 5 - Koffi N'Guessan (Trans-Ivoire)
 - **Email**: `chauffeur5@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `chauffeur`
 - **Dashboard**: `/chauffeur/dashboard`
 - **Badge**: Gold (4.6★ - 9200 points)
@@ -131,7 +131,7 @@
 
 ### Guichetier 1 - Gare d'Adjamé
 - **Email**: `guichet1@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `guichetier`
 - **Station**: Gare d'Adjamé
 - **Dashboard**: `/guichetier/dashboard`
@@ -145,14 +145,14 @@
 
 ### Guichetier 2 - Gare de Bouaké
 - **Email**: `guichet2@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `guichetier`
 - **Station**: Gare de Bouaké
 - **Dashboard**: `/guichetier/dashboard`
 
 ### Guichetier 3 - Gare de Yamoussoukro
 - **Email**: `guichet3@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `guichetier`
 - **Station**: Gare de Yamoussoukro
 - **Dashboard**: `/guichetier/dashboard`
@@ -163,7 +163,7 @@
 
 ### Chef Garage 1
 - **Email**: `chefgarage1@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `chef_garage`
 - **Dashboard**: `/garage/dashboard`
 - **Accès**:
@@ -176,7 +176,7 @@
 
 ### Mécanicien 1
 - **Email**: `meca1@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `mecanicien`
 - **Dashboard**: `/mecanicien/dashboard`
 - **Accès**:
@@ -188,13 +188,13 @@
 
 ### Mécanicien 2
 - **Email**: `meca2@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `mecanicien`
 - **Dashboard**: `/mecanicien/dashboard`
 
 ### Mécanicien 3
 - **Email**: `meca3@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `mecanicien`
 - **Dashboard**: `/mecanicien/dashboard`
 
@@ -204,7 +204,7 @@
 
 ### Pompiste 1
 - **Email**: `pompiste1@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `pompiste`
 - **Dashboard**: `/pompiste/dashboard`
 - **Accès**:
@@ -217,7 +217,7 @@
 
 ### Pompiste 2
 - **Email**: `pompiste2@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `pompiste`
 - **Dashboard**: `/pompiste/dashboard`
 
@@ -227,7 +227,7 @@
 
 ### Planificateur 1
 - **Email**: `planif1@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `planificateur`
 - **Dashboard**: `/planificateur/dashboard`
 - **Accès**:
@@ -240,7 +240,7 @@
 
 ### Planificateur 2
 - **Email**: `planif2@sbta.ci`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `planificateur`
 - **Dashboard**: `/planificateur/dashboard`
 
@@ -250,7 +250,7 @@
 
 ### Client Platinum - Kouadio Marcel
 - **Email**: `client01@gmail.com`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `client`
 - **Tier**: Platinum 💎
 - **Points**: 12,500
@@ -266,7 +266,7 @@
 
 ### Client Gold - N'Guessan Aya
 - **Email**: `client03@gmail.com`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `client`
 - **Tier**: Gold 🥇
 - **Points**: 6,800
@@ -274,7 +274,7 @@
 
 ### Client Gold - Traoré Ibrahim
 - **Email**: `client05@gmail.com`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `client`
 - **Tier**: Gold 🥇
 - **Points**: 7,200
@@ -282,7 +282,7 @@
 
 ### Client Silver - Koné Fatou
 - **Email**: `client08@gmail.com`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `client`
 - **Tier**: Silver 🥈
 - **Points**: 2,800
@@ -290,7 +290,7 @@
 
 ### Client Silver - Yao Christine
 - **Email**: `client12@gmail.com`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `client`
 - **Tier**: Silver 🥈
 - **Points**: 3,100
@@ -298,7 +298,7 @@
 
 ### Client Bronze - Bamba Seydou
 - **Email**: `client16@gmail.com`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `client`
 - **Tier**: Bronze 🥉
 - **Points**: 850
@@ -306,7 +306,7 @@
 
 ### Client Bronze - Diallo Aminata
 - **Email**: `client20@gmail.com`
-- **Mot de passe**: `Password123!`
+- **Mot de passe**: `(voir le gestionnaire de mots de passe)`
 - **Rôle**: `client`
 - **Tier**: Bronze 🥉
 - **Points**: 450

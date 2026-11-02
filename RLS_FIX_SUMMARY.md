@@ -151,28 +151,28 @@ La fonction vérifie automatiquement si l'utilisateur a les droits.
 ### Test 1: Admin
 ```
 Email: admin@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 Résultat attendu: ✅ Connexion réussie → /admin/dashboard
 ```
 
 ### Test 2: DAF
 ```
 Email: daf@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 Résultat attendu: ✅ Connexion réussie → /daf/dashboard
 ```
 
 ### Test 3: Comptable
 ```
 Email: comptable@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 Résultat attendu: ✅ Connexion réussie → /comptable/dashboard
 ```
 
 ### Test 4: Gestionnaire
 ```
 Email: gest.express@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 Résultat attendu: ✅ Connexion réussie → /gestionnaire/dashboard
 ```
 

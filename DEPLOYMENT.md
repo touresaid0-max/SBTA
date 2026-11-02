@@ -109,7 +109,7 @@ Pour stocker photos et documents :
 2. Cliquer sur **Add user** > **Create new user**
 3. Entrer :
    - Email: `admin@sbta.ci`
-   - Password: `Admin@SBTA2026`
+   - Password: `(voir le gestionnaire de mots de passe)`
    - ✅ Auto Confirm User (cocher cette case)
 4. Cliquer **Create user**
 5. Copier l'UUID généré (ex: `a1b2c3d4-...`)
@@ -147,7 +147,7 @@ UPDATE users SET role = 'admin' WHERE email = 'admin@sbta.ci';
 
 **Identifiants Admin** :
 - Email: `admin@sbta.ci`
-- Mot de passe: `Admin@SBTA2026`
+- Mot de passe: `(voir le gestionnaire de mots de passe)`
 
 ### 8. Charger les données de démonstration (Optionnel)
 
@@ -253,7 +253,7 @@ Dans Vercel Dashboard :
 ### Compte Administrateur Principal (Obligatoire)
 
 **Email** : `admin@sbta.ci`
-**Mot de passe** : `Admin@SBTA2026`
+**Mot de passe** : `(voir le gestionnaire de mots de passe)`
 **Rôle** : Administrateur avec accès complet
 
 **Créez ce compte via la section 7 ci-dessus avant première connexion !**
