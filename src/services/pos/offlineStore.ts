@@ -268,6 +268,8 @@ function markHistorySyncDone(stationId: string | undefined, todayStr: string): v
   } catch { /* storage unavailable: the history is simply pulled again next sync */ }
 }
 
+type RemoteSchedule = { id: string; bus_id: string | null; driver_id: string | null } & Record<string, unknown>;
+
 // A long list of ids in one `in` filter makes the request URL too long
 const SCHEDULE_ID_CHUNK = 100;
 
@@ -380,7 +382,11 @@ function mapRemoteChargeToLocal(c: Record<string, unknown>): Record<string, unkn
   };
 }
 
-export async function syncDepartsAndTicketsFromServer(stationId?: string): Promise<void> {
+/**
+ * @param sinceDate Optional YYYY-MM-DD: also pull the departures from that day on, when the
+ *   guichetier looks at a period older than what the device keeps (filter by period / range).
+ */
+export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceDate?: string): Promise<void> {
   if (!isOnline()) return;
   try {
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -425,18 +431,29 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
     const withHistory = !historySyncDoneToday(stationId, todayStr);
     const fromDate = new Date();
     if (withHistory) fromDate.setUTCDate(fromDate.getUTCDate() - HISTORY_DAYS);
-    const fromStr = fromDate.toISOString().slice(0, 10);
+    const defaultFrom = fromDate.toISOString().slice(0, 10);
+    const fromStr = sinceDate && sinceDate < defaultFrom ? sinceDate : defaultFrom;
 
-    let scheduleQuery = supabase
-      .from('schedules')
-      .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, buses:bus_id(seats_sold_from)')
-      .gte('departure_datetime', `${fromStr}T00:00:00`);
-    // Only this station's departures: other stations' ones are never shown here (shared
-    // buses rely on seat allocations kept on the device, not on pulled rows)
-    if (stationId) scheduleQuery = scheduleQuery.eq('departure_station_id', stationId);
+    // Page by page: a long period chosen in the filter can hold more than 1 000 departures,
+    // and a truncated list would drop the most recent ones
+    const remoteSchedules: RemoteSchedule[] = [];
+    for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
+      let scheduleQuery = supabase
+        .from('schedules')
+        .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, buses:bus_id(seats_sold_from)')
+        .gte('departure_datetime', `${fromStr}T00:00:00`);
+      // Only this station's departures: other stations' ones are never shown here (shared
+      // buses rely on seat allocations kept on the device, not on pulled rows)
+      if (stationId) scheduleQuery = scheduleQuery.eq('departure_station_id', stationId);
 
-    const { data: remoteSchedules, error: schedError } = await scheduleQuery.order('departure_datetime', { ascending: true });
-    if (schedError) throw schedError;
+      const { data, error: schedError } = await scheduleQuery
+        .order('departure_datetime', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, from + RESERVATION_PAGE_SIZE - 1);
+      if (schedError) throw schedError;
+      remoteSchedules.push(...((data ?? []) as unknown as RemoteSchedule[]));
+      if (!data || data.length < RESERVATION_PAGE_SIZE) break;
+    }
 
     if (remoteSchedules && remoteSchedules.length > 0) {
       const scheduleIds = remoteSchedules.map(s => s.id);

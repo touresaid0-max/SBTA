@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
@@ -16,6 +16,7 @@ import {
 } from '@/services/pos/departService';
 import { getAll as getAllTickets, getAll as getAllRecords, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
+import { isOnline } from '@/services/pos/syncEngine';
 import { getDepensesForDepart } from '@/services/pos/depenseService';
 import { getBagagesForDepart } from '@/services/pos/bagageService';
 import type { TicketRecord, BagageRecord, DepenseRecord } from '@/services/pos/db';
@@ -33,8 +34,8 @@ import DepartExpensesModal from '@/components/pos/DepartExpensesModal';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import {
   Plus, Pencil, Printer, Ticket, XCircle, Lock,
-  ChevronUp, ChevronDown, Eye, Loader2, X, AlertCircle,
-  FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt,
+  ChevronUp, ChevronDown, Loader2, X, AlertCircle,
+  FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange,
 } from 'lucide-react';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
@@ -213,12 +214,87 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
   await printBordereauDepartThermal({ data });
 }
 
+type Period = 'today' | 'yesterday' | 'last7' | 'week' | 'month' | 'last_month' | 'all' | 'custom';
+
+const PERIOD_LABELS: Record<Period, string> = {
+  today: "Aujourd'hui",
+  yesterday: 'Hier',
+  last7: '7 derniers jours',
+  week: 'Cette semaine',
+  month: 'Ce mois',
+  last_month: 'Mois dernier',
+  all: 'Toutes les dates',
+  custom: 'Plage personnalisée',
+};
+
+// The device keeps the departures of the last days: an older period is pulled from the server
+const LOCAL_HISTORY_DAYS = 7;
+
+/** YYYY-MM-DD of a date in UTC, the time zone of the departures (Côte d'Ivoire). */
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function shiftDays(day: string, days: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return isoDay(d);
+}
+
+/** First and last day (inclusive) of a period; undefined means no limit on that side. */
+function periodRange(period: Period, customFrom: string, customTo: string): { from?: string; to?: string } {
+  const today = isoDay(new Date());
+  const now = new Date(`${today}T00:00:00Z`);
+  switch (period) {
+    case 'today': return { from: today, to: today };
+    case 'yesterday': { const y = shiftDays(today, -1); return { from: y, to: y }; }
+    case 'last7': return { from: shiftDays(today, -6), to: today };
+    case 'week': {
+      // Week starting on Monday
+      const offset = (now.getUTCDay() + 6) % 7;
+      return { from: shiftDays(today, -offset), to: today };
+    }
+    case 'month': return { from: `${today.slice(0, 8)}01`, to: today };
+    case 'last_month': {
+      const firstOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const lastOfPrev = new Date(firstOfMonth.getTime() - 86_400_000);
+      return { from: `${isoDay(lastOfPrev).slice(0, 8)}01`, to: isoDay(lastOfPrev) };
+    }
+    case 'custom': {
+      const from = customFrom || undefined;
+      const to = customTo || undefined;
+      // Dates entered in the wrong order are swapped rather than giving an empty list
+      if (from && to && from > to) return { from: to, to: from };
+      return { from, to };
+    }
+    default: return {};
+  }
+}
+
+function formatDay(day: string): string {
+  const [y, m, d] = day.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function periodDescription(period: Period, range: { from?: string; to?: string }): string {
+  if (period !== 'custom') return PERIOD_LABELS[period].toLowerCase();
+  if (range.from && range.to) return range.from === range.to ? `du ${formatDay(range.from)}` : `du ${formatDay(range.from)} au ${formatDay(range.to)}`;
+  if (range.from) return `depuis le ${formatDay(range.from)}`;
+  if (range.to) return `jusqu'au ${formatDay(range.to)}`;
+  return 'toutes dates';
+}
+
 export default function POSDeparts() {
   const navigate = useNavigate();
   const { session } = usePOSSession();
   const [departs, setDeparts] = useState<DepartRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAll, setShowAll] = useState(false);
+  const [period, setPeriod] = useState<Period>('today');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [periodLoading, setPeriodLoading] = useState(false);
+  // Earliest day already pulled from the server during this visit
+  const pulledSinceRef = useRef<string | null>(null);
   const [routeFilter, setRouteFilter] = useState('');
   const [departureFilter, setDepartureFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('departure_datetime');
@@ -274,10 +350,36 @@ export default function POSDeparts() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
+  const range = useMemo(() => periodRange(period, customFrom, customTo), [period, customFrom, customTo]);
+  const periodText = periodDescription(period, range);
+  const exportSuffix = range.from && range.to && range.from !== range.to
+    ? `${range.from}_${range.to}`
+    : range.from ?? range.to ?? 'toutes-dates';
+
+  // A period older than the days kept on the device is pulled from the server once
+  useEffect(() => {
+    const since = range.from;
+    if (!since || since >= shiftDays(todayStr, -LOCAL_HISTORY_DAYS)) return;
+    if (pulledSinceRef.current && since >= pulledSinceRef.current) return;
+    if (!isOnline()) return;
+    let cancelled = false;
+    setPeriodLoading(true);
+    syncDepartsAndTicketsFromServer(session?.station_id, since)
+      .then(() => {
+        pulledSinceRef.current = since;
+        if (!cancelled) return loadDeparts();
+      })
+      .finally(() => { if (!cancelled) setPeriodLoading(false); });
+    return () => { cancelled = true; };
+  }, [range.from, todayStr, session?.station_id, loadDeparts]);
+
   const filterBaseDeparts = useMemo(() => {
-    let list = showAll ? departs : departs.filter(d => d.departure_date === todayStr);
+    const list = departs.filter(d =>
+      (!range.from || d.departure_date >= range.from) &&
+      (!range.to || d.departure_date <= range.to),
+    );
     return list.filter(d => !d.cancelled);
-  }, [departs, showAll, todayStr]);
+  }, [departs, range.from, range.to]);
 
   const routeOptions = useMemo(() => {
     return Array.from(new Set(filterBaseDeparts.map(d => d.route_name).filter((name): name is string => Boolean(name)))).sort((a, b) => a.localeCompare(b));
@@ -568,7 +670,7 @@ export default function POSDeparts() {
                     <Copy className="w-4 h-4" /> Imprimer liste
                   </button>
                   <button
-                    onClick={() => { setShowExportsMenu(false); exportToPDF(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.pdf`, 'Récapitulatif des départs'); }}
+                    onClick={() => { setShowExportsMenu(false); exportToPDF(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${exportSuffix}.pdf`, `Récapitulatif des départs — ${periodText}`); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
                     style={{ color: 'var(--text-primary)' }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
@@ -577,7 +679,7 @@ export default function POSDeparts() {
                     <FileText className="w-4 h-4" /> Export PDF
                   </button>
                   <button
-                    onClick={() => { setShowExportsMenu(false); exportToExcel(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${todayStr}.xlsx`); }}
+                    onClick={() => { setShowExportsMenu(false); exportToExcel(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${exportSuffix}.xlsx`); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
                     style={{ color: 'var(--text-primary)' }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
@@ -649,17 +751,63 @@ export default function POSDeparts() {
             </>
           )}
         </div>
-        <button
-          onClick={() => setShowAll(v => !v)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-        >
-          <Eye className="w-4 h-4" /> {showAll ? "Aujourd'hui" : 'Voir tout'}
-        </button>
       </div>
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+        <div className="min-w-[190px]">
+          <label className="mb-1 flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>
+            <CalendarRange className="h-3.5 w-3.5" /> Période
+          </label>
+          <select
+            value={period}
+            onChange={e => {
+              const next = e.target.value as Period;
+              // The range starts from the period shown, so it only needs adjusting
+              if (next === 'custom' && !customFrom && !customTo) {
+                setCustomFrom(range.from ?? todayStr);
+                setCustomTo(range.to ?? todayStr);
+              }
+              setPeriod(next);
+              setDepartureFilter('');
+            }}
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+          >
+            {(Object.keys(PERIOD_LABELS) as Period[]).map(p => <option key={p} value={p}>{PERIOD_LABELS[p]}</option>)}
+          </select>
+        </div>
+        {period === 'custom' && (
+          <>
+            <div className="min-w-[150px]">
+              <label className="mb-1 block text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Du</label>
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || todayStr}
+                onChange={e => { setCustomFrom(e.target.value); setDepartureFilter(''); }}
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+              />
+            </div>
+            <div className="min-w-[150px]">
+              <label className="mb-1 block text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Au</label>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={e => { setCustomTo(e.target.value); setDepartureFilter(''); }}
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+              />
+            </div>
+          </>
+        )}
+        {periodLoading && (
+          <div className="flex items-center gap-1.5 py-2 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
+            <Loader2 className="h-4 w-4 animate-spin" /> Chargement de la période…
+          </div>
+        )}
         <div className="min-w-[220px] flex-1">
           <label className="mb-1 block text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Filtre par ligne</label>
           <select
@@ -688,10 +836,10 @@ export default function POSDeparts() {
             ))}
           </select>
         </div>
-        {(routeFilter || departureFilter) && (
+        {(routeFilter || departureFilter || period !== 'today') && (
           <button
             type="button"
-            onClick={() => { setRouteFilter(''); setDepartureFilter(''); }}
+            onClick={() => { setRouteFilter(''); setDepartureFilter(''); setPeriod('today'); setCustomFrom(''); setCustomTo(''); }}
             className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-bold"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
           >
@@ -856,7 +1004,7 @@ export default function POSDeparts() {
           </div>
 
           <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-            {visibleDeparts.length} départ(s) {showAll ? '(toutes dates)' : "(aujourd'hui)"} · Cliquez sur une ligne pour la sélectionner et voir les actions
+            {visibleDeparts.length} départ(s) ({periodText}) · Cliquez sur une ligne pour la sélectionner et voir les actions
           </p>
         </>
       )}
