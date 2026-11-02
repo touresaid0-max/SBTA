@@ -138,7 +138,67 @@ function autoNumberLayout(layout: GridLayout, mode: AutoNumberMode): GridLayout 
 }
 
 export function countReservableSeats(layout: GridLayout): number {
-  return layout.reduce((acc, row) => acc + row.cells.filter(c => !c.is_aisle && !c.is_empty).length, 0)
+  return layout.reduce((acc, row) => acc + row.cells.filter(c => !c.is_aisle && !c.is_empty && c.label !== '').length, 0)
+}
+
+const EMPTY_CELL = { label: '', id: '', type: 'empty' as CellType, is_aisle: false, is_empty: true, custom_price: null }
+
+function isSeat(cell: GridCell): boolean {
+  return !cell.is_aisle && !cell.is_empty
+}
+
+// Next number after the highest existing one, so deleted numbers are never recreated.
+function nextSeatNumber(layout: GridLayout): number {
+  let max = 0
+  layout.forEach(row => row.cells.forEach(cell => {
+    if (isSeat(cell) && /^\d+$/.test(cell.label)) max = Math.max(max, parseInt(cell.label, 10))
+  }))
+  return max + 1
+}
+
+function applyCellUpdate(layout: GridLayout, rowIdx: number, colIdx: number, updated: GridCell): GridLayout {
+  let cell = updated
+  if (cell.is_aisle) {
+    cell = { ...cell, label: '', id: '' }
+  } else if (!cell.is_empty) {
+    const label = cell.label.trim()
+    const finalLabel = label || `${nextSeatNumber(layout.map((row, ri) => ({
+      ...row,
+      cells: row.cells.map((c, ci) => (ri === rowIdx && ci === colIdx ? { ...c, ...EMPTY_CELL } : c)),
+    })))}`
+    cell = { ...cell, label: finalLabel, id: finalLabel }
+  }
+
+  const relabel = new Map<string, string>()
+  if (isSeat(cell)) {
+    const taken = new Set<string>()
+    layout.forEach((row, ri) => row.cells.forEach((c, ci) => {
+      if (!(ri === rowIdx && ci === colIdx) && isSeat(c)) taken.add(c.label)
+    }))
+    if (taken.has(cell.label)) {
+      if (/^\d+$/.test(cell.label)) {
+        // Shift the contiguous run N, N+1, ... by one so the chosen number becomes free.
+        let n = parseInt(cell.label, 10)
+        while (taken.has(`${n}`)) {
+          relabel.set(`${n}`, `${n + 1}`)
+          n++
+        }
+      } else {
+        let next = nextSeatNumber(layout)
+        while (taken.has(`${next}`) || `${next}` === cell.label) next++
+        relabel.set(cell.label, `${next}`)
+      }
+    }
+  }
+
+  return layout.map((row, ri) => ({
+    ...row,
+    cells: row.cells.map((c, ci) => {
+      if (ri === rowIdx && ci === colIdx) return cell
+      const newLabel = isSeat(c) ? relabel.get(c.label) : undefined
+      return newLabel ? { ...c, label: newLabel, id: newLabel } : c
+    }),
+  }))
 }
 
 export function countAisles(layout: GridLayout): number {
@@ -396,13 +456,14 @@ function DeckBuilder({ config, onChange, title, driverPosition = 'gauche' }: Dec
   const handleAddRow = () => {
     if (!config.layout) return
     const nextRow = config.layout.length + 1
+    let seatNumber = nextSeatNumber(config.layout)
     const newCells: GridCell[] = []
     for (let col = 1; col <= config.cols; col++) {
       const isAisle = config.aislePositions.includes(col - 1) && col > 1
       if (isAisle) {
         newCells.push({ id: '', label: '', col, type: 'aisle', is_empty: true, is_aisle: true, custom_price: null })
       } else {
-        const label = `+${col}`
+        const label = `${seatNumber++}`
         newCells.push({ id: label, label, col, type: 'normal', is_empty: false, is_aisle: false, custom_price: null })
       }
     }
@@ -446,10 +507,15 @@ function DeckBuilder({ config, onChange, title, driverPosition = 'gauche' }: Dec
 
   const applyTypeToSelection = (type: CellType) => {
     if (!config.layout) return
+    let seatNumber = nextSeatNumber(config.layout)
     const newLayout = config.layout.map((row, ri) => ({
       ...row,
       cells: row.cells.map((cell, ci) => {
         if (selectedCells.includes(`${ri}-${ci}`) && !cell.is_aisle) {
+          if (cell.is_empty || cell.label === '') {
+            const label = `${seatNumber++}`
+            return { ...cell, label, id: label, type, is_empty: false }
+          }
           return { ...cell, type, is_empty: false }
         }
         return cell
@@ -473,13 +539,7 @@ function DeckBuilder({ config, onChange, title, driverPosition = 'gauche' }: Dec
   const handlePopupApply = (updated: GridCell) => {
     if (!popupTarget || !config.layout) return
     const { rowIdx, colIdx } = popupTarget
-    const newLayout = config.layout.map((row, ri) => ({
-      ...row,
-      cells: row.cells.map((cell, ci) =>
-        ri === rowIdx && ci === colIdx ? updated : cell
-      ),
-    }))
-    update({ layout: newLayout })
+    update({ layout: applyCellUpdate(config.layout, rowIdx, colIdx, updated) })
   }
 
   const popupCell = popupTarget && config.layout

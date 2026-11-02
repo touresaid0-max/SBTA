@@ -36,6 +36,31 @@ function layoutToSeatRows(layout: GridLayout): object[] {
   return rows
 }
 
+// Same grid position = same physical seat, so a label change there is a renumbering.
+export function buildSeatRemap(pairs: Array<[GridLayout | null | undefined, GridLayout | null | undefined]>): Record<string, string> {
+  const mapping: Record<string, string> = {}
+  const ambiguous = new Set<string>()
+  pairs.forEach(([before, after]) => {
+    if (!before || !after) return
+    before.forEach((row, ri) => row.cells.forEach((oldCell, ci) => {
+      const newCell = after[ri]?.cells[ci]
+      if (!newCell) return
+      const isSeat = (c: typeof oldCell) => !c.is_aisle && !c.is_empty && c.label !== ''
+      if (!isSeat(oldCell) || !isSeat(newCell) || oldCell.label === newCell.label) return
+      if (mapping[oldCell.label] && mapping[oldCell.label] !== newCell.label) ambiguous.add(oldCell.label)
+      mapping[oldCell.label] = newCell.label
+    }))
+  })
+  ambiguous.forEach(label => delete mapping[label])
+  return mapping
+}
+
+export async function remapBusSeatNumbers(busId: string, mapping: Record<string, string>): Promise<void> {
+  if (Object.keys(mapping).length === 0) return
+  const { error } = await supabase.rpc('remap_bus_seat_numbers', { p_bus_id: busId, p_mapping: mapping })
+  if (error) throw error
+}
+
 interface BusData {
   registration_number?: string
   brand?: string
