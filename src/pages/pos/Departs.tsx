@@ -32,6 +32,8 @@ import { formatCurrency } from '@/utils/formatCurrency';
 import EditDepartModal from '@/components/pos/EditDepartModal';
 import DepartExpensesModal from '@/components/pos/DepartExpensesModal';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import Pagination from '@/components/pos/Pagination';
+import { usePagination } from '@/hooks/usePagination';
 import {
   Plus, Pencil, Printer, Ticket, XCircle, Lock,
   ChevronUp, ChevronDown, Loader2, X, AlertCircle,
@@ -298,7 +300,8 @@ export default function POSDeparts() {
   const [routeFilter, setRouteFilter] = useState('');
   const [departureFilter, setDepartureFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('departure_datetime');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Most recent departures first
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [showExportsMenu, setShowExportsMenu] = useState(false);
@@ -402,10 +405,19 @@ export default function POSDeparts() {
       if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
       else if (typeof av === 'boolean' && typeof bv === 'boolean') cmp = av === bv ? 0 : av ? 1 : -1;
       else cmp = String(av ?? '').localeCompare(String(bv ?? ''));
+      // Same value (e.g. several departures at 00:00): the last one created comes first
+      if (cmp === 0) cmp = String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''));
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return list;
   }, [filterBaseDeparts, routeFilter, departureFilter, sortKey, sortDir]);
+
+  const pagination = usePagination(
+    visibleDeparts,
+    'sbta_guichet_departs_page_size',
+    `${period}|${range.from}|${range.to}|${routeFilter}|${departureFilter}|${sortKey}|${sortDir}`,
+  );
+  const pageDeparts = pagination.pageItems;
 
   const totals = useMemo(() => {
     return visibleDeparts.reduce((acc, d) => ({
@@ -438,9 +450,16 @@ export default function POSDeparts() {
       return next;
     });
   };
-  const allSelected = visibleDeparts.length > 0 && selectedIds.size === visibleDeparts.length;
+  // The header box selects the departures of the page shown; selections on other pages are kept
+  const allSelected = pageDeparts.length > 0 && pageDeparts.every(d => selectedIds.has(d.id));
   const toggleSelectAll = () => {
-    setSelectedIds(allSelected ? new Set() : new Set(visibleDeparts.map(d => d.id)));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      for (const d of pageDeparts) {
+        if (allSelected) next.delete(d.id); else next.add(d.id);
+      }
+      return next;
+    });
   };
 
   const printGroupedBordereau = async () => {
@@ -917,7 +936,7 @@ export default function POSDeparts() {
                 </tr>
               </thead>
               <tbody>
-                {visibleDeparts.map(d => {
+                {pageDeparts.map(d => {
                   const isSelected = d.id === selectedId;
                   return (
                     <tr
@@ -1003,8 +1022,18 @@ export default function POSDeparts() {
             </table>
           </div>
 
-          <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-            {visibleDeparts.length} départ(s) ({periodText}) · Cliquez sur une ligne pour la sélectionner et voir les actions
+          <Pagination
+            page={pagination.page}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            itemLabel="départs"
+          />
+
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {visibleDeparts.length} départ(s) ({periodText}) · La ligne Somme totalise tous les départs de la période, toutes pages comprises · Cliquez sur une ligne pour la sélectionner et voir les actions
           </p>
         </>
       )}

@@ -3,6 +3,8 @@ import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { supabase } from '@/services/supabase';
 import { formatCurrency } from '@/utils/formatCurrency';
+import Pagination from '@/components/pos/Pagination';
+import { usePagination } from '@/hooks/usePagination';
 import { Package, Loader2, AlertCircle, Calendar as CalendarIcon, Wallet } from 'lucide-react';
 
 type Period = 'day' | 'yesterday' | 'last7' | 'week' | 'month' | 'last_month' | 'year' | 'custom';
@@ -161,6 +163,16 @@ export default function POSRecetteBagage() {
 
   const totalRevenue = useMemo(() => rows.reduce((sum, r) => sum + (Number(r.price) || 0), 0), [rows]);
   const totalCount = rows.length;
+  // Most recent first (the server already sends them in that order; kept explicit here)
+  const sortedRows = useMemo(
+    () => [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    [rows],
+  );
+  const pagination = usePagination(
+    sortedRows,
+    'sbta_guichet_recette_bagage_page_size',
+    `${period}|${range.from.getTime()}|${range.to.getTime()}`,
+  );
 
   const periodButtons: { key: Period; label: string }[] = [
     { key: 'day', label: 'Jour' },
@@ -331,7 +343,7 @@ export default function POSRecetteBagage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => {
+                  {pagination.pageItems.map((r) => {
                     const d = new Date(r.created_at);
                     const dateStr = d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
                     const timeStr = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -380,6 +392,19 @@ export default function POSRecetteBagage() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+          )}
+          {!loading && rows.length > 0 && (
+            <div className="border-t px-2" style={{ borderColor: 'var(--border)' }}>
+              <Pagination
+                page={pagination.page}
+                pageCount={pagination.pageCount}
+                pageSize={pagination.pageSize}
+                total={pagination.total}
+                onPageChange={pagination.setPage}
+                onPageSizeChange={pagination.setPageSize}
+                itemLabel="opérations"
+              />
             </div>
           )}
         </div>
