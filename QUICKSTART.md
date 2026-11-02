@@ -39,7 +39,7 @@ Dans Supabase Dashboard > SQL Editor, exécuter dans l'ordre :
 
 1. **Authentication** > **Users** > **Add user**
 2. Email: `admin@sbta.ci`
-3. Password: `Admin@SBTA2026`
+3. Password: `(voir le gestionnaire de mots de passe)`
 4. ✅ Auto Confirm User
 5. Copier l'UUID généré
 6. Dans **SQL Editor** :
@@ -70,7 +70,7 @@ UPDATE users SET role = 'admin' WHERE email = 'admin@sbta.ci';
 ### 5️⃣ Se Connecter
 
 - Email : `admin@sbta.ci`
-- Mot de passe : `Admin@SBTA2026`
+- Mot de passe : `(voir le gestionnaire de mots de passe)`
 
 ## 📚 Documentation Complète
 

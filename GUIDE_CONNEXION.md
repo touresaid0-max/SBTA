@@ -21,7 +21,7 @@ L'erreur **"Database error querying schema"** a été résolue.
 #### 1. ADMIN - Accès Complet
 ```
 Email: admin@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/admin/dashboard`
@@ -33,7 +33,7 @@ Mot de passe: Password123!
 #### 2. DAF - Direction Financière
 ```
 Email: daf@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/daf/dashboard`
@@ -45,7 +45,7 @@ Mot de passe: Password123!
 #### 3. GESTIONNAIRE - Gestion de Flotte
 ```
 Email: gest.express@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/gestionnaire/dashboard`
@@ -62,7 +62,7 @@ Mot de passe: Password123!
 #### 4. COMPTABLE - Validation Financière
 ```
 Email: comptable@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/comptable/dashboard`
@@ -75,7 +75,7 @@ Mot de passe: Password123!
 #### 5. PLANIFICATEUR - Horaires
 ```
 Email: planif1@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/planificateur/dashboard`
@@ -87,7 +87,7 @@ Mot de passe: Password123!
 #### 6. GUICHETIER - Vente Billets
 ```
 Email: guichet1@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/guichetier/dashboard`
@@ -100,7 +100,7 @@ Mot de passe: Password123!
 #### 7. CHAUFFEUR - Conducteur
 ```
 Email: chauffeur1@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/chauffeur/dashboard`
@@ -113,7 +113,7 @@ Mot de passe: Password123!
 #### 8. CHEF GARAGE - Maintenance
 ```
 Email: chefgarage1@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/garage/dashboard`
@@ -126,7 +126,7 @@ Mot de passe: Password123!
 #### 9. MÉCANICIEN - Réparations
 ```
 Email: meca1@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/mecanicien/dashboard`
@@ -138,7 +138,7 @@ Mot de passe: Password123!
 #### 10. POMPISTE - Carburant
 ```
 Email: pompiste1@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 **Accès:**
 - Tableau de bord: `/pompiste/dashboard`
@@ -174,7 +174,7 @@ http://localhost:5173/login
 ### Étape 2: Saisir les identifiants
 ```
 Email: admin@sbta.ci
-Mot de passe: Password123!
+Mot de passe: (voir le gestionnaire de mots de passe)
 ```
 
 ### Étape 3: Cliquer sur "Se connecter"
@@ -192,7 +192,7 @@ Vous devriez être redirigé vers `/admin/dashboard`
 ### ❌ "Invalid login credentials"
 **Vérifiez:**
 1. Email correct (avec @sbta.ci)
-2. Mot de passe: `Password123!` (sensible à la casse)
+2. Mot de passe: `(voir le gestionnaire de mots de passe)` (sensible à la casse)
 3. Aucun espace avant/après
 
 ### ❌ Page blanche après connexion
