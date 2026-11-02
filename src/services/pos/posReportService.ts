@@ -69,27 +69,39 @@ export function departToSummary(
   };
 }
 
-const COLUMNS: { key: keyof DepartSummary; label: string; width: number }[] = [
-  { key: 'route_number', label: 'N° Départ/Ligne', width: 20 },
-  { key: 'route_name', label: 'Ligne', width: 45 },
-  { key: 'departure_date', label: 'Date', width: 28 },
-  { key: 'departure_time', label: 'Heure', width: 18 },
-  { key: 'seats_allocated', label: 'Sièges attribués', width: 22 },
-  { key: 'seat_range', label: 'Plage sièges', width: 20 },
-  { key: 'seats_sold', label: 'Vendus', width: 16 },
-  { key: 'seats_libres', label: 'Libres', width: 16 },
-  { key: 'fill_rate', label: 'Taux remplissage', width: 22 },
-  { key: 'mt_ticket', label: 'MT Ticket', width: 28 },
-  { key: 'mt_bagage', label: 'MT Bagage', width: 28 },
-  { key: 'tot_depense', label: 'Tot Dépense', width: 28 },
-  { key: 'solde', label: 'Solde', width: 28 },
-  { key: 'caisse', label: 'Caisse', width: 28 },
-  { key: 'status', label: 'Statut', width: 22 },
+type ColumnAlign = 'left' | 'right';
+
+// PDF columns: widths in mm, they add up to the usable width of a landscape A4 (277 mm).
+// Labels are wrapped on two lines when they do not fit their column.
+const COLUMNS: { key: keyof DepartSummary; label: string; width: number; align: ColumnAlign; total?: boolean; amount?: boolean }[] = [
+  { key: 'route_number', label: 'N° Départ / Ligne', width: 13, align: 'left' },
+  { key: 'route_name', label: 'Ligne', width: 36, align: 'left' },
+  { key: 'departure_date', label: 'Date', width: 18, align: 'left' },
+  { key: 'departure_time', label: 'Heure', width: 11, align: 'left' },
+  { key: 'seats_allocated', label: 'Sièges attribués', width: 15, align: 'right', total: true },
+  { key: 'seat_range', label: 'Plage sièges', width: 15, align: 'right' },
+  { key: 'seats_sold', label: 'Vendus', width: 13, align: 'right', total: true },
+  { key: 'seats_libres', label: 'Libres', width: 12, align: 'right', total: true },
+  { key: 'fill_rate', label: 'Taux (%)', width: 13, align: 'right' },
+  { key: 'mt_ticket', label: 'MT Ticket', width: 24, align: 'right', total: true, amount: true },
+  { key: 'mt_bagage', label: 'MT Bagage', width: 22, align: 'right', total: true, amount: true },
+  { key: 'tot_depense', label: 'Tot Dépense', width: 22, align: 'right', total: true, amount: true },
+  { key: 'solde', label: 'Solde', width: 24, align: 'right', total: true, amount: true },
+  { key: 'caisse', label: 'Caisse', width: 24, align: 'right', total: true, amount: true },
+  { key: 'status', label: 'Statut', width: 15, align: 'left' },
 ];
 
 function fmt(n: number): string {
   return n.toLocaleString('fr-FR');
 }
+
+// The PDF fonts have no narrow no-break space (the fr-FR thousands separator): it printed
+// "305 /500". Use a plain space instead.
+function pdfAmount(n: number): string {
+  return Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+const AMOUNT_COLUMNS = ['MT Ticket', 'MT Bagage', 'Tot Dépense', 'Solde', 'Caisse'];
 
 export function exportToExcel(summaries: DepartSummary[], fileName: string): void {
   const rows = summaries.map(s => ({
@@ -138,6 +150,19 @@ export function exportToExcel(summaries: DepartSummary[], fileName: string): voi
   rows.push(totals as unknown as typeof rows[0]);
 
   const ws = XLSX.utils.json_to_sheet(rows);
+
+  // Readable columns, and amounts shown with thousands separators (still numbers in Excel)
+  const headers = Object.keys(rows[0] ?? totals);
+  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 2, AMOUNT_COLUMNS.includes(h) ? 14 : h === 'Ligne' ? 28 : 10) }));
+  const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:A1');
+  headers.forEach((h, c) => {
+    if (!AMOUNT_COLUMNS.includes(h)) return;
+    for (let r = 1; r <= range.e.r; r++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (cell && typeof cell.v === 'number') cell.z = '#,##0';
+    }
+  });
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Récapitulatif');
   XLSX.writeFile(wb, fileName);
@@ -158,58 +183,60 @@ export function exportToPDF(summaries: DepartSummary[], fileName: string, title:
   doc.setFont('helvetica', 'normal');
   const dateStr = new Date().toLocaleString('fr-FR');
   doc.text(`Généré le ${dateStr}`, margin, y);
-  y += 3;
+  y += 4.5;
   if (summaries[0]?.station_name) {
     doc.text(`Gare: ${summaries[0].station_name}`, margin, y);
-    y += 3;
+    y += 4.5;
   }
   y += 3;
 
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
+  // Left edge of each column, scaled down if the table were wider than the page
+  const usable = pageWidth - margin * 2;
+  const scale = Math.min(1, usable / COLUMNS.reduce((a, c) => a + c.width, 0));
+  const lefts: number[] = [];
+  COLUMNS.reduce((x, c) => { lefts.push(x); return x + c.width * scale; }, margin);
+  const pad = 1;
 
-  let x = margin;
-  for (const col of COLUMNS) {
-    doc.text(col.label, x, y);
-    x += col.width;
-  }
-  y += 2;
-  doc.setDrawColor(200);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 4;
+  const cellText = (col: typeof COLUMNS[number], text: string, i: number, rowY: number) => {
+    const w = col.width * scale - pad * 2;
+    let str = text;
+    while (str.length > 1 && doc.getTextWidth(str) > w) str = str.slice(0, -1);
+    if (str !== text) str = str.slice(0, -1) + '…';
+    if (col.align === 'right') doc.text(str, lefts[i] + col.width * scale - pad, rowY, { align: 'right' });
+    else doc.text(str, lefts[i] + pad, rowY);
+  };
 
-  doc.setFont('helvetica', 'normal');
+  const drawHeader = () => {
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    let lines = 1;
+    COLUMNS.forEach((col, i) => {
+      const parts = doc.splitTextToSize(col.label, col.width * scale - pad * 2) as string[];
+      lines = Math.max(lines, parts.length);
+      parts.forEach((p, k) => {
+        if (col.align === 'right') doc.text(p, lefts[i] + col.width * scale - pad, y + k * 3.2, { align: 'right' });
+        else doc.text(p, lefts[i] + pad, y + k * 3.2);
+      });
+    });
+    y += (lines - 1) * 3.2 + 2;
+    doc.setDrawColor(200);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 4;
+    doc.setFont('helvetica', 'normal');
+  };
+
+  drawHeader();
   for (const s of summaries) {
     if (y > doc.internal.pageSize.getHeight() - 20) {
       doc.addPage();
       y = 15;
-      doc.setFont('helvetica', 'bold');
-      x = margin;
-      for (const col of COLUMNS) {
-        doc.text(col.label, x, y);
-        x += col.width;
-      }
-      y += 4;
-      doc.setFont('helvetica', 'normal');
+      drawHeader();
     }
-
-    x = margin;
-    for (const col of COLUMNS) {
+    COLUMNS.forEach((col, i) => {
       const val = s[col.key];
-      let str: string;
-      if (typeof val === 'number') {
-        str = ['mt_ticket', 'mt_bagage', 'tot_depense', 'solde', 'caisse'].includes(col.key)
-          ? fmt(val)
-          : String(val);
-      } else {
-        str = String(val ?? '');
-      }
-      if (str.length > col.width / 1.8) {
-        str = str.slice(0, Math.floor(col.width / 1.8)) + '…';
-      }
-      doc.text(str, x, y);
-      x += col.width;
-    }
+      const text = typeof val === 'number' ? (col.amount ? pdfAmount(val) : String(val)) : String(val ?? '');
+      cellText(col, text, i, y);
+    });
     y += 4;
   }
 
@@ -218,28 +245,12 @@ export function exportToPDF(summaries: DepartSummary[], fileName: string, title:
   doc.line(margin, y, pageWidth - margin, y);
   y += 4;
   doc.setFont('helvetica', 'bold');
-  doc.text('TOTAL', margin, y);
-
-  const totals = {
-    seats_allocated: summaries.reduce((a, s) => a + s.seats_allocated, 0),
-    seats_sold: summaries.reduce((a, s) => a + s.seats_sold, 0),
-    seats_libres: summaries.reduce((a, s) => a + s.seats_libres, 0),
-    mt_ticket: summaries.reduce((a, s) => a + s.mt_ticket, 0),
-    mt_bagage: summaries.reduce((a, s) => a + s.mt_bagage, 0),
-    tot_depense: summaries.reduce((a, s) => a + s.tot_depense, 0),
-    solde: summaries.reduce((a, s) => a + s.solde, 0),
-    caisse: summaries.reduce((a, s) => a + s.caisse, 0),
-  };
-
-  const colStart = margin + COLUMNS.slice(0, 4).reduce((a, c) => a + c.width, 0);
-  doc.text(String(totals.seats_allocated), colStart, y);
-  doc.text(String(totals.seats_sold), colStart + COLUMNS[4].width + COLUMNS[5].width, y);
-  doc.text(String(totals.seats_libres), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width, y);
-  doc.text(fmt(totals.mt_ticket), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width, y);
-  doc.text(fmt(totals.mt_bagage), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width, y);
-  doc.text(fmt(totals.tot_depense), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width + COLUMNS[10].width, y);
-  doc.text(fmt(totals.solde), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width + COLUMNS[10].width + COLUMNS[11].width, y);
-  doc.text(fmt(totals.caisse), colStart + COLUMNS[4].width + COLUMNS[5].width + COLUMNS[6].width + COLUMNS[7].width + COLUMNS[8].width + COLUMNS[9].width + COLUMNS[10].width + COLUMNS[11].width + COLUMNS[12].width, y);
+  doc.text('TOTAL', margin + pad, y);
+  COLUMNS.forEach((col, i) => {
+    if (!col.total) return;
+    const sum = summaries.reduce((a, s) => a + (Number(s[col.key]) || 0), 0);
+    cellText(col, col.amount ? pdfAmount(sum) : String(sum), i, y);
+  });
 
   doc.save(fileName);
 }
@@ -287,6 +298,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
     <td style="text-align:right">${fmt(s.mt_bagage)}</td>
     <td style="text-align:right">${fmt(s.tot_depense)}</td>
     <td style="text-align:right;font-weight:bold">${fmt(s.solde)}</td>
+    <td style="text-align:right">${fmt(s.caisse)}</td>
     <td style="text-align:center">${s.status}</td>
   </tr>`).join('');
 
@@ -298,6 +310,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
     mt_bagage: summaries.reduce((a, s) => a + s.mt_bagage, 0),
     tot_depense: summaries.reduce((a, s) => a + s.tot_depense, 0),
     solde: summaries.reduce((a, s) => a + s.solde, 0),
+    caisse: summaries.reduce((a, s) => a + s.caisse, 0),
   };
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
@@ -319,7 +332,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
       <tr>
         <th>N° Ligne</th><th>Ligne</th><th>Date/Heure</th><th>Matricule</th><th>Chauffeur</th>
         <th>Sièges attribués</th><th>Plage</th><th>Vendus</th><th>Libres</th><th>Taux</th>
-        <th>MT Ticket</th><th>MT Bagage</th><th>Tot Dépense</th><th>Solde</th><th>Statut</th>
+        <th>MT Ticket</th><th>MT Bagage</th><th>Tot Dépense</th><th>Solde</th><th>Caisse</th><th>Statut</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -335,6 +348,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
         <td style="text-align:right">${fmt(totals.mt_bagage)}</td>
         <td style="text-align:right">${fmt(totals.tot_depense)}</td>
         <td style="text-align:right">${fmt(totals.solde)}</td>
+        <td style="text-align:right">${fmt(totals.caisse)}</td>
         <td></td>
       </tr>
     </tfoot>
