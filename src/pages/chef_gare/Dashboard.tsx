@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
+import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -87,26 +88,21 @@ export default function ChefGareDashboard() {
 
   // Realtime: auto-refresh when a guichet makes a sale or modifies charges
   useEffect(() => {
+    // Every sale of every guichet triggers an event: one reload every 10 s at most
+    const refresh = createRefreshScheduler(() => loadAll());
     const channel = supabase
       .channel('chef-gare-dashboard-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => {
-        loadAll();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'counter_charges' }, () => {
-        loadAll();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-        loadAll();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'baggage_tickets' }, () => {
-        loadAll();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings' }, () => {
-        loadAll();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'counter_charges' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'baggage_tickets' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings' }, refresh.schedule)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      refresh.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const loadAll = async () => {

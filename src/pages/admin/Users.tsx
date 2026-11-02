@@ -123,6 +123,15 @@ const emptyForm = () => ({
 
 type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
 
+const USER_COLUMNS = 'id, email, full_name, first_name, last_name, phone, role, avatar_url, company_id, '
+  + 'station_id, organization_id, status, is_active, employee_id, license_number, license_expiry, '
+  + 'license_category, technician_type_id, tpe_counter_id, tpe_mode, tpe_pos_enabled, assistance_gp, '
+  + 'colis_direction, driver_avg_rating, driver_total_hours, created_at';
+
+const EMPLOYEE_COLUMNS = 'id, auth_user_id, professional_email, personal_email, first_name, last_name, '
+  + 'phone, role, avatar_url, company_id, station_id, account_status, employee_id, license_number, '
+  + 'license_expiry, license_category, technician_type_id, created_at';
+
 export default function Users() {
   const [activeTab, setActiveTab] = useState<TabType>('pending');
 
@@ -160,18 +169,19 @@ export default function Users() {
   const loadUsers = useCallback(async () => {
     try {
       // Read in pages of 1 000: users and employees are close to Supabase's 1 000-row limit,
-      // beyond which people would silently disappear from the list
+      // beyond which people would silently disappear from the list.
+      // Only the columns this page shows or edits are read (all columns weighed 2.8 MB).
       const [usersRes, empRes, companiesRes, stationsRes, countersRes, routesRes, techTypesRes] = await Promise.all([
         fetchAllPages<any>((from, to) => supabase
           .from('users')
-          .select('*, companies(name), organizations!users_organization_id_fkey(name)')
+          .select(USER_COLUMNS + ', companies(name), organizations!users_organization_id_fkey(name)')
           .neq('role', 'client')
           .order('created_at', { ascending: false })
           .order('id')
           .range(from, to)),
         fetchAllPages<any>((from, to) => supabase
           .from('employees')
-          .select('*, companies(name), technician_type:garage_types_techniciens(id, nom)')
+          .select(EMPLOYEE_COLUMNS + ', companies(name), technician_type:garage_types_techniciens(id, nom)')
           .neq('account_status', 'pending')
           .order('created_at', { ascending: false })
           .order('id')

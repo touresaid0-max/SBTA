@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '@/services/supabase';
+import { createRefreshScheduler } from '@/utils/realtimeRefresh';
 
 export const STATUS_LABELS: Record<string, string> = {
   provisional: 'Provisoire',
@@ -52,15 +53,20 @@ export function Badge({ map, colors, value }: { map: Record<string, string>; col
   );
 }
 
-/** Subscribe to realtime changes on a table; calls onChange on any event. */
+/** Subscribe to realtime changes on tables; calls onChange at most every 10 s after events. */
 export function useRealtimeSync(tables: string[], onChange: () => void) {
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   useEffect(() => {
+    const refresh = createRefreshScheduler(() => onChangeRef.current());
     const channel = supabase.channel('agent-resa-' + tables.join('-'));
     tables.forEach((t) => {
-      channel.on('postgres_changes', { event: '*', schema: 'public', table: t }, onChange);
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: t }, refresh.schedule);
     });
     channel.subscribe();
     return () => {
+      refresh.cancel();
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

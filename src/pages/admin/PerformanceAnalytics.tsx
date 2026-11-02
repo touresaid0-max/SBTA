@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../services/supabase';
+import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import toast from 'react-hot-toast';
 import {
   TrendingUp, TrendingDown, Bus, AlertTriangle, DollarSign,
@@ -370,15 +371,20 @@ export default function PerformanceAnalytics() {
       channelRef.current.unsubscribe();
     }
 
+    // One reload every 10 s at most, whatever the number of sales
+    const refresh = createRefreshScheduler(() => loadAll(true));
     channelRef.current = supabase.channel(`perf-rt-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => loadAll(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bus_expenses' }, () => loadAll(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'fuel_vouchers' }, () => loadAll(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, () => loadAll(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => loadAll(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bus_expenses' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fuel_vouchers' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh.schedule)
       .subscribe();
 
-    return () => { channelRef.current?.unsubscribe(); };
+    return () => {
+      refresh.cancel();
+      channelRef.current?.unsubscribe();
+    };
   }, [selectedCompany, dateRange]);
 
   const isPositive = (v: number) => v >= 0;

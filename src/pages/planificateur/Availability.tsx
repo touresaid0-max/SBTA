@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../services/supabase';
+import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import toast from 'react-hot-toast';
 import {
   Bus, Users, RefreshCw, Clock, Search,
@@ -98,13 +99,15 @@ export default function Availability() {
   }, [loadData]);
 
   useEffect(() => {
+    const refresh = createRefreshScheduler(() => loadData());
     const channel = supabase
       .channel('planificateur-availability')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-        loadData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh.schedule)
       .subscribe();
-    return () => { channel.unsubscribe(); };
+    return () => {
+      refresh.cancel();
+      channel.unsubscribe();
+    };
   }, [selectedDate]);
 
   const loadBuses = async () => {
