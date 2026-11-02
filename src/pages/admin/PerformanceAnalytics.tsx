@@ -6,6 +6,7 @@ import {
   Activity, RefreshCw, Wifi
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { fetchAllPages } from '../../utils/fetchAllPages';
 import { format, subDays, startOfDay, endOfDay, eachWeekOfInterval, startOfWeek, endOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
@@ -113,9 +114,11 @@ export default function PerformanceAnalytics() {
 
   const getRevenue = useCallback(async (scheduleIds: string[]): Promise<number> => {
     if (scheduleIds.length === 0) return 0;
-    const { data } = await supabase
+    // Read 1 000 rows at a time: a period has far more than 1 000 tickets
+    const { data } = await fetchAllPages<{ total_price: number }>((from, to) => supabase
       .from('reservations').select('total_price')
-      .in('schedule_id', scheduleIds).neq('status', 'annulee');
+      .in('schedule_id', scheduleIds).neq('status', 'annulee')
+      .order('id').range(from, to));
     return (data || []).reduce((s, r) => s + (r.total_price || 0), 0);
   }, []);
 
@@ -280,7 +283,8 @@ export default function PerformanceAnalytics() {
 
       const [revRes, expRes, fuelRes] = await Promise.all([
         schedIds.length > 0
-          ? supabase.from('reservations').select('total_price, total_seats').in('schedule_id', schedIds).neq('status', 'annulee')
+          ? fetchAllPages<any>((from, to) => supabase.from('reservations').select('total_price, total_seats')
+              .in('schedule_id', schedIds).neq('status', 'annulee').order('id').range(from, to))
           : Promise.resolve({ data: [] }),
         supabase.from('bus_expenses').select('amount').eq('bus_id', bus.id)
           .gte('expense_date', startIso).lte('expense_date', endIso).eq('status', 'validee'),
@@ -342,7 +346,7 @@ export default function PerformanceAnalytics() {
     }
 
     const { data: immobilised } = await supabase
-      .from('buses').select('registration_number').eq('status', 'en_panne').eq('is_active', true);
+      .from('buses').select('registration_number').in('status', ['panne_route', 'reception_garage', 'diagnostic', 'attente_ot', 'maintenance', 'controle_qualite']).eq('is_active', true);
     if (immobilised && immobilised.length > 0) {
       items.push({
         id: 'immobilised-buses',

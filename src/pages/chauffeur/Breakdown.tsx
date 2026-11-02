@@ -91,7 +91,7 @@ export default function BreakdownReport() {
         const { data: busData } = await supabase
           .from('buses')
           .select('id, registration_number, brand, model')
-          .eq('status', 'active')
+          .eq('status', 'disponible')
           .limit(1)
           .maybeSingle();
         if (busData) setCurrentBus(busData);

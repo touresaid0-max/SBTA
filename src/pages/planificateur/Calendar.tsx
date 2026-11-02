@@ -207,7 +207,7 @@ export default function ScheduleCalendar() {
         .from('buses')
         .select('id, registration_number, model, capacity, status, companies:company_id(name)')
         .eq('is_active', true)
-        .neq('status', 'en_panne')
+        .in('status', ['disponible', 'en_service'])
         .order('registration_number');
 
       // find buses already busy on this slot (excluding current schedule)

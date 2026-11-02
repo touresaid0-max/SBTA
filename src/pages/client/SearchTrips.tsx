@@ -115,7 +115,7 @@ export default function SearchTrips() {
             seat_configs:seat_config_id(class_type, total_seats)
           )
         `)
-        .eq('status', 'scheduled')
+        .in('status', ['planifie', 'retard'])
         .gte('departure_datetime', startDate.toISOString())
         .lte('departure_datetime', endDate.toISOString());
 
@@ -133,7 +133,7 @@ export default function SearchTrips() {
             .from('reservations')
             .select('*', { count: 'exact', head: true })
             .eq('schedule_id', schedule.id)
-            .in('status', ['confirmed', 'paid', 'embarked']);
+            .in('status', ['en_attente', 'confirmee', 'terminee']);
 
           const availableSeats = schedule.buses.capacity - (count || 0);
 

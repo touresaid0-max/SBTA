@@ -81,26 +81,26 @@ export default function ComptableDashboard() {
         workOrdersAmountRes,
       ] = await Promise.all([
         applyBusFilter(supabase.from('fuel_vouchers').select('id', { count: 'exact', head: true }).eq('status', 'genere')),
-        applyBusFilter(supabase.from('bus_expenses').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
-        applyBusFilter(supabase.from('maintenance_work_orders').select('id', { count: 'exact', head: true }).eq('status', 'submitted')),
+        applyBusFilter(supabase.from('bus_expenses').select('id', { count: 'exact', head: true }).eq('status', 'en_attente')),
+        applyBusFilter(supabase.from('maintenance_work_orders').select('id', { count: 'exact', head: true }).eq('status', 'attente_validation')),
         applyBusFilter(supabase.from('fuel_vouchers').select('id', { count: 'exact', head: true })
           .eq('status', 'validated')
           .gte('created_at', monthStart.toISOString())
           .lte('created_at', monthEnd.toISOString())),
         applyBusFilter(supabase.from('bus_expenses').select('id', { count: 'exact', head: true })
-          .eq('status', 'validated')
+          .eq('status', 'validee')
           .gte('created_at', monthStart.toISOString())
           .lte('created_at', monthEnd.toISOString())),
         applyBusFilter(supabase.from('maintenance_work_orders').select('id', { count: 'exact', head: true })
-          .eq('status', 'validated')
+          .eq('status', 'valide_comptable')
           .gte('created_at', monthStart.toISOString())
           .lte('created_at', monthEnd.toISOString())),
         applyBusFilter(supabase.from('bus_expenses').select('amount')
-          .eq('status', 'validated')
+          .eq('status', 'validee')
           .gte('created_at', monthStart.toISOString())
           .lte('created_at', monthEnd.toISOString())),
         applyBusFilter(supabase.from('maintenance_work_orders').select('actual_cost, estimated_cost')
-          .eq('status', 'validated')
+          .eq('status', 'valide_comptable')
           .gte('created_at', monthStart.toISOString())
           .lte('created_at', monthEnd.toISOString())),
       ]);

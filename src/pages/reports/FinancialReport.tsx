@@ -7,7 +7,8 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 import PeriodFilter from '../../components/shared/PeriodFilter';
 import { getDateRangeFromPeriod, PeriodFilter as PeriodType } from '../../utils/reportHelpers';
 import { formatCurrency } from '../../utils/formatCurrency';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 
 export default function FinancialReport() {
@@ -73,11 +74,24 @@ export default function FinancialReport() {
 
       setCompanyData(companyStats);
 
-      const monthlyData = [
-        { mois: 'Jan', revenus: revenue * 0.8, charges: expenses * 0.7 },
-        { mois: 'Fév', revenus: revenue * 0.9, charges: expenses * 0.85 },
-        { mois: 'Mar', revenus: revenue, charges: expenses }
-      ];
+      // Real figures of the last 3 calendar months up to the end of the period
+      // (this chart used to show invented values: 80 % and 90 % of the current month)
+      const months = [2, 1, 0].map(back => {
+        const start = startOfMonth(subMonths(dateRange.end, back));
+        return { start, end: endOfMonth(start) };
+      });
+      const monthlyData = await Promise.all(months.map(async ({ start, end }) => {
+        const { data: m, error: monthError } = await supabase.rpc('get_financial_report_stats', {
+          p_start: start.toISOString(),
+          p_end: end.toISOString(),
+        });
+        if (monthError) throw monthError;
+        return {
+          mois: format(start, 'MMM yyyy', { locale: fr }),
+          revenus: Number(m.revenue),
+          charges: Number(m.expenses),
+        };
+      }));
 
       setEvolutionData(monthlyData);
     } catch (error: any) {
