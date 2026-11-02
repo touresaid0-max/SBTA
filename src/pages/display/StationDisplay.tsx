@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { format, addMinutes, differenceInMinutes } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
@@ -389,17 +390,16 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
       } catch (_) {}
     }, REFRESH_MS);
 
+    // Each sale anywhere sends an event: the screen reloads at most every 10 s
+    const refresh = createRefreshScheduler(() => loadSchedules());
     const channel = supabase
       .channel(`display-${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-        loadSchedules();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => {
-        loadSchedules();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
       .subscribe((status) => { setConnected(status === 'SUBSCRIBED'); });
 
     return () => {
+      refresh.cancel();
       clearInterval(clock);
       clearInterval(transitionTimer);
       channel.unsubscribe();

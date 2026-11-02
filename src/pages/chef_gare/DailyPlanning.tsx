@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabase';
+import { createRefreshScheduler, runAtMostEvery } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import { format, addMinutes, isAfter, isBefore, isWithinInterval } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -108,6 +109,8 @@ export default function DailyPlanning() {
   const [autoCloseAlerts, setAutoCloseAlerts] = useState<{schedule_id: string; route_name: string; plate_number: string; departure: string; missing_charges: boolean; missing_peage?: boolean; missing_ration?: boolean}[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const stationRef = useRef<any>(null);
+  const selectedDateRef = useRef(selectedDate);
+  selectedDateRef.current = selectedDate;
 
   // Counter assignment
   const [counters, setCounters] = useState<CounterOption[]>([]);
@@ -152,16 +155,17 @@ export default function DailyPlanning() {
 
   useEffect(() => {
     if (!station) return;
+    // One reload every 10 s at most, on the date currently displayed
+    const refresh = createRefreshScheduler(() => loadSchedules(station.id, selectedDateRef.current));
     const channel = supabase
       .channel(`chef-gare-planning-${station.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-        loadSchedules(station.id);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => {
-        loadSchedules(station.id);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
       .subscribe();
-    return () => { channel.unsubscribe(); };
+    return () => {
+      refresh.cancel();
+      channel.unsubscribe();
+    };
   }, [station?.id]);
 
   useEffect(() => {
@@ -215,9 +219,14 @@ export default function DailyPlanning() {
 
     // Auto-terminate any en_cours/retard schedules that should be terminated
     const nowStr = format(new Date(), 'yyyy-MM-dd');
-    if (targetDate <= nowStr) {
+    // The closure check runs at most every 10 minutes, not on every reload
+    const closure = targetDate <= nowStr
+      ? runAtMostEvery(`auto-terminate-${stationId}`, 10 * 60_000,
+          async () => await supabase.rpc('auto_terminate_past_schedules', { p_station_id: stationId }))
+      : undefined;
+    if (closure) {
       try {
-        const { data: terminated } = await supabase.rpc('auto_terminate_past_schedules', { p_station_id: stationId });
+        const { data: terminated } = await closure;
         if (terminated && Array.isArray(terminated) && terminated.length > 0) {
           const missing = terminated.filter((a: any) => a.missing_charges);
           if (missing.length > 0) {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../services/supabase';
+import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import toast from 'react-hot-toast';
 import {
   Building2, MapPin, Monitor, Bus, Route, Calendar, TicketCheck,
@@ -186,18 +187,14 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     // Sales arrive continuously: refresh at most once every 10 s instead of on every change
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleRefresh = () => {
-      if (timer) return;
-      timer = setTimeout(() => { timer = null; loadData(true); }, 10_000);
-    };
+    const refresh = createRefreshScheduler(() => loadData(true));
     const channel = supabase
       .channel('admin-dashboard-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, scheduleRefresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh.schedule)
       .subscribe();
     return () => {
-      if (timer) clearTimeout(timer);
+      refresh.cancel();
       channel.unsubscribe();
     };
   }, [loadData]);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
+import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { Monitor, TrendingUp, TicketCheck, Banknote, RefreshCw, ChevronDown, ChevronUp, MapPin, Calendar } from 'lucide-react';
@@ -78,26 +79,21 @@ export default function ChefGareSalesTracking() {
 
   // Realtime: auto-refresh when a guichet makes a sale or modifies charges
   useEffect(() => {
+    // Every sale of every guichet triggers an event: one reload every 10 s at most
+    const refresh = createRefreshScheduler(() => load());
     const channel = supabase
       .channel('chef-gare-sales-tracking-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, () => {
-        load();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'counter_charges' }, () => {
-        load();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => {
-        load();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'baggage_tickets' }, () => {
-        load();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings' }, () => {
-        load();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'counter_charges' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'baggage_tickets' }, refresh.schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mobile_bookings' }, refresh.schedule)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      refresh.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [range?.start, range?.end]);
 
   const load = async () => {
