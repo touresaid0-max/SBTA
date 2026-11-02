@@ -214,13 +214,13 @@ const EXPENSE_TYPE_MAP: Record<string, string> = {
   'autres': 'autres',
 };
 
-function normalizeExpenseType(raw: string | undefined): string {
+export function normalizeExpenseType(raw: string | undefined): string {
   if (!raw) return 'autres';
   const key = raw.trim().toLowerCase();
   return EXPENSE_TYPE_MAP[key] ?? 'autres';
 }
 
-const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage']);
+export const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage']);
 
 async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Record<string, unknown> | null> {
   const p = payload;

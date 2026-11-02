@@ -1,7 +1,7 @@
-import { db } from './db';
+import { db, type BagageRecord, type DepenseRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
-import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount } from './syncEngine';
+import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType, UNIQUE_CHARGE_TYPES } from './syncEngine';
 
 function uuid(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -248,6 +248,138 @@ function markAutoTerminateDone(stationId: string | undefined, todayStr: string):
   } catch { /* storage unavailable: the call is simply repeated next sync */ }
 }
 
+// Departures of the last days are pulled again once per day and station, so that the tickets,
+// baggage and expenses recorded on other counters after a departure's day reach this device too.
+// The other syncs of the day only pull today's and future departures, to stay light.
+const HISTORY_DAYS = 7;
+const HISTORY_SYNC_KEY = 'sbta_history_sync_day';
+
+function historySyncDoneToday(stationId: string | undefined, todayStr: string): boolean {
+  try {
+    return localStorage.getItem(`${HISTORY_SYNC_KEY}:${stationId ?? 'all'}`) === todayStr;
+  } catch {
+    return false;
+  }
+}
+
+function markHistorySyncDone(stationId: string | undefined, todayStr: string): void {
+  try {
+    localStorage.setItem(`${HISTORY_SYNC_KEY}:${stationId ?? 'all'}`, todayStr);
+  } catch { /* storage unavailable: the history is simply pulled again next sync */ }
+}
+
+// A long list of ids in one `in` filter makes the request URL too long
+const SCHEDULE_ID_CHUNK = 100;
+
+/**
+ * Reads every row of `table` attached to the given departures, page by page.
+ * Returns null if any request fails, so that callers never work from a partial list.
+ */
+async function fetchRowsForSchedules(
+  table: string,
+  columns: string,
+  scheduleIds: string[],
+): Promise<Record<string, unknown>[] | null> {
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
+    const chunk = scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK);
+    for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(columns)
+        .in('schedule_id', chunk)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, from + RESERVATION_PAGE_SIZE - 1);
+      if (error) {
+        console.warn(`[sync] Failed to read ${table}:`, error.message);
+        return null;
+      }
+      rows.push(...((data ?? []) as unknown as Record<string, unknown>[]));
+      if (!data || data.length < RESERVATION_PAGE_SIZE) break;
+    }
+  }
+  return rows;
+}
+
+/** Ids of the records of a store that still have a local change waiting to be sent. */
+async function getPendingIds(entity: StoreName): Promise<Set<string>> {
+  const items = await db.sync_queue.where('entity').equals(entity).toArray();
+  return new Set(
+    items
+      .filter(i => i.status !== 'done')
+      .map(i => String((i.payload as Record<string, unknown> | undefined)?.id ?? '')),
+  );
+}
+
+/** Registration numbers of the buses and names of the drivers, for the given ids. */
+async function fetchBusAndDriverNames(
+  busIds: string[],
+  driverIds: string[],
+): Promise<{ plates: Map<string, string>; drivers: Map<string, string> }> {
+  const plates = new Map<string, string>();
+  const drivers = new Map<string, string>();
+  try {
+    if (busIds.length > 0) {
+      const { data } = await supabase.from('buses').select('id, registration_number').in('id', busIds);
+      for (const b of data ?? []) if (b.registration_number) plates.set(b.id, b.registration_number);
+    }
+    if (driverIds.length > 0) {
+      const { data } = await supabase.from('users').select('id, full_name').in('id', driverIds);
+      for (const u of data ?? []) if (u.full_name) drivers.set(u.id, u.full_name);
+    }
+  } catch { /* names are only displayed: the departures stay usable without them */ }
+  return { plates, drivers };
+}
+
+function mapRemoteBaggageToLocal(b: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: b.id,
+    depart_id: b.schedule_id,
+    bagage_number: b.baggage_number ?? '',
+    ticket_id: b.reservation_id ?? undefined,
+    linked_seat_number: b.seat_number ?? undefined,
+    with_ticket: Boolean(b.has_ticket),
+    with_ticket_report: false,
+    price: Number(b.price ?? 0),
+    destination: b.destination ?? '',
+    description: b.description ?? '',
+    car_plate: b.bus_registration ?? '',
+    owner_name: b.owner_name ?? '',
+    owner_phone: b.owner_phone ?? '',
+    print_bagage: false,
+    declared_value: Number(b.declared_value ?? 0),
+    station_id: b.station_id ?? undefined,
+    counter_id: b.counter_id ?? undefined,
+    payment_status: b.payment_status === 'en_attente' ? 'en_attente' : 'paye',
+    paid_at: b.paid_at ?? undefined,
+    paid_by: b.paid_by ?? undefined,
+  };
+}
+
+const CHARGE_TYPE_LABELS: Record<string, { type: string; label: string }> = {
+  ration: { type: 'ratio', label: 'Ratio' },
+  carburant_complement: { type: 'carburant', label: 'Carburant' },
+  peage: { type: 'péages', label: 'Péages' },
+  autres: { type: 'autres', label: 'Autres' },
+};
+
+function mapRemoteChargeToLocal(c: Record<string, unknown>): Record<string, unknown> {
+  const kind = CHARGE_TYPE_LABELS[String(c.charge_type)] ?? CHARGE_TYPE_LABELS.autres;
+  return {
+    id: c.id,
+    depart_id: c.schedule_id,
+    type: kind.type,
+    label: kind.label,
+    amount: Number(c.amount ?? 0),
+    description: c.description ?? '',
+    station_id: c.station_id ?? '',
+    bus_id: c.bus_id ?? undefined,
+    counter_id: c.counter_id ?? undefined,
+    expense_date: c.charge_date ?? '',
+  };
+}
+
 export async function syncDepartsAndTicketsFromServer(stationId?: string): Promise<void> {
   if (!isOnline()) return;
   try {
@@ -290,10 +422,15 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
       }
     } catch { /* non-critical */ }
 
+    const withHistory = !historySyncDoneToday(stationId, todayStr);
+    const fromDate = new Date();
+    if (withHistory) fromDate.setUTCDate(fromDate.getUTCDate() - HISTORY_DAYS);
+    const fromStr = fromDate.toISOString().slice(0, 10);
+
     let scheduleQuery = supabase
       .from('schedules')
       .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, buses:bus_id(seats_sold_from)')
-      .gte('departure_datetime', `${todayStr}T00:00:00`);
+      .gte('departure_datetime', `${fromStr}T00:00:00`);
     // Only this station's departures: other stations' ones are never shown here (shared
     // buses rely on seat allocations kept on the device, not on pulled rows)
     if (stationId) scheduleQuery = scheduleQuery.eq('departure_station_id', stationId);
@@ -304,13 +441,27 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
     if (remoteSchedules && remoteSchedules.length > 0) {
       const scheduleIds = remoteSchedules.map(s => s.id);
 
+      // The schedules only hold the bus and driver ids: without their registration and name,
+      // the Matricule and Chauffeur columns stayed empty for departures planned on the server
+      // (chef de gare, another counter) or pulled again on a new device.
+      const { plates, drivers } = await fetchBusAndDriverNames(
+        Array.from(new Set(remoteSchedules.map(s => s.bus_id).filter(Boolean))) as string[],
+        Array.from(new Set(remoteSchedules.map(s => s.driver_id).filter(Boolean))) as string[],
+      );
+
       for (const s of remoteSchedules) {
         const localRecord = mapRemoteScheduleToLocal(s as unknown as Record<string, unknown>);
+        const plate = s.bus_id ? plates.get(s.bus_id) : undefined;
+        const driverName = s.driver_id ? drivers.get(s.driver_id) : undefined;
         const existing = await (db.departs as any).get(s.id);
         if (existing) {
+          // A past-day departure already closed on this device stays closed, even if the
+          // server has not closed it yet (its nightly closing may not have run)
+          const keepClosed = existing.cloture && String(localRecord.departure_date) < todayStr;
           await (db.departs as any).put({
             ...existing,
             ...localRecord,
+            ...(keepClosed ? { cloture: true, status: existing.status, cloture_at: existing.cloture_at } : {}),
             mt_ticket: existing.mt_ticket,
             mt_bagage: existing.mt_bagage,
             tot_depense: existing.tot_depense,
@@ -319,9 +470,9 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
             seat_allocations: existing.seat_allocations,
             seats_from: localRecord.seats_from,
             seats_total: existing.seats_total,
-            bus_plate: existing.bus_plate,
-            bus_name: existing.bus_name,
-            driver_name: existing.driver_name,
+            bus_plate: plate ?? existing.bus_plate,
+            bus_name: plate ?? existing.bus_name,
+            driver_name: driverName ?? existing.driver_name,
             convoyeur_id: existing.convoyeur_id,
             convoyeur_name: existing.convoyeur_name,
             apprenti_id: existing.apprenti_id,
@@ -335,54 +486,76 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
             breakdown_transfer: existing.breakdown_transfer ?? 0,
           });
         } else {
-          await (db.departs as any).put({ ...localRecord, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
+          await (db.departs as any).put({
+            ...localRecord,
+            bus_plate: plate ?? '',
+            bus_name: plate ?? '',
+            driver_name: driverName ?? '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            synced: true,
+          });
         }
       }
 
       // Supabase returns at most 1 000 rows per request, and a busy station sells more than that
       // in a day: read the tickets page by page until the last one. If any page fails, nothing
       // below is updated, so a departure's cash total is never computed from a partial list.
-      let remoteReservations: any[] | null = [];
-      let resError: unknown = null;
-      for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
-        const { data, error } = await supabase
-          .from('reservations')
-          .select('id, schedule_id, seat_numbers, total_price, total_seats, passenger_name, passenger_phone, status, booking_reference, destination_city_name, loyalty_card_number')
-          .in('schedule_id', scheduleIds)
-          .order('created_at', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, from + RESERVATION_PAGE_SIZE - 1);
-        if (error) { resError = error; remoteReservations = null; break; }
-        remoteReservations.push(...(data ?? []));
-        if (!data || data.length < RESERVATION_PAGE_SIZE) break;
-      }
+      // Only columns that exist on `reservations`: the former list also asked for
+      // loyalty_card_number (a column of `users`), so the request always failed and no ticket
+      // sold on another counter ever reached this device — MT Ticket, Solde and Caisse stayed at 0.
+      const remoteReservations = await fetchRowsForSchedules(
+        'reservations',
+        'id, schedule_id, seat_numbers, total_price, total_seats, passenger_name, passenger_phone, status, booking_reference, destination_city_name, created_at',
+        scheduleIds,
+      );
 
-      if (!resError && remoteReservations) {
+      if (remoteReservations) {
+        const pendingTickets = await getPendingIds('tickets');
         for (const r of remoteReservations) {
-          const ticketRecord = mapRemoteReservationToLocalTicket(r as unknown as Record<string, unknown>);
-          const existingTicket = await (db.tickets as any).get(r.id);
+          const id = String(r.id);
+          // A local change not yet sent is more recent than the server copy
+          if (pendingTickets.has(id)) continue;
+          const ticketRecord = mapRemoteReservationToLocalTicket(r);
+          const existingTicket = await (db.tickets as any).get(id);
           if (existingTicket) {
-            await (db.tickets as any).put({ ...existingTicket, ...ticketRecord, updated_at: new Date().toISOString() });
+            if (existingTicket.synced === false) continue;
+            // Only what the server knows: the fields kept on the device only (reduction, payment
+            // method, original price, printing…) must not be reset to defaults.
+            await (db.tickets as any).put({
+              ...existingTicket,
+              depart_id: ticketRecord.depart_id,
+              seat_number: ticketRecord.seat_number,
+              seat_numbers: ticketRecord.seat_numbers,
+              passenger_name: ticketRecord.passenger_name,
+              passenger_phone: ticketRecord.passenger_phone,
+              price: ticketRecord.price,
+              status: ticketRecord.status,
+              destination: ticketRecord.destination || existingTicket.destination,
+              updated_at: new Date().toISOString(),
+            });
           } else {
-            await (db.tickets as any).put({ ...ticketRecord, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
+            await (db.tickets as any).put({ ...ticketRecord, created_at: r.created_at ?? new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
           }
         }
 
-        const { data: breakdownData } = await supabase
-          .from('schedule_receipt_summary')
-          .select('schedule_id, breakdown_transfer')
-          .in('schedule_id', scheduleIds)
-          .gt('breakdown_transfer', 0);
-
         const breakdownMap = new Map<string, number>();
-        for (const b of breakdownData ?? []) {
-          breakdownMap.set(b.schedule_id, Number(b.breakdown_transfer ?? 0));
+        for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
+          const { data: breakdownData } = await supabase
+            .from('schedule_receipt_summary')
+            .select('schedule_id, breakdown_transfer')
+            .in('schedule_id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK))
+            .gt('breakdown_transfer', 0);
+          for (const b of breakdownData ?? []) {
+            breakdownMap.set(b.schedule_id, Number(b.breakdown_transfer ?? 0));
+          }
         }
 
         for (const sid of scheduleIds) {
-          const activeTickets = (remoteReservations as unknown as Record<string, unknown>[])
+          const activeTickets = remoteReservations
             .filter(r => r.schedule_id === sid && r.status !== 'annulee');
-          const newSeatsSold = activeTickets.length;
+          // Seats, not reservations: a grouped reservation holds several seats
+          const newSeatsSold = activeTickets.reduce((sum, t) => sum + Math.max(1, Number(t.total_seats ?? 1)), 0);
           const grossMtTicket = activeTickets.reduce((sum, t) => sum + Number(t.total_price ?? 0), 0);
           const breakdownTransfer = breakdownMap.get(sid) ?? 0;
           const newMtTicket = grossMtTicket - breakdownTransfer;
@@ -400,10 +573,92 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string): Promi
           }
         }
       }
+
+      const baggageOk = await syncBaggageFromServer(scheduleIds);
+      const chargesOk = await syncChargesFromServer(scheduleIds);
+
+      if (withHistory && remoteReservations && baggageOk && chargesOk) {
+        markHistorySyncDone(stationId, todayStr);
+      }
+    } else if (withHistory) {
+      markHistorySyncDone(stationId, todayStr);
     }
   } catch (err) {
     console.warn('[sync] Failed to sync from server:', err);
   }
+}
+
+/**
+ * Baggage recorded on another device (another counter, the TPE) was never pulled: the MT Bagage
+ * column only counted the baggage sold on this device. Returns false if the server could not be read.
+ */
+async function syncBaggageFromServer(scheduleIds: string[]): Promise<boolean> {
+  const rows = await fetchRowsForSchedules('baggage_tickets', '*', scheduleIds);
+  if (!rows) return false;
+  const pending = await getPendingIds('bagages');
+  for (const row of rows) {
+    const id = String(row.id);
+    if (pending.has(id)) continue;
+    const remote = mapRemoteBaggageToLocal(row);
+    const existing = await db.bagages.get(id);
+    if (existing) {
+      if (existing.synced === false) continue;
+      // Payment and amount may change on the server (paid at the TPE); the rest stays as on the device
+      await db.bagages.put({
+        ...existing,
+        price: remote.price,
+        payment_status: remote.payment_status,
+        paid_at: remote.paid_at ?? existing.paid_at,
+        paid_by: remote.paid_by ?? existing.paid_by,
+        description: remote.description,
+        updated_at: new Date().toISOString(),
+      } as BagageRecord);
+    } else {
+      await db.bagages.put({
+        ...remote,
+        created_at: row.created_at ?? new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        synced: true,
+      } as unknown as BagageRecord);
+    }
+  }
+  return true;
+}
+
+/**
+ * Expenses entered on another device were never pulled: Tot Dépense, Solde and Caisse only counted
+ * the expenses entered on this device. Only the missing ones are added, the device's own records are
+ * left as they are. Returns false if the server could not be read.
+ */
+async function syncChargesFromServer(scheduleIds: string[]): Promise<boolean> {
+  const rows = await fetchRowsForSchedules('counter_charges', '*', scheduleIds);
+  if (!rows) return false;
+  const pending = await getPendingIds('depenses');
+  const local = await db.depenses.toArray();
+  const localIds = new Set(local.map(d => d.id));
+  for (const row of rows) {
+    const id = String(row.id);
+    if (row.status === 'rejete') continue;
+    if (localIds.has(id) || pending.has(id)) continue;
+    // Ratio, carburant and péage are one row per departure on the server: when this device sent
+    // a second amount, the server row kept another id. Skip it rather than count the expense twice.
+    const chargeType = String(row.charge_type);
+    if (UNIQUE_CHARGE_TYPES.has(chargeType)) {
+      const alreadyHere = local.some(d =>
+        d.depart_id === row.schedule_id &&
+        d.description !== '__deleted__' &&
+        normalizeExpenseType(d.type ?? d.label) === chargeType,
+      );
+      if (alreadyHere) continue;
+    }
+    await db.depenses.put({
+      ...mapRemoteChargeToLocal(row),
+      created_at: row.created_at ?? new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      synced: true,
+    } as unknown as DepenseRecord);
+  }
+  return true;
 }
 
 // Ensure auth store is initialized (side-effect import to avoid tree-shaking)

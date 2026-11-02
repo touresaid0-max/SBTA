@@ -147,7 +147,7 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
   // Categorize expenses
   const validDepenses = scopedDepenses;
   const totalRations = validDepenses
-    .filter(d => d.type.toLowerCase().includes('ration') || d.type.toLowerCase().includes('frais de route') || d.type.toLowerCase().includes('frais route'))
+    .filter(d => d.type.toLowerCase().includes('ratio') || d.type.toLowerCase().includes('frais de route') || d.type.toLowerCase().includes('frais route'))
     .reduce((s, d) => s + d.amount, 0);
   const totalCarburant = validDepenses
     .filter(d => d.type.toLowerCase().includes('carburant'))
@@ -158,7 +158,7 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
   const totalAutres = validDepenses
     .filter(d => {
       const t = d.type.toLowerCase();
-      return !t.includes('ration') && !t.includes('frais de route') && !t.includes('frais route')
+      return !t.includes('ratio') && !t.includes('frais de route') && !t.includes('frais route')
         && !t.includes('carburant') && !t.includes('péage') && !t.includes('peage');
     })
     .reduce((s, d) => s + d.amount, 0);
@@ -376,11 +376,11 @@ export default function POSDeparts() {
           ? dDepenses.filter(x => x.description !== '__deleted__' && x.station_id === session.station_id)
           : dDepenses.filter(x => x.description !== '__deleted__');
         const totalCarburant = valid.filter(x => x.type.toLowerCase().includes('carburant')).reduce((s, x) => s + x.amount, 0);
-        const totalRations = valid.filter(x => x.type.toLowerCase().includes('ration') || x.type.toLowerCase().includes('frais de route') || x.type.toLowerCase().includes('frais route')).reduce((s, x) => s + x.amount, 0);
+        const totalRations = valid.filter(x => x.type.toLowerCase().includes('ratio') || x.type.toLowerCase().includes('frais de route') || x.type.toLowerCase().includes('frais route')).reduce((s, x) => s + x.amount, 0);
         const totalPeages = valid.filter(x => x.type.toLowerCase().includes('péage') || x.type.toLowerCase().includes('peage')).reduce((s, x) => s + x.amount, 0);
         const totalAutres = valid.filter(x => {
           const t = x.type.toLowerCase();
-          return !t.includes('ration') && !t.includes('frais de route') && !t.includes('frais route') && !t.includes('carburant') && !t.includes('péage') && !t.includes('peage');
+          return !t.includes('ratio') && !t.includes('frais de route') && !t.includes('frais route') && !t.includes('carburant') && !t.includes('péage') && !t.includes('peage');
         }).reduce((s, x) => s + x.amount, 0);
         const totalCharges = totalCarburant + totalRations + totalPeages + totalAutres;
         const pad = (n: number) => String(n).padStart(2, '0');
