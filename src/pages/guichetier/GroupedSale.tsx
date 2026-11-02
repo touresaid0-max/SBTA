@@ -519,11 +519,8 @@ export default function GroupedSale() {
     setTicketMode('choose');
   };
 
-  /* ─── generate tickets for anticipated trips (first free seats) ─ */
-  // Seats were drawn at random among 1..capacity, skipping only this sale's tickets: a seat
-  // already sold could be given again. Now: lowest seat numbers not sold on this departure
-  // (or on a departure sharing the same bus) and not in this sale.
-  const generateAnticipatedTickets = async () => {
+  /* ─── generate tickets for anticipated trips (random seats) ─ */
+  const generateAnticipatedTickets = () => {
     if (!activeSchedule) return;
     const availableForAnticipated = activeSchedule.is_anticipated
       ? (activeSchedule.buses?.total_seats ?? 60) - (activeSchedule.seats_reserved || 0) - tickets.length
@@ -533,29 +530,15 @@ export default function GroupedSale() {
 
     const capacity = activeSchedule.buses?.total_seats || 60;
     const usedLabels = new Set(tickets.map(t => t.seatLabel));
-    try {
-      const siblingIds = await getSiblingScheduleIds(activeSchedule.id);
-      const { data: sold, error } = await supabase
-        .from('reservations')
-        .select('seat_numbers')
-        .in('schedule_id', siblingIds)
-        .neq('status', 'annulee');
-      if (error) throw error;
-      (sold ?? []).forEach(r => (r.seat_numbers ?? []).forEach((s: string) => usedLabels.add(String(s))));
-    } catch {
-      toast.error('Impossible de verifier les sieges deja vendus. Reessayez.');
-      return;
-    }
-
-    const freeLabels: string[] = [];
-    for (let n = 1; n <= capacity && freeLabels.length < count; n++) {
-      if (!usedLabels.has(String(n))) freeLabels.push(String(n));
-    }
-    if (freeLabels.length === 0) { toast.error('Aucun siege disponible'); return; }
-    if (freeLabels.length < count) toast(`Seulement ${freeLabels.length} siege(s) libre(s)`);
-
     const newTickets: TicketEntry[] = [];
-    for (const label of freeLabels) {
+    for (let i = 0; i < count; i++) {
+      let label = '';
+      let attempts = 0;
+      do {
+        label = String(Math.floor(Math.random() * capacity) + 1);
+        attempts++;
+      } while (usedLabels.has(label) && attempts < 200);
+      usedLabels.add(label);
       newTickets.push({
         uid: `t_${++ticketUid}`,
         scheduleId: activeSchedule.id,
@@ -644,15 +627,14 @@ export default function GroupedSale() {
     try {
       const seatNumbers = tickets.map(t => t.seatLabel);
 
-      // Anticipated trips too: their seats were not checked and could be sold twice
-      {
+      if (!activeSchedule.is_anticipated) {
         const checks = await Promise.all(
           seatNumbers.map(s => isSeatStillAvailable(activeSchedule.id, s))
         );
         const conflictIdx = checks.findIndex(ok => !ok);
         if (conflictIdx !== -1) {
           toast.error(`Siege ${seatNumbers[conflictIdx]} deja reserve. Veuillez actualiser.`);
-          if (!activeSchedule.is_anticipated) await loadSeatMap(activeSchedule.id);
+          await loadSeatMap(activeSchedule.id);
           setProcessing(false);
           return;
         }
