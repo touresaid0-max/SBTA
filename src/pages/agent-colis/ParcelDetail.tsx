@@ -4,11 +4,11 @@ import { ArrowLeft, Package, User, MapPin, Clock, MessageCircle, AlertTriangle, 
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { useAuthStore } from '@/store/authStore'
+import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
 import { supabase } from '@/services/supabase'
 import { fetchTrackingEvents, updateParcelStatus, updateParcelNames } from '@/services/parcel.service'
 import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
-import { getLocalParcel, getLocalTrackingEvents, localUpdateParcel, parcelRecordToParcel } from '@/services/courrier/offlineStore'
+import { getLocalParcel, getLocalTrackingEvents, localUpdateParcel, localAdvanceParcel, parcelRecordToParcel } from '@/services/courrier/offlineStore'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { fetchSmsLogs, resendSms } from '@/services/emisSms.service'
@@ -33,7 +33,8 @@ export default function ParcelDetail() {
   const navigate = useNavigate()
   const location = useLocation()
   const basePath = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
-  const { user } = useAuthStore()
+  // Account and station of the counter's session: also known after an offline login
+  const user = useCourrierUser()
   const conn = useConnection()
 
   const [parcel, setParcel] = useState<Parcel | null>(null)
@@ -78,7 +79,22 @@ export default function ParcelDetail() {
     if (!value.trim()) { toast.error('Le nom ne peut pas être vide'); return }
     setSavingName(true)
     try {
-      await updateParcelNames(parcel.id, { [field]: value.trim() })
+      // Without network (or when the server stops answering): saved on the device and queued.
+      // The status check is the one shown on screen (names cannot be changed once shipped).
+      const saveLocally = async () => {
+        await localUpdateParcel(parcel.id, { [field]: value.trim() })
+        conn.setPendingCount(await getPendingCount())
+      }
+      if (!courrierIsOnline()) {
+        await saveLocally()
+      } else {
+        try {
+          await updateParcelNames(parcel.id, { [field]: value.trim() })
+        } catch (err) {
+          if (!isNetworkError(err)) throw err
+          await saveLocally()
+        }
+      }
       setParcel(prev => prev ? { ...prev, [field]: value.trim() } : prev)
       toast.success('Nom mis à jour')
       if (field === 'sender_name') setEditingSender(false)
@@ -90,7 +106,7 @@ export default function ParcelDetail() {
     }
   }
 
-  const stationId    = user?.station_id    ?? null
+  const stationId    = user.station_id
 
   useEffect(() => {
     if (!id) return
@@ -130,6 +146,15 @@ export default function ParcelDetail() {
           .maybeSingle()
 
         if (error) throw error
+        if (!data) {
+          // Saved on this device and not on the server yet: show the device's copy
+          const localParcel = await getLocalParcel(id as string)
+          if (localParcel) {
+            setParcel(parcelRecordToParcel(localParcel))
+            setEvents(await getLocalTrackingEvents(id as string) as any)
+          }
+          return
+        }
         if (data) {
           setParcel({
             ...data,
@@ -201,24 +226,27 @@ export default function ParcelDetail() {
   async function doAdvance(newStatus: ParcelStatus, additionalData?: Record<string, unknown>) {
     if (!parcel) return
     setActionLoading(true)
+    // Without network (or when the server stops answering): saved on the device and queued,
+    // with the recipient's SMS on arrival
+    const applyLocally = async () => {
+      await localAdvanceParcel(parcel.id, newStatus, user.id, additionalData)
+      toast.success(`Statut mis à jour : ${STATUS_CONFIG[newStatus].label}`)
+      setParcel(prev => prev ? { ...prev, status: newStatus, ...additionalData } as Parcel : prev)
+      const localEvts = await getLocalTrackingEvents(parcel.id)
+      setEvents(localEvts as any)
+      conn.setPendingCount(await getPendingCount())
+    }
     try {
       if (!courrierIsOnline()) {
-        const now = new Date().toISOString()
-        const patch: Record<string, unknown> = { status: newStatus, ...additionalData }
-        switch (newStatus) {
-          case 'mis_en_paquet': patch.packaged_at = now; break
-          case 'expedie': patch.shipped_at = now; break
-          case 'arrive': patch.arrived_at = now; break
-          case 'livre': patch.delivered_at = now; break
-        }
-        await localUpdateParcel(parcel.id, patch as any)
-        toast.success(`Statut mis à jour : ${STATUS_CONFIG[newStatus].label}`)
-        setParcel(prev => prev ? { ...prev, status: newStatus, ...additionalData } as Parcel : prev)
-        const localEvts = await getLocalTrackingEvents(parcel.id)
-        setEvents(localEvts as any)
-        conn.setPendingCount(await getPendingCount())
+        await applyLocally()
       } else {
-        await updateParcelStatus(parcel.id, newStatus, additionalData)
+        try {
+          await updateParcelStatus(parcel.id, newStatus, additionalData)
+        } catch (err) {
+          if (!isNetworkError(err)) throw err
+          await applyLocally()
+          return
+        }
         toast.success(`Statut mis a jour : ${STATUS_CONFIG[newStatus].label}`)
         setParcel(prev => prev ? { ...prev, status: newStatus, ...additionalData } : prev)
         const evts = await fetchTrackingEvents(parcel.id)
@@ -376,7 +404,7 @@ export default function ParcelDetail() {
           operationReference={`Courrier ${parcel.parcel_code}`}
           operationSnapshot={parcel as unknown as Record<string, unknown>}
           stationId={stationId}
-          stationName={user?.station_name}
+          stationName={user.station_name}
         />
 
       </div>

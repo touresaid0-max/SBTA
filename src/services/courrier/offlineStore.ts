@@ -1,6 +1,6 @@
 import { db, type ParcelRecord, type TrackingEventRecord } from './db';
 import { supabase } from '@/services/supabase';
-import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount } from './syncEngine';
+import { enqueueInsert, enqueueUpdate, enqueueDelete, enqueueSms, isOnline, getPendingCount } from './syncEngine';
 import type { Parcel } from '@/types/parcel.types';
 
 function uuid(): string {
@@ -46,9 +46,8 @@ export async function localInsertParcel(
 
   try {
     const result = await enqueueInsert('parcels', full as unknown as Record<string, unknown>);
-    if (!result.queued) {
-      await db.parcels.put({ ...full, synced: true });
-    }
+    // Kept for later: marked as not sent, so that the screens add it to the server's list
+    await db.parcels.put({ ...full, synced: !result.queued });
   } catch {
     // Network error — record stays locally with synced=false
   }
@@ -78,9 +77,7 @@ export async function localUpdateParcel(
   if (hasRemoteMappableFields('parcels', patchRecord)) {
     try {
       const result = await enqueueUpdate('parcels', id, patchRecord);
-      if (!result.queued) {
-        await db.parcels.put({ ...updated, synced: true });
-      }
+      await db.parcels.put({ ...updated, synced: !result.queued });
     } catch {
       // Network error — local update is preserved, will sync later
     }
@@ -89,6 +86,99 @@ export async function localUpdateParcel(
   }
 
   return updated;
+}
+
+// Date and author columns set by each status, as the server functions do (parcel.service)
+const STATUS_STAMPS: Record<string, { at: string; by: string }> = {
+  mis_en_paquet: { at: 'packaged_at', by: 'packaged_by' },
+  expedie: { at: 'shipped_at', by: 'shipped_by' },
+  arrive: { at: 'arrived_at', by: 'arrived_by' },
+  livre: { at: 'delivered_at', by: 'delivered_by' },
+};
+
+/**
+ * Status change made on the device: saved at once, sent now when the server answers, otherwise
+ * kept in the queue and sent when the network is back. The recipient's "arrived" SMS goes with it.
+ * A parcel not kept on this device is first read from the server (only possible online).
+ */
+export async function localAdvanceParcel(
+  id: string,
+  newStatus: string,
+  userId: string | null,
+  additionalData: Record<string, unknown> = {},
+): Promise<ParcelRecord | null> {
+  const now = nowIso();
+  const patch: Record<string, unknown> = { status: newStatus, ...additionalData };
+  const stamps = STATUS_STAMPS[newStatus];
+  if (stamps) {
+    patch[stamps.at] = now;
+    if (userId) patch[stamps.by] = userId;
+  }
+
+  if (!(await db.parcels.get(id)) && isOnline()) await pullParcel(id);
+  const updated = await localUpdateParcel(id, patch as Partial<ParcelRecord>);
+  if (updated && newStatus === 'arrive' && updated.recipient_phone) {
+    await enqueueSms({ kind: 'arrived', parcel_id: id, recipient_phone: updated.recipient_phone });
+  }
+  return updated;
+}
+
+export interface ReceptionResult {
+  success: boolean;
+  code: string;
+  message: string;
+  parcel_id: string | null;
+}
+
+/**
+ * Reception by QR code without network: same checks as the server function receive_parcel_by_qr,
+ * on the parcels kept on the device (those sent to this station are pulled while online).
+ */
+export async function receiveParcelLocally(
+  parcelCode: string,
+  stationId: string,
+  userId: string | null,
+): Promise<ReceptionResult> {
+  const parcel = await db.parcels.where('parcel_code').equals(parcelCode).first();
+  if (!parcel) {
+    return {
+      success: false,
+      code: 'not_found',
+      message: 'Colis introuvable sur ce poste (hors ligne). Réessayez une fois la connexion revenue.',
+      parcel_id: null,
+    };
+  }
+  if (parcel.status === 'arrive') {
+    return { success: false, code: 'already_arrived', message: 'Ce colis a déjà été réceptionné.', parcel_id: parcel.id };
+  }
+  if (parcel.status === 'livre') {
+    return { success: false, code: 'already_delivered', message: 'Ce colis a déjà été livré au client.', parcel_id: parcel.id };
+  }
+  if (!['expedie', 'mis_en_paquet', 'enregistre'].includes(parcel.status)) {
+    return { success: false, code: 'invalid_status', message: 'Ce colis ne peut pas être réceptionné dans son état actuel.', parcel_id: parcel.id };
+  }
+  if (parcel.destination_station_id !== stationId) {
+    return { success: false, code: 'wrong_station', message: 'Ce colis n\'est pas destiné à votre gare.', parcel_id: parcel.id };
+  }
+  await localAdvanceParcel(parcel.id, 'arrive', userId);
+  return {
+    success: true,
+    code: 'ok',
+    message: 'Colis réceptionné (hors ligne) — envoyé au serveur au retour de la connexion.',
+    parcel_id: parcel.id,
+  };
+}
+
+/** Copies one parcel from the server to the device. */
+async function pullParcel(id: string): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('parcels')
+      .select(PARCEL_SELECT)
+      .eq('id', id)
+      .maybeSingle();
+    if (data) await db.parcels.put(mapRemoteParcelToLocal(data as unknown as Record<string, unknown>));
+  } catch { /* stays unknown on the device */ }
 }
 
 export async function localDeleteParcel(id: string): Promise<void> {
@@ -118,9 +208,7 @@ export async function localInsertTrackingEvent(
 
   try {
     const result = await enqueueInsert('tracking_events', full as unknown as Record<string, unknown>);
-    if (!result.queued) {
-      await db.tracking_events.put({ ...full, synced: true });
-    }
+    await db.tracking_events.put({ ...full, synced: !result.queued });
   } catch {
     // Network error — stays locally with synced=false
   }
@@ -147,61 +235,82 @@ export async function pendingCount(): Promise<number> {
 
 // ── Sync from server: pull parcel changes made externally ──
 
+const PARCEL_SELECT = `
+  *,
+  origin_station:stations!origin_station_id(id, name),
+  dest_station:stations!destination_station_id(id, name),
+  companies(name)
+`;
+
+// Supabase's maximum number of rows per request
+const PAGE_SIZE = 1000;
+// A long list of ids in one `in` filter makes the request URL too long
+const ID_CHUNK = 100;
+// Parcels kept up to date on the device: all those still in progress, plus the recent ones
+const RECENT_DAYS = 30;
+
+/**
+ * Pulls this station's parcels (sent and received) so that the courrier screens work without
+ * network: those still in progress whatever their age, and those registered in the last days.
+ * Read page by page: a busy station has more than 1 000 parcels.
+ */
 export async function syncParcelsFromServer(stationId?: string): Promise<void> {
   if (!isOnline()) return;
   try {
-    let query = supabase
-      .from('parcels')
-      .select(`
-        *,
-        origin_station:stations!origin_station_id(id, name),
-        dest_station:stations!destination_station_id(id, name),
-        companies(name)
-      `);
-
-    if (stationId) {
-      query = query.or(`origin_station_id.eq.${stationId},destination_station_id.eq.${stationId}`);
+    // Date only: no reserved characters inside the filter
+    const since = new Date(Date.now() - RECENT_DAYS * 86_400_000).toISOString().slice(0, 10);
+    const remoteParcels: Record<string, unknown>[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      // (recent OR in progress) AND (sent OR received by the station), as one filter
+      const recent = `registered_at.gte.${since}`;
+      const active = 'status.in.(enregistre,mis_en_paquet,expedie,arrive)';
+      const filter = stationId
+        ? [recent, active].flatMap(c => [
+            `and(${c},origin_station_id.eq.${stationId})`,
+            `and(${c},destination_station_id.eq.${stationId})`,
+          ]).join(',')
+        : `${recent},${active}`;
+      const { data, error } = await supabase
+        .from('parcels')
+        .select(PARCEL_SELECT)
+        .or(filter)
+        .order('registered_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      remoteParcels.push(...((data ?? []) as unknown as Record<string, unknown>[]));
+      if (!data || data.length < PAGE_SIZE) break;
     }
 
-    const { data: remoteParcels, error } = await query.order('registered_at', { ascending: false });
-    if (error) throw error;
+    // Operations not yet sent: the device's copy is more recent than the server's
+    const pendingIds = new Set(
+      (await db.sync_queue.where('entity').equals('parcels').toArray())
+        .filter(i => i.status !== 'done')
+        .map(i => String(i.payload?.id ?? '')),
+    );
 
-    if (remoteParcels && remoteParcels.length > 0) {
-      for (const p of remoteParcels as unknown as Record<string, unknown>[]) {
-        const localRecord = mapRemoteParcelToLocal(p);
-        const existing = await db.parcels.get(p.id as string);
-        if (existing) {
-          // Server wins on shared fields, preserve local-only fields
-          await db.parcels.put({
-            ...existing,
-            ...localRecord,
-            synced: true,
-          });
-        } else {
-          await db.parcels.put({ ...localRecord, synced: true });
-        }
-      }
+    for (const p of remoteParcels) {
+      const id = p.id as string;
+      if (pendingIds.has(id)) continue;
+      const localRecord = mapRemoteParcelToLocal(p);
+      const existing = await db.parcels.get(id);
+      // Server wins on shared fields, preserve local-only fields
+      await db.parcels.put(existing ? { ...existing, ...localRecord, synced: true } : { ...localRecord, synced: true });
     }
 
-    // Pull tracking events for the parcels we have locally
-    const localParcelIds = (await db.parcels.toArray()).map(p => p.id);
-    if (localParcelIds.length > 0) {
+    // Tracking events of the parcels just pulled, by groups of ids
+    const ids = remoteParcels.map(p => p.id as string);
+    for (let i = 0; i < ids.length; i += ID_CHUNK) {
       const { data: remoteEvents, error: evtError } = await supabase
         .from('parcel_tracking_events')
         .select('*, stations(name)')
-        .in('parcel_id', localParcelIds)
+        .in('parcel_id', ids.slice(i, i + ID_CHUNK))
         .order('event_at', { ascending: true });
-
-      if (!evtError && remoteEvents) {
-        for (const evt of remoteEvents as unknown as Record<string, unknown>[]) {
-          const evtRecord = mapRemoteEventToLocal(evt);
-          const existing = await db.tracking_events.get(evt.id as string);
-          if (existing) {
-            await db.tracking_events.put({ ...existing, ...evtRecord, synced: true });
-          } else {
-            await db.tracking_events.put({ ...evtRecord, synced: true });
-          }
-        }
+      if (evtError || !remoteEvents) continue;
+      for (const evt of remoteEvents as unknown as Record<string, unknown>[]) {
+        const evtRecord = mapRemoteEventToLocal(evt);
+        const existing = await db.tracking_events.get(evt.id as string);
+        await db.tracking_events.put(existing ? { ...existing, ...evtRecord, synced: true } : { ...evtRecord, synced: true });
       }
     }
   } catch (err) {

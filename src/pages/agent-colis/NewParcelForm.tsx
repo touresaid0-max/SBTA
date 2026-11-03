@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useAuthStore } from '@/store/authStore'
+import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
 import { supabase } from '@/services/supabase'
 import { createParcel, fetchParcelAgentInfo, fetchPosOriginPhones, markTicketPrinted } from '@/services/parcel.service'
-import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
-import { localInsertParcel } from '@/services/courrier/offlineStore'
+import { isOnline as courrierIsOnline, getPendingCount, enqueueSms } from '@/services/courrier/syncEngine'
+import { localInsertParcel, localInsertTrackingEvent } from '@/services/courrier/offlineStore'
 import { getReferentiel } from '@/services/courrier/referentiels'
 import { generateOfflineParcelCodes } from '@/services/courrier/parcelCodeGenerator'
 import { useConnection } from '@/services/courrier/ConnectionContext'
@@ -35,20 +35,23 @@ const PRIORITY_OPTIONS: { value: ParcelPriority; label: string }[] = [
 ]
 
 export default function NewParcelForm() {
-  const { user } = useAuthStore()
+  // Account and station of the counter's session: also known after an offline login
+  const user = useCourrierUser()
   const navigate = useNavigate()
   const location = useLocation()
   const basePath = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
 
-  const myStation: Station | null = user?.station_id
-    ? { id: user.station_id, name: user.station_name ?? '' }
+  const myStation: Station | null = user.station_id
+    ? { id: user.station_id, name: user.station_name }
     : null
-  const stationPhone = user?.station_phone ?? ''
+  const stationPhone = user.station_phone
   const isPosCourrier = basePath === '/guichet/courrier'
 
   async function loadAgentInfo(originStationId: string, destinationStationId: string) {
+    // Server data only: without network the receipt prints without the agents' phones
+    if (!courrierIsOnline()) return null
     const agentInfo = await fetchParcelAgentInfo(originStationId, destinationStationId).catch(() => null)
-    if (!isPosCourrier || !agentInfo || !user?.id) return agentInfo
+    if (!isPosCourrier || !agentInfo || !user.id) return agentInfo
     const posPhones = await fetchPosOriginPhones(user.id, originStationId, user.phone ?? null).catch(() => null)
     return posPhones ? { ...agentInfo, origin_agent_phone: posPhones } : agentInfo
   }
@@ -164,6 +167,123 @@ export default function NewParcelForm() {
     navigate(`${basePath}/dashboard`)
   }
 
+  /**
+   * Parcel saved on the device (no network, or the server stopped answering): code generated
+   * here, ticket printed at once; the parcel, its "registered" event and the recipient's SMS are
+   * sent when the network is back.
+   */
+  async function saveOffline(fullRecipientPhone: string) {
+    if (!myStation) return
+    const now = new Date().toISOString()
+    const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
+
+    // Look up agency_code from cached station referentiels
+    let agencyCode: string | null = null
+    const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
+    if (cachedStations) {
+      const myStationData = cachedStations.find(s => s.id === myStation.id)
+      agencyCode = myStationData?.agency_code ?? null
+    }
+
+    // Generate proper parcel codes matching the online DB trigger format
+    const { parcel_code, reference, daily_sequence, tracking_url } =
+      await generateOfflineParcelCodes(myStation.id, agencyCode)
+
+    const localParcel = await localInsertParcel({
+      parcel_code,
+      reference,
+      daily_sequence,
+      tracking_url,
+      sender_name: form.sender_name,
+      sender_phone: form.sender_phone,
+      sender_address: null,
+      recipient_name: form.recipient_name,
+      recipient_phone: fullRecipientPhone,
+      recipient_city: form.recipient_city,
+      recipient_address: null,
+      origin_station_id: myStation.id,
+      origin_station_name: myStation.name,
+      destination_station_id: form.destination_station_id,
+      destination_station_name: stations.find(s => s.id === form.destination_station_id)?.name ?? '',
+      schedule_id: null,
+      driver_id: null,
+      bus_id: null,
+      declared_value: Number(form.declared_value),
+      delivery_fee: Number(form.delivery_fee),
+      sms_tracking_fee: Number(form.sms_tracking_fee),
+      total_amount: totalAmount,
+      priority: form.priority,
+      planned_date: form.planned_date || null,
+      nature: form.nature,
+      content_description: form.content_description,
+      notes: form.notes || null,
+      status: 'enregistre',
+      registered_at: now,
+      registered_by: user.id,
+      packaged_at: null,
+      shipped_at: null,
+      arrived_at: null,
+      delivered_at: null,
+      sms_sent_at: null,
+      company_id: null,
+      ticket_printed: false,
+      delivery_recipient_name: null,
+      delivery_recipient_phone: null,
+      delivery_id_number: null,
+      delivery_id_type: null,
+    })
+
+    // Same "registered" event and SMS as online, sent with the parcel when the network is back
+    try {
+      await localInsertTrackingEvent({
+        parcel_id: localParcel.id,
+        event_type: 'enregistre',
+        description: 'Courrier enregistré',
+        location: myStation.name,
+        station_id: myStation.id,
+        performed_by: user.id,
+        performer_name: user.full_name,
+        event_at: now,
+        metadata: {},
+      })
+      await enqueueSms({
+        kind: 'created',
+        parcel_id: localParcel.id,
+        parcel_code: localParcel.parcel_code,
+        recipient_name: localParcel.recipient_name,
+        recipient_phone: localParcel.recipient_phone,
+        recipient_city: localParcel.recipient_city,
+        tracking_url: localParcel.tracking_url,
+      })
+    } catch { /* the parcel itself is saved */ }
+
+    toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
+
+    try {
+      const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
+      let courierQrEnabled = true
+      const cachedStationsForQr = await getReferentiel<{ id: string; courier_qr_enabled?: boolean }>('station_extras')
+      if (cachedStationsForQr) {
+        const myStationData = cachedStationsForQr.find(s => s.id === myStation.id)
+        if (myStationData?.courier_qr_enabled !== undefined) courierQrEnabled = myStationData.courier_qr_enabled
+      }
+      const receiptData = buildReceiptData(
+        { ...localParcel, origin_station_name: myStation.name, parcel_code: localParcel.parcel_code } as Parcel,
+        myStation.name,
+        stationPhone,
+        null,
+        null,
+        agentInfo,
+        courierQrEnabled,
+      )
+      setPrintModal({ data: receiptData, parcelId: localParcel.id, isOffline: true, localParcel })
+      setPrintCopy('client')
+    } catch {
+      conn.setPendingCount(await getPendingCount())
+      navigate(`${basePath}/dashboard`)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!myStation) { toast.error('Aucune gare associée à votre compte'); return }
@@ -178,138 +298,62 @@ export default function NewParcelForm() {
     try {
       // Offline path: save locally, queue for sync, skip server-only features
       if (!courrierIsOnline()) {
-        const now = new Date().toISOString()
-        const localId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-        const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
-
-        // Look up agency_code from cached station referentiels
-        let agencyCode: string | null = null
-        const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
-        if (cachedStations) {
-          const myStationData = cachedStations.find(s => s.id === myStation.id)
-          agencyCode = myStationData?.agency_code ?? null
-        }
-
-        // Generate proper parcel codes matching the online DB trigger format
-        const { parcel_code, reference, daily_sequence, tracking_url } =
-          await generateOfflineParcelCodes(myStation.id, agencyCode)
-
-        const localParcel = await localInsertParcel({
-          parcel_code,
-          reference,
-          daily_sequence,
-          tracking_url,
-          sender_name: form.sender_name,
-          sender_phone: form.sender_phone,
-          sender_address: null,
-          recipient_name: form.recipient_name,
-          recipient_phone: fullRecipientPhone,
-          recipient_city: form.recipient_city,
-          recipient_address: null,
-          origin_station_id: myStation.id,
-          origin_station_name: myStation.name,
-          destination_station_id: form.destination_station_id,
-          destination_station_name: stations.find(s => s.id === form.destination_station_id)?.name ?? '',
-          schedule_id: null,
-          driver_id: null,
-          bus_id: null,
-          declared_value: Number(form.declared_value),
-          delivery_fee: Number(form.delivery_fee),
-          sms_tracking_fee: Number(form.sms_tracking_fee),
-          total_amount: totalAmount,
-          priority: form.priority,
-          planned_date: form.planned_date || null,
-          nature: form.nature,
-          content_description: form.content_description,
-          notes: form.notes || null,
-          status: 'enregistre',
-          registered_at: now,
-          registered_by: user?.id ?? null,
-          packaged_at: null,
-          shipped_at: null,
-          arrived_at: null,
-          delivered_at: null,
-          sms_sent_at: null,
-          company_id: null,
-          ticket_printed: false,
-          delivery_recipient_name: null,
-          delivery_recipient_phone: null,
-          delivery_id_number: null,
-          delivery_id_type: null,
-        })
-
-        toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
-
-        try {
-          const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
-          let courierQrEnabled = true
-          const cachedStationsForQr = await getReferentiel<{ id: string; courier_qr_enabled?: boolean }>('stations_all')
-          if (cachedStationsForQr) {
-            const myStationData = cachedStationsForQr.find(s => s.id === myStation.id)
-            if (myStationData?.courier_qr_enabled !== undefined) courierQrEnabled = myStationData.courier_qr_enabled
-          }
-          const receiptData = buildReceiptData(
-            { ...localParcel, origin_station_name: myStation.name, parcel_code: localParcel.parcel_code } as Parcel,
-            myStation.name,
-            stationPhone,
-            null,
-            null,
-            agentInfo,
-            courierQrEnabled,
-          )
-          setPrintModal({ data: receiptData, parcelId: localParcel.id, isOffline: true, localParcel })
-          setPrintCopy('client')
-        } catch {
-          conn.setPendingCount(await getPendingCount())
-          navigate(`${basePath}/dashboard`)
-        }
+        await saveOffline(fullRecipientPhone)
         return
       }
 
       // Online path: original flow
       // Vérifier qu'un code agence est configuré pour cette destination
-      const { data: destCode } = await supabase
+      const { data: destCode, error: destCodeError } = await supabase
         .from('station_destination_agency_codes')
         .select('agency_code')
         .eq('origin_station_id', myStation.id)
         .eq('destination_station_id', form.destination_station_id)
         .maybeSingle()
 
-      if (!destCode?.agency_code) {
+      if (!destCodeError && !destCode?.agency_code) {
         toast('Aucun code agence configuré pour cette destination — le code agence général de la gare sera utilisé.', { icon: '⚠️' })
       }
 
-      const parcel = await createParcel({
-        sender_name:            form.sender_name,
-        sender_phone:           form.sender_phone,
-        sender_address:         null,
-        recipient_name:         form.recipient_name,
-        recipient_phone:        fullRecipientPhone,
-        recipient_city:         form.recipient_city,
-        recipient_address:      null,
-        origin_station_id:      myStation.id,
-        destination_station_id: form.destination_station_id,
-        declared_value:         Number(form.declared_value),
-        delivery_fee:           Number(form.delivery_fee),
-        sms_tracking_fee:       Number(form.sms_tracking_fee),
-        priority:               form.priority,
-        planned_date:           form.planned_date || null,
-        schedule_id:            null,
-        bus_id:                 null,
-        driver_id:              null,
-        nature:                 form.nature,
-        content_description:    form.content_description,
-        parcel_photos:          [],
-        notes:                  form.notes || null,
-        company_id:             null,
-      } as any)
+      let parcel: Awaited<ReturnType<typeof createParcel>>
+      try {
+        parcel = await createParcel({
+          sender_name:            form.sender_name,
+          sender_phone:           form.sender_phone,
+          sender_address:         null,
+          recipient_name:         form.recipient_name,
+          recipient_phone:        fullRecipientPhone,
+          recipient_city:         form.recipient_city,
+          recipient_address:      null,
+          origin_station_id:      myStation.id,
+          destination_station_id: form.destination_station_id,
+          declared_value:         Number(form.declared_value),
+          delivery_fee:           Number(form.delivery_fee),
+          sms_tracking_fee:       Number(form.sms_tracking_fee),
+          priority:               form.priority,
+          planned_date:           form.planned_date || null,
+          schedule_id:            null,
+          bus_id:                 null,
+          driver_id:              null,
+          nature:                 form.nature,
+          content_description:    form.content_description,
+          parcel_photos:          [],
+          notes:                  form.notes || null,
+          company_id:             null,
+        } as any)
+      } catch (err) {
+        // The connection dropped: the parcel is not on the server, save it on the device instead
+        if (!isNetworkError(err)) throw err
+        await saveOffline(fullRecipientPhone)
+        return
+      }
 
       await supabase.from('parcel_tracking_events').insert({
         parcel_id:      parcel.id,
         event_type:     'enregistre',
         description:    'Courrier enregistré',
         station_id:     myStation.id,
-        performer_name: user?.full_name ?? '',
+        performer_name: user.full_name,
       })
 
       toast.success('Courrier enregistré avec succès !')

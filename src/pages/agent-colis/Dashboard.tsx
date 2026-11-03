@@ -8,7 +8,8 @@ import {
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { useAuthStore } from '@/store/authStore'
+import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
+import { getReferentiel } from '@/services/courrier/referentiels'
 import { supabase } from '@/services/supabase'
 import {
   fetchOutgoingParcelsPeriod,
@@ -25,7 +26,7 @@ import type { Parcel, ParcelStatus } from '@/types/parcel.types'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { useAutoSync } from '@/services/courrier/useAutoSync'
 import { isOnline as courrierIsOnline, flushSyncQueue, getPendingCount } from '@/services/courrier/syncEngine'
-import { getAllLocalParcels, localUpdateParcel, parcelRecordToParcel, syncParcelsFromServer } from '@/services/courrier/offlineStore'
+import { getAllLocalParcels, localAdvanceParcel, parcelRecordToParcel, syncParcelsFromServer } from '@/services/courrier/offlineStore'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { CourrierSyncQueueModal } from '@/components/parcel/CourrierSyncQueueModal'
 
@@ -77,7 +78,8 @@ const INCOMING_STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function AgentColisDashboard() {
-  const { user } = useAuthStore()
+  // Account and station of the counter's session: also known after an offline login
+  const user = useCourrierUser()
   const navigate  = useNavigate()
   const location = useLocation()
   const basePath = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
@@ -272,14 +274,23 @@ export default function AgentColisDashboard() {
     let cancelled = false
     ;(async () => {
       setExpBusLoading(true)
-      try {
-        const { data } = await supabase
-          .from('buses')
-          .select('id, registration_number, brand')
-          .order('registration_number')
-        if (!cancelled) setExpAllBuses(data ?? [])
-      } catch { if (!cancelled) setExpAllBuses([]) }
-      finally { if (!cancelled) setExpBusLoading(false) }
+      // List kept on the device first (works without network), then the server's when it answers
+      const cached = await getReferentiel<{ id: string; registration_number: string; brand?: string | null }>('buses_all')
+      if (!cancelled && cached?.length) {
+        setExpAllBuses(cached.map(b => ({ id: b.id, registration_number: b.registration_number, brand: b.brand ?? null })))
+        setExpBusLoading(false)
+      }
+      if (courrierIsOnline()) {
+        try {
+          const { data } = await supabase
+            .from('buses')
+            .select('id, registration_number, brand')
+            .order('registration_number')
+          // An empty answer never replaces a known list
+          if (!cancelled && data && data.length > 0) setExpAllBuses(data)
+        } catch { /* keep the device's list */ }
+      }
+      if (!cancelled) setExpBusLoading(false)
     })()
     return () => { cancelled = true }
   }, [expeditionModal])
@@ -291,26 +302,37 @@ export default function AgentColisDashboard() {
   }, [expAllBuses, expBusSearch])
 
   // ── Expedition modal: driver search ───────────────────────────────────────
+  // Whole list loaded once (device first, then server) and searched here: the search also works
+  // without network
+  const [expAllDrivers, setExpAllDrivers] = useState<{ id: string; full_name: string }[]>([])
   useEffect(() => {
     if (!expeditionModal) return
-    if (expDriverSearch.length < 2) { setExpDriverResults([]); return }
-    const t = setTimeout(async () => {
+    let cancelled = false
+    ;(async () => {
       setExpDriverLoading(true)
-      try {
-        const { data } = await supabase
-          .from('users')
-          .select('id, full_name')
-          .eq('role', 'chauffeur')
-          .eq('is_active', true)
-          .ilike('full_name', `%${expDriverSearch}%`)
-          .order('full_name')
-          .limit(10)
-        setExpDriverResults(data ?? [])
-      } catch { setExpDriverResults([]) }
-      finally { setExpDriverLoading(false) }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [expDriverSearch, expeditionModal])
+      const cached = await getReferentiel<{ id: string; full_name: string }>('drivers_all')
+      if (!cancelled && cached?.length) setExpAllDrivers(cached.map(d => ({ id: d.id, full_name: d.full_name ?? '' })))
+      if (courrierIsOnline()) {
+        try {
+          const { data } = await supabase
+            .from('users')
+            .select('id, full_name')
+            .eq('role', 'chauffeur')
+            .eq('is_active', true)
+            .order('full_name')
+          if (!cancelled && data && data.length > 0) setExpAllDrivers(data.map(d => ({ id: d.id, full_name: d.full_name ?? '' })))
+        } catch { /* keep the device's list */ }
+      }
+      if (!cancelled) setExpDriverLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [expeditionModal])
+
+  useEffect(() => {
+    const q = expDriverSearch.trim().toLowerCase()
+    if (q.length < 2) { setExpDriverResults([]); return }
+    setExpDriverResults(expAllDrivers.filter(d => d.full_name.toLowerCase().includes(q)).slice(0, 10))
+  }, [expDriverSearch, expAllDrivers])
 
   // Close expedition dropdowns on outside click
   useEffect(() => {
@@ -331,25 +353,19 @@ export default function AgentColisDashboard() {
     }
     setExpSubmitting(true)
     try {
-      const now = new Date().toISOString()
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-
-      const { data, error } = await supabase
-        .from('parcels')
-        .update({
-          status: 'expedie',
-          shipped_at: now,
-          shipped_by: authUser?.id,
+      // Saved on the device, sent at once when the server answers, otherwise kept and sent later
+      let count = 0
+      for (const id of expeditionModal.ids) {
+        const updated = await localAdvanceParcel(id, 'expedie', user.id, {
           bus_id: expSelectedBus.id,
           driver_id: expSelectedDriver.id,
-          updated_at: now,
         })
-        .in('id', expeditionModal.ids)
-        .select('id')
-
-      if (error) throw error
-      const count = data?.length ?? 0
-      toast.success(`${count} courrier${count > 1 ? 's' : ''} expédié${count > 1 ? 's' : ''} — ${expeditionModal.dest}`)
+        if (updated) count++
+      }
+      if (count === 0) throw new Error('Courriers introuvables sur ce poste')
+      const queued = await getPendingCount()
+      conn.setPendingCount(queued)
+      toast.success(`${count} courrier${count > 1 ? 's' : ''} expédié${count > 1 ? 's' : ''} — ${expeditionModal.dest}${queued > 0 && !courrierIsOnline() ? ' (envoi au retour de la connexion)' : ''}`)
       setExpeditionModal(null)
       resetExpeditionState()
       loadParcels()
@@ -449,25 +465,26 @@ export default function AgentColisDashboard() {
     const { action, ids, dest } = bulkConfirm
     setBulkLoading(dest)
     setBulkConfirm(null)
+    const label = action === 'mis_en_paquet' ? 'mis en paquet' : 'expédiés'
+    // Without network (or when the server stops answering): saved on the device and queued
+    const applyLocally = async () => {
+      for (const id of ids) await localAdvanceParcel(id, action, user.id)
+      toast.success(`${ids.length} courrier${ids.length > 1 ? 's' : ''} ${label} — ${dest}`)
+      conn.setPendingCount(await getPendingCount())
+      loadParcels()
+    }
     try {
       if (!courrierIsOnline()) {
-        const now = new Date().toISOString()
-        for (const id of ids) {
-          const patch: Record<string, unknown> = { status: action }
-          if (action === 'mis_en_paquet') patch.packaged_at = now
-          else if (action === 'expedie') patch.shipped_at = now
-          await localUpdateParcel(id, patch as any)
-        }
-        const label = action === 'mis_en_paquet' ? 'mis en paquet' : 'expédiés'
-        toast.success(`${ids.length} courrier${ids.length > 1 ? 's' : ''} ${label} — ${dest}`)
-        const count = await getPendingCount()
-        conn.setPendingCount(count)
-        loadParcels()
+        await applyLocally()
       } else {
-        const { updated } = await bulkUpdateParcelStatus(ids, action)
-        const label = action === 'mis_en_paquet' ? 'mis en paquet' : 'expédiés'
-        toast.success(`${updated} courrier${updated > 1 ? 's' : ''} ${label} — ${dest}`)
-        loadParcels()
+        try {
+          const { updated } = await bulkUpdateParcelStatus(ids, action)
+          toast.success(`${updated} courrier${updated > 1 ? 's' : ''} ${label} — ${dest}`)
+          loadParcels()
+        } catch (err) {
+          if (!isNetworkError(err)) throw err
+          await applyLocally()
+        }
       }
     } catch (e: any) {
       toast.error(e.message || 'Erreur lors de la mise à jour')
@@ -486,26 +503,26 @@ export default function AgentColisDashboard() {
 
   async function doAdvance(parcel: Parcel, nextStatus: ParcelStatus, additionalData?: Record<string, unknown>) {
     setActionLoading(parcel.id)
+    // Without network (or when the server stops answering): saved on the device and queued,
+    // with the recipient's SMS on arrival
+    const applyLocally = async () => {
+      await localAdvanceParcel(parcel.id, nextStatus, user.id, additionalData)
+      toast.success(`Statut mis à jour : ${STATUS_CONFIG[nextStatus].label}`)
+      conn.setPendingCount(await getPendingCount())
+      loadParcels()
+    }
     try {
       if (!courrierIsOnline()) {
-        // Offline: update local IndexedDB, queue for sync
-        const now = new Date().toISOString()
-        const patch: Record<string, unknown> = { status: nextStatus, ...additionalData }
-        switch (nextStatus) {
-          case 'mis_en_paquet': patch.packaged_at = now; break
-          case 'expedie': patch.shipped_at = now; break
-          case 'arrive': patch.arrived_at = now; break
-          case 'livre': patch.delivered_at = now; break
-        }
-        await localUpdateParcel(parcel.id, patch as any)
-        toast.success(`Statut mis à jour : ${STATUS_CONFIG[nextStatus].label}`)
-        const count = await getPendingCount()
-        conn.setPendingCount(count)
-        loadParcels()
+        await applyLocally()
       } else {
-        await updateParcelStatus(parcel.id, nextStatus, additionalData)
-        toast.success(`Statut mis à jour : ${STATUS_CONFIG[nextStatus].label}`)
-        loadParcels()
+        try {
+          await updateParcelStatus(parcel.id, nextStatus, additionalData)
+          toast.success(`Statut mis à jour : ${STATUS_CONFIG[nextStatus].label}`)
+          loadParcels()
+        } catch (err) {
+          if (!isNetworkError(err)) throw err
+          await applyLocally()
+        }
       }
     } catch (e: any) {
       toast.error(e.message)
@@ -556,7 +573,28 @@ export default function AgentColisDashboard() {
 
     // Collect all unique schedule_ids so we can batch-resolve bus/driver in one shot
     const scheduleIds = [...new Set(source.map(p => p.schedule_id).filter(Boolean) as string[])]
-    const transportMap = await fetchScheduleTransportInfo(scheduleIds).catch(() => new Map())
+    const transportMap = courrierIsOnline()
+      ? await fetchScheduleTransportInfo(scheduleIds).catch(() => new Map())
+      : new Map()
+
+    // Lists kept on the device: the slip also prints without network
+    const [cachedBuses, cachedDrivers, cachedSchedules] = await Promise.all([
+      getReferentiel<{ id: string; registration_number: string }>('buses_all'),
+      getReferentiel<{ id: string; full_name: string }>('drivers_all'),
+      stationId ? getReferentiel<{ id: string; bus_id: string | null; driver_id: string | null }>(`schedules_${stationId}`) : Promise.resolve(null),
+    ])
+    const cachedBusMap = new Map((cachedBuses ?? []).map(b => [b.id, b.registration_number ?? '']))
+    const cachedDriverMap = new Map((cachedDrivers ?? []).map(d => [d.id, d.full_name ?? '']))
+    for (const sid of scheduleIds) {
+      if (transportMap.has(sid)) continue
+      const sched = (cachedSchedules ?? []).find(x => x.id === sid)
+      if (sched) {
+        transportMap.set(sid, {
+          busReg: sched.bus_id ? cachedBusMap.get(sched.bus_id) ?? '' : '',
+          driverName: sched.driver_id ? cachedDriverMap.get(sched.driver_id) ?? '' : '',
+        })
+      }
+    }
 
     // Resolve direct bus_id / driver_id for parcels without a schedule
     const directBusIds = [...new Set(source.filter(p => !p.schedule_id && (p as any).bus_id).map(p => (p as any).bus_id as string))]
@@ -565,13 +603,21 @@ export default function AgentColisDashboard() {
     const busNameMap = new Map<string, string>()
     const driverNameMap = new Map<string, string>()
 
-    if (directBusIds.length > 0) {
-      const { data: buses } = await supabase.from('buses').select('id, registration_number').in('id', directBusIds)
-      for (const b of buses ?? []) busNameMap.set(b.id, b.registration_number ?? '')
-    }
-    if (directDriverIds.length > 0) {
-      const { data: drivers } = await supabase.from('users').select('id, full_name').in('id', directDriverIds)
-      for (const d of drivers ?? []) driverNameMap.set(d.id, d.full_name ?? '')
+    for (const id of directBusIds) if (cachedBusMap.has(id)) busNameMap.set(id, cachedBusMap.get(id)!)
+    for (const id of directDriverIds) if (cachedDriverMap.has(id)) driverNameMap.set(id, cachedDriverMap.get(id)!)
+    const missingBusIds = directBusIds.filter(id => !busNameMap.has(id))
+    const missingDriverIds = directDriverIds.filter(id => !driverNameMap.has(id))
+    if (courrierIsOnline()) {
+      try {
+        if (missingBusIds.length > 0) {
+          const { data: buses } = await supabase.from('buses').select('id, registration_number').in('id', missingBusIds)
+          for (const b of buses ?? []) busNameMap.set(b.id, b.registration_number ?? '')
+        }
+        if (missingDriverIds.length > 0) {
+          const { data: drivers } = await supabase.from('users').select('id, full_name').in('id', missingDriverIds)
+          for (const d of drivers ?? []) driverNameMap.set(d.id, d.full_name ?? '')
+        }
+      } catch { /* names left blank on the slip */ }
     }
 
     // Group by (schedule_id || bus_id || '', destination) so every unique trip is its own group

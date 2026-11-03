@@ -24,7 +24,7 @@ export default function POSAccueil() {
   const { session, logout } = usePOSSession();
   const [pendingRamassage, setPendingRamassage] = useState(0);
   const courrierEnabled = session?.courrier_enabled === true;
-  useAutoSync(session?.station_id);
+  useAutoSync(session?.station_id, session?.courrier_enabled === true);
 
   // Operations not yet sent stay on the device and leave only with their author's next online
   // login here: say so before logging out

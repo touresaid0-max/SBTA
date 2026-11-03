@@ -1,5 +1,6 @@
 import { db, type SyncQueueItem } from './db';
 import { supabase } from '@/services/supabase';
+import { sendCourierCreatedSms, sendCourierArrivedSms } from '@/services/emisSms.service';
 
 // ── Online/offline state (single source of truth) ──
 
@@ -29,6 +30,54 @@ const TABLE_MAP: Record<StoreName, string> = {
   parcels: 'parcels',
   tracking_events: 'parcel_tracking_events',
 };
+
+// SMS to the recipient for an action done without network: kept in the same queue, so that it
+// leaves after the parcel it is about has reached the server.
+const SMS_ENTITY = 'sms';
+
+export type QueuedSms =
+  | { kind: 'created'; parcel_id: string; parcel_code: string; recipient_name: string; recipient_phone: string; recipient_city: string; tracking_url?: string }
+  | { kind: 'arrived'; parcel_id: string; recipient_phone: string };
+
+export async function enqueueSms(sms: QueuedSms): Promise<void> {
+  if (!sms.recipient_phone) return;
+  await db.sync_queue.add({
+    entity: SMS_ENTITY,
+    op: 'insert',
+    payload: { id: `${sms.kind}:${sms.parcel_id}`, ...sms },
+    created_at: nowIso(),
+    tries: 0,
+    status: 'pending',
+  });
+}
+
+async function executeSms(payload: Record<string, unknown>): Promise<void> {
+  const sms = payload as unknown as QueuedSms;
+  // The parcel must be on the server first (insert queued earlier and not sent yet)
+  const parcelWaiting = await db.sync_queue
+    .where('entity').equals('parcels')
+    .filter(i => i.op === 'insert' && i.status !== 'done' && String(i.payload?.id ?? '') === sms.parcel_id)
+    .count();
+  if (parcelWaiting > 0) throw new Error('SMS en attente de l\'envoi du courrier');
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('SMS en attente d\'une session en ligne');
+
+  // A network failure throws (kept for later). A refusal by the SMS service is recorded in the
+  // parcel's SMS history by the server and can be sent again from the parcel's page.
+  if (sms.kind === 'created') {
+    await sendCourierCreatedSms({
+      id: sms.parcel_id,
+      parcel_code: sms.parcel_code,
+      recipient_name: sms.recipient_name,
+      recipient_phone: sms.recipient_phone,
+      recipient_city: sms.recipient_city,
+      tracking_url: sms.tracking_url,
+    });
+  } else {
+    await sendCourierArrivedSms({ id: sms.parcel_id, recipient_phone: sms.recipient_phone });
+  }
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -256,8 +305,10 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
       parcel_id: p.parcel_id,
       event_type: p.event_type,
       description: p.description ?? null,
+      location: p.location ?? null,
       station_id: p.station_id ?? null,
       performed_by: p.performed_by ?? null,
+      performer_name: p.performer_name ?? null,
       event_at: p.event_at ?? nowIso(),
       metadata: p.metadata ?? {},
     };
@@ -360,7 +411,9 @@ export async function flushSyncQueue(): Promise<FlushResult> {
       try {
         await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1, sending_since: nowIso() });
 
-        if (item.op === 'insert') {
+        if (item.entity === SMS_ENTITY) {
+          await executeSms(item.payload);
+        } else if (item.op === 'insert') {
           await executeInsert(item.entity as StoreName, item.payload);
         } else if (item.op === 'update') {
           const id = item.payload.id as string;

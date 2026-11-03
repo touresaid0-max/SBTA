@@ -652,6 +652,8 @@ function App() {
             <Route path="parametres" element={<POSParametres />} />
             {/* ── Courrier accessible from POS guichet when station has courrier_enabled ── */}
             <Route path="courrier" element={<CourrierAccessGuard><CourrierConnectionProvider><AgentColisDashboard /></CourrierConnectionProvider></CourrierAccessGuard>} />
+            {/* The courrier screens go back to ".../dashboard": without this route, the guichet landed on the login page */}
+            <Route path="courrier/dashboard" element={<Navigate to="/guichet/courrier" replace />} />
             <Route path="courrier/new" element={<CourrierAccessGuard><CourrierConnectionProvider><NewParcelForm /></CourrierConnectionProvider></CourrierAccessGuard>} />
             <Route path="courrier/parcels/:id" element={<CourrierAccessGuard><CourrierConnectionProvider><ParcelDetail /></CourrierConnectionProvider></CourrierAccessGuard>} />
             <Route path="courrier/scan" element={<CourrierAccessGuard><CourrierConnectionProvider><QrScanner /></CourrierConnectionProvider></CourrierAccessGuard>} />

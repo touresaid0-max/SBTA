@@ -17,7 +17,7 @@ interface POSLayoutProps {
 export default function POSLayout({ children, stationName, activeRoute, showBack, backTo, headerActions }: POSLayoutProps) {
   const navigate = useNavigate();
   const { session } = usePOSSession();
-  useAutoSync(session?.station_id);
+  useAutoSync(session?.station_id, session?.courrier_enabled === true);
 
   const goBack = () => {
     if (backTo) {

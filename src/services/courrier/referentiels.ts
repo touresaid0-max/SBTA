@@ -6,6 +6,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+// An empty answer (access rules, server hiccup) never replaces a list already kept on the device:
+// the screens would lose it exactly when they need it without network.
 export async function refreshAllReferentiels(stationId?: string): Promise<void> {
   if (!isOnline()) return;
 
@@ -16,7 +18,7 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
       .select('id, name, agency_code, is_active, cities(name)')
       .eq('is_active', true)
       .order('name');
-    if (stations) {
+    if (stations && stations.length > 0) {
       await db.referentiels.put({
         key: 'stations_all',
         type: 'stations',
@@ -25,12 +27,24 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
       });
     }
 
+    // Phone and QR setting of each station, printed on receipts and slips. Read apart: if one of
+    // these columns were missing, the station list above must still be kept.
+    try {
+      const { data: extras, error: extrasError } = await supabase
+        .from('stations')
+        .select('id, phone, courier_qr_enabled')
+        .eq('is_active', true);
+      if (!extrasError && extras) {
+        await db.referentiels.put({ key: 'station_extras', type: 'stations', data: extras, updated_at: nowIso() });
+      }
+    } catch { /* receipts then print without the station phone */ }
+
     // Companies
     const { data: companies } = await supabase
       .from('companies')
       .select('id, name')
       .order('name');
-    if (companies) {
+    if (companies && companies.length > 0) {
       await db.referentiels.put({
         key: 'companies_all',
         type: 'companies',
@@ -46,7 +60,7 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
       .eq('role', 'chauffeur')
       .eq('is_active', true)
       .order('full_name');
-    if (drivers) {
+    if (drivers && drivers.length > 0) {
       await db.referentiels.put({
         key: 'drivers_all',
         type: 'drivers',
@@ -58,10 +72,10 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
     // Buses
     const { data: buses } = await supabase
       .from('buses')
-      .select('id, registration_number, company_id')
+      .select('id, registration_number, company_id, brand')
       .is('archived_at', null)
       .order('registration_number');
-    if (buses) {
+    if (buses && buses.length > 0) {
       await db.referentiels.put({
         key: 'buses_all',
         type: 'buses',
