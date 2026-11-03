@@ -23,14 +23,20 @@ export function onOnlineChange(fn: (online: boolean) => void): () => void {
 
 // ── Sync queue helpers ──
 
-type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses';
+// convoi_trajets / convois: the convoy screen writes its rows as they are (no local table). An
+// insert carries { id, rows }: the outbound and return legs go in one request, all or nothing.
+export type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses' | 'convoi_trajets' | 'convois';
 
 const TABLE_MAP: Record<StoreName, string> = {
   departs: 'schedules',
   tickets: 'reservations',
   bagages: 'baggage_tickets',
   depenses: 'counter_charges',
+  convoi_trajets: 'schedules',
+  convois: 'convoys',
 };
+
+const RAW_ROW_STORES = new Set<StoreName>(['convoi_trajets', 'convois']);
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -299,6 +305,7 @@ async function addToQueue(
   payload: Record<string, unknown>,
   userId: string | undefined,
   lastError?: string,
+  meta?: Record<string, unknown>,
 ): Promise<void> {
   await db.sync_queue.add({
     entity: store,
@@ -309,6 +316,7 @@ async function addToQueue(
     status: 'pending',
     ...(lastError ? { last_error: lastError } : {}),
     ...(userId ? { user_id: userId } : {}),
+    ...(meta ? { meta } : {}),
   });
 }
 
@@ -321,6 +329,7 @@ async function sendOrQueue(
   op: SyncQueueItem['op'],
   payload: Record<string, unknown>,
   send: () => Promise<void>,
+  meta?: Record<string, unknown>,
 ): Promise<{ queued: boolean; error?: string }> {
   const userId = await currentSellerId();
   if (isOnline() && sentBy({ user_id: userId }, await serverSessionUserId())) {
@@ -329,20 +338,24 @@ async function sendOrQueue(
       return { queued: false };
     } catch (err: any) {
       // Network failed mid-operation — queue it for retry
-      await addToQueue(store, op, payload, userId, err?.message);
+      await addToQueue(store, op, payload, userId, err?.message, meta);
       return { queued: true, error: err?.message };
     }
   }
-  await addToQueue(store, op, payload, userId);
+  await addToQueue(store, op, payload, userId, undefined, meta);
   return { queued: true };
 }
 
-/** Insert: sent now if possible, otherwise queued. */
+/**
+ * Insert: sent now if possible, otherwise queued. `meta`: kept with a queued operation only, never
+ * sent (e.g. what the convoy list shows until the convoy reaches the server).
+ */
 export async function enqueueInsert(
   store: StoreName,
   record: Record<string, unknown>,
+  meta?: Record<string, unknown>,
 ): Promise<{ queued: boolean; error?: string }> {
-  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record));
+  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record), meta);
 }
 
 /** Update: sent now if possible, otherwise queued. */
@@ -386,6 +399,14 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
     payload = depensePayload;
     const userId = await getCurrentUserId();
     if (userId) payload.created_by = userId;
+  } else if (RAW_ROW_STORES.has(store)) {
+    // Rows written as they are, all in one request; ids made on the device, so a retry is a no-op
+    const rows = (record.rows as Record<string, unknown>[] | undefined) ?? [];
+    const userId = store === 'convois' ? await getCurrentUserId() : null;
+    const toSend = rows.map(r => (userId ? { ...r, created_by: userId } : r));
+    const { error } = await supabase.from(table).upsert(toSend);
+    if (error) throw error;
+    return;
   } else {
     return;
   }
@@ -473,6 +494,8 @@ async function executeUpdate(store: StoreName, id: string, patch: Record<string,
     remotePayload = mapTicketUpdate({ id, ...patch });
   } else if (store === 'bagages') {
     remotePayload = mapBagageUpdate({ id, ...patch });
+  } else if (RAW_ROW_STORES.has(store)) {
+    remotePayload = Object.keys(patch).length > 0 ? patch : null;
   }
 
   if (!remotePayload) return;
@@ -537,7 +560,8 @@ function isWaitingToSend(item: SyncQueueItem): boolean {
  * records: a ticket cancelled on the server afterwards was never updated on the device.
  */
 async function markSyncedIfNothingLeft(entity: StoreName, id: string): Promise<void> {
-  if (!id) return;
+  // Convoys have no copy on the device to mark
+  if (!id || RAW_ROW_STORES.has(entity)) return;
   const left = await db.sync_queue
     .where('entity').equals(entity)
     .filter(i => String(i.payload?.id ?? '') === id)

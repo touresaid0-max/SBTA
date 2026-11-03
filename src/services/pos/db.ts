@@ -144,7 +144,8 @@ export interface DepenseRecord {
 
 export interface ReferentielRecord {
   key: string;
-  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops';
+  /** convois_master / convois_list: lists of the convoy screen, kept for working offline */
+  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops' | 'convois_master' | 'convois_list';
   data: unknown;
   updated_at: string;
 }
@@ -162,6 +163,8 @@ export interface SyncQueueItem {
   sending_since?: string;
   /** Guichetier logged in on the device when the operation was made: only his server session sends it */
   user_id?: string;
+  /** Kept on the device only, never sent (e.g. the convoy row shown until it reaches the server) */
+  meta?: Record<string, unknown>;
 }
 
 export interface TransferLogRecord {

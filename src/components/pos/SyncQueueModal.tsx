@@ -13,6 +13,8 @@ const ENTITY_LABELS: Record<string, string> = {
   tickets: 'Ticket',
   bagages: 'Bagage',
   depenses: 'Dépense',
+  convoi_trajets: 'Convoi (trajets)',
+  convois: 'Convoi',
 };
 
 const OP_LABELS: Record<string, string> = {
@@ -43,6 +45,14 @@ function describe(item: SyncQueueItem): string {
       return `N° ${p.bagage_number ?? '—'} · ${p.destination ?? ''} · ${money(p.price)}`;
     case 'depenses':
       return `${p.label ?? p.type ?? 'Dépense'} · ${money(p.amount)}`;
+    case 'convoi_trajets': {
+      const n = Array.isArray(p.rows) ? p.rows.length : 1;
+      return n > 1 ? 'Trajets aller et retour' : 'Trajet aller';
+    }
+    case 'convois': {
+      const row = item.meta?.row as { destination_city?: string; bus_registration?: string; amount?: number } | undefined;
+      return row ? `${row.destination_city ?? ''} · ${row.bus_registration ?? ''} · ${money(row.amount)}` : 'Convoi';
+    }
     default:
       return OP_LABELS[item.op] ?? item.op;
   }

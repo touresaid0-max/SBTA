@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { supabase } from '@/services/supabase';
-import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
 import {
   Truck, Plus, Search, X, AlertTriangle, User, Banknote,
@@ -11,6 +10,9 @@ import {
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { formatCurrency, formatNumber } from '@/utils/formatCurrency';
 import { printConvoyBordereau, type PrintConvoyData } from '@/services/pos/printService';
+import { db } from '@/services/pos/db';
+import { enqueueInsert, enqueueUpdate, isOnline } from '@/services/pos/syncEngine';
+import { useConnection } from '@/services/pos/ConnectionContext';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,6 +56,18 @@ interface ConvoyRow {
   driver_id: string;
   driver_name: string;
   station_name: string;
+  /** Recorded on this device, not yet on the server */
+  pending?: boolean;
+}
+
+/** What the form chooses from, kept on the device to record convoys without network */
+interface ConvoyMasterData {
+  assignedIds: string[];
+  stationRoutes: RouteOption[];
+  systemRoutes: RouteOption[];
+  buses: BusOption[];
+  drivers: DriverOption[];
+  stations: StationOption[];
 }
 
 interface ConvoyForm {
@@ -183,7 +197,6 @@ function Autocomplete<T extends { id: string }>({
 // ─── Main POS Convoi page ─────────────────────────────────────────────────────
 export default function POSConvois() {
   const { session } = usePOSSession();
-  const { user } = useAuthStore();
 
   const stationId = session?.station_id ?? null;
   const stationName = session?.station_name ?? null;
@@ -217,13 +230,37 @@ export default function POSConvois() {
   const [submitting, setSubmitting] = useState(false);
 
   // ─── Load master data ───────────────────────────────────────────────────────
+  // Kept on the device (convois_master): without network the screen had nothing to choose from and
+  // no convoy could be recorded. The copy is shown at once, then replaced by the server's.
   useEffect(() => {
     if (!stationId) { setLoading(false); return; }
+    const masterKey = `convois_master:${stationId}`;
+    let cancelled = false;
+    const apply = (m: ConvoyMasterData) => {
+      if (cancelled) return;
+      // Only the routes assigned to this guichetier's counter
+      setRoutes(m.assignedIds.length > 0 ? m.stationRoutes.filter(r => m.assignedIds.includes(r.id)) : m.stationRoutes);
+      setAllRoutes(m.stationRoutes);
+      setSystemRoutes(m.systemRoutes);
+      setBuses(m.buses);
+      setDrivers(m.drivers);
+      setAllStations(m.stations);
+    };
+
     (async () => {
+      const cached = await db.referentiels.get(masterKey).catch(() => undefined);
+      const copy = cached?.data as ConvoyMasterData | undefined;
+      if (copy) { apply(copy); setLoading(false); }
+      if (!isOnline()) {
+        if (!copy) toast.error("Hors ligne : ouvrez une première fois l'écran Convoi avec Internet pour l'utiliser sans réseau");
+        setLoading(false);
+        return;
+      }
       try {
-        const { data: stData } = await supabase
+        const { data: stData, error: stErr } = await supabase
           .from('stations').select('id, name, city_id').eq('id', stationId).maybeSingle();
-        if (!stData) { setLoading(false); return; }
+        if (stErr) throw stErr;
+        if (!stData) return;
 
         // Resolve assigned route IDs for this counter (from session or DB)
         let assignedIds = assignedRouteIds;
@@ -261,25 +298,29 @@ export default function POSConvois() {
           supabase
             .from('stations').select('id, name, city_id').eq('is_active', true).order('name'),
         ]);
+        const failed = [routesRes, systemRoutesRes, busesRes, driversRes, stationsRes].find(r => r.error);
+        if (failed?.error) throw failed.error;
 
-        const allStationRoutes = (routesRes.data || []) as unknown as RouteOption[];
-        // Filter to only routes assigned to this guichetier's counter
-        const myRoutes = assignedIds && assignedIds.length > 0
-          ? allStationRoutes.filter(r => assignedIds.includes(r.id))
-          : allStationRoutes;
-
-        setRoutes(myRoutes);
-        setAllRoutes(allStationRoutes);
-        setSystemRoutes((systemRoutesRes.data || []) as unknown as RouteOption[]);
-        setBuses((busesRes.data || []) as unknown as BusOption[]);
-        setDrivers((driversRes.data || []) as unknown as DriverOption[]);
-        setAllStations((stationsRes.data || []) as unknown as StationOption[]);
+        // An empty answer (e.g. session expired: drivers hidden by the access rules) never replaces
+        // a list already kept on the device
+        const keep = <T,>(fresh: T[], old?: T[]): T[] => (fresh.length === 0 && old && old.length > 0 ? old : fresh);
+        const m: ConvoyMasterData = {
+          assignedIds: assignedIds ?? [],
+          stationRoutes: keep((routesRes.data || []) as unknown as RouteOption[], copy?.stationRoutes),
+          systemRoutes: keep((systemRoutesRes.data || []) as unknown as RouteOption[], copy?.systemRoutes),
+          buses: keep((busesRes.data || []) as unknown as BusOption[], copy?.buses),
+          drivers: keep((driversRes.data || []) as unknown as DriverOption[], copy?.drivers),
+          stations: keep((stationsRes.data || []) as unknown as StationOption[], copy?.stations),
+        };
+        apply(m);
+        await db.referentiels.put({ key: masterKey, type: 'convois_master', data: m, updated_at: new Date().toISOString() });
       } catch (err: any) {
-        toast.error(err.message || 'Erreur de chargement');
+        if (!copy) toast.error(err.message || 'Erreur de chargement');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [stationId, counterId, assignedRouteIds]);
 
   // ─── Load convoys list ──────────────────────────────────────────────────────
@@ -297,10 +338,33 @@ export default function POSConvois() {
     }
   }, []);
 
+  // Convoys recorded on this device and not yet on the server (sending queue)
+  const loadPendingConvoys = useCallback(async (): Promise<ConvoyRow[]> => {
+    const items = await db.sync_queue.where('entity').equals('convois').toArray().catch(() => []);
+    return items
+      .filter(i => i.op === 'insert' && i.status !== 'done' && i.meta?.row)
+      .map(i => ({ ...(i.meta!.row as ConvoyRow), pending: true }));
+  }, []);
+
   const loadConvoys = useCallback(async () => {
     if (!stationId) return;
     setListLoading(true);
+    const listKey = `convois_list:${stationId}`;
+    const inPeriod = (c: ConvoyRow) => {
+      const d = (c.created_at || '').slice(0, 10);
+      return d >= dateFrom && d <= dateTo;
+    };
+    // The pending ones first; a convoy already on the server is shown once
+    const withPending = async (rows: ConvoyRow[]) => {
+      const pending = (await loadPendingConvoys()).filter(inPeriod);
+      const pendingIds = new Set(pending.map(r => r.id));
+      return [...pending, ...rows.filter(r => !pendingIds.has(r.id))];
+    };
+    const keptOnDevice = async () =>
+      ((await db.referentiels.get(listKey).catch(() => undefined))?.data as ConvoyRow[] | undefined) ?? [];
+
     try {
+      if (!isOnline()) throw new Error('offline');
       const { data, error } = await supabase
         .from('convoys')
         .select(`
@@ -358,15 +422,33 @@ export default function POSConvois() {
           };
         });
 
-      setConvoys(rows);
+      setConvoys(await withPending(rows));
+
+      // Kept on the device for working offline: the last 500 convoys seen, newest first
+      const merged = new Map((await keptOnDevice()).map(r => [r.id, r]));
+      for (const r of rows) merged.set(r.id, r);
+      const kept = [...merged.values()]
+        .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+        .slice(0, 500);
+      await db.referentiels.put({ key: listKey, type: 'convois_list', data: kept, updated_at: new Date().toISOString() });
     } catch (err: any) {
-      toast.error(err.message || 'Erreur de chargement des convois');
+      // Without network: the convoys kept on the device for the period, plus those not yet sent
+      setConvoys(await withPending((await keptOnDevice()).filter(inPeriod)));
+      if (err?.message !== 'offline' && isOnline()) toast.error(err.message || 'Erreur de chargement des convois');
     } finally {
       setListLoading(false);
     }
-  }, [stationId, dateFrom, dateTo]);
+  }, [stationId, dateFrom, dateTo, loadPendingConvoys]);
 
   useEffect(() => { loadConvoys(); }, [loadConvoys]);
+
+  // A convoy recorded offline leaves the « en attente » state once the queue has sent it
+  const { pendingCount } = useConnection();
+  const prevPendingRef = useRef(pendingCount);
+  useEffect(() => {
+    if (pendingCount < prevPendingRef.current) void loadConvoys();
+    prevPendingRef.current = pendingCount;
+  }, [pendingCount, loadConvoys]);
 
   // ─── Derived ────────────────────────────────────────────────────────────────
   const selectedRoute = systemRoutes.find(r => r.id === form.route_id) || routes.find(r => r.id === form.route_id) || null;
@@ -505,6 +587,15 @@ export default function POSConvois() {
   };
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
+  // Through the sending queue, like the ticket sales: sent at once when online, otherwise kept on
+  // the device and sent when the connection comes back (with the guichetier's own account).
+  const savedMessage = (what: string, results: { queued: boolean; error?: string }[]) => {
+    const failed = results.find(r => r.error);
+    if (failed) return `${what} sur le poste — envoi à reprendre : ${failed.error}`;
+    if (results.some(r => r.queued)) return `${what} sur le poste — envoi dès le retour de la connexion`;
+    return `${what} avec succès`;
+  };
+
   const handleSubmit = async () => {
     if (!stationId) { toast.error('Session de guichet invalide'); return; }
     if (!canSubmit) { toast.error('Veuillez renseigner les champs obligatoires'); return; }
@@ -520,40 +611,63 @@ export default function POSConvois() {
         peage_amount: Number(form.peage_amount) || 0,
         autres_amount: Number(form.autres_amount) || 0,
       };
+      const observation = form.observation.trim() || null;
 
       let createdConvoy: ConvoyRow | null = null;
 
       if (editConvoy) {
-        const { error: cErr } = await supabase.from('convoys').update({
-          amount,
-          passengers_count: passengersCount,
-          observation: form.observation.trim() || null,
-          ...charges,
-        }).eq('id', editConvoy.id);
-        if (cErr) throw cErr;
-
         const depDate = form.departure_datetime.includes('T') ? form.departure_datetime : `${form.departure_datetime}:00`;
         const selectedRouteObj = routes.find(r => r.id === form.route_id);
         const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
         const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
 
-        const { error: sErr } = await supabase.from('schedules').update({
-          bus_id: form.bus_id,
-          driver_id: form.driver_id,
-          departure_datetime: depDate,
-          arrival_datetime: arrDate,
-          route_id: form.route_id,
-          updated_at: new Date().toISOString(),
-        }).eq('id', editConvoy.schedule_id);
-        if (sErr) throw sErr;
+        const results = [
+          await enqueueUpdate('convois', editConvoy.id, { amount, passengers_count: passengersCount, observation, ...charges }),
+          await enqueueUpdate('convoi_trajets', editConvoy.schedule_id, {
+            bus_id: form.bus_id,
+            driver_id: form.driver_id,
+            departure_datetime: depDate,
+            arrival_datetime: arrDate,
+            route_id: form.route_id,
+            updated_at: new Date().toISOString(),
+          }),
+        ];
 
-        toast.success('Convoi modifié avec succès');
+        // A convoy not yet sent: what the list shows follows the change
+        if (editConvoy.pending) {
+          const item = await db.sync_queue.where('entity').equals('convois')
+            .filter(i => i.op === 'insert' && String(i.payload?.id ?? '') === editConvoy.id).first();
+          if (item?.id && item.meta?.row) {
+            const bus = buses.find(b => b.id === form.bus_id);
+            await db.sync_queue.update(item.id, {
+              meta: {
+                ...item.meta,
+                row: {
+                  ...(item.meta.row as ConvoyRow),
+                  amount, passengers_count: passengersCount, observation, ...charges,
+                  departure_datetime: depDate,
+                  bus_id: form.bus_id,
+                  bus_registration: bus?.registration_number ?? '—',
+                  bus_capacity: bus?.capacity ?? 0,
+                  company_name: bus?.company?.name ?? '—',
+                  driver_id: form.driver_id,
+                  driver_name: drivers.find(d => d.id === form.driver_id)?.full_name ?? '—',
+                },
+              },
+            });
+          }
+        }
+
+        toast.success(savedMessage('Convoi modifié', results));
       } else {
         const depDate = form.departure_datetime.includes('T') ? form.departure_datetime : `${form.departure_datetime}:00`;
         const selectedRouteObj = routes.find(r => r.id === form.route_id);
         const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
         const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
+        // Ids made on the device: the convoys can point to their trips before anything is sent
+        const allerScheduleId = crypto.randomUUID();
         const baseSchedule: Record<string, any> = {
+          id: allerScheduleId,
           route_id: form.route_id,
           departure_station_id: stationId,
           arrival_station_id: form.arrival_station_id || null,
@@ -570,6 +684,7 @@ export default function POSConvois() {
         };
 
         const hasRetour = form.trip_type === 'aller_retour' && !!form.retour_route_id;
+        const retourScheduleId = hasRetour ? crypto.randomUUID() : null;
         const schedulesToInsert: Record<string, any>[] = [baseSchedule];
         if (hasRetour) {
           const retDep = form.retour_departure_datetime.includes('T')
@@ -578,6 +693,7 @@ export default function POSConvois() {
           // The return leg comes back to this counter's station.
           schedulesToInsert.push({
             ...baseSchedule,
+            id: retourScheduleId,
             route_id: form.retour_route_id,
             departure_station_id: form.arrival_station_id || stationId,
             arrival_station_id: stationId,
@@ -586,29 +702,13 @@ export default function POSConvois() {
           });
         }
 
-        // Single insert so both legs are saved together or not at all.
-        const { data: newScheds, error: sErr } = await supabase
-          .from('schedules').insert(schedulesToInsert).select('id');
-        if (sErr) throw sErr;
-        if (!newScheds || newScheds.length !== schedulesToInsert.length) {
-          throw new Error("Échec de l'enregistrement des trajets du convoi");
-        }
-        const newSched = newScheds[0];
-
-        const convoyBase = {
-          amount,
-          passengers_count: passengersCount,
-          observation: form.observation.trim() || null,
-          created_by: user?.id,
-          ...charges,
-        };
-
+        const convoyBase = { amount, passengers_count: passengersCount, observation, ...charges };
         const allerConvoyId = crypto.randomUUID();
         const retourConvoyId = hasRetour ? crypto.randomUUID() : null;
         const convoysToInsert: Record<string, any>[] = [{
           ...convoyBase,
           id: allerConvoyId,
-          schedule_id: newSched.id,
+          schedule_id: allerScheduleId,
           trip_type: form.trip_type,
           return_convoy_id: retourConvoyId,
         }];
@@ -616,33 +716,23 @@ export default function POSConvois() {
           convoysToInsert.push({
             ...convoyBase,
             id: retourConvoyId,
-            schedule_id: newScheds[1].id,
+            schedule_id: retourScheduleId,
             trip_type: 'aller_retour',
           });
         }
 
-        const { data: newConvoys, error: cErr } = await supabase
-          .from('convoys').insert(convoysToInsert).select('id');
-        if (cErr) throw cErr;
-        if (!newConvoys || newConvoys.length !== convoysToInsert.length) {
-          throw new Error("Échec de l'enregistrement du convoi");
-        }
-
-        // Build a ConvoyRow for immediate bordereau printing
+        // The row the list shows (and the bordereau prints) until the server has the convoy
         createdConvoy = {
-          id: 'new',
-          schedule_id: newSched.id,
+          id: allerConvoyId,
+          schedule_id: allerScheduleId,
           amount,
           trip_type: form.trip_type,
           passengers_count: passengersCount,
-          ratio_amount: charges.ratio_amount,
-          carburant_amount: charges.carburant_amount,
-          peage_amount: charges.peage_amount,
-          autres_amount: charges.autres_amount,
-          observation: form.observation.trim() || null,
+          ...charges,
+          observation,
           created_at: new Date().toISOString(),
-              return_convoy_id: null,
-          return_departure_datetime: form.trip_type === 'aller_retour' ? form.retour_departure_datetime : null,
+          return_convoy_id: retourConvoyId,
+          return_departure_datetime: hasRetour ? form.retour_departure_datetime : null,
           departure_datetime: depDate,
           route_id: form.route_id,
           route_name: selectedRoute?.destination_city?.name ?? '—',
@@ -657,7 +747,13 @@ export default function POSConvois() {
           station_name: stationName ?? '—',
         };
 
-        toast.success('Convoi créé avec succès');
+        // Trips first, then the convoys pointing to them (the queue is sent in this order)
+        const results = [
+          await enqueueInsert('convoi_trajets', { id: allerScheduleId, rows: schedulesToInsert }),
+          await enqueueInsert('convois', { id: allerConvoyId, rows: convoysToInsert }, { row: createdConvoy }),
+        ];
+
+        toast.success(savedMessage('Convoi enregistré', results));
       }
 
       setShowModal(false);
@@ -826,6 +922,11 @@ export default function POSConvois() {
                       <tr key={c.id} className="hover:opacity-80 transition-opacity">
                         <td className="px-2 py-2.5 whitespace-nowrap font-medium" style={{ color: 'var(--text-primary)' }}>
                           <span className="block">Aller : {format(parseISO(c.departure_datetime || c.created_at), 'dd/MM HH:mm')}</span>
+                          {c.pending && (
+                            <span className="inline-block mt-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                              En attente d'envoi
+                            </span>
+                          )}
                           {c.return_departure_datetime && <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>Retour : {format(parseISO(c.return_departure_datetime), 'dd/MM HH:mm')}</span>}
                         </td>
                         <td className="px-2 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
@@ -859,7 +960,7 @@ export default function POSConvois() {
                               className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Modifier">
                               <Edit3 className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                             </button>
-                            <ChangeRequestButton
+                            {!c.pending && <ChangeRequestButton
                               compact
                               operationType="convoy"
                               operationId={c.id}
@@ -868,7 +969,7 @@ export default function POSConvois() {
                               operationSnapshot={c as unknown as Record<string, unknown>}
                               stationId={stationId}
                               stationName={stationName}
-                            />
+                            />}
                           </div>
                         </td>
                       </tr>
