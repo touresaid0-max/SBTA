@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import { supabase } from '@/services/supabase';
+import { supabase, setResponseTimeout } from '@/services/supabase';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
 
 export type ConnectionStatus = 'online' | 'offline' | 'checking';
@@ -36,6 +36,7 @@ const ConnectionContext = createContext<ConnectionState>({
 });
 
 const PING_INTERVAL_MS = 15_000;
+const GUICHET_RESPONSE_TIMEOUT_MS = 15_000;
 
 /**
  * The ping below reads the stations, which the database also lets anonymous visitors read: it
@@ -79,6 +80,13 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   const [offlineReady, setOfflineReady] = useState(
     () => typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !!navigator.serviceWorker.controller,
   );
+
+  // While the guichet is open, a request the server does not start answering within this delay
+  // fails: the sale is then kept in the queue and the screen uses the copy kept on the device
+  useEffect(() => {
+    setResponseTimeout(GUICHET_RESPONSE_TIMEOUT_MS);
+    return () => setResponseTimeout(null);
+  }, []);
 
   useEffect(() => {
     if (offlineReady || !('serviceWorker' in navigator)) return;
