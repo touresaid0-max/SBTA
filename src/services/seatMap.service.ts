@@ -202,7 +202,7 @@ export async function fetchScheduleSeatMap(
       currentUser,
     ] = await Promise.all([
       fetchSeatHolders(siblingIds),
-      supabase.auth.getUser().then(r => r.data?.user ?? null).catch(() => null),
+      supabase.auth.getSession().then(r => r.data?.session?.user ?? null).catch(() => null),
     ])
 
     const lockMap = await fetchActiveSeatLocksForSchedules(siblingIds)
@@ -320,7 +320,7 @@ export async function fetchScheduleSeatMap(
     currentUser,
   ] = await Promise.all([
     fetchSeatHolders(siblingIds),
-    supabase.auth.getUser().then(r => r.data?.user ?? null).catch(() => null),
+    supabase.auth.getSession().then(r => r.data?.session?.user ?? null).catch(() => null),
   ])
 
   if (resError) throw new Error(`Erreur chargement réservations : ${resError.message}`)

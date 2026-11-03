@@ -30,9 +30,11 @@ export default function POSAccueil() {
   // login here: say so before logging out
   const handleLogout = async () => {
     const pending = await getPendingCount();
+    const many = pending > 1;
     if (pending > 0 && !window.confirm(
-      `${pending} opération${pending > 1 ? 's' : ''} pas encore envoyée${pending > 1 ? 's' : ''} au serveur. `
-      + 'Elles resteront sur ce poste et partiront à votre prochaine connexion avec Internet sur ce poste.\n\n'
+      `${pending} opération${many ? 's' : ''} pas encore envoyée${many ? 's' : ''} au serveur. `
+      + `${many ? 'Elles resteront' : 'Elle restera'} sur ce poste et ${many ? 'partiront' : 'partira'} `
+      + 'à votre prochaine connexion avec Internet sur ce poste.\n\n'
       + 'Se déconnecter quand même ?',
     )) return;
     await logout();

@@ -40,13 +40,11 @@ function uuid(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// Account the operation is sent with, read from the session kept on the device. getUser() asked
+// the server on every sale: one more round trip, during which the Supabase client holds its
+// session lock and every other request of the guichet waits (beyond the response time limit).
 async function getCurrentUserId(): Promise<string | null> {
-  try {
-    const { data } = await supabase.auth.getUser();
-    return data?.user?.id ?? null;
-  } catch {
-    return null;
-  }
+  return (await serverSessionUserId()) ?? null;
 }
 
 // ── Field mapping (same logic as offlineStore, kept in sync) ──
@@ -533,6 +531,20 @@ function isWaitingToSend(item: SyncQueueItem): boolean {
   return !(Date.now() - since < STALE_SENDING_MS);
 }
 
+/**
+ * Once its last queued change has reached the server, the device's copy is marked synced. Without
+ * it, a record made offline stayed « not synced » for good, and the pulls from the server skip such
+ * records: a ticket cancelled on the server afterwards was never updated on the device.
+ */
+async function markSyncedIfNothingLeft(entity: StoreName, id: string): Promise<void> {
+  if (!id) return;
+  const left = await db.sync_queue
+    .where('entity').equals(entity)
+    .filter(i => String(i.payload?.id ?? '') === id)
+    .count();
+  if (left === 0) await (db as any)[entity].update(id, { synced: true });
+}
+
 let flushing = false;
 
 export async function flushSyncQueue(): Promise<FlushResult> {
@@ -575,6 +587,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         }
 
         await db.sync_queue.delete(item.id);
+        if (item.op !== 'delete') await markSyncedIfNothingLeft(item.entity as StoreName, String(item.payload.id ?? ''));
         succeeded++;
       } catch (err: any) {
         await db.sync_queue.update(item.id, {

@@ -315,8 +315,8 @@ export async function cloturerDepart(
 
     let createdById: string | null = null;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      createdById = user?.id ?? null;
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      createdById = authSession?.user.id ?? null;
     } catch { /* no active session — insert with null created_by */ }
 
     try {

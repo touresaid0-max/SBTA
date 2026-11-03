@@ -80,11 +80,13 @@ function refreshOnce(type: RefType): Promise<unknown[]> {
 
 export async function getReferentiel<T = unknown>(type: RefType): Promise<T[]> {
   const cached = await db.referentiels.get(type).catch(() => undefined);
-  const copy = cached && Array.isArray(cached.data) && cached.data.length > 0 ? cached.data as T[] : null;
+  // An empty list is a copy too: many stations have no fares or stops of their own. A list emptied
+  // by an earlier version is replaced by the server's within the 3 s on a normal connection.
+  const copy = cached && Array.isArray(cached.data) ? cached.data as T[] : null;
 
   const fromServer = refreshOnce(type) as Promise<T[]>;
-  // No copy on the device (first use, or emptied by an earlier version): the server is needed
-  if (!copy) return fromServer.catch(() => (cached?.data as T[] | undefined) ?? []);
+  // No copy on the device (first use): the server is needed
+  if (!copy) return fromServer.catch(() => []);
 
   fromServer.catch(() => { /* the copy stays in use; the next sync tries again */ });
   let timer: ReturnType<typeof setTimeout> | undefined;

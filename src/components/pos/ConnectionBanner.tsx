@@ -1,11 +1,9 @@
-import { useState } from 'react';
 import { Wifi, WifiOff, RefreshCw, CheckCircle, ChevronRight } from 'lucide-react';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import { SyncQueueModal } from '@/components/pos/SyncQueueModal';
 
 export function ConnectionBanner() {
-  const { status, sessionExpired, syncing, pendingCount, bannerLabel } = useConnection();
-  const [queueOpen, setQueueOpen] = useState(false);
+  const { status, sessionExpired, syncing, pendingCount, bannerLabel, queueOpen, setQueueOpen } = useConnection();
 
   let bgColor = '#16a34a';
   let Icon = Wifi;

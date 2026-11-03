@@ -58,13 +58,19 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
 
   const loadRefs = useCallback(async () => {
     try {
-      const [l, v, c, g] = await Promise.all([getLignes(), getVehicules(), getChauffeurs(), getGares()]);
+      // The counter's lines are asked at the same time as the lists. Those known on the device are
+      // used after at most 3 s, as for the lists: on a slow connection the screen waited up to
+      // 15 s more for this answer alone
+      const known = session?.assigned_route_ids ?? [];
+      const fromServer = navigator.onLine && session?.counter_id
+        ? getAssignedRouteIds(session.counter_id)
+        : Promise.resolve([] as string[]);
+      const assigned = known.length > 0
+        ? Promise.race([fromServer, new Promise<string[]>(resolve => setTimeout(() => resolve([]), 3_000))])
+        : fromServer;
+      const [l, v, c, g, fresh] = await Promise.all([getLignes(), getVehicules(), getChauffeurs(), getGares(), assigned]);
 
-      let routeIds = session?.assigned_route_ids ?? [];
-      if (navigator.onLine && session?.counter_id) {
-        const fresh = await getAssignedRouteIds(session.counter_id);
-        if (fresh.length > 0) routeIds = fresh;
-      }
+      const routeIds = fresh.length > 0 ? fresh : known;
 
       if (routeIds.length > 0) {
         const allowed = new Set(routeIds);

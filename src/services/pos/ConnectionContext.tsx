@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import { supabase, setResponseTimeout } from '@/services/supabase';
+import { supabase } from '@/services/supabase';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
 import { requestPersistentStorage } from './persistentStorage';
 
@@ -19,6 +19,9 @@ export interface ConnectionState {
   setLastSyncedAt: (iso: string) => void;
   setLastSyncError: (message: string | null) => void;
   recheck: () => void;
+  /** Pending operations window, kept here: several screens re-create the banner while loading */
+  queueOpen: boolean;
+  setQueueOpen: (open: boolean) => void;
 }
 
 const ConnectionContext = createContext<ConnectionState>({
@@ -34,10 +37,11 @@ const ConnectionContext = createContext<ConnectionState>({
   setLastSyncedAt: () => {},
   setLastSyncError: () => {},
   recheck: () => {},
+  queueOpen: false,
+  setQueueOpen: () => {},
 });
 
 const PING_INTERVAL_MS = 15_000;
-const GUICHET_RESPONSE_TIMEOUT_MS = 15_000;
 
 /**
  * The ping below reads the stations, which the database also lets anonymous visitors read: it
@@ -75,19 +79,13 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
+  const [queueOpen, setQueueOpen] = useState(false);
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // The guichet works without network only once the service worker has downloaded the app
   // (about 8 MB, the first time): until then, the network must stay on
   const [offlineReady, setOfflineReady] = useState(
     () => typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !!navigator.serviceWorker.controller,
   );
-
-  // While the guichet is open, a request the server does not start answering within this delay
-  // fails: the sale is then kept in the queue and the screen uses the copy kept on the device
-  useEffect(() => {
-    setResponseTimeout(GUICHET_RESPONSE_TIMEOUT_MS);
-    return () => setResponseTimeout(null);
-  }, []);
 
   // The sales not yet sent live in the browser: ask it not to erase them when the disk is full
   useEffect(() => {
@@ -132,15 +130,16 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
 
   const bannerLabel = (() => {
     if (status === 'checking') return 'Vérification de la connexion…';
+    // Shown before « Synchronisation en cours » : nothing can be sent until the guichetier logs in again
+    if (status === 'online' && sessionExpired) {
+      return pendingCount > 0
+        ? `En ligne — session expirée : ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente, déconnectez-vous puis reconnectez-vous`
+        : 'En ligne — session expirée : déconnectez-vous puis reconnectez-vous';
+    }
     if (syncing) return 'Synchronisation en cours…';
     if (status === 'offline') {
       if (pendingCount > 0) return `Hors ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente de synchronisation`;
       return 'Hors ligne — fonctionnement local';
-    }
-    if (sessionExpired) {
-      return pendingCount > 0
-        ? `En ligne — session expirée : ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente, déconnectez-vous puis reconnectez-vous`
-        : 'En ligne — session expirée : déconnectez-vous puis reconnectez-vous';
     }
     if (lastSyncError) return `En ligne — synchronisation à reprendre : ${lastSyncError}`;
     if (pendingCount > 0) return `En ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente`;
@@ -163,6 +162,8 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
       setLastSyncedAt,
       setLastSyncError,
       recheck,
+      queueOpen,
+      setQueueOpen,
     }}>
       {children}
     </ConnectionContext.Provider>
