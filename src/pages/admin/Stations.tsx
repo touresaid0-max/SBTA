@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Building2, Plus, CreditCard as Edit2, Trash2, Eye, Monitor, UserCheck, X, Package, MapPin, Luggage, Search } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
+import Pagination from '../../components/pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 import { useNavigate } from 'react-router-dom';
 
 interface StationAgent {
@@ -681,16 +683,19 @@ export default function Stations() {
     setDestCodes(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   const removeDestCode = (idx: number) => setDestCodes(prev => prev.filter((_, i) => i !== idx));
 
-  if (loading) {
-    return <div className="p-8">Chargement...</div>;
-  }
-
   const filtered = stations.filter((s) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
     return [s.name, s.address, s.agency_code, s.cities?.name, s.cities?.region, s.phone, s.email]
       .some((x) => (x ?? '').toLowerCase().includes(q));
   });
+
+  // Same pagination as the guichet departures list: back to page 1 when the search changes
+  const pagination = usePagination(filtered, 'sbta_admin_stations_page_size', search);
+
+  if (loading) {
+    return <div className="p-8">Chargement...</div>;
+  }
 
   return (
     <div className="p-8">
@@ -1314,7 +1319,8 @@ export default function Stations() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border overflow-x-auto">
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full min-w-max">
           <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
             <tr>
@@ -1333,7 +1339,7 @@ export default function Stations() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((station) => {
+            {pagination.pageItems.map((station) => {
               const agents = stationAgentsMap[station.id] ?? [];
               return (
                 <tr key={station.id} className="border-t group hover:bg-gray-50">
@@ -1551,6 +1557,7 @@ export default function Stations() {
             })}
           </tbody>
         </table>
+        </div>
 
         {filtered.length === 0 && (
           <div className="text-center py-12">
@@ -1558,6 +1565,20 @@ export default function Stations() {
             <p style={{ color: 'var(--text-secondary)' }}>
               {search.trim() ? 'Aucune gare ne correspond à votre recherche' : 'Aucune gare trouvée'}
             </p>
+          </div>
+        )}
+
+        {filtered.length > 0 && (
+          <div className="border-t px-4 py-2">
+            <Pagination
+              page={pagination.page}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              total={pagination.total}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              itemLabel="gares"
+            />
           </div>
         )}
       </div>

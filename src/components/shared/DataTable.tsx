@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
+import Pagination from '../pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 
 interface Column<T> {
   key: string;
@@ -15,6 +17,12 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   onRowClick?: (item: T) => void;
   emptyMessage?: string;
+  /** localStorage key remembering the rows per page of this table */
+  pageSizeKey?: string;
+  /** Change it when the caller's filters change, to go back to page 1 */
+  resetKey?: string;
+  /** Plural name of the rows, e.g. "utilisateurs" */
+  itemLabel?: string;
 }
 
 export default function DataTable<T extends Record<string, any>>({
@@ -24,11 +32,12 @@ export default function DataTable<T extends Record<string, any>>({
   searchPlaceholder = 'Rechercher...',
   onRowClick,
   emptyMessage = 'Aucune donnée disponible',
+  pageSizeKey = 'sbta_datatable_page_size',
+  resetKey = '',
+  itemLabel = 'lignes',
 }: DataTableProps<T>) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
-  const itemsPerPage = 10;
 
   const filteredData = data.filter((item) => {
     if (!searchTerm) return true;
@@ -48,9 +57,14 @@ export default function DataTable<T extends Record<string, any>>({
     return 0;
   });
 
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedData = sortedData.slice(startIndex, startIndex + itemsPerPage);
+  // Same pagination as the guichet departures list: back to page 1 when the search, the sort
+  // or the caller's filters (resetKey) change
+  const pagination = usePagination(
+    sortedData,
+    pageSizeKey,
+    `${searchTerm}|${sortConfig?.key}|${sortConfig?.direction}|${resetKey}`,
+  );
+  const paginatedData = pagination.pageItems;
 
   const handleSort = (key: string) => {
     setSortConfig((current) => {
@@ -69,10 +83,7 @@ export default function DataTable<T extends Record<string, any>>({
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1);
-            }}
+            onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={searchPlaceholder}
             className="w-full pl-10 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2"
             style={{
@@ -127,36 +138,21 @@ export default function DataTable<T extends Record<string, any>>({
             </tbody>
           </table>
         </div>
-      </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Affichage de {startIndex + 1} à {Math.min(startIndex + itemsPerPage, sortedData.length)} sur {sortedData.length} résultats
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-2 rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="px-4 py-2" style={{ color: 'var(--text-primary)' }}>
-              Page {currentPage} sur {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3 py-2 rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+        {sortedData.length > 0 && (
+          <div className="border-t px-4 py-2" style={{ borderColor: 'var(--border)' }}>
+            <Pagination
+              page={pagination.page}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              total={pagination.total}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              itemLabel={itemLabel}
+            />
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
