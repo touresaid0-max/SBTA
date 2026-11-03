@@ -495,66 +495,41 @@ export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSett
   parts.push(...separator());
 
   // ── TABLEAU ───────────────────────────────────────────────────────
-  // 44 chars for 58mm. Column layout:
-  // IMMAT(9) | N°(3) | SIEGE(4) | MT TICKET(9) | DEPENSE(8) | SOLDE(7) | BAGAGE(4)
-  // Total = 9+3+4+9+8+7+4 = 44
-  const C_IMMAT = 9;
-  const C_NUM = 3;
-  const C_SIEGE = 4;
-  const C_TICKET = 9;
-  const C_DEPENSE = 8;
-  const C_SOLDE = 7;
-  const C_BAGAGE = 4;
-
+  // Seven fixed columns did not fit in the width: amounts were cut (a balance of 1 760 000
+  // printed « 1 760 0 ») or glued together. Each departure now takes two lines: the bus, then
+  // its three amounts in columns wide enough for any amount (about 14 characters each).
   const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max) : s;
-  const rightAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : ' '.repeat(max - s.length) + s;
-  const leftAlign = (s: string, max: number) => s.length >= max ? s.slice(0, max) : s + ' '.repeat(max - s.length);
+  // Never cuts an amount: a wider value only pushes the line
+  const rightAlign = (s: string, max: number) => s.length >= max ? s : ' '.repeat(max - s.length) + s;
 
-  // Header row
-  const headerRow =
-    leftAlign('IMMAT', C_IMMAT) +
-    leftAlign('N°', C_NUM) +
-    leftAlign('SIEG', C_SIEGE) +
-    rightAlign('MT TIC', C_TICKET) +
-    rightAlign('DEP R/P', C_DEPENSE) +
-    rightAlign('SOLDE', C_SOLDE) +
-    rightAlign('BAG', C_BAGAGE);
-  parts.push(setBold(true), ...line(headerRow.slice(0, w)), setBold(false));
+  const third = Math.floor(w / 3);
+  const colWidths = [w - 2 * third, third, third];
+  const amounts = (ticket: string, charges: string, solde: string) =>
+    rightAlign(ticket, colWidths[0]) + rightAlign(charges, colWidths[1]) + rightAlign(solde, colWidths[2]);
+  const places = (n: number) => `${fmtNum(n)} place${n > 1 ? 's' : ''}`;
+  const bag = (n: number) => (n > 0 ? ` Bag ${fmtNum(n)}` : '');
+
+  parts.push(setBold(true), ...line(amounts('TICKETS', 'DEPENSES', 'SOLDE')), setBold(false));
   parts.push(...separator());
 
-  // Data rows
   for (const row of bordereau.rows) {
-    const immat = truncate((row.registration_number || '').toUpperCase(), C_IMMAT);
-    const num = truncate(String(row.departure_number || ''), C_NUM);
-    const siege = truncate(fmtNum(row.seats_sold), C_SIEGE);
-    const ticket = rightAlign(fmtNum(row.total_ticket), C_TICKET);
-    const depense = rightAlign(fmtNum(row.total_charges), C_DEPENSE);
-    const solde = rightAlign(fmtNum(row.solde_ticket), C_SOLDE);
-    const bagage = rightAlign(fmtNum(row.total_baggage), C_BAGAGE);
-
-    const dataLine =
-      leftAlign(immat, C_IMMAT) +
-      leftAlign(num, C_NUM) +
-      leftAlign(siege, C_SIEGE) +
-      ticket +
-      depense +
-      solde +
-      bagage;
-    parts.push(...line(dataLine.slice(0, w)));
+    const bus = (row.registration_number || '-').toUpperCase();
+    const head = `${bus} N°${row.departure_number ?? ''} ${places(row.seats_sold)}${bag(row.total_baggage)}`;
+    parts.push(setBold(true), ...line(truncate(head, w)), setBold(false));
+    parts.push(...line(amounts(fmtNum(row.total_ticket), fmtNum(row.total_charges), fmtNum(row.solde_ticket))));
   }
 
   parts.push(...separator());
 
-  // TOTAUX row
-  const totRow =
-    leftAlign('TOTAUX', C_IMMAT) +
-    leftAlign(String(bordereau.totals.departures), C_NUM) +
-    leftAlign(fmtNum(bordereau.totals.seats_sold), C_SIEGE) +
-    rightAlign(fmtNum(bordereau.totals.total_ticket), C_TICKET) +
-    rightAlign(fmtNum(bordereau.totals.total_charges), C_DEPENSE) +
-    rightAlign(fmtNum(bordereau.totals.solde_ticket), C_SOLDE) +
-    rightAlign(fmtNum(bordereau.totals.total_baggage), C_BAGAGE);
-  parts.push(setBold(true), ...line(totRow.slice(0, w)), setBold(false));
+  // TOTAUX: same two lines, in bold
+  const n = bordereau.totals.departures;
+  const totHead = `TOTAUX ${n} depart${n > 1 ? 's' : ''} ${places(bordereau.totals.seats_sold)}${bag(bordereau.totals.total_baggage)}`;
+  parts.push(setBold(true), ...line(truncate(totHead, w)));
+  parts.push(...line(amounts(
+    fmtNum(bordereau.totals.total_ticket),
+    fmtNum(bordereau.totals.total_charges),
+    fmtNum(bordereau.totals.solde_ticket),
+  )), setBold(false));
 
   parts.push(...doubleSep());
 

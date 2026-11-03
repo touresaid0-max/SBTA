@@ -1077,26 +1077,23 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   const { data: bordereau, phoneLine } = data;
   const mm = settings.width_mm;
   const bodyWidthMm = mm - 4;
+  // Non-breaking spaces: an amount never splits over two lines
   const fmtNum = (n: number): string =>
-    Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  const fmt = (n: number): string => fmtNum(n) + ' F';
+    Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const fmt = (n: number): string => fmtNum(n) + ' F';
+  const places = (n: number) => `${fmtNum(n)} place${n > 1 ? 's' : ''}`;
 
+  // Seven columns did not fit on a 58 mm ticket: the amounts overlapped, the totals line most.
+  // Each departure now takes two lines: the bus, then its three amounts in wide columns.
   const rowsHtml = bordereau.rows.map(row => {
-    const immat = escapeHtml((row.registration_number || '').toUpperCase().slice(0, 9));
-    const num = escapeHtml(String(row.departure_number || '').slice(0, 3));
-    const siege = escapeHtml(fmtNum(row.seats_sold).slice(0, 4));
-    const ticket = escapeHtml(fmtNum(row.total_ticket));
-    const depense = escapeHtml(fmtNum(row.total_charges));
-    const solde = escapeHtml(fmtNum(row.solde_ticket));
-    const bagage = escapeHtml(fmtNum(row.total_baggage));
-    return `<tr>
-      <td class="l">${immat}</td>
-      <td class="l">${num}</td>
-      <td class="l">${siege}</td>
-      <td class="r">${ticket}</td>
-      <td class="r">${depense}</td>
-      <td class="r">${solde}</td>
-      <td class="r">${bagage}</td>
+    const bus = escapeHtml((row.registration_number || '—').toUpperCase());
+    const num = escapeHtml(String(row.departure_number ?? ''));
+    const bag = row.total_baggage > 0 ? ` · Bag ${escapeHtml(fmtNum(row.total_baggage))}` : '';
+    return `<tr class="bus"><td colspan="3"><b>${bus}</b> · N°${num} · ${places(row.seats_sold)}${bag}</td></tr>
+    <tr class="amounts">
+      <td class="r">${escapeHtml(fmtNum(row.total_ticket))}</td>
+      <td class="r">${escapeHtml(fmtNum(row.total_charges))}</td>
+      <td class="r">${escapeHtml(fmtNum(row.solde_ticket))}</td>
     </tr>`;
   }).join('');
 
@@ -1115,14 +1112,15 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   .dsep { border-top: 2px solid #000; margin: 2px 0; }
   .sep { border-top: 1px solid #000; margin: 1px 0; }
   .info { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; padding: 1px 0; }
-  table { width: 100%; border-collapse: collapse; table-layout: auto; }
-  th { font-size: 9px; font-weight: 900; padding: 1px 1px; border-bottom: 1px solid #000; }
-  th.l { text-align: left; }
-  th.r { text-align: right; }
-  td { font-size: 9px; font-weight: 800; padding: 1px 1px; }
-  td.l { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { font-size: 9px; font-weight: 900; padding: 1px 2px; border-bottom: 1px solid #000; text-align: right; }
+  td { font-size: 10px; font-weight: 800; padding: 0 2px; }
   td.r { text-align: right; white-space: nowrap; }
-  .tot { font-weight: 900; border-top: 1px solid #000; }
+  tr.bus td { font-size: 9px; padding-top: 3px; white-space: normal; }
+  tr.amounts td { padding-bottom: 2px; border-bottom: 1px dotted #000; }
+  tr.tot td { font-weight: 900; }
+  tr.tot.bus td { border-top: 1px solid #000; padding-top: 3px; }
+  tr.tot.amounts td { border-bottom: none; }
   .recap { font-size: 11px; font-weight: 800; padding: 1px 0; }
   .recap-row { display: flex; justify-content: space-between; padding: 1px 0; }
   .recap-bold { font-weight: 900; }
@@ -1143,26 +1141,15 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   <div class="sep"></div>
   <table>
     <thead>
-      <tr>
-        <th class="l">IMMAT</th>
-        <th class="l">N°</th>
-        <th class="l">SIEG</th>
-        <th class="r">MT TIC</th>
-        <th class="r">DEP R/P</th>
-        <th class="r">SOLDE</th>
-        <th class="r">BAG</th>
-      </tr>
+      <tr><th>TICKETS</th><th>DEPENSES</th><th>SOLDE</th></tr>
     </thead>
     <tbody>
       ${rowsHtml}
-      <tr class="tot">
-        <td class="l">TOTAUX</td>
-        <td class="l">${bordereau.totals.departures}</td>
-        <td class="l">${fmtNum(bordereau.totals.seats_sold)}</td>
+      <tr class="tot bus"><td colspan="3">TOTAUX · ${bordereau.totals.departures} départ${bordereau.totals.departures > 1 ? 's' : ''} · ${places(bordereau.totals.seats_sold)}${bordereau.totals.total_baggage > 0 ? ` · Bag ${fmtNum(bordereau.totals.total_baggage)}` : ''}</td></tr>
+      <tr class="tot amounts">
         <td class="r">${fmtNum(bordereau.totals.total_ticket)}</td>
         <td class="r">${fmtNum(bordereau.totals.total_charges)}</td>
         <td class="r">${fmtNum(bordereau.totals.solde_ticket)}</td>
-        <td class="r">${fmtNum(bordereau.totals.total_baggage)}</td>
       </tr>
     </tbody>
   </table>

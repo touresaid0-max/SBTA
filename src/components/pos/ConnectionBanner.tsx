@@ -3,7 +3,7 @@ import { useConnection } from '@/services/pos/ConnectionContext';
 import { SyncQueueModal } from '@/components/pos/SyncQueueModal';
 
 export function ConnectionBanner() {
-  const { status, sessionExpired, syncing, pendingCount, bannerLabel, queueOpen, setQueueOpen } = useConnection();
+  const { status, sessionExpired, syncing, pendingCount, lastSyncError, bannerLabel, queueOpen, setQueueOpen } = useConnection();
 
   let bgColor = '#16a34a';
   let Icon = Wifi;
@@ -19,7 +19,8 @@ export function ConnectionBanner() {
     bgColor = '#2563eb';
     Icon = RefreshCw;
     animate = true;
-  } else if (pendingCount > 0) {
+  } else if (pendingCount > 0 || lastSyncError) {
+    // A warning (session of another guichetier, refused operation…) is never shown in green
     bgColor = '#f59e0b';
     Icon = RefreshCw;
   } else {
