@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { useAuthStore } from '../store/authStore'
 import type { ScheduleSeatMap, EnrichedSeat, SeatStatus, EnrichedRow, SeatRow, OnlineReservationInfo } from '../types/seatMap.types'
 import { normalizeLegacyLayout, generateSeatLayout, generateDefaultLayoutFromTotalSeats } from '../utils/generateSeatLayout'
 
@@ -19,13 +20,89 @@ export async function getSiblingScheduleIds(scheduleId: string): Promise<string[
   return [scheduleId]
 }
 
+// ── Occupied seats for visitors ───────────────────────────────────────────────
+// The kiosk and the public site have no login, and a client only reads his own reservations.
+// Since migration 20261103120000 visitors can no longer read the reservations table (it exposed
+// the passengers' names and phones): they get the occupied seats from get_occupied_seats, which
+// returns no personal data. Staff accounts keep reading the table with their own access rights.
+
+export interface OccupiedReservation {
+  id: string
+  schedule_id: string
+  seat_numbers: string[]
+  total_seats: number
+  status: string
+  customer_id: string | null
+  passenger_name: string
+}
+
+/** No login, or a client account: occupied seats come from get_occupied_seats. */
+export async function isSeatMapVisitor(): Promise<boolean> {
+  const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+  if (!data.session) return true
+  return useAuthStore.getState().user?.role === 'client'
+}
+
+/**
+ * Non-cancelled reservations of the given departures, without personal data. Before the
+ * migration is applied the function does not exist: the table is then read as before.
+ */
+export async function fetchOccupiedReservations(scheduleIds: string[]): Promise<OccupiedReservation[]> {
+  if (scheduleIds.length === 0) return []
+  const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+  const userId = session?.user.id ?? null
+  const rows: OccupiedReservation[] = []
+  for (let i = 0; i < scheduleIds.length; i += 200) {
+    const chunk = scheduleIds.slice(i, i + 200)
+    const { data, error } = await supabase.rpc('get_occupied_seats', { p_schedule_ids: chunk })
+    if (error) {
+      const { data: direct, error: readError } = await supabase
+        .from('reservations')
+        .select('id, schedule_id, seat_numbers, total_seats, status, customer_id')
+        .in('schedule_id', chunk)
+        .not('status', 'in', '(annule,annulee,cancelled)')
+      if (readError) throw readError
+      for (const r of direct ?? []) {
+        rows.push({ ...r, seat_numbers: Array.isArray(r.seat_numbers) ? r.seat_numbers : [], total_seats: r.total_seats ?? 1, passenger_name: '' })
+      }
+      continue
+    }
+    for (const r of (data ?? []) as { reservation_id: string; schedule_id: string; seat_numbers: string[] | null; total_seats: number; status: string; is_mine: boolean }[]) {
+      rows.push({
+        id: r.reservation_id,
+        schedule_id: r.schedule_id,
+        seat_numbers: Array.isArray(r.seat_numbers) ? r.seat_numbers : [],
+        total_seats: r.total_seats ?? 1,
+        status: r.status,
+        customer_id: r.is_mine ? userId : null,
+        passenger_name: '',
+      })
+    }
+  }
+  return rows
+}
+
+const OCCUPYING_STATUSES = ['confirme', 'confirmee', 'en_attente', 'embarque']
+
+/** Reservations holding a seat on the departures: staff read the table, visitors the function. */
+async function fetchSeatHolders(scheduleIds: string[]): Promise<{ data: OccupiedReservation[] | null; error: Error | null }> {
+  if (await isSeatMapVisitor()) {
+    try {
+      const rows = await fetchOccupiedReservations(scheduleIds)
+      return { data: rows.filter(r => OCCUPYING_STATUSES.includes(r.status)), error: null }
+    } catch (error: any) {
+      return { data: null, error }
+    }
+  }
+  const { data, error } = await supabase.from('reservations')
+    .select('id, schedule_id, seat_numbers, total_seats, passenger_name, status, customer_id')
+    .in('schedule_id', scheduleIds).in('status', OCCUPYING_STATUSES)
+  return { data: data as OccupiedReservation[] | null, error }
+}
+
 export async function getSiblingOccupancy(scheduleId: string): Promise<number> {
   const siblingIds = await getSiblingScheduleIds(scheduleId)
-  const { data } = await supabase
-    .from('reservations')
-    .select('total_seats')
-    .in('schedule_id', siblingIds)
-    .in('status', ['confirme', 'confirmee', 'en_attente', 'embarque'])
+  const { data } = await fetchSeatHolders(siblingIds)
   return (data ?? []).reduce((sum, r) => sum + (r.total_seats ?? 1), 0)
 }
 
@@ -124,8 +201,7 @@ export async function fetchScheduleSeatMap(
       { data: reservations },
       currentUser,
     ] = await Promise.all([
-      supabase.from('reservations').select('id, seat_numbers, passenger_name, status, customer_id')
-        .in('schedule_id', siblingIds).in('status', ['confirme', 'confirmee', 'en_attente', 'embarque']),
+      fetchSeatHolders(siblingIds),
       supabase.auth.getUser().then(r => r.data?.user ?? null).catch(() => null),
     ])
 
@@ -136,7 +212,7 @@ export async function fetchScheduleSeatMap(
     for (const res of reservations ?? []) {
       const seats: string[] = Array.isArray(res.seat_numbers) ? res.seat_numbers : []
       for (const seatNum of seats) {
-        occupiedMap[seatNum] = { reservation_id: res.id, passenger_name: res.passenger_name, status: res.status, client_id: res.customer_id }
+        occupiedMap[seatNum] = { reservation_id: res.id, passenger_name: res.passenger_name, status: res.status, client_id: res.customer_id ?? '' }
       }
     }
 
@@ -243,8 +319,7 @@ export async function fetchScheduleSeatMap(
     { data: reservations, error: resError },
     currentUser,
   ] = await Promise.all([
-    supabase.from('reservations').select('id, seat_numbers, passenger_name, status, customer_id')
-      .in('schedule_id', siblingIds).in('status', ['confirme', 'confirmee', 'en_attente', 'embarque']),
+    fetchSeatHolders(siblingIds),
     supabase.auth.getUser().then(r => r.data?.user ?? null).catch(() => null),
   ])
 
@@ -257,7 +332,7 @@ export async function fetchScheduleSeatMap(
   for (const res of reservations ?? []) {
     const seats: string[] = Array.isArray(res.seat_numbers) ? res.seat_numbers : []
     for (const seatNum of seats) {
-      occupiedMap[seatNum] = { reservation_id: res.id, passenger_name: res.passenger_name, status: res.status, client_id: res.customer_id }
+      occupiedMap[seatNum] = { reservation_id: res.id, passenger_name: res.passenger_name, status: res.status, client_id: res.customer_id ?? '' }
     }
   }
 
@@ -336,16 +411,21 @@ export async function isSeatStillAvailable(
   seatNumber: string
 ): Promise<boolean> {
   const siblingIds = await getSiblingScheduleIds(scheduleId)
-  const { data, error } = await supabase
-    .from('reservations')
-    .select('id')
-    .in('schedule_id', siblingIds)
-    .contains('seat_numbers', [seatNumber])
-    .in('status', ['confirme', 'confirmee', 'en_attente', 'embarque'])
-    .maybeSingle()
+  if (await isSeatMapVisitor()) {
+    const holders = await fetchOccupiedReservations(siblingIds)
+    if (holders.some(r => OCCUPYING_STATUSES.includes(r.status) && r.seat_numbers.includes(seatNumber))) return false
+  } else {
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id')
+      .in('schedule_id', siblingIds)
+      .contains('seat_numbers', [seatNumber])
+      .in('status', OCCUPYING_STATUSES)
+      .maybeSingle()
 
-  if (error) throw error
-  if (data !== null) return false
+    if (error) throw error
+    if (data !== null) return false
+  }
 
   const seatInt = parseInt(seatNumber, 10)
   if (!Number.isNaN(seatInt)) {
