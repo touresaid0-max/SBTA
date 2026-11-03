@@ -296,23 +296,9 @@ export default function Login() {
               </button>
             </form>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-6">
-              <div className="flex-1 h-px" style={{ backgroundColor: '#E2EAE5' }} />
-              <span className="text-xs font-medium" style={{ color: '#8AA898' }}>ou</span>
-              <div className="flex-1 h-px" style={{ backgroundColor: '#E2EAE5' }} />
-            </div>
-
-            {/* Register link */}
-            <p className="text-center text-sm" style={{ color: '#4A6B55' }}>
-              Pas encore de compte?{' '}
-              <Link
-                to="/register"
-                className="font-semibold hover:underline transition-colors"
-                style={{ color: '#0B7439' }}
-              >
-                Créer un compte
-              </Link>
+            {/* Accounts are created by the administration only */}
+            <p className="text-center text-xs mt-6" style={{ color: '#8AA898' }}>
+              Pas de compte ? Adressez-vous à votre administrateur.
             </p>
           </div>
 

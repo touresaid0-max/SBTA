@@ -60,7 +60,6 @@ interface AuthState {
 
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  register: (email: string, password: string, fullName: string, phone?: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   fetchProfile: (userId?: string) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
@@ -268,37 +267,6 @@ export const useAuthStore = create<AuthState>()(
         }
         await supabase.auth.signOut();
         set({ user: null, session: null, isAuthenticated: false });
-      },
-
-      register: async (email, password, fullName, phone) => {
-        set({ isLoading: true });
-        try {
-          const nameParts = fullName.trim().split(' ');
-          const first_name = nameParts[0] || fullName;
-          const last_name = nameParts.slice(1).join(' ') || '';
-
-          const { data, error } = await supabase.auth.signUp({ email, password });
-          if (error) throw error;
-          if (!data.user) throw new Error('Échec de la création du compte');
-
-          const { error: profileError } = await supabase.from('users').insert({
-            id: data.user.id,
-            email,
-            full_name: fullName,
-            first_name,
-            last_name,
-            phone: phone || null,
-            role: 'client',
-            status: 'active',
-            is_self_registered: true,
-          });
-          if (profileError) throw profileError;
-
-          set({ session: data.session, isAuthenticated: true });
-          await get().fetchProfile();
-        } finally {
-          set({ isLoading: false });
-        }
       },
 
       resetPassword: async (email) => {

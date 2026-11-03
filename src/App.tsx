@@ -10,7 +10,6 @@ import { ConnectionProvider } from './services/pos/ConnectionContext';
 import { ConnectionProvider as CourrierConnectionProvider } from './services/courrier/ConnectionContext';
 const MobileApp = lazyPage(() => import('./sbtamobile/MobileApp'));
 const Login = lazyPage(() => import('./pages/auth/Login'));
-const Register = lazyPage(() => import('./pages/auth/Register'));
 const ForgotPassword = lazyPage(() => import('./pages/auth/ForgotPassword'));
 const ResetPassword = lazyPage(() => import('./pages/auth/ResetPassword'));
 const AcceptInvitation = lazyPage(() => import('./pages/auth/AcceptInvitation'));
@@ -351,7 +350,8 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          {/* Accounts are created by the administration only: no self sign-up */}
+          <Route path="/register" element={<Navigate to="/login" replace />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/accept-invitation" element={<AcceptInvitation />} />
