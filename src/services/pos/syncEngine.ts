@@ -495,63 +495,15 @@ async function executeDelete(store: StoreName, id: string): Promise<void> {
   if (!error && (data ?? []).length === 0) await checkNothingChanged(store, table, id);
 }
 
-// ── Conflict detection ──
-
-export interface SyncConflict {
-  entity: string;
-  id: string;
-  reason: string;
-  local_payload: Record<string, unknown>;
-  server_payload?: Record<string, unknown>;
-  created_at: string;
-}
-
-async function checkTicketConflict(payload: Record<string, unknown>): Promise<SyncConflict | null> {
-  const scheduleId = payload.depart_id as string;
-  const seatNumbers = Array.isArray(payload.seat_numbers)
-    ? payload.seat_numbers as string[]
-    : payload.seat_number != null ? [String(payload.seat_number)] : [];
-
-  if (!scheduleId || seatNumbers.length === 0) return null;
-
-  try {
-    const { data: existing } = await supabase
-      .from('reservations')
-      .select('id, seat_numbers, status')
-      .eq('schedule_id', scheduleId)
-      .neq('id', payload.id as string)
-      .neq('status', 'annulee');
-
-    if (existing && existing.length > 0) {
-      const serverSeats = new Set<string>();
-      for (const r of existing) {
-        const seats = Array.isArray(r.seat_numbers) ? r.seat_numbers as string[] : [];
-        for (const s of seats) serverSeats.add(s);
-      }
-      const conflicts = seatNumbers.filter(s => serverSeats.has(s));
-      if (conflicts.length > 0) {
-        return {
-          entity: 'tickets',
-          id: payload.id as string,
-          reason: `Siège(s) ${conflicts.join(', ')} déjà vendu(s) sur le serveur pour ce départ`,
-          local_payload: payload,
-          created_at: nowIso(),
-        };
-      }
-    }
-  } catch {
-    // Can't check — proceed with upsert (idempotency will handle duplicates by ID)
-  }
-  return null;
-}
-
 // ── Flush: process all pending queue items ──
+// Tickets sold offline are sent as they are, even if another guichet sold the same seat of the
+// departure meanwhile: different guichets may sell the same seat (business rule). The former
+// check blocked such a sale forever, so the money collected never reached the server.
 
 export interface FlushResult {
   processed: number;
   succeeded: number;
   failed: number;
-  conflicts: SyncConflict[];
 }
 
 // An operation is marked 'syncing' while it is being sent. If the page closes or reloads at that
@@ -569,14 +521,13 @@ function isWaitingToSend(item: SyncQueueItem): boolean {
 let flushing = false;
 
 export async function flushSyncQueue(): Promise<FlushResult> {
-  if (flushing) return { processed: 0, succeeded: 0, failed: 0, conflicts: [] };
-  if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0, conflicts: [] };
+  if (flushing) return { processed: 0, succeeded: 0, failed: 0 };
+  if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0 };
 
   flushing = true;
   let processed = 0;
   let succeeded = 0;
   let failed = 0;
-  const conflicts: SyncConflict[] = [];
 
   try {
     const pending = (await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray())
@@ -593,16 +544,6 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1, sending_since: nowIso() });
 
         if (item.op === 'insert') {
-          // Check for seat conflicts before inserting tickets
-          if (item.entity === 'tickets') {
-            const conflict = await checkTicketConflict(item.payload);
-            if (conflict) {
-              conflicts.push(conflict);
-              await db.sync_queue.update(item.id, { status: 'error', last_error: conflict.reason });
-              failed++;
-              continue;
-            }
-          }
           await executeInsert(item.entity as StoreName, item.payload);
         } else if (item.op === 'update') {
           const id = item.payload.id as string;
@@ -630,7 +571,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     flushing = false;
   }
 
-  return { processed, succeeded, failed, conflicts };
+  return { processed, succeeded, failed };
 }
 
 /** Operations not yet confirmed by the server, including those being sent or whose sending was interrupted. */
@@ -642,20 +583,6 @@ export async function getLastSyncError(): Promise<string | null> {
   const errors = await db.sync_queue.where('status').equals('error').toArray();
   errors.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
   return errors[0]?.last_error ?? null;
-}
-
-export async function getConflicts(): Promise<SyncConflict[]> {
-  // Conflicts are stored as error-status queue items with a conflict reason
-  const errors = await db.sync_queue.where('status').equals('error').toArray();
-  return errors
-    .filter(item => item.last_error?.includes('déjà vendu'))
-    .map(item => ({
-      entity: item.entity,
-      id: item.payload.id as string,
-      reason: item.last_error ?? '',
-      local_payload: item.payload,
-      created_at: item.created_at,
-    }));
 }
 
 export async function generateId(): Promise<string> {

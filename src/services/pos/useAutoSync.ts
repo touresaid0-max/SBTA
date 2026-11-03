@@ -44,7 +44,7 @@ export function useAutoSync(stationId?: string) {
 
     try {
       // 1. Send the operations recorded on this device (sales, cancellations…), if any
-      let result = { failed: 0, conflicts: [] as unknown[] };
+      let result = { failed: 0 };
       if (await getPendingCount() > 0) {
         // Before flushing, ensure the Supabase auth session is still valid.
         // After a long offline period the access token may have expired.
@@ -77,7 +77,7 @@ export function useAutoSync(stationId?: string) {
       }
 
       const remaining = await updateQueueState();
-      if (result.failed === 0 && result.conflicts.length === 0 && remaining === 0) {
+      if (result.failed === 0 && remaining === 0) {
         setLastSyncedAt(new Date().toISOString());
       }
     } catch (error) {
