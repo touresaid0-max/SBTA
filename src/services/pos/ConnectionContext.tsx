@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import { supabase } from '@/services/supabase';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
 import { requestPersistentStorage } from './persistentStorage';
+import { preloadPrintLogos } from './printLogos';
 
 export type ConnectionStatus = 'online' | 'offline' | 'checking';
 
@@ -91,6 +92,11 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   useEffect(() => {
     void requestPersistentStorage();
   }, []);
+
+  // Logos of the tickets and bordereaux kept on the device, for printing without network
+  useEffect(() => {
+    if (status === 'online') void preloadPrintLogos();
+  }, [status]);
 
   useEffect(() => {
     if (offlineReady || !('serviceWorker' in navigator)) return;

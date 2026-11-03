@@ -4,6 +4,7 @@ import { getPrintCustomization, type PrintCustomization } from '../printCustomiz
 import { setPrintingGuard } from '@/store/authStore';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
+import { printLogoSrc, withPrintLogos } from './printLogos';
 
 export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData };
 
@@ -17,7 +18,8 @@ async function loadLogoRaster(src: string, widthDots: number): Promise<RasterIma
       img.onload = () => resolve();
       img.onerror = () => reject(new Error('Logo introuvable'));
     });
-    img.src = src;
+    // The copy kept on the device when known: the logo is printed without network too
+    img.src = printLogoSrc(src);
     if (img.complete && img.naturalWidth > 0) {
       await img.decode().catch(() => undefined);
     } else {
@@ -582,7 +584,7 @@ async function printHTMLDocument(html: string): Promise<boolean> {
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1001,7 +1003,7 @@ export async function printConvoyBordereau(data: PrintConvoyData): Promise<boole
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1046,7 +1048,7 @@ export async function printRamassageBordereau(data: PrintRamassageData): Promise
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1200,7 +1202,7 @@ export async function printRecettesBordereau(data: PrintRecettesData): Promise<b
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1434,7 +1436,7 @@ export async function printBordereauCourrierThermal(data: BordereauCourrierData)
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1488,7 +1490,7 @@ export async function printBordereauDepartThermal(data: PrintBordereauDepartData
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
