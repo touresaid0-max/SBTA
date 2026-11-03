@@ -508,8 +508,26 @@ export interface FlushResult {
 // again, otherwise the sale never reaches the server. Older than this delay = interrupted send.
 const STALE_SENDING_MS = 2 * 60_000;
 
+// A failed operation was sent again every 5 s, forever. It now waits longer after each failure:
+// 5 s, 10 s, 20 s… up to 10 minutes. « Réessayer » in the queue window sends it at once.
+const FIRST_RETRY_MS = 5_000;
+const MAX_RETRY_MS = 10 * 60_000;
+
+/** Wait before sending again an operation that failed `tries` times. */
+export function retryDelayMs(tries: number): number {
+  return Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** Math.max(0, Math.min(tries, 20) - 1));
+}
+
+/** When a failed operation will be sent again (null: at the next sending). */
+export function nextRetryAt(item: SyncQueueItem): number | null {
+  if (item.status !== 'error' || !item.sending_since) return null;
+  const last = Date.parse(item.sending_since);
+  return Number.isNaN(last) ? null : last + retryDelayMs(item.tries ?? 1);
+}
+
 function isWaitingToSend(item: SyncQueueItem): boolean {
-  if (item.status === 'pending' || item.status === 'error') return true;
+  if (item.status === 'pending') return true;
+  if (item.status === 'error') return !(Date.now() < (nextRetryAt(item) ?? 0));
   if (item.status !== 'syncing') return false;
   const since = item.sending_since ? Date.parse(item.sending_since) : NaN;
   return !(Date.now() - since < STALE_SENDING_MS);
@@ -578,6 +596,17 @@ export async function flushSyncQueue(): Promise<FlushResult> {
 /** Operations not yet confirmed by the server, including those being sent or whose sending was interrupted. */
 export async function getPendingCount(): Promise<number> {
   return db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).count();
+}
+
+/** Operations not yet confirmed by the server, oldest first (queue window). */
+export async function getQueueItems(): Promise<SyncQueueItem[]> {
+  const items = await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray();
+  return items.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+}
+
+/** Sends a failed operation again at the next sending, without waiting for its retry delay. */
+export async function retryQueueItem(id: number): Promise<void> {
+  await db.sync_queue.update(id, { status: 'pending', tries: 0, sending_since: undefined });
 }
 
 export async function getLastSyncError(): Promise<string | null> {
