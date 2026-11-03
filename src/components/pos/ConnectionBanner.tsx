@@ -2,7 +2,7 @@ import { Wifi, WifiOff, RefreshCw, CheckCircle } from 'lucide-react';
 import { useConnection } from '@/services/pos/ConnectionContext';
 
 export function ConnectionBanner() {
-  const { status, syncing, pendingCount, bannerLabel } = useConnection();
+  const { status, sessionExpired, syncing, pendingCount, bannerLabel } = useConnection();
 
   let bgColor = '#16a34a';
   let Icon = Wifi;
@@ -10,6 +10,9 @@ export function ConnectionBanner() {
 
   if (status === 'offline') {
     bgColor = '#dc2626';
+    Icon = WifiOff;
+  } else if (sessionExpired) {
+    bgColor = '#f59e0b';
     Icon = WifiOff;
   } else if (syncing) {
     bgColor = '#2563eb';
