@@ -209,12 +209,7 @@ export async function enqueueDelete(
 ): Promise<{ queued: boolean; error?: string }> {
   if (isOnline()) {
     try {
-      const table = TABLE_MAP[store];
-      if (store === 'parcels') {
-        await supabase.from('parcel_tracking_events').delete().eq('parcel_id', id);
-      }
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error && !error.message.includes('0 rows')) throw error;
+      await executeDelete(store, id);
       return { queued: false };
     } catch (err: any) {
       await db.sync_queue.add({
@@ -271,14 +266,35 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
   }
 }
 
+/**
+ * An update or delete that changed no row returns no error: it used to leave the queue as if it
+ * had been applied. Find out why before letting it go:
+ * - the row is still waiting to be added (its insert failed or is queued): keep the change, it is
+ *   sent again after the insert (the queue is sent in order);
+ * - the row is on the server but the change was refused (access rules): keep it, as an error;
+ * - the row is not on the server and nothing will add it: there is nothing left to change.
+ */
+async function checkNothingChanged(store: StoreName, table: string, id: string): Promise<void> {
+  const insertWaiting = await db.sync_queue
+    .where('entity').equals(store)
+    .filter(i => i.op === 'insert' && i.status !== 'done' && String(i.payload?.id ?? '') === id)
+    .count();
+  if (insertWaiting > 0) throw new Error('En attente de l\'envoi de l\'enregistrement concerné');
+
+  const { data, error } = await supabase.from(table).select('id').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (data) throw new Error('Modification refusée par le serveur (droits insuffisants)');
+}
+
 async function executeUpdate(store: StoreName, id: string, patch: Record<string, unknown>): Promise<void> {
   const table = TABLE_MAP[store];
 
   if (store === 'parcels') {
     const remotePayload = mapParcelUpdate({ id, ...patch });
     if (!remotePayload) return;
-    const { error } = await supabase.from(table).update(remotePayload).eq('id', id);
+    const { data, error } = await supabase.from(table).update(remotePayload).eq('id', id).select('id');
     if (error && !error.message.includes('0 rows')) throw error;
+    if (!error && (data ?? []).length === 0) await checkNothingChanged(store, table, id);
   }
 }
 
@@ -287,8 +303,9 @@ async function executeDelete(store: StoreName, id: string): Promise<void> {
   if (store === 'parcels') {
     await supabase.from('parcel_tracking_events').delete().eq('parcel_id', id);
   }
-  const { error } = await supabase.from(table).delete().eq('id', id);
+  const { data, error } = await supabase.from(table).delete().eq('id', id).select('id');
   if (error && !error.message.includes('0 rows')) throw error;
+  if (!error && (data ?? []).length === 0) await checkNothingChanged(store, table, id);
 }
 
 // ── Flush: process all pending queue items ──
