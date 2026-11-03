@@ -9,6 +9,8 @@ import FillRateBar from '../../components/bus/FillRateBar';
 import BusWizard from '../../components/bus/BusWizard';
 import { generateSeatLayout } from '../../utils/generateSeatLayout';
 import { fetchAllPages } from '../../utils/fetchAllPages';
+import Pagination from '../../components/pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 
 interface SeatConfigDetail {
   id: string;
@@ -511,6 +513,13 @@ export default function Buses() {
     return true;
   });
 
+  // Same pagination as the guichet departures list: back to page 1 when a filter changes
+  const pagination = usePagination(
+    filteredBuses,
+    'sbta_admin_buses_page_size',
+    `${filters.company}|${filters.class}|${filters.status}|${filters.capacity}|${filters.search}`,
+  );
+
   const openStatusModal = (bus: BusData, mode: 'maintenance' | 'deactivate' | 'reactivate') => {
     setStatusModalBus(bus);
     setStatusModalMode(mode);
@@ -666,7 +675,7 @@ export default function Buses() {
               </tr>
             </thead>
           <tbody>
-            {filteredBuses.map((bus) => (
+            {pagination.pageItems.map((bus) => (
               <tr key={bus.id} className="border-t hover:bg-gray-50">
                 <td className="p-4 whitespace-nowrap">
                   <span className="font-bold">{bus.registration_number}</span>
@@ -797,6 +806,20 @@ export default function Buses() {
           <div className="text-center py-12">
             <Bus className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--neutral-400)' }} />
             <p style={{ color: 'var(--text-secondary)' }}>Aucun bus trouvé</p>
+          </div>
+        )}
+
+        {filteredBuses.length > 0 && (
+          <div className="border-t px-4 py-2">
+            <Pagination
+              page={pagination.page}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              total={pagination.total}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              itemLabel="bus"
+            />
           </div>
         )}
       </div>
