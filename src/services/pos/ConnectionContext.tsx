@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase, setResponseTimeout } from '@/services/supabase';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
+import { requestPersistentStorage } from './persistentStorage';
 
 export type ConnectionStatus = 'online' | 'offline' | 'checking';
 
@@ -86,6 +87,11 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   useEffect(() => {
     setResponseTimeout(GUICHET_RESPONSE_TIMEOUT_MS);
     return () => setResponseTimeout(null);
+  }, []);
+
+  // The sales not yet sent live in the browser: ask it not to erase them when the disk is full
+  useEffect(() => {
+    void requestPersistentStorage();
   }, []);
 
   useEffect(() => {
