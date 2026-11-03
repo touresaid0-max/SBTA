@@ -317,8 +317,7 @@ export default function POSDeparts() {
   const [editNextDepart, setEditNextDepart] = useState<DepartRecord | null>(null);
   const [pendingTransfers, setPendingTransfers] = useState(0);
 
-  const loadDeparts = useCallback(async () => {
-    await syncDepartsAndTicketsFromServer(session?.station_id);
+  const showLocalDeparts = useCallback(async () => {
     const [all, tickets, allBagages, allDepenses] = await Promise.all([
       getAllDeparts(session?.station_id, session?.counter_id),
       getAllRecords<TicketRecord>('tickets'),
@@ -346,6 +345,14 @@ export default function POSDeparts() {
       setPendingTransfers(pending.length);
     }
   }, [session?.station_id, session?.counter_id]);
+
+  // What the device has is shown at once; the server sync runs after and the list is read again.
+  // Waiting for the sync first left the list loading for minutes on a slow connection.
+  const loadDeparts = useCallback(async () => {
+    await showLocalDeparts();
+    await syncDepartsAndTicketsFromServer(session?.station_id);
+    await showLocalDeparts();
+  }, [session?.station_id, showLocalDeparts]);
 
   useEffect(() => {
     loadDeparts();

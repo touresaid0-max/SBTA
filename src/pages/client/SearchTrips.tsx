@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { fetchOccupiedReservations, isSeatMapVisitor } from '../../services/seatMap.service';
 import toast from 'react-hot-toast';
 import { Search, MapPin, Calendar, Users, Bus, Clock, Filter, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
@@ -127,13 +128,28 @@ export default function SearchTrips() {
         return originCity === searchParams.origin_city && destCity === searchParams.destination_city;
       });
 
+      // Visitors (no login) cannot read the reservations: the occupied seats come from
+      // get_occupied_seats, in one call for all the results
+      const counted = ['en_attente', 'confirmee', 'terminee'];
+      const visitor = await isSeatMapVisitor();
+      const visitorCounts = new Map<string, number>();
+      if (visitor) {
+        const occupied = await fetchOccupiedReservations(filtered.map((s: any) => s.id));
+        for (const r of occupied) {
+          if (counted.includes(r.status)) visitorCounts.set(r.schedule_id, (visitorCounts.get(r.schedule_id) ?? 0) + 1);
+        }
+      }
+
       const schedulesWithSeats = await Promise.all(
         filtered.map(async (schedule: any) => {
-          const { count } = await supabase
-            .from('reservations')
-            .select('*', { count: 'exact', head: true })
-            .eq('schedule_id', schedule.id)
-            .in('status', ['en_attente', 'confirmee', 'terminee']);
+          let count: number | null = visitorCounts.get(schedule.id) ?? 0;
+          if (!visitor) {
+            ({ count } = await supabase
+              .from('reservations')
+              .select('*', { count: 'exact', head: true })
+              .eq('schedule_id', schedule.id)
+              .in('status', counted));
+          }
 
           const availableSeats = schedule.buses.capacity - (count || 0);
 

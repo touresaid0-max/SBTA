@@ -54,13 +54,13 @@ export async function localInsert<
 ): Promise<T> {
   const id = record.id ?? uuid();
   const ts = nowIso();
-  const online = isOnline();
+  // Not synced until the server confirmed it (sent now, or later from the queue)
   const full = {
     ...record,
     id,
     created_at: record.created_at ?? ts,
     updated_at: ts,
-    synced: online,
+    synced: false,
   } as unknown as T;
 
   // Always write to local IndexedDB first (offline-first)
@@ -91,13 +91,12 @@ export async function localUpdate<
   const existing = await (db[store] as any).get(id);
   if (!existing) return null;
 
-  const online = isOnline();
   const updated = {
     ...existing,
     ...patch,
     id,
     updated_at: nowIso(),
-    synced: online,
+    synced: false,
   } as unknown as T;
 
   // Always write locally first

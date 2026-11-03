@@ -61,13 +61,40 @@ export async function refreshReferentiel(type: RefType): Promise<unknown[]> {
   return data;
 }
 
+// The screens (new departure, sale) read 4 to 6 lists on every opening: waiting for the server each
+// time left them loading on a slow connection. A list known on the device is now shown after at
+// most this delay, while the server copy keeps loading in the background for the next opening.
+const SERVER_WAIT_WITH_COPY_MS = 3_000;
+
+// One server read at a time per list, shared by the screens that ask for it meanwhile
+const refreshing = new Map<RefType, Promise<unknown[]>>();
+
+function refreshOnce(type: RefType): Promise<unknown[]> {
+  let running = refreshing.get(type);
+  if (!running) {
+    running = refreshReferentiel(type).finally(() => refreshing.delete(type));
+    refreshing.set(type, running);
+  }
+  return running;
+}
+
 export async function getReferentiel<T = unknown>(type: RefType): Promise<T[]> {
+  const cached = await db.referentiels.get(type).catch(() => undefined);
+  // An empty list is a copy too: many stations have no fares or stops of their own. A list emptied
+  // by an earlier version is replaced by the server's within the 3 s on a normal connection.
+  const copy = cached && Array.isArray(cached.data) ? cached.data as T[] : null;
+
+  const fromServer = refreshOnce(type) as Promise<T[]>;
+  // No copy on the device (first use): the server is needed
+  if (!copy) return fromServer.catch(() => []);
+
+  fromServer.catch(() => { /* the copy stays in use; the next sync tries again */ });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const copyAfterDelay = new Promise<T[]>(resolve => { timer = setTimeout(() => resolve(copy), SERVER_WAIT_WITH_COPY_MS); });
   try {
-    return (await refreshReferentiel(type)) as T[];
-  } catch {
-    const cached = await db.referentiels.get(type);
-    if (cached) return cached.data as T[];
-    return [];
+    return await Promise.race([fromServer.catch(() => copy), copyAfterDelay]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

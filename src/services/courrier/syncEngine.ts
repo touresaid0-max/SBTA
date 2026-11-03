@@ -209,12 +209,7 @@ export async function enqueueDelete(
 ): Promise<{ queued: boolean; error?: string }> {
   if (isOnline()) {
     try {
-      const table = TABLE_MAP[store];
-      if (store === 'parcels') {
-        await supabase.from('parcel_tracking_events').delete().eq('parcel_id', id);
-      }
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error && !error.message.includes('0 rows')) throw error;
+      await executeDelete(store, id);
       return { queued: false };
     } catch (err: any) {
       await db.sync_queue.add({
@@ -271,14 +266,35 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
   }
 }
 
+/**
+ * An update or delete that changed no row returns no error: it used to leave the queue as if it
+ * had been applied. Find out why before letting it go:
+ * - the row is still waiting to be added (its insert failed or is queued): keep the change, it is
+ *   sent again after the insert (the queue is sent in order);
+ * - the row is on the server but the change was refused (access rules): keep it, as an error;
+ * - the row is not on the server and nothing will add it: there is nothing left to change.
+ */
+async function checkNothingChanged(store: StoreName, table: string, id: string): Promise<void> {
+  const insertWaiting = await db.sync_queue
+    .where('entity').equals(store)
+    .filter(i => i.op === 'insert' && i.status !== 'done' && String(i.payload?.id ?? '') === id)
+    .count();
+  if (insertWaiting > 0) throw new Error('En attente de l\'envoi de l\'enregistrement concerné');
+
+  const { data, error } = await supabase.from(table).select('id').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (data) throw new Error('Modification refusée par le serveur (droits insuffisants)');
+}
+
 async function executeUpdate(store: StoreName, id: string, patch: Record<string, unknown>): Promise<void> {
   const table = TABLE_MAP[store];
 
   if (store === 'parcels') {
     const remotePayload = mapParcelUpdate({ id, ...patch });
     if (!remotePayload) return;
-    const { error } = await supabase.from(table).update(remotePayload).eq('id', id);
+    const { data, error } = await supabase.from(table).update(remotePayload).eq('id', id).select('id');
     if (error && !error.message.includes('0 rows')) throw error;
+    if (!error && (data ?? []).length === 0) await checkNothingChanged(store, table, id);
   }
 }
 
@@ -287,8 +303,9 @@ async function executeDelete(store: StoreName, id: string): Promise<void> {
   if (store === 'parcels') {
     await supabase.from('parcel_tracking_events').delete().eq('parcel_id', id);
   }
-  const { error } = await supabase.from(table).delete().eq('id', id);
+  const { data, error } = await supabase.from(table).delete().eq('id', id).select('id');
   if (error && !error.message.includes('0 rows')) throw error;
+  if (!error && (data ?? []).length === 0) await checkNothingChanged(store, table, id);
 }
 
 // ── Flush: process all pending queue items ──
@@ -307,6 +324,18 @@ export interface FlushConflict {
   created_at: string;
 }
 
+// An operation is marked 'syncing' while it is being sent. If the page closes or reloads at that
+// moment (update of the site, power cut, tab closed), it stays 'syncing': it must then be sent
+// again, otherwise the sale never reaches the server. Older than this delay = interrupted send.
+const STALE_SENDING_MS = 2 * 60_000;
+
+function isWaitingToSend(item: SyncQueueItem): boolean {
+  if (item.status === 'pending' || item.status === 'error') return true;
+  if (item.status !== 'syncing') return false;
+  const since = item.sending_since ? Date.parse(item.sending_since) : NaN;
+  return !(Date.now() - since < STALE_SENDING_MS);
+}
+
 let flushing = false;
 
 export async function flushSyncQueue(): Promise<FlushResult> {
@@ -320,7 +349,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   const conflicts: FlushConflict[] = [];
 
   try {
-    const pending = await db.sync_queue.where('status').anyOf(['pending', 'error']).toArray();
+    const pending = (await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray())
+      .filter(isWaitingToSend);
     pending.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
 
     for (const item of pending) {
@@ -328,7 +358,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
       processed++;
 
       try {
-        await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1 });
+        await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1, sending_since: nowIso() });
 
         if (item.op === 'insert') {
           await executeInsert(item.entity as StoreName, item.payload);
@@ -360,8 +390,9 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   return { processed, succeeded, failed, conflicts };
 }
 
+/** Operations not yet confirmed by the server, including those being sent or whose sending was interrupted. */
 export async function getPendingCount(): Promise<number> {
-  return db.sync_queue.where('status').anyOf(['pending', 'error']).count();
+  return db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).count();
 }
 
 export async function getLastSyncError(): Promise<string | null> {
@@ -371,7 +402,7 @@ export async function getLastSyncError(): Promise<string | null> {
 }
 
 export async function getQueueItems(): Promise<SyncQueueItem[]> {
-  return db.sync_queue.where('status').anyOf(['pending', 'error']).toArray();
+  return db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray();
 }
 
 export async function deleteQueueItem(id: number): Promise<void> {

@@ -5,8 +5,9 @@ import { getPrintSettings, savePrintSettings, PrintService } from '@/services/po
 import type { PrintSettings, PrintBackend } from '@/services/pos/db';
 import {
   Printer, Usb, Wifi, Monitor, Save, CheckCircle, Loader2,
-  Plus, Trash2, AlertCircle, Cable,
+  Plus, Trash2, AlertCircle, Cable, HardDrive, ShieldCheck,
 } from 'lucide-react';
+import { getStorageStatus, requestPersistentStorage, type StorageStatus } from '@/services/pos/persistentStorage';
 
 const BACKENDS: { value: PrintBackend; label: string; icon: typeof Printer; desc: string }[] = [
   { value: 'webserial', label: 'Web Serial (USB-Serial)', icon: Cable, desc: 'Imprimante thermique connectée en USB-Série (ESC/POS)' },
@@ -32,6 +33,14 @@ export default function POSParametres() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const [storage, setStorage] = useState<StorageStatus | null>(null);
+  useEffect(() => { void getStorageStatus().then(setStorage); }, []);
+
+  const handleProtectStorage = async () => {
+    await requestPersistentStorage();
+    setStorage(await getStorageStatus());
+  };
 
   const handleSave = async () => {
     if (!settings) return;
@@ -171,6 +180,49 @@ export default function POSParametres() {
             <span>{error}</span>
           </div>
         )}
+
+        {/* Device data: sales not yet sent are kept in the browser */}
+        <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <h3 className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <HardDrive className="w-4 h-4" /> Données du poste
+          </h3>
+          {storage?.persisted === true ? (
+            <p className="text-sm flex items-start gap-2" style={{ color: 'var(--success, #16a34a)' }}>
+              <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              Protégées : le navigateur ne les effacera pas, même si le disque est presque plein.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm flex items-start gap-2" style={{ color: 'var(--danger)' }}>
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                {storage?.persisted === false
+                  ? 'Non protégées : si le disque est presque plein, le navigateur peut effacer les ventes pas encore envoyées.'
+                  : 'Ce navigateur ne permet pas de protéger les données du poste.'}
+              </p>
+              {storage?.persisted === false && (
+                <>
+                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    Installez le guichet comme application (icône d'installation dans la barre d'adresse de Chrome),
+                    puis rouvrez cette page : Chrome accorde alors la protection.
+                  </p>
+                  <button
+                    onClick={handleProtectStorage}
+                    className="px-3 py-2 rounded-lg text-sm font-semibold text-white"
+                    style={{ backgroundColor: 'var(--primary)' }}
+                  >
+                    Protéger les données
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {storage?.usageBytes !== undefined && (
+            <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+              Espace utilisé : {(storage.usageBytes / 1_048_576).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Mo
+              {storage.quotaBytes ? ` sur ${(storage.quotaBytes / 1_073_741_824).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Go disponibles` : ''}
+            </p>
+          )}
+        </div>
 
         {/* Printer backend selection */}
         <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>

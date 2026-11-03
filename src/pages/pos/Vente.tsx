@@ -109,21 +109,26 @@ export default function POSVente() {
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
 
-  const loadData = useCallback(async () => {
+  /**
+   * Reads the departure and its sales on the device. `final`: the server copy has been pulled, so a
+   * departure still missing does not exist; before that it may only not have reached the device yet.
+   */
+  const loadLocalData = useCallback(async (final: boolean) => {
     if (!departId) return;
-    try {
-      await syncDepartsAndTicketsFromServer(session?.station_id);
-      const d = await getDepartById(departId);
-      if (!d) {
+    const d = await getDepartById(departId);
+    if (!d) {
+      if (final) {
         setError('Départ introuvable');
         setLoading(false);
-        return;
       }
-      if (session?.counter_id && d.counter_id && d.counter_id !== session.counter_id) {
-        setError('Ce départ n\'est pas affecté à votre guichet.');
-        setLoading(false);
-        return;
-      }
+      return;
+    }
+    if (session?.counter_id && d.counter_id && d.counter_id !== session.counter_id) {
+      setError('Ce départ n\'est pas affecté à votre guichet.');
+      setLoading(false);
+      return;
+    }
+    try {
       setDepart(d);
 
       const [t, s, st, ta, li, bg, rcs, dp] = await Promise.all([
@@ -150,6 +155,18 @@ export default function POSVente() {
       setLoading(false);
     }
   }, [departId]);
+
+  // What the device has is shown at once; the server sync runs after and the screen is read again.
+  // Waiting for the sync first left the screen loading for minutes on a slow connection.
+  const loadData = useCallback(async () => {
+    if (!departId) return;
+    await loadLocalData(false);
+    try {
+      await syncDepartsAndTicketsFromServer(session?.station_id);
+    } finally {
+      await loadLocalData(true);
+    }
+  }, [departId, loadLocalData]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

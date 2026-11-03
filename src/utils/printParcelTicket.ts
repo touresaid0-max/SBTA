@@ -7,6 +7,7 @@ import type { ParcelReceiptData, Parcel } from '@/types/parcel.types'
 import type { ScheduledBus } from '@/components/parcel/BusSelector'
 import { setPrintingGuard } from '@/store/authStore'
 import { getPrintCustomization } from '@/services/printCustomization'
+import { printLogoSrc } from '@/services/pos/printLogos'
 
 async function loadImageDataUrl(url: string): Promise<string> {
   const response = await fetch(url)
@@ -72,7 +73,8 @@ export async function printParcelTicket(data: ParcelReceiptData, copyType: 'clie
   try {
     logoUrl = await loadImageDataUrl(logoSourceUrl)
   } catch {
-    logoUrl = logoSourceUrl
+    // Without network: the copy kept on the device (see printLogos)
+    logoUrl = printLogoSrc('/logosbta00-1.JPG')
   }
   const customization = await getPrintCustomization()
   const customNotes = customization.parcel_notes

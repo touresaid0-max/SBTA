@@ -103,7 +103,9 @@ export const useAuthStore = create<AuthState>()(
 
           if (session?.user) {
             set({ session, isAuthenticated: true });
-            await get().fetchProfile();
+            // The account id is in the session: without it fetchProfile asked the server (getUser),
+            // and every request of the app waited for that answer at start (Supabase session lock)
+            await get().fetchProfile(session.user.id);
           }
 
           supabase.auth.onAuthStateChange((event, session) => {
@@ -114,7 +116,7 @@ export const useAuthStore = create<AuthState>()(
                 // Supabase re-sends SIGNED_IN each time the tab comes back into view: reload the
                 // profile (4 requests + a write) only when a different user has signed in
                 if (get().user?.id === session.user.id) return;
-                await get().fetchProfile();
+                await get().fetchProfile(session.user.id);
               } else if (event === 'SIGNED_OUT') {
                 if (_isPrinting) return;
                 const user = get().user;

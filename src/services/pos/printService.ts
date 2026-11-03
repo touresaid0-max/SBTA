@@ -4,6 +4,7 @@ import { getPrintCustomization, type PrintCustomization } from '../printCustomiz
 import { setPrintingGuard } from '@/store/authStore';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
+import { printLogoSrc, withPrintLogos } from './printLogos';
 
 export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData };
 
@@ -17,7 +18,8 @@ async function loadLogoRaster(src: string, widthDots: number): Promise<RasterIma
       img.onload = () => resolve();
       img.onerror = () => reject(new Error('Logo introuvable'));
     });
-    img.src = src;
+    // The copy kept on the device when known: the logo is printed without network too
+    img.src = printLogoSrc(src);
     if (img.complete && img.naturalWidth > 0) {
       await img.decode().catch(() => undefined);
     } else {
@@ -582,7 +584,7 @@ async function printHTMLDocument(html: string): Promise<boolean> {
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1001,7 +1003,7 @@ export async function printConvoyBordereau(data: PrintConvoyData): Promise<boole
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1046,7 +1048,7 @@ export async function printRamassageBordereau(data: PrintRamassageData): Promise
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1076,29 +1078,27 @@ export async function printRamassageBordereau(data: PrintRamassageData): Promise
 function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSettings): string {
   const { data: bordereau, phoneLine } = data;
   const mm = settings.width_mm;
-  const bodyWidthMm = mm - 4;
+  // The whole paper width (1 mm margin each side, instead of 2 mm): the 7 columns need it
+  const bodyWidthMm = mm - 2;
+  // Non-breaking spaces: an amount never splits over two lines
   const fmtNum = (n: number): string =>
-    Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  const fmt = (n: number): string => fmtNum(n) + ' F';
+    Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+  const fmt = (n: number): string => fmtNum(n) + '\u00a0F';
+  // In the table: narrow non-breaking spaces, so that the space inside an amount is clearly
+  // smaller than the gap between two columns (« 1 872 500 | 112 500 »)
+  const fmtCell = (n: number): string => fmtNum(n).replace(/\u00a0/g, '\u202f');
 
-  const rowsHtml = bordereau.rows.map(row => {
-    const immat = escapeHtml((row.registration_number || '').toUpperCase().slice(0, 9));
-    const num = escapeHtml(String(row.departure_number || '').slice(0, 3));
-    const siege = escapeHtml(fmtNum(row.seats_sold).slice(0, 4));
-    const ticket = escapeHtml(fmtNum(row.total_ticket));
-    const depense = escapeHtml(fmtNum(row.total_charges));
-    const solde = escapeHtml(fmtNum(row.solde_ticket));
-    const bagage = escapeHtml(fmtNum(row.total_baggage));
-    return `<tr>
-      <td class="l">${immat}</td>
-      <td class="l">${num}</td>
-      <td class="l">${siege}</td>
-      <td class="r">${ticket}</td>
-      <td class="r">${depense}</td>
-      <td class="r">${solde}</td>
-      <td class="r">${bagage}</td>
-    </tr>`;
-  }).join('');
+  // One line per departure, 7 columns. The amounts overlapped in Courier (a wide font) on 54 mm:
+  // the table now uses a narrow font and the whole width, and the registration is not cut.
+  const rowsHtml = bordereau.rows.map(row => `<tr>
+      <td class="immat">${escapeHtml((row.registration_number || '').toUpperCase())}</td>
+      <td class="c">${escapeHtml(String(row.departure_number ?? ''))}</td>
+      <td class="c">${escapeHtml(fmtNum(row.seats_sold))}</td>
+      <td class="r">${escapeHtml(fmtCell(row.total_ticket))}</td>
+      <td class="r">${escapeHtml(fmtCell(row.total_charges))}</td>
+      <td class="r">${escapeHtml(fmtCell(row.solde_ticket))}</td>
+      <td class="r">${escapeHtml(fmtCell(row.total_baggage))}</td>
+    </tr>`).join('');
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   @page { size: ${mm}mm auto; margin: 0; }
@@ -1116,13 +1116,19 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   .sep { border-top: 1px solid #000; margin: 1px 0; }
   .info { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; padding: 1px 0; }
   table { width: 100%; border-collapse: collapse; table-layout: auto; }
-  th { font-size: 9px; font-weight: 900; padding: 1px 1px; border-bottom: 1px solid #000; }
+  table, table * { font-family: 'Arial Narrow', 'Roboto Condensed', 'Liberation Sans Narrow', Arial, sans-serif; font-stretch: condensed; }
+  th, td { white-space: nowrap; padding: 1px 0 1px 3px; }
+  th:first-child, td:first-child { padding-left: 0; }
+  th { font-size: 8px; font-weight: 800; border-bottom: 1px solid #000; text-align: right; }
   th.l { text-align: left; }
-  th.r { text-align: right; }
-  td { font-size: 9px; font-weight: 800; padding: 1px 1px; }
-  td.l { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-  td.r { text-align: right; white-space: nowrap; }
-  .tot { font-weight: 900; border-top: 1px solid #000; }
+  th.c, td.c { text-align: center; }
+  /* 9 px and 700: the heavier 900 widened the narrow font and the 7 columns no longer fitted */
+  td { font-size: 9px; font-weight: 700; }
+  td.immat { text-align: left; font-size: 8px; }
+  td.r { text-align: right; }
+  /* A dotted line between the amount columns: they can no longer be read as one number */
+  td.r, th.r { border-left: 1px dotted #000; padding-left: 2px; padding-right: 1px; }
+  tr.tot td { font-weight: 800; border-top: 1px solid #000; padding-top: 2px; }
   .recap { font-size: 11px; font-weight: 800; padding: 1px 0; }
   .recap-row { display: flex; justify-content: space-between; padding: 1px 0; }
   .recap-bold { font-weight: 900; }
@@ -1145,8 +1151,8 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
     <thead>
       <tr>
         <th class="l">IMMAT</th>
-        <th class="l">N°</th>
-        <th class="l">SIEG</th>
+        <th class="c">N°</th>
+        <th class="c">SIEG</th>
         <th class="r">MT TIC</th>
         <th class="r">DEP R/P</th>
         <th class="r">SOLDE</th>
@@ -1156,16 +1162,25 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
     <tbody>
       ${rowsHtml}
       <tr class="tot">
-        <td class="l">TOTAUX</td>
-        <td class="l">${bordereau.totals.departures}</td>
-        <td class="l">${fmtNum(bordereau.totals.seats_sold)}</td>
-        <td class="r">${fmtNum(bordereau.totals.total_ticket)}</td>
-        <td class="r">${fmtNum(bordereau.totals.total_charges)}</td>
-        <td class="r">${fmtNum(bordereau.totals.solde_ticket)}</td>
-        <td class="r">${fmtNum(bordereau.totals.total_baggage)}</td>
+        <td class="immat">TOTAUX</td>
+        <td class="c">${bordereau.totals.departures}</td>
+        <td class="c">${fmtNum(bordereau.totals.seats_sold)}</td>
+        <td class="r">${fmtCell(bordereau.totals.total_ticket)}</td>
+        <td class="r">${fmtCell(bordereau.totals.total_charges)}</td>
+        <td class="r">${fmtCell(bordereau.totals.solde_ticket)}</td>
+        <td class="r">${fmtCell(bordereau.totals.total_baggage)}</td>
       </tr>
     </tbody>
   </table>
+  <script>
+    // Without Arial Narrow on the device the table is wider than the paper: shrink it to the
+    // width rather than let the columns overlap or be cut
+    (function () {
+      var t = document.querySelector('table');
+      var k = t ? document.body.clientWidth / t.scrollWidth : 1;
+      if (k < 1) t.style.zoom = String(k);
+    })();
+  </script>
   <div class="dsep"></div>
   <div class="recap">
     <div class="recap-row recap-bold"><span>TOTAL TICKETS:</span><span>${fmt(bordereau.totals.total_ticket)}</span></div>
@@ -1213,7 +1228,7 @@ export async function printRecettesBordereau(data: PrintRecettesData): Promise<b
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1447,7 +1462,7 @@ export async function printBordereauCourrierThermal(data: BordereauCourrierData)
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
@@ -1501,7 +1516,7 @@ export async function printBordereauDepartThermal(data: PrintBordereauDepartData
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
     doc.open();
-    doc.write(html);
+    doc.write(withPrintLogos(html));
     doc.close();
 
     let settled = false;
