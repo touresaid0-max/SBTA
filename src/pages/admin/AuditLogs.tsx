@@ -5,6 +5,8 @@ import { useAuthStore } from '../../store/authStore';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import toast from 'react-hot-toast';
+import Pagination from '../../components/pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 
 interface LogEntry {
   id: string;
@@ -182,6 +184,13 @@ export default function AuditLogs() {
     });
   }, [logs, searchTerm, tableFilter, opFilter, dateFilter]);
 
+  // Same pagination as the guichet departures list: back to page 1 when a filter changes
+  const pagination = usePagination(
+    filteredLogs,
+    'sbta_admin_audit_logs_page_size',
+    `${searchTerm}|${tableFilter}|${opFilter}|${dateFilter}`,
+  );
+
   if (!unlocked) {
     return (
       <div className="space-y-6">
@@ -286,12 +295,12 @@ export default function AuditLogs() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border)' }}>
-            {filteredLogs.map((log, idx) => (
+            {pagination.pageItems.map((log, idx) => (
               <div
                 key={log.id}
                 onClick={() => setSelectedLog(log)}
                 className="flex items-start gap-4 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                style={{ borderBottom: idx < filteredLogs.length - 1 ? '1px solid var(--border)' : 'none' }}
+                style={{ borderBottom: idx < pagination.pageItems.length - 1 ? '1px solid var(--border)' : 'none' }}
               >
                 <div className="w-2 h-2 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: opColor(log.action) }} />
                 <div className="flex-1 min-w-0">
@@ -328,6 +337,17 @@ export default function AuditLogs() {
                 </div>
               </div>
             ))}
+            <div className="border-t px-4 py-2" style={{ borderColor: 'var(--border)' }}>
+              <Pagination
+                page={pagination.page}
+                pageCount={pagination.pageCount}
+                pageSize={pagination.pageSize}
+                total={pagination.total}
+                onPageChange={pagination.setPage}
+                onPageSizeChange={pagination.setPageSize}
+                itemLabel="événements"
+              />
+            </div>
           </div>
         )}
       </div>
