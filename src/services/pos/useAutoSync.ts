@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConnection } from './ConnectionContext';
-import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError } from './syncEngine';
+import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError, isServerSessionOfAnotherUser } from './syncEngine';
 import { syncDepartsAndTicketsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
 import { ensureAuthSession } from './offlineAuth';
@@ -44,7 +44,7 @@ export function useAutoSync(stationId?: string) {
 
     try {
       // 1. Send the operations recorded on this device (sales, cancellations…), if any
-      let result = { failed: 0 };
+      let result = { failed: 0, waitingOtherUser: 0 };
       if (await getPendingCount() > 0) {
         // Before flushing, ensure the Supabase auth session is still valid.
         // After a long offline period the access token may have expired.
@@ -77,8 +77,14 @@ export function useAutoSync(stationId?: string) {
       }
 
       const remaining = await updateQueueState();
-      if (result.failed === 0 && remaining === 0) {
+      if (await isServerSessionOfAnotherUser()) {
+        // The guichetier signed in offline after another one: his operations wait for his own login
+        setLastSyncError('Session serveur d\'un autre guichetier sur ce poste : déconnectez-vous puis reconnectez-vous avec Internet pour envoyer vos opérations');
+      } else if (result.failed === 0 && remaining === 0) {
         setLastSyncedAt(new Date().toISOString());
+      } else if (result.waitingOtherUser > 0 && result.failed === 0) {
+        const n = result.waitingOtherUser;
+        setLastSyncError(`${n} opération${n > 1 ? 's' : ''} d'un autre guichetier, envoyée${n > 1 ? 's' : ''} à sa prochaine connexion en ligne sur ce poste`);
       }
     } catch (error) {
       setLastSyncError(error instanceof Error ? error.message : 'Erreur inconnue pendant la synchronisation');

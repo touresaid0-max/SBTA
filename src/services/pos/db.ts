@@ -160,6 +160,8 @@ export interface SyncQueueItem {
   last_error?: string;
   /** When the operation was last marked 'syncing' (being sent) */
   sending_since?: string;
+  /** Guichetier logged in on the device when the operation was made: only his server session sends it */
+  user_id?: string;
 }
 
 export interface TransferLogRecord {

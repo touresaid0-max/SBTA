@@ -9,6 +9,7 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
 import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
 import { useAutoSync } from '@/services/pos/useAutoSync';
+import { getPendingCount } from '@/services/pos/syncEngine';
 
 interface TileConfig {
   label: string;
@@ -24,6 +25,19 @@ export default function POSAccueil() {
   const [pendingRamassage, setPendingRamassage] = useState(0);
   const courrierEnabled = session?.courrier_enabled === true;
   useAutoSync(session?.station_id);
+
+  // Operations not yet sent stay on the device and leave only with their author's next online
+  // login here: say so before logging out
+  const handleLogout = async () => {
+    const pending = await getPendingCount();
+    if (pending > 0 && !window.confirm(
+      `${pending} opération${pending > 1 ? 's' : ''} pas encore envoyée${pending > 1 ? 's' : ''} au serveur. `
+      + 'Elles resteront sur ce poste et partiront à votre prochaine connexion avec Internet sur ce poste.\n\n'
+      + 'Se déconnecter quand même ?',
+    )) return;
+    await logout();
+    navigate('/guichet/connexion');
+  };
 
   useEffect(() => {
     if (!session?.station_id) return;
@@ -86,7 +100,7 @@ export default function POSAccueil() {
               <SettingsIcon className="w-5 h-5" />
             </button>
             <button
-              onClick={() => { logout(); navigate('/guichet/connexion'); }}
+              onClick={handleLogout}
               className="flex items-center justify-center w-11 h-11 rounded-xl transition-colors hover:bg-white/15"
               aria-label="Déconnexion"
             >

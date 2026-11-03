@@ -257,116 +257,111 @@ async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Recor
   return row;
 }
 
+// ── Who sends what ──
+// Each operation is sent with the account of the guichetier who made it. On a shared device the
+// server session may still be the previous guichetier's (logged out offline, or the next one
+// logged in offline): sending with it recorded the sale under the other guichetier's name, and
+// an expense was refused (it must come from the counter's own guichetier). Such an operation now
+// waits until its author logs in online on the device.
+
+/** Guichetier logged in on the device (POS session): author of the operations recorded now. */
+async function currentSellerId(): Promise<string | undefined> {
+  try {
+    return (await db.session.toArray())[0]?.user_id || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Account of the server session the requests are sent with (read on the device, no request). */
+async function serverSessionUserId(): Promise<string | undefined> {
+  try {
+    return (await supabase.auth.getSession()).data.session?.user.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The server session belongs to another account than the guichetier logged in on the device. */
+export async function isServerSessionOfAnotherUser(): Promise<boolean> {
+  const [sellerId, serverUserId] = await Promise.all([currentSellerId(), serverSessionUserId()]);
+  return Boolean(sellerId && serverUserId && sellerId !== serverUserId);
+}
+
+/** Operations recorded before this version have no author: they are sent as before. */
+function sentBy(item: Pick<SyncQueueItem, 'user_id'>, serverUserId: string | undefined): boolean {
+  return !item.user_id || item.user_id === serverUserId;
+}
+
 // ── Queue operations ──
 
+async function addToQueue(
+  store: StoreName,
+  op: SyncQueueItem['op'],
+  payload: Record<string, unknown>,
+  userId: string | undefined,
+  lastError?: string,
+): Promise<void> {
+  await db.sync_queue.add({
+    entity: store,
+    op,
+    payload,
+    created_at: nowIso(),
+    tries: 0,
+    status: 'pending',
+    ...(lastError ? { last_error: lastError } : {}),
+    ...(userId ? { user_id: userId } : {}),
+  });
+}
+
 /**
- * Enqueue an insert operation. If online, execute immediately.
- * If offline, store in the sync queue for later flush.
+ * Sends an operation now when online and the server session is its author's; otherwise (offline,
+ * network failure, another guichetier's server session) keeps it in the queue for later.
  */
+async function sendOrQueue(
+  store: StoreName,
+  op: SyncQueueItem['op'],
+  payload: Record<string, unknown>,
+  send: () => Promise<void>,
+): Promise<{ queued: boolean; error?: string }> {
+  const userId = await currentSellerId();
+  if (isOnline() && sentBy({ user_id: userId }, await serverSessionUserId())) {
+    try {
+      await send();
+      return { queued: false };
+    } catch (err: any) {
+      // Network failed mid-operation — queue it for retry
+      await addToQueue(store, op, payload, userId, err?.message);
+      return { queued: true, error: err?.message };
+    }
+  }
+  await addToQueue(store, op, payload, userId);
+  return { queued: true };
+}
+
+/** Insert: sent now if possible, otherwise queued. */
 export async function enqueueInsert(
   store: StoreName,
   record: Record<string, unknown>,
 ): Promise<{ queued: boolean; error?: string }> {
-  if (isOnline()) {
-    try {
-      await executeInsert(store, record);
-      return { queued: false };
-    } catch (err: any) {
-      // Network failed mid-operation — queue it for retry
-      await db.sync_queue.add({
-        entity: store,
-        op: 'insert',
-        payload: record,
-        created_at: nowIso(),
-        tries: 0,
-        status: 'pending',
-        last_error: err?.message,
-      });
-      return { queued: true, error: err?.message };
-    }
-  }
-  // Offline: queue
-  await db.sync_queue.add({
-    entity: store,
-    op: 'insert',
-    payload: record,
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-  });
-  return { queued: true };
+  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record));
 }
 
-/**
- * Enqueue an update operation. If online, execute immediately.
- * If offline, store in the sync queue.
- */
+/** Update: sent now if possible, otherwise queued. */
 export async function enqueueUpdate(
   store: StoreName,
   id: string,
   patch: Record<string, unknown>,
 ): Promise<{ queued: boolean; error?: string }> {
-  if (isOnline()) {
-    try {
-      await executeUpdate(store, id, patch);
-      return { queued: false };
-    } catch (err: any) {
-      await db.sync_queue.add({
-        entity: store,
-        op: 'update',
-        payload: { id, ...patch },
-        created_at: nowIso(),
-        tries: 0,
-        status: 'pending',
-        last_error: err?.message,
-      });
-      return { queued: true, error: err?.message };
-    }
-  }
-  await db.sync_queue.add({
-    entity: store,
-    op: 'update',
-    payload: { id, ...patch },
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-  });
-  return { queued: true };
+  return sendOrQueue(store, 'update', { id, ...patch }, () => executeUpdate(store, id, patch));
 }
 
-/**
- * Enqueue a delete operation.
- */
+/** Delete: sent now if possible, otherwise queued. */
 export async function enqueueDelete(
   store: StoreName,
   id: string,
 ): Promise<{ queued: boolean; error?: string }> {
-  if (isOnline()) {
-    try {
-      await executeDelete(store, id);
-      return { queued: false };
-    } catch (err: any) {
-      await db.sync_queue.add({
-        entity: store,
-        op: 'delete',
-        payload: { id },
-        created_at: nowIso(),
-        tries: 0,
-        status: 'pending',
-        last_error: err?.message,
-      });
-      return { queued: true, error: err?.message };
-    }
-  }
-  await db.sync_queue.add({
-    entity: store,
-    op: 'delete',
-    payload: { id },
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-  });
-  return { queued: true };
+  return sendOrQueue(store, 'delete', { id }, () => executeDelete(store, id));
 }
 
 // ── Execute individual operations against Supabase ──
@@ -504,6 +499,8 @@ export interface FlushResult {
   processed: number;
   succeeded: number;
   failed: number;
+  /** Operations of another guichetier, kept until he logs in online on this device */
+  waitingOtherUser: number;
 }
 
 // An operation is marked 'syncing' while it is being sent. If the page closes or reloads at that
@@ -521,17 +518,21 @@ function isWaitingToSend(item: SyncQueueItem): boolean {
 let flushing = false;
 
 export async function flushSyncQueue(): Promise<FlushResult> {
-  if (flushing) return { processed: 0, succeeded: 0, failed: 0 };
-  if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0 };
+  if (flushing) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
+  if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
 
   flushing = true;
   let processed = 0;
   let succeeded = 0;
   let failed = 0;
+  let waitingOtherUser = 0;
 
   try {
-    const pending = (await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray())
+    const serverUserId = await serverSessionUserId();
+    const waiting = (await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray())
       .filter(isWaitingToSend);
+    const pending = waiting.filter(item => sentBy(item, serverUserId));
+    waitingOtherUser = waiting.length - pending.length;
     // Sort by created_at to preserve operation order
     pending.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
 
@@ -571,7 +572,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     flushing = false;
   }
 
-  return { processed, succeeded, failed };
+  return { processed, succeeded, failed, waitingOtherUser };
 }
 
 /** Operations not yet confirmed by the server, including those being sent or whose sending was interrupted. */
