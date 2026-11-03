@@ -534,6 +534,18 @@ export interface FlushResult {
   conflicts: SyncConflict[];
 }
 
+// An operation is marked 'syncing' while it is being sent. If the page closes or reloads at that
+// moment (update of the site, power cut, tab closed), it stays 'syncing': it must then be sent
+// again, otherwise the sale never reaches the server. Older than this delay = interrupted send.
+const STALE_SENDING_MS = 2 * 60_000;
+
+function isWaitingToSend(item: SyncQueueItem): boolean {
+  if (item.status === 'pending' || item.status === 'error') return true;
+  if (item.status !== 'syncing') return false;
+  const since = item.sending_since ? Date.parse(item.sending_since) : NaN;
+  return !(Date.now() - since < STALE_SENDING_MS);
+}
+
 let flushing = false;
 
 export async function flushSyncQueue(): Promise<FlushResult> {
@@ -547,7 +559,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   const conflicts: SyncConflict[] = [];
 
   try {
-    const pending = await db.sync_queue.where('status').anyOf(['pending', 'error']).toArray();
+    const pending = (await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray())
+      .filter(isWaitingToSend);
     // Sort by created_at to preserve operation order
     pending.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
 
@@ -557,7 +570,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
 
       try {
         // Mark as syncing
-        await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1 });
+        await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1, sending_since: nowIso() });
 
         if (item.op === 'insert') {
           // Check for seat conflicts before inserting tickets
@@ -600,8 +613,9 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   return { processed, succeeded, failed, conflicts };
 }
 
+/** Operations not yet confirmed by the server, including those being sent or whose sending was interrupted. */
 export async function getPendingCount(): Promise<number> {
-  return db.sync_queue.where('status').anyOf(['pending', 'error']).count();
+  return db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).count();
 }
 
 export async function getLastSyncError(): Promise<string | null> {

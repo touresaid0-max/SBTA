@@ -83,6 +83,8 @@ export interface SyncQueueItem {
   tries: number;
   status: SyncStatus;
   last_error?: string;
+  /** When the operation was last marked 'syncing' (being sent) */
+  sending_since?: string;
 }
 
 export interface SessionRecord {
