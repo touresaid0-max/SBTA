@@ -712,7 +712,7 @@ export default function Companies() {
                   <p className="mb-4" style={{ color: 'var(--text-secondary)' }}>
                     {buses.length} bus associé(s)
                   </p>
-                  <DataTable data={buses} columns={busColumns} searchable={false} />
+                  <DataTable data={buses} columns={busColumns} searchable={false} pageSizeKey="sbta_admin_company_buses_page_size" itemLabel="bus" />
                 </div>
               )}
 

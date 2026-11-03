@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { MapPin, Plus, CreditCard as Edit2, Trash2 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
+import Pagination from '../../components/pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 
 interface City {
   id: string;
@@ -118,6 +120,9 @@ export default function Cities() {
       is_active: true
     });
   };
+
+  // Same pagination as the guichet departures list
+  const pagination = usePagination(cities, 'sbta_admin_cities_page_size', '');
 
   if (loading) {
     return <div className="p-8">Chargement...</div>;
@@ -260,7 +265,7 @@ export default function Cities() {
             </tr>
           </thead>
           <tbody>
-            {cities.map((city) => (
+            {pagination.pageItems.map((city) => (
               <tr key={city.id} className="border-t hover:bg-gray-50">
                 <td className="p-4">
                   <div className="flex items-center gap-2">
@@ -317,6 +322,20 @@ export default function Cities() {
           <div className="text-center py-12">
             <MapPin className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--neutral-400)' }} />
             <p style={{ color: 'var(--text-secondary)' }}>Aucune ville trouvée</p>
+          </div>
+        )}
+
+        {cities.length > 0 && (
+          <div className="border-t px-4 py-2">
+            <Pagination
+              page={pagination.page}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              total={pagination.total}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              itemLabel="villes"
+            />
           </div>
         )}
       </div>

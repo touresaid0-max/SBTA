@@ -14,6 +14,8 @@ import { generateSecurePassword } from '../../utils/generatePassword';
 import { fetchTypesTechniciens } from '../../services/garageSbta.service';
 import type { GarageTypeTechnicien } from '../../types/garage.types';
 import toast from 'react-hot-toast';
+import Pagination from '../../components/pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { UserRole } from '../../types';
@@ -656,6 +658,9 @@ export default function Users() {
     return name.includes(q) || email.includes(q) || empId.includes(q) || phone.includes(q);
   });
 
+  // Same pagination as the guichet departures list: back to page 1 when a filter changes
+  const pendingPagination = usePagination(filteredPendingEmployees, 'sbta_admin_pending_employees_page_size', pendingSearch);
+
   const columns = [
     {
       key: 'avatar', label: '',
@@ -887,7 +892,7 @@ export default function Users() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPendingEmployees.map((emp) => {
+                  {pendingPagination.pageItems.map((emp) => {
                     const roleInfo = ROLES.find(r => r.value === emp.role);
                     const waitTime = formatDistanceToNow(new Date(emp.created_by_hr_at), { addSuffix: false, locale: fr });
                     return (
@@ -949,6 +954,17 @@ export default function Users() {
                   })}
                 </tbody>
               </table>
+              <div className="border-t px-4 py-2">
+                <Pagination
+                  page={pendingPagination.page}
+                  pageCount={pendingPagination.pageCount}
+                  pageSize={pendingPagination.pageSize}
+                  total={pendingPagination.total}
+                  onPageChange={pendingPagination.setPage}
+                  onPageSizeChange={pendingPagination.setPageSize}
+                  itemLabel="employés"
+                />
+              </div>
             </>
           )}
         </div>
@@ -980,7 +996,14 @@ export default function Users() {
             </select>
           </div>
 
-          <DataTable data={filteredUsers} columns={columns} searchable={false} />
+          <DataTable
+            data={filteredUsers}
+            columns={columns}
+            searchable={false}
+            pageSizeKey="sbta_admin_users_page_size"
+            resetKey={`${activeTab}|${roleFilter}|${searchTerm}`}
+            itemLabel="utilisateurs"
+          />
         </div>
       )}
 

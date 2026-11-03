@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Plus, CreditCard as Edit2, Trash2, Building2, Search, X, MapPin, ChevronDown } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
+import Pagination from '../../components/pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 
 interface Counter {
   id: string;
@@ -255,10 +257,6 @@ export default function Counters() {
     setStationOpen(false);
   };
 
-  if (loading) {
-    return <div className="p-8">Chargement...</div>;
-  }
-
   const filtered = counters.filter((c) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -271,6 +269,13 @@ export default function Counters() {
       c.manager?.full_name,
     ].some((x) => (x ?? '').toLowerCase().includes(q));
   });
+
+  // Same pagination as the guichet departures list: back to page 1 when the search changes
+  const pagination = usePagination(filtered, 'sbta_admin_counters_page_size', search);
+
+  if (loading) {
+    return <div className="p-8">Chargement...</div>;
+  }
 
   // Station autocomplete filtered list
   const stationQuery = stationSearch.trim().toLowerCase();
@@ -524,7 +529,7 @@ export default function Counters() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((counter) => (
+            {pagination.pageItems.map((counter) => (
               <tr key={counter.id} className="border-t hover:bg-gray-50">
                 <td className="p-4">
                   <div className="flex items-center gap-2">
@@ -612,6 +617,20 @@ export default function Counters() {
             <p style={{ color: 'var(--text-secondary)' }}>
               {search.trim() ? 'Aucun guichet ne correspond à votre recherche' : 'Aucun guichet trouvé'}
             </p>
+          </div>
+        )}
+
+        {filtered.length > 0 && (
+          <div className="border-t px-4 py-2">
+            <Pagination
+              page={pagination.page}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              total={pagination.total}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              itemLabel="guichets"
+            />
           </div>
         )}
       </div>
