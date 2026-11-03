@@ -37,7 +37,20 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
 };
 
 export async function refreshReferentiel(type: RefType): Promise<unknown[]> {
+  // Without a valid login the database answers drivers with an empty list and no error (users
+  // are hidden by RLS) while lines and buses still come back: never read in that state.
+  // getSession() renews an expired token when the refresh token is still valid.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Session expirée');
+
   const data = await QUERIES[type]();
+
+  // An empty answer never replaces a list already known on this device
+  if (data.length === 0) {
+    const cached = await db.referentiels.get(type);
+    if (cached && Array.isArray(cached.data) && cached.data.length > 0) return cached.data;
+  }
+
   const record: ReferentielRecord = {
     key: type,
     type,

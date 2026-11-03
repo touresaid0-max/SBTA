@@ -335,6 +335,17 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                 emptyText="Aucun chauffeur trouvé"
                 disabled={isLinked}
               />
+              {/* Drivers are only readable with a valid login: say so instead of an empty list */}
+              {!isLinked && !loadingRefs && chauffeurs.length === 0 && (
+                <p className="text-xs mt-1 flex items-center gap-1 flex-wrap" style={{ color: 'var(--danger)' }}>
+                  <AlertCircle className="w-3 h-3" />
+                  Liste des chauffeurs non chargée (connexion ou session expirée).
+                  <button type="button" onClick={() => loadRefs()} className="underline font-semibold">
+                    Recharger
+                  </button>
+                  ou reconnectez-vous.
+                </p>
+              )}
             </div>
 
             {/* Charger dans une autre gare */}
