@@ -7,6 +7,7 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getChauffeurs, getGares, getVehicules, type ChauffeurRef, type GareRef, type VehiculeRef } from '@/services/pos/departService';
 import { enqueueInsert } from '@/services/pos/syncEngine';
 import { trustedNowIso } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
 
 export default function POSRamassageDirect() {
   const navigate = useNavigate();
@@ -81,8 +82,8 @@ export default function POSRamassageDirect() {
     setSaving(true);
     try {
       const departureDatetime = `${date}T${time}:00`;
-      const ramassageId = crypto.randomUUID();
-      const collectionId = crypto.randomUUID();
+      const ramassageId = uuidV4();
+      const collectionId = uuidV4();
 
       // Through the sending queue, like the ticket sales: sent at once when online, otherwise kept
       // on the device. The author (collected_by / created_by) is filled with the guichetier's account.

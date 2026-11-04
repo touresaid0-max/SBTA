@@ -4,6 +4,7 @@ import { enqueueInsert } from './syncEngine';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
 
 export type { DepartRecord, SeatAllocation, SeatTransfer };
 
@@ -289,7 +290,7 @@ export async function cloturerDepart(
       return updated;
     }
 
-    const notificationId = crypto.randomUUID();
+    const notificationId = uuidV4();
     await enqueueInsert('ramassages', {
       id: notificationId,
       rows: [{

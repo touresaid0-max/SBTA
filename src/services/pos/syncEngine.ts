@@ -4,6 +4,7 @@ import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, byQueueOrder, i
 import { supabase } from '@/services/supabase';
 import { trustedNowIso } from '@/services/offline/deviceClock';
 import { storedPhoneOrEmpty } from '@/utils/phoneCI';
+import { uuidV4 } from '@/utils/uuid';
 
 // ── Online/offline state (single source of truth) ──
 
@@ -59,7 +60,7 @@ function nowIso(): string {
 }
 
 function uuid(): string {
-  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return uuidV4();
 }
 
 // Account the operation is sent with, read from the session kept on the device. getUser() asked

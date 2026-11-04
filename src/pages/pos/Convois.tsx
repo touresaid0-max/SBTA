@@ -15,6 +15,7 @@ import { enqueueInsert, enqueueUpdate, isOnline } from '@/services/pos/syncEngin
 import { useConnection } from '@/services/pos/ConnectionContext';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption {
@@ -666,7 +667,7 @@ export default function POSConvois() {
         const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
         const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
         // Ids made on the device: the convoys can point to their trips before anything is sent
-        const allerScheduleId = crypto.randomUUID();
+        const allerScheduleId = uuidV4();
         const baseSchedule: Record<string, any> = {
           id: allerScheduleId,
           route_id: form.route_id,
@@ -685,7 +686,7 @@ export default function POSConvois() {
         };
 
         const hasRetour = form.trip_type === 'aller_retour' && !!form.retour_route_id;
-        const retourScheduleId = hasRetour ? crypto.randomUUID() : null;
+        const retourScheduleId = hasRetour ? uuidV4() : null;
         const schedulesToInsert: Record<string, any>[] = [baseSchedule];
         if (hasRetour) {
           const retDep = form.retour_departure_datetime.includes('T')
@@ -704,8 +705,8 @@ export default function POSConvois() {
         }
 
         const convoyBase = { amount, passengers_count: passengersCount, observation, ...charges };
-        const allerConvoyId = crypto.randomUUID();
-        const retourConvoyId = hasRetour ? crypto.randomUUID() : null;
+        const allerConvoyId = uuidV4();
+        const retourConvoyId = hasRetour ? uuidV4() : null;
         const convoysToInsert: Record<string, any>[] = [{
           ...convoyBase,
           id: allerConvoyId,

@@ -3,9 +3,10 @@ import { supabase } from '@/services/supabase';
 import { enqueueInsert, enqueueUpdate, enqueueDelete, enqueueSms, isOnline, getPendingCount } from './syncEngine';
 import type { Parcel } from '@/types/parcel.types';
 import { trustedNowIso } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
 
 function uuid(): string {
-  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return uuidV4();
 }
 
 function nowIso(): string {

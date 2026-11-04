@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/authStore';
 import { isOnline } from './syncEngine';
 import { clearPersonalDataOnLogout } from '@/services/offline/dataRetention';
 import { createCredentialStore, OFFLINE_LOGIN_MAX_AGE_DAYS } from '@/services/offline/credentialStore';
+import { uuidV4 } from '@/utils/uuid';
 
 export interface CourrierLoginResult {
   success: boolean;
@@ -90,7 +91,7 @@ export async function login(email: string, password: string): Promise<CourrierLo
       }
 
       const session: SessionRecord = {
-        id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        id: uuidV4(),
         user_id: user.id,
         email: user.email,
         full_name: user.full_name ?? `${user.first_name} ${user.last_name}`,
@@ -134,7 +135,7 @@ async function offlineLogin(email: string, password: string): Promise<CourrierLo
   if (check.status === 'ok') {
     const restored: SessionRecord = {
       ...check.session,
-      id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: uuidV4(),
       login_at: new Date().toISOString(),
       offline: true,
     };

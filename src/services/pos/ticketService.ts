@@ -5,6 +5,7 @@ import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
 import { isOnline } from './syncEngine';
 import { trustedNow } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
 
 export type { TicketRecord };
 
@@ -180,11 +181,8 @@ export async function getSoldSeats(departId: string): Promise<number[]> {
 
 export function generateTicketNumber(_stationAgencyCode?: string): string {
   const year = trustedNow().getFullYear();
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return `${year}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-  }
-  const rand = Math.random().toString(36).slice(2, 10).toUpperCase();
-  return `${year}-${Date.now().toString(36).toUpperCase()}-${rand}`;
+  // Same format on every page (the fallback of a non-secure page used to give a longer number)
+  return `${year}-${uuidV4().slice(0, 8).toUpperCase()}`;
 }
 
 export function calculatePrice(basePrice: number, isAc: boolean, isReduced: boolean): number {
