@@ -63,20 +63,11 @@ export async function localInsert<
     synced: false,
   } as unknown as T;
 
-  // Always write to local IndexedDB first (offline-first)
-  await (db[store] as any).put(full);
-
-  // Then attempt remote sync (or queue if offline)
-  try {
-    const result = await enqueueInsert(store, full as unknown as Record<string, unknown>);
-    if (!result.queued) {
-      // Successfully synced — mark as synced
-      await (db[store] as any).put({ ...full, synced: true });
-    }
-  } catch (err) {
-    // Network error — record stays locally with synced=false
-    // It will be synced when connection returns
-  }
+  // Saved on the device together with its queued operation, then sent at once when online
+  // (marked synced once the server has it, or later from the queue)
+  await enqueueInsert(store, full as unknown as Record<string, unknown>, undefined, {
+    table: db[store], write: () => (db[store] as any).put(full),
+  });
 
   return full;
 }
@@ -99,20 +90,12 @@ export async function localUpdate<
     synced: false,
   } as unknown as T;
 
-  // Always write locally first
-  await (db[store] as any).put(updated);
-
-  // Then sync/queue remotely
   const patchRecord = patch as unknown as Record<string, unknown>;
   if (hasRemoteMappableFields(store, patchRecord)) {
-    try {
-      const result = await enqueueUpdate(store, id, patchRecord);
-      if (!result.queued) {
-        await (db[store] as any).put({ ...updated, synced: true });
-      }
-    } catch {
-      // Network error — local update is preserved, will sync later
-    }
+    // Saved on the device together with its queued operation (see localInsert)
+    await enqueueUpdate(store, id, patchRecord, {
+      table: db[store], write: () => (db[store] as any).put(updated),
+    });
   } else {
     // No remote-mappable fields — mark as synced since there's nothing to send
     await (db[store] as any).put({ ...updated, synced: true });
@@ -122,14 +105,8 @@ export async function localUpdate<
 }
 
 export async function localDelete(store: StoreName, id: string): Promise<void> {
-  // Delete locally first
-  await (db[store] as any).delete(id);
-  // Then sync/queue
-  try {
-    await enqueueDelete(store, id);
-  } catch {
-    // Network error — deletion will be synced later
-  }
+  // Deleted on the device together with the queueing of the deletion
+  await enqueueDelete(store, id, { table: db[store], write: () => (db[store] as any).delete(id) });
 }
 
 export async function getAll<T>(store: StoreName): Promise<T[]> {

@@ -1,4 +1,4 @@
-import { setOnline, flushSyncQueue, getPendingCount } from './syncEngine';
+import { setOnline, flushSyncQueue, getPendingCount, recoverUnqueuedRecords } from './syncEngine';
 import { syncParcelsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
 
@@ -18,6 +18,7 @@ let lastReferentiels = 0;
  */
 export async function syncCourrierInBackground(stationId: string | undefined, force = false): Promise<void> {
   setOnline(true);
+  await recoverUnqueuedRecords().catch(() => { /* tried again at the next sync */ });
   if (await getPendingCount() > 0) await flushSyncQueue();
 
   const now = Date.now();

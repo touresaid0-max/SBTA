@@ -1,3 +1,4 @@
+import type { Table } from 'dexie';
 import { db, type SyncQueueItem } from './db';
 import { supabase } from '@/services/supabase';
 import { sendCourierCreatedSms, sendCourierArrivedSms } from '@/services/emisSms.service';
@@ -196,101 +197,117 @@ function mapParcelUpdate(payload: Record<string, unknown>): Record<string, unkno
 
 // ── Queue operations ──
 
+/** Change of the device's copy, saved in the same transaction as the operation that sends it. */
+export interface LocalWrite {
+  tables: Table<any, any>[];
+  write: () => Promise<unknown>;
+}
+
+// Like the guichet: an operation sent at once was queued only after a failed send, so a parcel
+// whose send was cut (page closed) stayed on the device and never reached the server. It is now
+// in the queue before it is sent, marked 'syncing', and saved together with the device's copy.
+async function sendOrQueue(
+  store: StoreName,
+  op: SyncQueueItem['op'],
+  payload: Record<string, unknown>,
+  send: () => Promise<void>,
+  local?: LocalWrite,
+): Promise<{ queued: boolean; error?: string }> {
+  const sendNow = isOnline();
+  const item: SyncQueueItem = {
+    entity: store,
+    op,
+    payload,
+    created_at: nowIso(),
+    tries: sendNow ? 1 : 0,
+    status: sendNow ? 'syncing' : 'pending',
+    ...(sendNow ? { sending_since: nowIso() } : {}),
+  };
+  const queueId = local
+    ? await db.transaction('rw', [...local.tables, db.sync_queue], async () => {
+      await local.write();
+      return db.sync_queue.add(item);
+    })
+    : await db.sync_queue.add(item);
+  if (!sendNow) return { queued: true };
+
+  try {
+    await send();
+  } catch (err: any) {
+    // Network failed mid-operation — sent again by the queue
+    await db.sync_queue.update(queueId, { status: 'pending', tries: 0, sending_since: undefined, last_error: err?.message })
+      .catch(() => { /* stays 'syncing': sent again once the send is considered interrupted */ });
+    return { queued: true, error: err?.message };
+  }
+  await db.sync_queue.delete(queueId).catch(() => { /* sent once more later, without effect */ });
+  return { queued: false };
+}
+
 export async function enqueueInsert(
   store: StoreName,
   record: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  if (isOnline()) {
-    try {
-      await executeInsert(store, record);
-      return { queued: false };
-    } catch (err: any) {
-      await db.sync_queue.add({
-        entity: store,
-        op: 'insert',
-        payload: record,
-        created_at: nowIso(),
-        tries: 0,
-        status: 'pending',
-        last_error: err?.message,
-      });
-      return { queued: true, error: err?.message };
-    }
-  }
-  await db.sync_queue.add({
-    entity: store,
-    op: 'insert',
-    payload: record,
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-  });
-  return { queued: true };
+  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record), local);
 }
 
 export async function enqueueUpdate(
   store: StoreName,
   id: string,
   patch: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  if (isOnline()) {
-    try {
-      await executeUpdate(store, id, patch);
-      return { queued: false };
-    } catch (err: any) {
-      await db.sync_queue.add({
-        entity: store,
-        op: 'update',
-        payload: { id, ...patch },
-        created_at: nowIso(),
-        tries: 0,
-        status: 'pending',
-        last_error: err?.message,
-      });
-      return { queued: true, error: err?.message };
-    }
-  }
-  await db.sync_queue.add({
-    entity: store,
-    op: 'update',
-    payload: { id, ...patch },
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-  });
-  return { queued: true };
+  return sendOrQueue(store, 'update', { id, ...patch }, () => executeUpdate(store, id, patch), local);
 }
 
 export async function enqueueDelete(
   store: StoreName,
   id: string,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  if (isOnline()) {
-    try {
-      await executeDelete(store, id);
-      return { queued: false };
-    } catch (err: any) {
-      await db.sync_queue.add({
-        entity: store,
-        op: 'delete',
-        payload: { id },
-        created_at: nowIso(),
-        tries: 0,
-        status: 'pending',
-        last_error: err?.message,
-      });
-      return { queued: true, error: err?.message };
+  return sendOrQueue(store, 'delete', { id }, () => executeDelete(store, id), local);
+}
+
+// Parcels and events whose send was cut before this version: « not synced », with no operation.
+// Once per session, online: found on the server = marked synced; missing = queued again.
+let recoveryDone = false;
+
+/** Queues again the parcels and events not synced that have no operation. Returns how many. */
+export async function recoverUnqueuedRecords(): Promise<number> {
+  if (recoveryDone || !isOnline()) return 0;
+  const stores: StoreName[] = ['parcels', 'tracking_events'];
+  const orphans = await db.transaction('r', [db.parcels, db.tracking_events, db.sync_queue], async () => {
+    const queued = new Set((await db.sync_queue.toArray()).map(i => `${i.entity}:${String(i.payload?.id ?? '')}`));
+    return {
+      parcels: await db.parcels.filter(r => r.synced === false && !queued.has(`parcels:${r.id}`)).toArray(),
+      tracking_events: await db.tracking_events.filter(r => r.synced === false && !queued.has(`tracking_events:${r.id}`)).toArray(),
+    };
+  });
+
+  let requeued = 0;
+  for (const store of stores) {
+    const records = orphans[store] as unknown as Array<Record<string, unknown>>;
+    for (let i = 0; i < records.length; i += 100) {
+      const chunk = records.slice(i, i + 100);
+      const { data, error } = await supabase.from(TABLE_MAP[store]).select('id').in('id', chunk.map(r => String(r.id)));
+      if (error) throw error; // tried again at the next sync
+      const onServer = new Set((data ?? []).map((r: { id: string }) => r.id));
+      for (const record of chunk) {
+        const id = String(record.id);
+        if (onServer.has(id)) {
+          await (store === 'parcels' ? db.parcels : db.tracking_events).update(id, { synced: true });
+        } else {
+          await db.sync_queue.add({
+            entity: store, op: 'insert', payload: record,
+            created_at: String(record.created_at ?? nowIso()), tries: 0, status: 'pending',
+          });
+          requeued++;
+        }
+      }
     }
   }
-  await db.sync_queue.add({
-    entity: store,
-    op: 'delete',
-    payload: { id },
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-  });
-  return { queued: true };
+  recoveryDone = true;
+  return requeued;
 }
 
 // ── Execute individual operations against Supabase ──

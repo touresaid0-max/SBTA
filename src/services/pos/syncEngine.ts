@@ -1,3 +1,4 @@
+import type { Table } from 'dexie';
 import { db, type SyncQueueItem } from './db';
 import { supabase } from '@/services/supabase';
 
@@ -311,26 +312,28 @@ function sentBy(item: Pick<SyncQueueItem, 'user_id'>, serverUserId: string | und
 
 // ── Queue operations ──
 
-async function addToQueue(
-  store: StoreName,
-  op: SyncQueueItem['op'],
-  payload: Record<string, unknown>,
-  userId: string | undefined,
-  lastError?: string,
-  meta?: Record<string, unknown>,
-): Promise<void> {
-  await db.sync_queue.add({
-    entity: store,
-    op,
-    payload,
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-    ...(lastError ? { last_error: lastError } : {}),
-    ...(userId ? { user_id: userId } : {}),
-    ...(meta ? { meta } : {}),
+/** Change of the device's copy, saved in the same transaction as the operation that sends it. */
+export interface LocalWrite {
+  table: Table<any, any>;
+  write: () => Promise<unknown>;
+}
+
+/**
+ * Saves the operation in the queue, together with the change of the device's copy when given:
+ * both are saved, or neither (a record saved on the device always has its operation).
+ */
+async function saveInQueue(item: SyncQueueItem, local?: LocalWrite): Promise<number> {
+  if (!local) return db.sync_queue.add(item);
+  return db.transaction('rw', local.table, db.sync_queue, async () => {
+    await local.write();
+    return db.sync_queue.add(item);
   });
 }
+
+// An operation sent at once (online) was put in the queue only after a failed send. If the page
+// closed during the send (up to 15 s: tab closed, reload after an update, power cut), the sale
+// stayed on the device, in no queue, and never reached the server. The operation is now in the
+// queue before it is sent, marked 'syncing': an interrupted send is sent again by the queue.
 
 /**
  * Sends an operation now when online and the server session is its author's; otherwise (offline,
@@ -342,32 +345,52 @@ async function sendOrQueue(
   payload: Record<string, unknown>,
   send: () => Promise<void>,
   meta?: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
   const userId = await currentSellerId();
-  if (isOnline() && sentBy({ user_id: userId }, await serverSessionUserId())) {
-    try {
-      await send();
-      return { queued: false };
-    } catch (err: any) {
-      // Network failed mid-operation — queue it for retry
-      await addToQueue(store, op, payload, userId, err?.message, meta);
-      return { queued: true, error: err?.message };
-    }
+  const sendNow = isOnline() && sentBy({ user_id: userId }, await serverSessionUserId());
+  const queueId = await saveInQueue({
+    entity: store,
+    op,
+    payload,
+    created_at: nowIso(),
+    tries: sendNow ? 1 : 0,
+    status: sendNow ? 'syncing' : 'pending',
+    ...(sendNow ? { sending_since: nowIso() } : {}),
+    ...(userId ? { user_id: userId } : {}),
+    ...(meta ? { meta } : {}),
+  }, local);
+  if (!sendNow) return { queued: true };
+
+  try {
+    await send();
+  } catch (err: any) {
+    // Network failed mid-operation — sent again by the queue
+    await db.sync_queue.update(queueId, { status: 'pending', tries: 0, sending_since: undefined, last_error: err?.message })
+      .catch(() => { /* stays 'syncing': sent again once the send is considered interrupted */ });
+    return { queued: true, error: err?.message };
   }
-  await addToQueue(store, op, payload, userId, undefined, meta);
-  return { queued: true };
+  try {
+    await db.sync_queue.delete(queueId);
+    if (op !== 'delete') await markSyncedIfNothingLeft(store, String(payload.id ?? ''));
+  } catch {
+    // Left in the queue: sent once more later, without effect (same id)
+  }
+  return { queued: false };
 }
 
 /**
  * Insert: sent now if possible, otherwise queued. `meta`: kept with a queued operation only, never
- * sent (e.g. what the convoy list shows until the convoy reaches the server).
+ * sent (e.g. what the convoy list shows until the convoy reaches the server). `local`: the saving
+ * of the record on the device, done together with the queueing.
  */
 export async function enqueueInsert(
   store: StoreName,
   record: Record<string, unknown>,
   meta?: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record), meta);
+  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record), meta, local);
 }
 
 /** Update: sent now if possible, otherwise queued. */
@@ -375,16 +398,18 @@ export async function enqueueUpdate(
   store: StoreName,
   id: string,
   patch: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  return sendOrQueue(store, 'update', { id, ...patch }, () => executeUpdate(store, id, patch));
+  return sendOrQueue(store, 'update', { id, ...patch }, () => executeUpdate(store, id, patch), undefined, local);
 }
 
 /** Delete: sent now if possible, otherwise queued. */
 export async function enqueueDelete(
   store: StoreName,
   id: string,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  return sendOrQueue(store, 'delete', { id }, () => executeDelete(store, id));
+  return sendOrQueue(store, 'delete', { id }, () => executeDelete(store, id), undefined, local);
 }
 
 // ── Execute individual operations against Supabase ──
@@ -663,6 +688,56 @@ export async function getLastSyncError(): Promise<string | null> {
   const errors = await db.sync_queue.where('status').equals('error').toArray();
   errors.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
   return errors[0]?.last_error ?? null;
+}
+
+// ── Records left out of the queue ──
+// Before the queue-first sending above, a record whose send was cut (page closed during the send)
+// stayed on the device « not synced », with no operation: it never reached the server. Once per
+// session, online: each such record is looked for on the server; there, it is marked synced;
+// missing, its creation is queued again, at its original place in the order.
+
+const RECOVERABLE_STORES: Array<'departs' | 'tickets' | 'bagages' | 'depenses'> = ['departs', 'tickets', 'bagages', 'depenses'];
+let recoveryDone = false;
+
+/** Queues again the records not synced that have no operation. Returns how many were queued. */
+export async function recoverUnqueuedRecords(): Promise<number> {
+  if (recoveryDone || !isOnline()) return 0;
+  const tables = RECOVERABLE_STORES.map(s => db[s] as Table<any, string>);
+  // Records and queue read together: a record saved meanwhile comes with its operation
+  const orphans = await db.transaction('r', [...tables, db.sync_queue], async () => {
+    const queued = new Set((await db.sync_queue.toArray()).map(i => `${i.entity}:${String(i.payload?.id ?? '')}`));
+    const found: Array<{ store: StoreName; record: Record<string, unknown> }> = [];
+    for (const store of RECOVERABLE_STORES) {
+      const rows = await (db[store] as Table<any, string>).filter(r => r.synced === false && !queued.has(`${store}:${r.id}`)).toArray();
+      for (const record of rows) found.push({ store, record });
+    }
+    return found;
+  });
+
+  let requeued = 0;
+  for (const store of RECOVERABLE_STORES) {
+    const records = orphans.filter(o => o.store === store).map(o => o.record);
+    for (let i = 0; i < records.length; i += 100) {
+      const chunk = records.slice(i, i + 100);
+      const { data, error } = await supabase.from(TABLE_MAP[store]).select('id').in('id', chunk.map(r => String(r.id)));
+      if (error) throw error; // tried again at the next sync
+      const onServer = new Set((data ?? []).map((r: { id: string }) => r.id));
+      for (const record of chunk) {
+        const id = String(record.id);
+        if (onServer.has(id)) {
+          await (db[store] as Table<any, string>).update(id, { synced: true });
+        } else {
+          await db.sync_queue.add({
+            entity: store, op: 'insert', payload: record,
+            created_at: String(record.created_at ?? nowIso()), tries: 0, status: 'pending',
+          });
+          requeued++;
+        }
+      }
+    }
+  }
+  recoveryDone = true;
+  return requeued;
 }
 
 export async function generateId(): Promise<string> {

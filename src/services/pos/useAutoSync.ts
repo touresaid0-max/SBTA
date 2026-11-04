@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConnection } from './ConnectionContext';
-import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError, isServerSessionOfAnotherUser } from './syncEngine';
+import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError, isServerSessionOfAnotherUser, recoverUnqueuedRecords } from './syncEngine';
 import { syncDepartsAndTicketsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
 import { ensureAuthSession } from './offlineAuth';
@@ -49,6 +49,8 @@ export function useAutoSync(stationId?: string, courrierEnabled = false) {
     try {
       // 1. Send the operations recorded on this device (sales, cancellations…), if any
       let result = { failed: 0, waitingOtherUser: 0 };
+      // Records whose send was cut before this version, in no queue: queued again (once per session)
+      await recoverUnqueuedRecords().catch(() => { /* tried again at the next sync */ });
       if (await getPendingCount() > 0) {
         // Before flushing, ensure the Supabase auth session is still valid.
         // After a long offline period the access token may have expired.

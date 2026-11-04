@@ -33,26 +33,22 @@ export async function localInsertParcel(
 ): Promise<ParcelRecord> {
   const id = record.id ?? uuid();
   const ts = nowIso();
-  const online = isOnline();
+  // Not synced until the server has it: kept for later, the screens add it to the server's list
   const full: ParcelRecord = {
     ...record,
     id,
     created_at: record.created_at ?? ts,
     updated_at: ts,
-    synced: online,
+    synced: false,
   } as ParcelRecord;
 
-  await db.parcels.put(full);
+  // Saved on the device together with its queued operation, then sent at once when online
+  const result = await enqueueInsert('parcels', full as unknown as Record<string, unknown>, {
+    tables: [db.parcels], write: () => db.parcels.put(full),
+  });
+  if (!result.queued) await db.parcels.update(id, { synced: true });
 
-  try {
-    const result = await enqueueInsert('parcels', full as unknown as Record<string, unknown>);
-    // Kept for later: marked as not sent, so that the screens add it to the server's list
-    await db.parcels.put({ ...full, synced: !result.queued });
-  } catch {
-    // Network error — record stays locally with synced=false
-  }
-
-  return full;
+  return { ...full, synced: !result.queued };
 }
 
 export async function localUpdateParcel(
@@ -62,25 +58,21 @@ export async function localUpdateParcel(
   const existing = await db.parcels.get(id);
   if (!existing) return null;
 
-  const online = isOnline();
   const updated: ParcelRecord = {
     ...existing,
     ...patch,
     id,
     updated_at: nowIso(),
-    synced: online,
+    synced: false,
   };
-
-  await db.parcels.put(updated);
 
   const patchRecord = patch as unknown as Record<string, unknown>;
   if (hasRemoteMappableFields('parcels', patchRecord)) {
-    try {
-      const result = await enqueueUpdate('parcels', id, patchRecord);
-      await db.parcels.put({ ...updated, synced: !result.queued });
-    } catch {
-      // Network error — local update is preserved, will sync later
-    }
+    // Saved on the device together with its queued operation (see localInsertParcel)
+    const result = await enqueueUpdate('parcels', id, patchRecord, {
+      tables: [db.parcels], write: () => db.parcels.put(updated),
+    });
+    if (!result.queued) await db.parcels.update(id, { synced: true });
   } else {
     await db.parcels.put({ ...updated, synced: true });
   }
@@ -182,13 +174,14 @@ async function pullParcel(id: string): Promise<void> {
 }
 
 export async function localDeleteParcel(id: string): Promise<void> {
-  await db.tracking_events.where('parcel_id').equals(id).delete();
-  await db.parcels.delete(id);
-  try {
-    await enqueueDelete('parcels', id);
-  } catch {
-    // Network error — deletion will be synced later
-  }
+  // Deleted on the device together with the queueing of the deletion
+  await enqueueDelete('parcels', id, {
+    tables: [db.parcels, db.tracking_events],
+    write: async () => {
+      await db.tracking_events.where('parcel_id').equals(id).delete();
+      await db.parcels.delete(id);
+    },
+  });
 }
 
 export async function localInsertTrackingEvent(
@@ -196,22 +189,19 @@ export async function localInsertTrackingEvent(
 ): Promise<TrackingEventRecord> {
   const id = record.id ?? uuid();
   const ts = nowIso();
-  const online = isOnline();
   const full: TrackingEventRecord = {
     ...record,
     id,
     created_at: ts,
-    synced: online,
+    synced: false,
   } as TrackingEventRecord;
 
-  await db.tracking_events.put(full);
-
-  try {
-    const result = await enqueueInsert('tracking_events', full as unknown as Record<string, unknown>);
-    await db.tracking_events.put({ ...full, synced: !result.queued });
-  } catch {
-    // Network error — stays locally with synced=false
-  }
+  // Saved on the device together with its queued operation (see localInsertParcel)
+  const result = await enqueueInsert('tracking_events', full as unknown as Record<string, unknown>, {
+    tables: [db.tracking_events], write: () => db.tracking_events.put(full),
+  });
+  if (!result.queued) await db.tracking_events.update(id, { synced: true });
+  full.synced = !result.queued;
 
   return full;
 }

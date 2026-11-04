@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConnection } from './ConnectionContext';
-import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError } from './syncEngine';
+import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError, recoverUnqueuedRecords } from './syncEngine';
 import { syncParcelsFromServer } from './offlineStore';
 import { ensureAuthSession } from './offlineAuth';
 import { refreshAllReferentiels } from './referentiels';
@@ -45,6 +45,8 @@ export function useAutoSync(stationId?: string) {
 
     try {
       let result = { failed: 0, conflicts: [] as unknown[] };
+      // Parcels whose send was cut before this version, in no queue: queued again (once per session)
+      await recoverUnqueuedRecords().catch(() => { /* tried again at the next sync */ });
       if (await getPendingCount() > 0) {
         const authValid = await ensureAuthSession();
         if (!authValid) {
