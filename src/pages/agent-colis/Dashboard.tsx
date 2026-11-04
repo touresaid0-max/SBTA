@@ -426,7 +426,8 @@ export default function AgentColisDashboard() {
   const filteredIncoming = useMemo(() => {
     let list = incStatusFilter === 'all' ? incoming : incoming.filter(p => p.status === incStatusFilter)
     const q = pickupCodeSearch.trim().toLowerCase()
-    if (q) list = list.filter(p => p.parcel_code.toLowerCase().includes(q))
+    // Also the code printed on the receipt of a parcel renumbered when it reached the server (in its notes)
+    if (q) list = list.filter(p => p.parcel_code.toLowerCase().includes(q) || (p.notes ?? '').toLowerCase().includes(q))
     return list
   }, [incoming, incStatusFilter, pickupCodeSearch])
 

@@ -1,12 +1,12 @@
 import { db } from './db'
 
-const APP_TRACKING_URL = 'https://sbta-gestion.cloud'
+export const APP_TRACKING_URL = 'https://sbta-gestion.cloud'
 
 function pad(num: number, len: number): string {
   return num.toString().padStart(len, '0')
 }
 
-function formatReference(date: Date, code: string): string {
+export function formatReference(date: Date, code: string): string {
   const mm = pad(date.getMonth() + 1, 2)
   const dd = pad(date.getDate(), 2)
   const hh = pad(date.getHours(), 2)
@@ -15,30 +15,45 @@ function formatReference(date: Date, code: string): string {
   return `${mm}/${dd}-${hh}${mi}-${suffix}`
 }
 
+// Offline codes used to look like the server's (agency code + 4 random digits) and were only
+// checked against the parcels of the device: with 9 999 codes per agency, a code already taken on
+// the server was likely once an agency had thousands of parcels, and the parcel was then refused
+// for good while its receipt was already in the client's hands.
+// They now have their own form: agency code + « H » (hors ligne) + 5 characters drawn among 31
+// (no 0/O, 1/I/L), e.g. « GTH7K2QM ». The server's codes never have that form, and two devices
+// offline at the same time draw the same code about once in 28 million.
+const OFFLINE_MARK = 'H'
+const OFFLINE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'
+const OFFLINE_RANDOM_LENGTH = 5
+
+function randomOfflinePart(): string {
+  const values = crypto.getRandomValues(new Uint32Array(OFFLINE_RANDOM_LENGTH))
+  return Array.from(values, v => OFFLINE_ALPHABET[v % OFFLINE_ALPHABET.length]).join('')
+}
+
+/** Agency code that starts a parcel code (offline or server form). */
+export function agencyCodeOf(parcelCode: string): string {
+  const offline = parcelCode.match(new RegExp(`^(.*)${OFFLINE_MARK}[${OFFLINE_ALPHABET}]{${OFFLINE_RANDOM_LENGTH}}$`))
+  if (offline) return offline[1]
+  return parcelCode.length > 4 ? parcelCode.slice(0, -4) : ''
+}
+
 /**
- * Generate a parcel code matching the online DB trigger format:
- *   agency_code + 4-digit random suffix (e.g. "012829")
- * Falls back to 6-digit random if no agency_code.
- *
- * Ensures uniqueness against existing local parcels (IndexedDB).
+ * New offline parcel code, not used by a parcel known on the device, nor by `isTaken` when given
+ * (e.g. a check on the server once online).
  */
-async function generateUniqueCode(agencyCode: string | null): Promise<string> {
-  const existing = await db.parcels.toArray()
-  const existingCodes = new Set(existing.map(p => p.parcel_code))
-
-  for (let attempt = 0; attempt < 100; attempt++) {
-    let code: string
-    if (agencyCode && agencyCode.length > 0) {
-      const suffix = pad(Math.floor(Math.random() * 9999) + 1, 4)
-      code = `${agencyCode}${suffix}`
-    } else {
-      code = pad(Math.floor(Math.random() * 999999) + 1, 6)
-    }
-    if (!existingCodes.has(code)) return code
+export async function generateOfflineParcelCode(
+  agencyCode: string | null,
+  isTaken?: (code: string) => Promise<boolean>,
+): Promise<string> {
+  const existingCodes = new Set((await db.parcels.toArray()).map(p => p.parcel_code))
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const code = `${agencyCode ?? ''}${OFFLINE_MARK}${randomOfflinePart()}`
+    if (existingCodes.has(code)) continue
+    if (isTaken && await isTaken(code)) continue
+    return code
   }
-
-  // Extremely unlikely fallback
-  return `${agencyCode ?? ''}${pad(Date.now() % 10000, 4)}`
+  throw new Error('Impossible de créer un code courrier unique')
 }
 
 /**
@@ -62,7 +77,7 @@ async function getNextDailySequence(stationId: string): Promise<number> {
 }
 
 /**
- * Generate all parcel codes locally, matching the online DB trigger format.
+ * Generate all parcel codes locally (offline code form, see above).
  * Returns parcel_code, reference, daily_sequence, and tracking_url.
  */
 export async function generateOfflineParcelCodes(
@@ -74,7 +89,7 @@ export async function generateOfflineParcelCodes(
   daily_sequence: number
   tracking_url: string
 }> {
-  const code = await generateUniqueCode(agencyCode)
+  const code = await generateOfflineParcelCode(agencyCode)
   const now = new Date()
   const reference = formatReference(now, code)
   const daily_sequence = await getNextDailySequence(stationId)

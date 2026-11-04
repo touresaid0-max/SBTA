@@ -1,5 +1,6 @@
 import type { Table } from 'dexie';
 import { db, type SyncQueueItem } from './db';
+import { APP_TRACKING_URL, agencyCodeOf, formatReference, generateOfflineParcelCode } from './parcelCodeGenerator';
 import { supabase } from '@/services/supabase';
 import { sendCourierCreatedSms, sendCourierArrivedSms } from '@/services/emisSms.service';
 
@@ -310,6 +311,48 @@ export async function recoverUnqueuedRecords(): Promise<number> {
   return requeued;
 }
 
+// ── Parcel code already used on the server ──
+// A code drawn offline (older form: agency code + 4 digits) could already belong to another parcel
+// on the server: the parcel was then refused at every try, forever, and never reached the server.
+// It now gets a new code, free on the server; the code printed on the receipt is kept in its notes
+// so that the parcel can still be found, and the queued SMS gives the recipient the new code.
+
+function isCodeTaken(error: { code?: string; message?: string }): boolean {
+  return error.code === '23505' && /parcel_code|reference/.test(error.message ?? '');
+}
+
+async function newCodeFor(record: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const printed = String(record.parcel_code ?? '');
+  const isTaken = async (code: string): Promise<boolean> => {
+    const { data, error } = await supabase.from('parcels').select('id').eq('parcel_code', code).maybeSingle();
+    if (error) throw error;
+    return Boolean(data);
+  };
+  const code = await generateOfflineParcelCode(agencyCodeOf(printed) || null, isTaken);
+  const registeredAt = new Date(String(record.registered_at ?? record.created_at ?? nowIso()));
+  return {
+    parcel_code: code,
+    reference: formatReference(Number.isNaN(registeredAt.getTime()) ? new Date() : registeredAt, code),
+    tracking_url: `${APP_TRACKING_URL}/track/${code}`,
+    notes: [record.notes, `Code imprimé sur le reçu : ${printed}`].filter(Boolean).join(' — '),
+  };
+}
+
+/** The new code on the device's copy, in the parcel's other queued sends and in its queued SMS. */
+async function applyNewCode(parcelId: string, changes: Record<string, unknown>): Promise<void> {
+  await db.parcels.update(parcelId, changes);
+  await db.sync_queue
+    .filter(i => (i.entity === 'parcels' && i.op === 'insert' && String(i.payload?.id ?? '') === parcelId)
+      || (i.entity === SMS_ENTITY && String(i.payload?.parcel_id ?? '') === parcelId))
+    .modify(i => {
+      if (i.entity === SMS_ENTITY) {
+        if ('parcel_code' in i.payload) i.payload = { ...i.payload, parcel_code: changes.parcel_code, tracking_url: changes.tracking_url };
+      } else {
+        i.payload = { ...i.payload, ...changes };
+      }
+    });
+}
+
 // ── Execute individual operations against Supabase ──
 
 async function executeInsert(store: StoreName, record: Record<string, unknown>): Promise<void> {
@@ -320,7 +363,12 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
     const userId = await getCurrentUserId();
     if (userId && !payload.registered_by) payload.registered_by = userId;
     // upsert ensures idempotency — if the UUID already exists (retry), it's a no-op
-    const { error } = await supabase.from(table).upsert(payload);
+    let { error } = await supabase.from(table).upsert(payload);
+    if (error && isCodeTaken(error)) {
+      const changes = await newCodeFor(record);
+      ({ error } = await supabase.from(table).upsert({ ...payload, ...changes }));
+      if (!error) await applyNewCode(String(record.id), changes);
+    }
     if (error) throw error;
   } else if (store === 'tracking_events') {
     // Tracking events are normally created by the DB trigger on parcel status change.
@@ -430,8 +478,11 @@ export async function flushSyncQueue(): Promise<FlushResult> {
       .filter(isWaitingToSend);
     pending.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
 
-    for (const item of pending) {
-      if (!item.id) continue;
+    for (const listed of pending) {
+      if (!listed.id) continue;
+      // Read again: an earlier send of this run may have changed it (new parcel code in its SMS)
+      const item = await db.sync_queue.get(listed.id);
+      if (!item?.id) continue;
       processed++;
 
       try {
