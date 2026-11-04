@@ -228,6 +228,7 @@ export interface SessionRecord {
   assigned_route_ids?: string[];
   login_at: string;
   offline: boolean;
+  /** @deprecated Unsalted SHA-256 of earlier versions: never read, erased when found (audit M8). */
   password_hash?: string;
   tpe_pos_enabled?: boolean;
   tpe_mode?: 'sans_guichet' | 'avec_guichet';

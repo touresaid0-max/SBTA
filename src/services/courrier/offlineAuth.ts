@@ -3,6 +3,7 @@ import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { isOnline } from './syncEngine';
 import { clearPersonalDataOnLogout } from '@/services/offline/dataRetention';
+import { createCredentialStore, OFFLINE_LOGIN_MAX_AGE_DAYS } from '@/services/offline/credentialStore';
 
 export interface CourrierLoginResult {
   success: boolean;
@@ -11,10 +12,33 @@ export interface CourrierLoginResult {
   offline?: boolean;
 }
 
-async function hashPassword(password: string): Promise<string> {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(password));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+// Offline login of the courrier (audit M8): salted PBKDF2, one entry per account, valid 30 days.
+// It used to keep an unsalted SHA-256 of the password in the session table.
+type StoredSession = Omit<SessionRecord, 'id' | 'login_at' | 'offline' | 'password_hash'>;
+const credentials = createCredentialStore<StoredSession>('sbta_courrier_offline_logins');
+
+// The server did not answer (no network, timeout, server down) — as opposed to a refused password
+function isNetworkError(err: any): boolean {
+  if (!err) return false;
+  if (err.name === 'AuthRetryableFetchError' || err instanceof TypeError) return true;
+  if (Number(err.status ?? 0) >= 500) return true;
+  return /failed to fetch|network|load failed|timeout|délai/i.test(String(err.message ?? ''));
+}
+
+function isRejectedPassword(err: any): boolean {
+  return err?.name === 'AuthApiError' && /invalid login credentials/i.test(String(err.message ?? ''));
+}
+
+/** Erases the unsalted hashes kept by earlier versions in the session table. */
+async function eraseLegacyPasswordHashes(): Promise<void> {
+  try {
+    const legacy = (await db.session.toArray()).filter(s => s.password_hash);
+    for (const s of legacy) {
+      const { password_hash: _ph, ...rest } = s;
+      void _ph;
+      await db.session.put(rest as SessionRecord);
+    }
+  } catch { /* tried again at the next read of the session */ }
 }
 
 export async function login(email: string, password: string): Promise<CourrierLoginResult> {
@@ -28,8 +52,6 @@ export async function login(email: string, password: string): Promise<CourrierLo
       if (!user) {
         return { success: false, error: 'Profil introuvable. Contactez votre administrateur.' };
       }
-
-      const passwordHash = await hashPassword(password);
 
       // Resolve station_id from station_agents junction
       let stationId = user.station_id ?? '';
@@ -77,7 +99,6 @@ export async function login(email: string, password: string): Promise<CourrierLo
         station_name: stationName,
         login_at: new Date().toISOString(),
         offline: false,
-        password_hash: passwordHash,
       };
 
       await db.session.clear();
@@ -88,37 +109,50 @@ export async function login(email: string, password: string): Promise<CourrierLo
         return { success: false, error: 'Aucune gare assignée à ce compte.' };
       }
 
+      // Allow this account to sign in again on this device without network
+      try {
+        const { id: _id, login_at: _at, offline: _off, ...stored } = session;
+        void _id; void _at; void _off;
+        await credentials.save(email, password, stored);
+      } catch { /* offline login unavailable */ }
+
       return { success: true, session };
     } catch (err: any) {
+      // No answer from the server: check the login saved on this device instead
+      if (isNetworkError(err)) return offlineLogin(email, password);
+      // Password refused (changed or wrong): it must no longer open the offline session either
+      if (isRejectedPassword(err)) credentials.forget(email);
       return { success: false, error: err?.message ?? 'Erreur de connexion' };
     }
   }
 
-  // ── OFFLINE LOGIN ──
-  const sessions = await db.session.toArray();
-  const cached = sessions.find(s => s.email?.toLowerCase() === email.trim().toLowerCase());
+  return offlineLogin(email, password);
+}
 
-  if (!cached || !cached.password_hash) {
-    return { success: false, error: 'Aucune session hors ligne trouvée pour cet identifiant. Connectez-vous au moins une fois en ligne.' };
+async function offlineLogin(email: string, password: string): Promise<CourrierLoginResult> {
+  const check = await credentials.check(email, password);
+  if (check.status === 'ok') {
+    const restored: SessionRecord = {
+      ...check.session,
+      id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      login_at: new Date().toISOString(),
+      offline: true,
+    };
+    await db.session.clear();
+    await db.session.put(restored);
+    return { success: true, session: restored, offline: true };
   }
-
-  const inputHash = await hashPassword(password);
-  if (inputHash !== cached.password_hash) {
+  if (check.status === 'wrong_password') {
     return { success: false, error: 'Mot de passe incorrect (vérification hors ligne).' };
   }
-
-  const restored: SessionRecord = {
-    ...cached,
-    login_at: new Date().toISOString(),
-    offline: true,
-  };
-  await db.session.clear();
-  await db.session.put(restored);
-
-  return { success: true, session: restored, offline: true };
+  if (check.status === 'expired') {
+    return { success: false, error: `Connexion hors ligne expirée : reconnectez-vous une fois en ligne (validité ${OFFLINE_LOGIN_MAX_AGE_DAYS} jours).` };
+  }
+  return { success: false, error: 'Aucune session hors ligne trouvée pour cet identifiant. Connectez-vous au moins une fois en ligne.' };
 }
 
 export async function getCurrentSession(): Promise<SessionRecord | undefined> {
+  await eraseLegacyPasswordHashes();
   const sessions = await db.session.toArray();
   return sessions[0];
 }

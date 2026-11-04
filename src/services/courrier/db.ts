@@ -104,6 +104,7 @@ export interface SessionRecord {
   station_name: string;
   login_at: string;
   offline: boolean;
+  /** @deprecated Unsalted SHA-256 of earlier versions: never read, erased when found (audit M8). */
   password_hash?: string;
 }
 
