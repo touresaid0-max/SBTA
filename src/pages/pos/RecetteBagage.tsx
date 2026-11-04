@@ -5,21 +5,13 @@ import { supabase } from '@/services/supabase';
 import { formatCurrency } from '@/utils/formatCurrency';
 import Pagination from '@/components/pos/Pagination';
 import { usePagination } from '@/hooks/usePagination';
-import { Package, Loader2, AlertCircle, Calendar as CalendarIcon, Wallet } from 'lucide-react';
+import { getLocalBaggageRevenue, type BaggageRevenueRow } from '@/services/pos/bagageService';
+import { isOnline } from '@/services/pos/syncEngine';
+import { Package, Loader2, AlertCircle, Calendar as CalendarIcon, Wallet, WifiOff } from 'lucide-react';
 
 type Period = 'day' | 'yesterday' | 'last7' | 'week' | 'month' | 'last_month' | 'year' | 'custom';
 
-interface BaggageRow {
-  id: string;
-  baggage_number: string;
-  destination: string;
-  price: number;
-  created_at: string;
-  bus_registration: string | null;
-  departure_number: number | null;
-  owner_name: string | null;
-  has_ticket: boolean;
-}
+type BaggageRow = BaggageRevenueRow;
 
 const DATE_LONG: Intl.DateTimeFormatOptions = { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' };
 const DATE_SHORT: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
@@ -112,6 +104,8 @@ export default function POSRecetteBagage() {
   const [rows, setRows] = useState<BaggageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  // Server not reachable: the list holds the baggage kept on this device only
+  const [deviceOnly, setDeviceOnly] = useState(false);
 
   const range = useMemo(() => getPeriodRange(period, customFrom, customTo), [period, customFrom, customTo]);
 
@@ -122,11 +116,18 @@ export default function POSRecetteBagage() {
     setError('');
 
     (async () => {
+      // Baggage kept on this device (sold offline, or not yet sent): shown in every case
+      let local: BaggageRow[] = [];
       try {
+        local = await getLocalBaggageRevenue(session.user_id, session.counter_id, range.from, range.to);
+      } catch { /* device database unreadable: the server's list alone */ }
+      if (cancelled) return;
+
+      try {
+        if (!isOnline()) throw new TypeError('offline');
         // Page by page: a month or a year can hold more than 1 000 operations,
         // and a truncated list would give a wrong total
         const all: BaggageRow[] = [];
-        let err: { message: string } | null = null;
         for (let from = 0; ; from += PAGE_SIZE) {
           const { data, error: pageError } = await supabase
             .from('baggage_tickets')
@@ -138,19 +139,23 @@ export default function POSRecetteBagage() {
             .order('created_at', { ascending: false })
             .order('id', { ascending: true })
             .range(from, from + PAGE_SIZE - 1);
-          if (pageError) { err = pageError; break; }
+          if (pageError) throw pageError;
           all.push(...((data ?? []) as BaggageRow[]));
           if (!data || data.length < PAGE_SIZE) break;
         }
         if (cancelled) return;
-        if (err) {
-          setError(err.message);
-          setRows([]);
-        } else {
-          setRows(all);
-        }
+        // The server's list, plus the baggage of this device it has not received yet
+        const onServer = new Set(all.map(r => r.id));
+        setRows([...all, ...local.filter(r => !onServer.has(r.id))]);
+        setDeviceOnly(false);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur inattendue');
+        if (cancelled) return;
+        const message = e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e);
+        const network = !isOnline() || /failed to fetch|network|offline|load failed|timeout/i.test(message);
+        // Server not reachable (offline): the baggage kept on the device, without an error
+        setRows(local);
+        setDeviceOnly(true);
+        if (!network) setError(message);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -159,7 +164,7 @@ export default function POSRecetteBagage() {
     return () => {
       cancelled = true;
     };
-  }, [session?.user_id, range.from, range.to]);
+  }, [session?.user_id, session?.counter_id, range.from, range.to]);
 
   const totalRevenue = useMemo(() => rows.reduce((sum, r) => sum + (Number(r.price) || 0), 0), [rows]);
   const totalCount = rows.length;
@@ -297,7 +302,20 @@ export default function POSRecetteBagage() {
             style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}
           >
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <span>Erreur de chargement : {error}</span>
+            <span>Serveur indisponible ({error}) : seuls les bagages enregistrés sur ce poste sont affichés.</span>
+          </div>
+        )}
+
+        {deviceOnly && !error && (
+          <div
+            className="rounded-xl px-3 py-2.5 mb-4 flex items-start gap-2 text-sm"
+            style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+          >
+            <WifiOff className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>
+              Hors ligne : recette calculée avec les bagages enregistrés sur ce poste.
+              {' '}Ceux vendus sur un autre poste apparaîtront au retour du réseau.
+            </span>
           </div>
         )}
 
@@ -355,6 +373,11 @@ export default function POSRecetteBagage() {
                         </td>
                         <td className="px-3 py-2 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
                           {r.baggage_number}
+                          {r.not_sent && (
+                            <div className="mt-0.5 font-sans text-[10px] font-bold" style={{ color: '#B45309' }}>
+                              Pas encore envoyé
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
                           <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{r.destination}</div>

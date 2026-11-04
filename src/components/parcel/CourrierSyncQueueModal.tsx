@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { X, RefreshCw, Trash2, AlertCircle, Clock, Package } from 'lucide-react';
-import { getQueueItems, deleteQueueItem, retryQueueItem, type StoreName } from '@/services/courrier/syncEngine';
+import { X, RefreshCw, AlertCircle, Clock, Package } from 'lucide-react';
+import { getQueueItems, abandonQueueItem, retryQueueItem, type StoreName } from '@/services/courrier/syncEngine';
 import type { SyncQueueItem } from '@/services/courrier/db';
 import { useConnection } from '@/services/courrier/ConnectionContext';
+import { useCourrierUser } from '@/services/courrier/useCourrierUser';
+import { AbandonOperation } from '@/components/shared/AbandonOperation';
+import { byQueueOrder } from '@/services/offline/queueRules';
 
 interface CourrierSyncQueueModalProps {
   open: boolean;
@@ -13,6 +16,8 @@ interface CourrierSyncQueueModalProps {
 const ENTITY_LABELS: Record<string, string> = {
   parcels: 'Courrier',
   tracking_events: 'Événement de suivi',
+  sms: 'SMS au destinataire',
+  photos: 'Photo du courrier',
 };
 
 const OP_LABELS: Record<string, string> = {
@@ -37,12 +42,22 @@ function describePayload(item: SyncQueueItem): string {
   if (item.entity === 'tracking_events') {
     return `Suivi — ${p.description ?? p.event_type ?? ''}`;
   }
+  if (item.entity === 'photos') {
+    return 'Photo du courrier (envoi vers l\'espace privé)';
+  }
+  if (item.entity === 'sms') {
+    return p.kind === 'arrived' ? 'SMS « courrier arrivé »' : `SMS « courrier enregistré » — ${p.parcel_code ?? ''}`;
+  }
   return `${ENTITY_LABELS[item.entity] ?? item.entity} — ${OP_LABELS[item.op] ?? item.op}`;
 }
 
 export function CourrierSyncQueueModal({ open, onClose, onSyncNow }: CourrierSyncQueueModalProps) {
   const [items, setItems] = useState<SyncQueueItem[]>([]);
   const { status } = useConnection();
+  const user = useCourrierUser();
+  // Abandoned operations stay listed as a trace, after the ones still to send
+  const toSend = items.filter(i => i.status !== 'abandoned');
+  const canRetry = (item: SyncQueueItem) => item.status === 'error' || item.status === 'failed';
 
   useEffect(() => {
     if (!open) return;
@@ -53,12 +68,14 @@ export function CourrierSyncQueueModal({ open, onClose, onSyncNow }: CourrierSyn
 
   async function refreshItems() {
     const queueItems = await getQueueItems();
-    queueItems.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+    queueItems.sort((a, b) => Number(a.status === 'abandoned') - Number(b.status === 'abandoned') || byQueueOrder(a, b));
     setItems(queueItems);
   }
 
-  async function handleDelete(id: number) {
-    await deleteQueueItem(id);
+  // An operation used to be deletable here without a trace, whatever its state: a failed one is
+  // now given up with a written reason, kept with it on the device
+  async function handleAbandon(id: number, reason: string) {
+    await abandonQueueItem(id, reason, user.full_name || 'agent');
     await refreshItems();
   }
 
@@ -118,6 +135,16 @@ export function CourrierSyncQueueModal({ open, onClose, onSyncNow }: CourrierSyn
                         <AlertCircle className="w-3 h-3" /> Erreur
                       </span>
                     )}
+                    {item.status === 'failed' && (
+                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded flex items-center gap-1" style={{ backgroundColor: '#DC2626', color: '#fff' }}>
+                        <AlertCircle className="w-3 h-3" /> Refusée par le serveur
+                      </span>
+                    )}
+                    {item.status === 'abandoned' && (
+                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)' }}>
+                        Abandonnée
+                      </span>
+                    )}
                     {item.status === 'pending' && (
                       <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
                         En attente
@@ -127,12 +154,25 @@ export function CourrierSyncQueueModal({ open, onClose, onSyncNow }: CourrierSyn
                   <p className="text-xs truncate" style={{ color: 'var(--text-primary)' }}>
                     {describePayload(item)}
                   </p>
-                  {item.last_error && (
+                  {canRetry(item) && item.last_error && (
                     <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{item.last_error}</p>
+                  )}
+                  {item.status === 'failed' && (
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      Plus renvoyée automatiquement : « Réessayer » après correction, ou abandonner avec une justification.
+                    </p>
+                  )}
+                  {item.status === 'abandoned' && (
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Abandonnée{item.abandoned_by ? ` par ${item.abandoned_by}` : ''} : {item.abandon_reason}
+                    </p>
+                  )}
+                  {canRetry(item) && item.id && (
+                    <AbandonOperation onAbandon={reason => handleAbandon(item.id!, reason)} />
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  {item.status === 'error' && (
+                  {canRetry(item) && (
                     <button
                       onClick={() => item.id && void handleRetry(item.id)}
                       className="p-1.5 rounded-lg hover:bg-gray-100"
@@ -141,13 +181,6 @@ export function CourrierSyncQueueModal({ open, onClose, onSyncNow }: CourrierSyn
                       <RefreshCw className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                     </button>
                   )}
-                  <button
-                    onClick={() => item.id && void handleDelete(item.id)}
-                    className="p-1.5 rounded-lg hover:bg-gray-100"
-                    title="Supprimer"
-                  >
-                    <Trash2 className="w-4 h-4" style={{ color: '#DC2626' }} />
-                  </button>
                 </div>
               </div>
             ))
@@ -161,10 +194,10 @@ export function CourrierSyncQueueModal({ open, onClose, onSyncNow }: CourrierSyn
             </p>
           ) : (
             <p className="text-xs flex-1" style={{ color: 'var(--text-muted)' }}>
-              {items.length} opération{items.length > 1 ? 's' : ''} en attente
+              {toSend.length} opération{toSend.length > 1 ? 's' : ''} en attente
             </p>
           )}
-          {status === 'online' && items.length > 0 && (
+          {status === 'online' && toSend.length > 0 && (
             <button
               onClick={() => { onSyncNow(); onClose(); }}
               className="px-4 py-2 rounded-lg text-sm font-semibold"

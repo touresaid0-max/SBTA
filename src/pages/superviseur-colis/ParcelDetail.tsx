@@ -12,6 +12,7 @@ import { fetchTrackingEvents, fetchParcelAgentInfo } from '@/services/parcel.ser
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import ParcelStatusStepper from '@/components/parcel/ParcelStatusStepper'
 import type { Parcel, ParcelTrackingEvent, ParcelStatus } from '@/types/parcel.types'
+import { usePhotoUrls } from '@/services/courrier/photos'
 
 const STATUS_CONFIG: Record<ParcelStatus, { label: string; color: string; bg: string }> = {
   enregistre:    { label: 'Enregistré',    color: '#0B7439', bg: '#d4edda' },
@@ -48,6 +49,8 @@ export default function SuperviseurParcelDetail() {
   } | null>(null)
   const [loading, setLoading]         = useState(true)
   const [lightbox, setLightbox]       = useState<string | null>(null)
+  // Photos of the private space shown with signed links, or from the device's copy (audit m3)
+  const photoUrls = usePhotoUrls(parcel?.parcel_photos)
 
   useEffect(() => {
     if (!id) return
@@ -296,15 +299,21 @@ export default function SuperviseurParcelDetail() {
             </span>
           </div>
           <div className="flex flex-wrap gap-3">
-            {parcel.parcel_photos.map((url, idx) => (
+            {parcel.parcel_photos.map((entry, idx) => (
               <button
-                key={url}
+                key={entry}
                 type="button"
-                onClick={() => setLightbox(url)}
+                onClick={() => photoUrls[idx] && setLightbox(photoUrls[idx])}
                 className="relative rounded-xl overflow-hidden flex-shrink-0 group"
                 style={{ width: 96, height: 96, border: '2px solid var(--border)' }}
               >
-                <img src={url} alt={`Photo courrier ${idx + 1}`} className="w-full h-full object-cover" />
+                {photoUrls[idx] ? (
+                  <img src={photoUrls[idx]} alt={`Photo courrier ${idx + 1}`} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center p-1 text-center text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    Photo pas encore disponible
+                  </span>
+                )}
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }}>
                   <ZoomIn className="w-5 h-5 text-white" />
                 </div>

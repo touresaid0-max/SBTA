@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, User, MapPin, Package, DollarSign, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useAuthStore } from '@/store/authStore'
+import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
 import { supabase } from '@/services/supabase'
 import { createParcel, fetchParcelAgentInfo, fetchPosOriginPhones, markTicketPrinted } from '@/services/parcel.service'
-import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
-import { localInsertParcel } from '@/services/courrier/offlineStore'
+import { isOnline as courrierIsOnline, getPendingCount, enqueueSms, keepAndQueuePhotos, plannedPhotoPaths, flushSyncQueue } from '@/services/courrier/syncEngine'
+import { localInsertParcel, localInsertTrackingEvent, localUpdateParcel } from '@/services/courrier/offlineStore'
 import { getReferentiel } from '@/services/courrier/referentiels'
 import { generateOfflineParcelCodes } from '@/services/courrier/parcelCodeGenerator'
 import { useConnection } from '@/services/courrier/ConnectionContext'
@@ -14,6 +14,13 @@ import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import type { ParcelNature, ParcelPriority, Parcel, ParcelReceiptData } from '@/types/parcel.types'
+import { trustedNowIso } from '@/services/offline/deviceClock'
+import PhoneInputCI from '@/components/shared/PhoneInputCI'
+import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput'
+import { uuidV4 } from '@/utils/uuid'
+import ParcelPhotoCapture, { type CapturedPhoto } from '@/components/parcel/ParcelPhotoCapture'
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits'
 
 interface Station { id: string; name: string; city_name?: string }
 
@@ -35,26 +42,33 @@ const PRIORITY_OPTIONS: { value: ParcelPriority; label: string }[] = [
 ]
 
 export default function NewParcelForm() {
-  const { user } = useAuthStore()
+  // Account and station of the counter's session: also known after an offline login
+  const user = useCourrierUser()
   const navigate = useNavigate()
   const location = useLocation()
   const basePath = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
 
-  const myStation: Station | null = user?.station_id
-    ? { id: user.station_id, name: user.station_name ?? '' }
+  const myStation: Station | null = user.station_id
+    ? { id: user.station_id, name: user.station_name }
     : null
-  const stationPhone = user?.station_phone ?? ''
+  const stationPhone = user.station_phone
   const isPosCourrier = basePath === '/guichet/courrier'
 
   async function loadAgentInfo(originStationId: string, destinationStationId: string) {
+    // Server data only: without network the receipt prints without the agents' phones
+    if (!courrierIsOnline()) return null
     const agentInfo = await fetchParcelAgentInfo(originStationId, destinationStationId).catch(() => null)
-    if (!isPosCourrier || !agentInfo || !user?.id) return agentInfo
+    if (!isPosCourrier || !agentInfo || !user.id) return agentInfo
     const posPhones = await fetchPosOriginPhones(user.id, originStationId, user.phone ?? null).catch(() => null)
     return posPhones ? { ...agentInfo, origin_agent_phone: posPhones } : agentInfo
   }
 
   const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(false)
+  // Phone errors shown at once after a submit attempt, otherwise when the field is left
+  const [showPhoneErrors, setShowPhoneErrors] = useState(false)
+  // Photos of the parcel (audit m3): reduced on the device, sent by the queue after the parcel
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([])
 
   const [form, setForm] = useState({
     sender_name: '',
@@ -126,7 +140,9 @@ export default function NewParcelForm() {
       if (printCopy === 'client') {
         try {
           if (printModal.isOffline && printModal.localParcel) {
-            await localInsertParcel({ ...printModal.localParcel, ticket_printed: true } as any)
+            // An update, sent after the parcel: a second full insert of the parcel was queued
+            // behind the recipient's SMS and held it back until it was sent
+            await localUpdateParcel(printModal.parcelId, { ticket_printed: true })
           } else {
             await markTicketPrinted(printModal.parcelId)
           }
@@ -154,7 +170,11 @@ export default function NewParcelForm() {
         if (!smsResult.success && !smsResult.duplicate) {
           toast('Courrier enregistre, mais SMS non envoye.', { icon: '⚠️' })
         }
-      } catch { /* SMS failure must not block */ }
+      } catch {
+        // Service unreachable: kept and sent again with the other pending operations
+        await enqueueSms({ kind: 'created', parcel_id: m.smsData.id, parcel_code: m.smsData.parcel_code, recipient_name: m.smsData.recipient_name, recipient_phone: m.smsData.recipient_phone, recipient_city: m.smsData.recipient_city, tracking_url: m.smsData.tracking_url }).catch(() => {})
+        conn.setPendingCount(await getPendingCount())
+      }
     }
 
     if (m.isOffline) {
@@ -164,155 +184,246 @@ export default function NewParcelForm() {
     navigate(`${basePath}/dashboard`)
   }
 
+  /**
+   * Parcel saved on the device (no network, or the server stopped answering): code generated
+   * here, ticket printed at once; the parcel, its "registered" event and the recipient's SMS are
+   * sent when the network is back.
+   */
+  // Texts as saved: cleaned (spaces, invisible characters) and limited (audit m2)
+  function cleanedTexts() {
+    return {
+      sender_name: cleanText(form.sender_name, TEXT_LIMITS.name),
+      recipient_name: cleanText(form.recipient_name, TEXT_LIMITS.name),
+      recipient_city: cleanText(form.recipient_city, TEXT_LIMITS.city),
+      content_description: cleanText(form.content_description, TEXT_LIMITS.description),
+    }
+  }
+
+  async function saveOffline(fullRecipientPhone: string, parcelId: string, photoPaths: string[]) {
+    if (!myStation) return
+    const now = trustedNowIso()
+    const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
+
+    // Same prefix as online (audit M11): the agency code of the destination for this station,
+    // otherwise the station's general agency code, both kept on the device
+    let agencyCode: string | null = null
+    const destCodes = await getReferentiel<{ destination_station_id: string; agency_code?: string | null }>(`destination_agency_codes_${myStation.id}`)
+    const destCode = destCodes?.find(c => c.destination_station_id === form.destination_station_id)?.agency_code
+    if (destCode) {
+      agencyCode = destCode
+    } else {
+      const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
+      const myStationData = cachedStations?.find(s => s.id === myStation.id)
+      agencyCode = myStationData?.agency_code ?? null
+    }
+
+    // Generate proper parcel codes matching the online DB trigger format
+    const { parcel_code, reference, daily_sequence, tracking_url } =
+      await generateOfflineParcelCodes(myStation.id, agencyCode)
+
+    const localParcel = await localInsertParcel({
+      id: parcelId,
+      parcel_photos: photoPaths,
+      parcel_code,
+      reference,
+      daily_sequence,
+      tracking_url,
+      sender_name: cleanedTexts().sender_name,
+      sender_phone: toStoredPhoneCI(form.sender_phone),
+      sender_address: null,
+      recipient_name: cleanedTexts().recipient_name,
+      recipient_phone: fullRecipientPhone,
+      recipient_city: cleanedTexts().recipient_city,
+      recipient_address: null,
+      origin_station_id: myStation.id,
+      origin_station_name: myStation.name,
+      destination_station_id: form.destination_station_id,
+      destination_station_name: stations.find(s => s.id === form.destination_station_id)?.name ?? '',
+      schedule_id: null,
+      driver_id: null,
+      bus_id: null,
+      declared_value: Number(form.declared_value),
+      delivery_fee: Number(form.delivery_fee),
+      sms_tracking_fee: Number(form.sms_tracking_fee),
+      total_amount: totalAmount,
+      priority: form.priority,
+      planned_date: form.planned_date || null,
+      nature: form.nature,
+      content_description: cleanedTexts().content_description,
+      notes: form.notes || null,
+      status: 'enregistre',
+      registered_at: now,
+      registered_by: user.id,
+      packaged_at: null,
+      shipped_at: null,
+      arrived_at: null,
+      delivered_at: null,
+      sms_sent_at: null,
+      company_id: null,
+      ticket_printed: false,
+      delivery_recipient_name: null,
+      delivery_recipient_phone: null,
+      delivery_id_number: null,
+      delivery_id_type: null,
+    })
+
+    // Same "registered" event and SMS as online, sent with the parcel when the network is back
+    try {
+      await localInsertTrackingEvent({
+        parcel_id: localParcel.id,
+        event_type: 'enregistre',
+        description: 'Courrier enregistré',
+        location: myStation.name,
+        station_id: myStation.id,
+        performed_by: user.id,
+        performer_name: user.full_name,
+        event_at: now,
+        metadata: {},
+      })
+      await enqueueSms({
+        kind: 'created',
+        parcel_id: localParcel.id,
+        parcel_code: localParcel.parcel_code,
+        recipient_name: localParcel.recipient_name,
+        recipient_phone: localParcel.recipient_phone,
+        recipient_city: localParcel.recipient_city,
+        tracking_url: localParcel.tracking_url,
+      })
+    } catch { /* the parcel itself is saved */ }
+
+    // Photos kept with the parcel, sent after it when the network is back (audit m3)
+    try {
+      await keepAndQueuePhotos(localParcel.id, photos)
+    } catch { toast('Photos non gardées sur ce poste : le courrier est enregistré sans elles.', { icon: '⚠️' }) }
+
+    toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
+
+    try {
+      const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
+      let courierQrEnabled = true
+      const cachedStationsForQr = await getReferentiel<{ id: string; courier_qr_enabled?: boolean }>('station_extras')
+      if (cachedStationsForQr) {
+        const myStationData = cachedStationsForQr.find(s => s.id === myStation.id)
+        if (myStationData?.courier_qr_enabled !== undefined) courierQrEnabled = myStationData.courier_qr_enabled
+      }
+      const receiptData = buildReceiptData(
+        { ...localParcel, origin_station_name: myStation.name, parcel_code: localParcel.parcel_code } as Parcel,
+        myStation.name,
+        stationPhone,
+        null,
+        null,
+        agentInfo,
+        courierQrEnabled,
+      )
+      setPrintModal({ data: receiptData, parcelId: localParcel.id, isOffline: true, localParcel })
+      setPrintCopy('client')
+    } catch {
+      conn.setPendingCount(await getPendingCount())
+      navigate(`${basePath}/dashboard`)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!myStation) { toast.error('Aucune gare associée à votre compte'); return }
-    if (!form.recipient_name || !form.recipient_phone || !form.destination_station_id || !form.content_description) {
+    const texts = cleanedTexts()
+    if (!texts.sender_name || !texts.recipient_name || !form.recipient_phone || !form.destination_station_id || !texts.content_description) {
       toast.error('Veuillez remplir tous les champs obligatoires')
       return
     }
 
-    const fullRecipientPhone = '225' + form.recipient_phone.replace(/\D/g, '')
+    // Both numbers follow the Côte d'Ivoire rule (10 digits, 01/05/07/21/25/27) and are stored as 225 + 10 digits
+    const senderPhoneError = phoneCIError(form.sender_phone, true)
+    if (senderPhoneError) { setShowPhoneErrors(true); toast.error(`Téléphone de l'expéditeur : ${senderPhoneError}`); return }
+    const recipientPhoneError = phoneCIError(form.recipient_phone, true)
+    if (recipientPhoneError) { setShowPhoneErrors(true); toast.error(`Téléphone du destinataire : ${recipientPhoneError}`); return }
+
+    // Typing slip on an amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([
+      { value: Number(form.delivery_fee) || 0, rule: AMOUNT_RULES.parcelFee },
+      { value: Number(form.declared_value) || 0, rule: AMOUNT_RULES.declaredValue },
+    ])
+    if (!amountCheck.ok) { if (amountCheck.error) toast.error(amountCheck.error); return }
+
+    const fullRecipientPhone = toStoredPhoneCI(form.recipient_phone)
+    const fullSenderPhone = toStoredPhoneCI(form.sender_phone)
+
+    // Id fixed now: the photos' storage paths name the parcel, offline as online
+    const parcelId = uuidV4()
+    const photoPaths = await plannedPhotoPaths(parcelId, photos.map(p => p.id))
 
     setLoading(true)
     try {
       // Offline path: save locally, queue for sync, skip server-only features
       if (!courrierIsOnline()) {
-        const now = new Date().toISOString()
-        const localId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
-        const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
-
-        // Look up agency_code from cached station referentiels
-        let agencyCode: string | null = null
-        const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
-        if (cachedStations) {
-          const myStationData = cachedStations.find(s => s.id === myStation.id)
-          agencyCode = myStationData?.agency_code ?? null
-        }
-
-        // Generate proper parcel codes matching the online DB trigger format
-        const { parcel_code, reference, daily_sequence, tracking_url } =
-          await generateOfflineParcelCodes(myStation.id, agencyCode)
-
-        const localParcel = await localInsertParcel({
-          parcel_code,
-          reference,
-          daily_sequence,
-          tracking_url,
-          sender_name: form.sender_name,
-          sender_phone: form.sender_phone,
-          sender_address: null,
-          recipient_name: form.recipient_name,
-          recipient_phone: fullRecipientPhone,
-          recipient_city: form.recipient_city,
-          recipient_address: null,
-          origin_station_id: myStation.id,
-          origin_station_name: myStation.name,
-          destination_station_id: form.destination_station_id,
-          destination_station_name: stations.find(s => s.id === form.destination_station_id)?.name ?? '',
-          schedule_id: null,
-          driver_id: null,
-          bus_id: null,
-          declared_value: Number(form.declared_value),
-          delivery_fee: Number(form.delivery_fee),
-          sms_tracking_fee: Number(form.sms_tracking_fee),
-          total_amount: totalAmount,
-          priority: form.priority,
-          planned_date: form.planned_date || null,
-          nature: form.nature,
-          content_description: form.content_description,
-          notes: form.notes || null,
-          status: 'enregistre',
-          registered_at: now,
-          registered_by: user?.id ?? null,
-          packaged_at: null,
-          shipped_at: null,
-          arrived_at: null,
-          delivered_at: null,
-          sms_sent_at: null,
-          company_id: null,
-          ticket_printed: false,
-          delivery_recipient_name: null,
-          delivery_recipient_phone: null,
-          delivery_id_number: null,
-          delivery_id_type: null,
-        })
-
-        toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
-
-        try {
-          const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
-          let courierQrEnabled = true
-          const cachedStationsForQr = await getReferentiel<{ id: string; courier_qr_enabled?: boolean }>('stations_all')
-          if (cachedStationsForQr) {
-            const myStationData = cachedStationsForQr.find(s => s.id === myStation.id)
-            if (myStationData?.courier_qr_enabled !== undefined) courierQrEnabled = myStationData.courier_qr_enabled
-          }
-          const receiptData = buildReceiptData(
-            { ...localParcel, origin_station_name: myStation.name, parcel_code: localParcel.parcel_code } as Parcel,
-            myStation.name,
-            stationPhone,
-            null,
-            null,
-            agentInfo,
-            courierQrEnabled,
-          )
-          setPrintModal({ data: receiptData, parcelId: localParcel.id, isOffline: true, localParcel })
-          setPrintCopy('client')
-        } catch {
-          conn.setPendingCount(await getPendingCount())
-          navigate(`${basePath}/dashboard`)
-        }
+        await saveOffline(fullRecipientPhone, parcelId, photoPaths)
         return
       }
 
       // Online path: original flow
       // Vérifier qu'un code agence est configuré pour cette destination
-      const { data: destCode } = await supabase
+      const { data: destCode, error: destCodeError } = await supabase
         .from('station_destination_agency_codes')
         .select('agency_code')
         .eq('origin_station_id', myStation.id)
         .eq('destination_station_id', form.destination_station_id)
         .maybeSingle()
 
-      if (!destCode?.agency_code) {
+      if (!destCodeError && !destCode?.agency_code) {
         toast('Aucun code agence configuré pour cette destination — le code agence général de la gare sera utilisé.', { icon: '⚠️' })
       }
 
-      const parcel = await createParcel({
-        sender_name:            form.sender_name,
-        sender_phone:           form.sender_phone,
-        sender_address:         null,
-        recipient_name:         form.recipient_name,
-        recipient_phone:        fullRecipientPhone,
-        recipient_city:         form.recipient_city,
-        recipient_address:      null,
-        origin_station_id:      myStation.id,
-        destination_station_id: form.destination_station_id,
-        declared_value:         Number(form.declared_value),
-        delivery_fee:           Number(form.delivery_fee),
-        sms_tracking_fee:       Number(form.sms_tracking_fee),
-        priority:               form.priority,
-        planned_date:           form.planned_date || null,
-        schedule_id:            null,
-        bus_id:                 null,
-        driver_id:              null,
-        nature:                 form.nature,
-        content_description:    form.content_description,
-        parcel_photos:          [],
-        notes:                  form.notes || null,
-        company_id:             null,
-      } as any)
+      let parcel: Awaited<ReturnType<typeof createParcel>>
+      try {
+        parcel = await createParcel({
+          sender_name:            cleanedTexts().sender_name,
+          sender_phone:           fullSenderPhone,
+          sender_address:         null,
+          recipient_name:         cleanedTexts().recipient_name,
+          recipient_phone:        fullRecipientPhone,
+          recipient_city:         cleanedTexts().recipient_city,
+          recipient_address:      null,
+          origin_station_id:      myStation.id,
+          destination_station_id: form.destination_station_id,
+          declared_value:         Number(form.declared_value),
+          delivery_fee:           Number(form.delivery_fee),
+          sms_tracking_fee:       Number(form.sms_tracking_fee),
+          priority:               form.priority,
+          planned_date:           form.planned_date || null,
+          schedule_id:            null,
+          bus_id:                 null,
+          driver_id:              null,
+          nature:                 form.nature,
+          content_description:    cleanedTexts().content_description,
+          id:                     parcelId,
+          parcel_photos:          photoPaths,
+          notes:                  form.notes || null,
+          company_id:             null,
+        } as any)
+      } catch (err) {
+        // The connection dropped: the parcel is not on the server, save it on the device instead
+        if (!isNetworkError(err)) throw err
+        await saveOffline(fullRecipientPhone, parcelId, photoPaths)
+        return
+      }
 
       await supabase.from('parcel_tracking_events').insert({
         parcel_id:      parcel.id,
         event_type:     'enregistre',
         description:    'Courrier enregistré',
         station_id:     myStation.id,
-        performer_name: user?.full_name ?? '',
+        performer_name: user.full_name,
       })
 
       toast.success('Courrier enregistré avec succès !')
+
+      // Photos sent right away by the queue (kept on the device if the connection drops)
+      if (photos.length > 0) {
+        try {
+          await keepAndQueuePhotos(parcelId, photos)
+          void flushSyncQueue()
+        } catch { toast('Courrier enregistré, mais photos non gardées sur ce poste.', { icon: '⚠️' }) }
+      }
 
       try {
         const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
@@ -357,7 +468,10 @@ export default function NewParcelForm() {
           if (!smsResult.success && !smsResult.duplicate) {
             toast('Courrier enregistre, mais SMS non envoye.', { icon: '⚠️' })
           }
-        } catch { /* SMS failure must not block */ }
+        } catch {
+          // Service unreachable: kept and sent again with the other pending operations
+          await enqueueSms({ kind: 'created', parcel_id: parcel.id, parcel_code: parcel.parcel_code, recipient_name: parcel.recipient_name, recipient_phone: parcel.recipient_phone, recipient_city: parcel.recipient_city ?? form.recipient_city, tracking_url: parcel.tracking_url ?? '' }).catch(() => {})
+        }
         navigate(`${basePath}/dashboard`)
       }
     } catch (e: any) {
@@ -444,11 +558,11 @@ export default function NewParcelForm() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelCls} style={labelStyle}>Nom complet *</label>
-              <input className={inputCls} style={inputStyle} value={form.sender_name} onChange={e => set('sender_name', e.target.value)} required />
+              <input className={inputCls} style={inputStyle} value={form.sender_name} maxLength={TEXT_LIMITS.name} onChange={e => set('sender_name', e.target.value)} required />
             </div>
             <div>
-              <label className={labelCls} style={labelStyle}>Téléphone *</label>
-              <input className={inputCls} style={inputStyle} value={form.sender_phone} onChange={e => set('sender_phone', e.target.value)} required />
+              <label htmlFor="sender-phone" className={labelCls} style={labelStyle}>Téléphone *</label>
+              <PhoneInputCI id="sender-phone" value={form.sender_phone} onChange={v => set('sender_phone', v)} required showError={showPhoneErrors} className={inputCls} style={inputStyle} />
             </div>
           </div>
         </section>
@@ -462,33 +576,11 @@ export default function NewParcelForm() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelCls} style={labelStyle}>Nom complet *</label>
-              <input className={inputCls} style={inputStyle} value={form.recipient_name} onChange={e => set('recipient_name', e.target.value)} required />
+              <input className={inputCls} style={inputStyle} value={form.recipient_name} maxLength={TEXT_LIMITS.name} onChange={e => set('recipient_name', e.target.value)} required />
             </div>
             <div>
-              <label className={labelCls} style={labelStyle}>Téléphone (SMS/WhatsApp) *</label>
-              <div className="flex">
-                <span
-                  className="inline-flex items-center px-3 rounded-l-lg border-r-0 text-sm font-semibold select-none"
-                  style={{
-                    border: '1px solid var(--border)',
-                    backgroundColor: 'var(--bg-subtle)',
-                    color: 'var(--text-secondary)',
-                    minWidth: '3.5rem',
-                    justifyContent: 'center',
-                  }}
-                >225</span>
-                <input
-                  className={inputCls + ' rounded-l-none'}
-                  style={inputStyle}
-                  type="tel"
-                  pattern="[0-9]{10}"
-                  maxLength={10}
-                  placeholder="0759818155"
-                  value={form.recipient_phone}
-                  onChange={e => set('recipient_phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  required
-                />
-              </div>
+              <label htmlFor="recipient-phone" className={labelCls} style={labelStyle}>Téléphone (SMS/WhatsApp) *</label>
+              <PhoneInputCI id="recipient-phone" value={form.recipient_phone} onChange={v => set('recipient_phone', v)} required showError={showPhoneErrors} placeholder="07 59 81 81 55" className={inputCls} style={inputStyle} />
             </div>
             <div>
               <label className={labelCls} style={labelStyle}>Gare d'arrivée *</label>
@@ -555,9 +647,13 @@ export default function NewParcelForm() {
               rows={3}
               placeholder="ex: 01 SHT BLC (HABIT)"
               value={form.content_description}
+              maxLength={TEXT_LIMITS.description}
               onChange={e => set('content_description', e.target.value)}
               required
             />
+          </div>
+          <div className="mt-4">
+            <ParcelPhotoCapture photos={photos} onChange={setPhotos} disabled={loading} />
           </div>
         </section>
 

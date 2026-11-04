@@ -5,8 +5,13 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { supabase } from '@/services/supabase';
 import { Bus, Search, MapPin, Hash, Loader2, CheckCircle, Clock, Lock, Printer, AlertCircle, FileText, PlusCircle } from 'lucide-react';
 import { printRamassageBordereau } from '@/services/pos/printService';
+import { db } from '@/services/pos/db';
+import { enqueueUpdate, isOnline } from '@/services/pos/syncEngine';
+import { byQueueOrder } from '@/services/offline/queueRules';
 import RamassageReportView from '@/components/shared/RamassageReportView';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import { trustedNowIso } from '@/services/offline/deviceClock';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 type RamassageNotif = {
   id: string;
@@ -46,20 +51,64 @@ export default function POSRamassage() {
   const [montant, setMontant] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [savedOffline, setSavedOffline] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'collect' | 'report'>('collect');
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
+  // The list is kept on the device (ramassage_list) and the changes go through the sending queue,
+  // like the ticket sales: without network the screen showed nothing and nothing could be collected.
+  const listKey = `ramassage_list:${stationId}`;
+
+  /** The server copy, plus what this device recorded and has not sent yet (queue). */
+  const withPendingChanges = async (rows: RamassageNotif[]): Promise<RamassageNotif[]> => {
+    const items = await db.sync_queue.where('entity').equals('ramassages').toArray().catch(() => []);
+    const byId = new Map(rows.map(r => [r.id, r]));
+    for (const item of items.sort(byQueueOrder)) {
+      if (item.status === 'done' || item.status === 'abandoned') continue;
+      if (item.op === 'insert') {
+        for (const r of (item.payload.rows as RamassageNotif[] | undefined) ?? []) {
+          if (r.destination_station_id === stationId && !byId.has(r.id)) byId.set(r.id, r);
+        }
+      } else if (item.op === 'update') {
+        const id = String(item.payload.id ?? '');
+        const current = byId.get(id);
+        if (current) byId.set(id, { ...current, ...(item.payload as Partial<RamassageNotif>), id });
+      }
+    }
+    return [...byId.values()].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  };
+
+  const keepOnDevice = (rows: RamassageNotif[]) =>
+    db.referentiels.put({ key: listKey, type: 'ramassage_list', data: rows, updated_at: new Date().toISOString() }).catch(() => {});
+
   const load = async () => {
     if (!stationId) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('ramassage_notifications')
-      .select('*')
-      .eq('destination_station_id', stationId)
-      .order('created_at', { ascending: false });
-    if (!error) setNotifs((data as RamassageNotif[]) ?? []);
+    let rows: RamassageNotif[] | null = null;
+    if (isOnline()) {
+      const { data, error } = await supabase
+        .from('ramassage_notifications')
+        .select('*')
+        .eq('destination_station_id', stationId)
+        .order('created_at', { ascending: false });
+      if (!error) {
+        rows = (data as RamassageNotif[]) ?? [];
+        void keepOnDevice(rows);
+      }
+    }
+    // Without network (or no answer): the list kept on the device
+    if (!rows) rows = ((await db.referentiels.get(listKey).catch(() => undefined))?.data as RamassageNotif[] | undefined) ?? [];
+    setNotifs(await withPendingChanges(rows));
     setLoading(false);
+  };
+
+  /** Applies a change on screen and on the copy kept on the device, then sends or queues it. */
+  const saveChange = async (id: string, patch: Partial<RamassageNotif>) => {
+    const next = notifs.map(x => (x.id === id ? { ...x, ...patch } : x));
+    setNotifs(next);
+    void keepOnDevice(next);
+    return enqueueUpdate('ramassages', id, patch as Record<string, unknown>);
   };
 
   useEffect(() => {
@@ -113,13 +162,7 @@ export default function POSRamassage() {
     setError('');
     if (n.status === 'pending') {
       setMarking(true);
-      const { error } = await supabase
-        .from('ramassage_notifications')
-        .update({ status: 'consulted', consulted_at: new Date().toISOString() })
-        .eq('id', n.id);
-      if (!error) {
-        setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, status: 'consulted', consulted_at: new Date().toISOString() } : x));
-      }
+      await saveChange(n.id, { status: 'consulted', consulted_at: trustedNowIso() });
       setMarking(false);
     }
   };
@@ -138,26 +181,24 @@ export default function POSRamassage() {
     if (!selected) return;
     const err = validate();
     if (err) { setError(err); return; }
+    // Typing slip on the amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([{ value: parseFloat(montant) || 0, rule: AMOUNT_RULES.ramassageAmount }]);
+    if (!amountCheck.ok) { if (amountCheck.error) setError(amountCheck.error); return; }
     setError('');
     setSubmitting(true);
     const p = parseInt(places, 10) || 0;
     const m = parseFloat(montant) || 0;
-    const { error } = await supabase
-      .from('ramassage_notifications')
-      .update({
-        status: 'done',
-        collected_places: p,
-        collected_amount: m,
-        collected_by_name: session?.full_name ?? null,
-        collected_at: new Date().toISOString(),
-      })
-      .eq('id', selected.id);
+    // Kept on the device and sent by the queue: the collection is recorded even without network
+    const result = await saveChange(selected.id, {
+      status: 'done',
+      collected_places: p,
+      collected_amount: m,
+      collected_by_name: session?.full_name ?? null,
+      collected_at: trustedNowIso(),
+    });
     setSubmitting(false);
-    if (error) {
-      setError("Erreur lors de l'enregistrement du ramassage.");
-      return;
-    }
-    setNotifs(prev => prev.map(x => x.id === selected.id ? { ...x, status: 'done', collected_places: p, collected_amount: m } : x));
+    setSavedOffline(result.queued);
+    setSelected(s => (s && s.id === selected.id ? { ...s, status: 'done', collected_places: p, collected_amount: m } : s));
     setDone(true);
     // Auto-print bordereau
     try {
@@ -219,6 +260,7 @@ export default function POSRamassage() {
           stationId={session?.station_id ?? null}
           stationName={session?.station_name}
           title="Rapport des ventes de ramassage"
+          withDevice
         />
       ) : (
       <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-4">
@@ -377,6 +419,11 @@ export default function POSRamassage() {
                 <div className="rounded-xl p-3 flex items-center gap-2 text-sm font-medium" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
                   <CheckCircle className="w-5 h-5" /> Ramassage validé
                 </div>
+                {savedOffline && (
+                  <div className="rounded-xl p-3 flex items-center gap-2 text-sm" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                    <Clock className="w-4 h-4 flex-shrink-0" /> Enregistré sur le poste : envoi au serveur dès le retour de la connexion.
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <InfoRow icon={<Hash className="w-4 h-4" />} label="Places vendues" value={String(selected.collected_places ?? 0)} />
                   <InfoRow icon={<Hash className="w-4 h-4" />} label="Montant collecté" value={`${(selected.collected_amount ?? 0).toLocaleString('fr-FR')} FCFA`} />

@@ -3,7 +3,10 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { QrCode, CheckCircle2, AlertTriangle, ArrowLeft, RefreshCw, Loader2, CameraOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
-import { useAuthStore } from '@/store/authStore'
+import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
+import { isOnline as courrierIsOnline, getPendingCount, enqueueSms } from '@/services/courrier/syncEngine'
+import { receiveParcelLocally } from '@/services/courrier/offlineStore'
+import { useConnection } from '@/services/courrier/ConnectionContext'
 import { sendCourierArrivedSms } from '@/services/emisSms.service'
 
 type ScanState = 'idle' | 'scanning' | 'processing' | 'success' | 'error'
@@ -25,8 +28,10 @@ export default function QrScanner() {
   const navigate   = useNavigate()
   const location   = useLocation()
   const basePath   = location.pathname.startsWith('/guichet/courrier') ? '/guichet/courrier' : '/agent-colis'
-  const { user }   = useAuthStore()
-  const stationId  = user?.station_id ?? null
+  // Account and station of the counter's session: also known after an offline login
+  const user       = useCourrierUser()
+  const stationId  = user.station_id
+  const { setPendingCount } = useConnection()
 
   const videoRef    = useRef<HTMLVideoElement>(null)
   const streamRef   = useRef<MediaStream | null>(null)
@@ -61,13 +66,40 @@ export default function QrScanner() {
       return
     }
 
+    // Without network (or when the server stops answering): same checks on the parcels kept on
+    // the device; the reception and the recipient's SMS are sent when the network is back
+    const receiveLocally = async () => {
+      const result = await receiveParcelLocally(value, stationId, user.id)
+      setScanResult({ code: result.code, message: result.message, parcel_id: result.parcel_id })
+      if (result.success) {
+        setScanState('success')
+        toast.success('Courrier réceptionné (hors ligne)')
+        setPendingCount(await getPendingCount())
+      } else {
+        setScanState('error')
+      }
+    }
+
+    if (!courrierIsOnline()) {
+      try {
+        await receiveLocally()
+      } catch {
+        setScanResult({ code: 'error', message: 'Erreur lors de la réception hors ligne, veuillez réessayer.', parcel_id: null })
+        setScanState('error')
+      }
+      return
+    }
+
     try {
       const { data, error } = await supabase.rpc('receive_parcel_by_qr', {
         p_parcel_code: value,
         p_station_id:  stationId,
       })
 
-      if (error) throw error
+      if (error) {
+        if (isNetworkError(error)) { await receiveLocally(); return }
+        throw error
+      }
 
       const result = data as { success: boolean; code: string; message: string; parcel_id: string | null; recipient_phone?: string }
 
@@ -85,18 +117,26 @@ export default function QrScanner() {
               .eq('id', result.parcel_id)
               .maybeSingle()
             if (p?.recipient_phone) {
-              await sendCourierArrivedSms({ id: p.id, recipient_phone: p.recipient_phone })
+              try {
+                await sendCourierArrivedSms({ id: p.id, recipient_phone: p.recipient_phone })
+              } catch {
+                // Service unreachable: kept and sent again with the other pending operations
+                await enqueueSms({ kind: 'arrived', parcel_id: p.id, recipient_phone: p.recipient_phone })
+              }
             }
           } catch { /* SMS must not block */ }
         }
       } else {
         setScanState('error')
       }
-    } catch {
+    } catch (err) {
+      if (isNetworkError(err)) {
+        try { await receiveLocally(); return } catch { /* reported below */ }
+      }
       setScanResult({ code: 'error', message: 'Erreur réseau, veuillez réessayer.', parcel_id: null })
       setScanState('error')
     }
-  }, [stationId, stopCamera])
+  }, [stationId, stopCamera, user.id, setPendingCount])
 
   // Scan loop using BarcodeDetector
   const startScanLoop = useCallback((detector: BarcodeDetector) => {

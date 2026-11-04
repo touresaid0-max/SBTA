@@ -17,6 +17,7 @@ import {
   Ticket as TicketIcon, Package, Wallet,
   TrendingDown, Calendar as CalendarIcon, CheckSquare, Square,
 } from 'lucide-react';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 export default function POSCloture() {
   const { session } = usePOSSession();
@@ -33,7 +34,7 @@ export default function POSCloture() {
   const [success, setSuccess] = useState('');
 
   // Date filter — defaults to today
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = trustedNowIso().slice(0, 10);
   const [filterDate, setFilterDate] = useState(todayStr);
 
   // Multi-select for batch clôture

@@ -1,7 +1,10 @@
 import { type DepartRecord, type SeatAllocation, type SeatTransfer, type TicketRecord } from './db';
 import { localInsert, localUpdate, getAll } from './offlineStore';
+import { enqueueInsert, isOnline } from './syncEngine';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
 
 export type { DepartRecord, SeatAllocation, SeatTransfer };
 
@@ -36,14 +39,59 @@ export async function getGares(): Promise<GareRef[]> {
   return getReferentiel<GareRef>('gares');
 }
 
+// ── Departure and line numbers (audit m6) ──
+// Each counter numbers its own departures of the day (n° de départ) and, per line, its line
+// departures (n° de ligne). They were computed from the departures kept on THIS device only: a
+// second device on the same counter, or a new device, gave a number already used. The database
+// refuses a departure number used twice by a counter on the same day (departure_sequence): the
+// whole departure, and the tickets sold on it, were then refused.
+// Online, the numbers already used on the server are now taken into account. Offline, the device
+// keeps its own count, and the database gives the next free number if it was taken meanwhile
+// (migration 20261104150000_departure_numbers_server_safe.sql); the device gets it at the next sync.
+
+function nextDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Highest numbers already used on the server for this counter (or station) and day; null offline. */
+async function serverMaxNumbers(
+  stationId: string,
+  counterId: string | undefined,
+  departureDate: string | undefined,
+  routeId?: string,
+): Promise<{ departure: number; route: number } | null> {
+  if (!isOnline() || !departureDate) return null;
+  try {
+    let query = supabase
+      .from('schedules')
+      .select('departure_number, route_number, route_id')
+      .eq('departure_station_id', stationId)
+      .gte('departure_datetime', `${departureDate}T00:00:00`)
+      .lt('departure_datetime', `${nextDay(departureDate)}T00:00:00`);
+    if (counterId) query = query.eq('counter_id', counterId);
+    const { data, error } = await query;
+    if (error || !data) return null;
+    const rows = data as Array<{ departure_number: number | null; route_number: number | null; route_id: string | null }>;
+    return {
+      departure: Math.max(0, ...rows.map(r => r.departure_number ?? 0)),
+      route: Math.max(0, ...rows.filter(r => !routeId || r.route_id === routeId).map(r => r.route_number ?? 0)),
+    };
+  } catch {
+    return null; // the device's own count is used
+  }
+}
+
 export async function nextDepartureNumber(stationId: string, counterId?: string, departureDate?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
   let stationDeparts = all.filter(d => d.station_id === stationId && d.departure_date === departureDate);
   if (counterId) {
     stationDeparts = stationDeparts.filter(d => d.counter_id === counterId);
   }
-  if (stationDeparts.length === 0) return 1;
-  return Math.max(...stationDeparts.map(d => d.departure_number ?? 0)) + 1;
+  const localMax = Math.max(0, ...stationDeparts.map(d => d.departure_number ?? 0));
+  const server = await serverMaxNumbers(stationId, counterId, departureDate);
+  return Math.max(localMax, server?.departure ?? 0) + 1;
 }
 
 export async function nextRouteNumber(stationId: string, routeId: string, counterId?: string, departureDate?: string): Promise<number> {
@@ -52,8 +100,9 @@ export async function nextRouteNumber(stationId: string, routeId: string, counte
   if (counterId) {
     routeDeparts = routeDeparts.filter(d => d.counter_id === counterId);
   }
-  if (routeDeparts.length === 0) return 1;
-  return Math.max(...routeDeparts.map(d => d.route_number ?? 0)) + 1;
+  const localMax = Math.max(0, ...routeDeparts.map(d => d.route_number ?? 0));
+  const server = await serverMaxNumbers(stationId, counterId, departureDate, routeId);
+  return Math.max(localMax, server?.route ?? 0) + 1;
 }
 
 export async function createDepart(
@@ -263,49 +312,23 @@ export async function cloturerDepart(
   const existing = (await getAll<DepartRecord>('departs')).find(d => d.id === departId) ?? null;
   const updated = await localUpdate<DepartRecord>('departs', departId, {
     cloture: true,
-    cloture_at: new Date().toISOString(),
+    cloture_at: trustedNowIso(),
     cloture_by: userName,
   });
 
   if (existing?.is_ramassage && !existing.ramassage_notified) {
-    // Ensure the schedule in Supabase has is_ramassage = true so the destination station
-    // can identify this departure as a ramassage in their list
-    try {
-      await supabase
-        .from('schedules')
-        .update({ is_ramassage: true, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
-    } catch { /* best-effort sync */ }
-
+    // The destination station must learn that this bus will pass by for a ramassage. The
+    // notification was written straight to the server: closing the departure without network lost
+    // it for good. It now goes through the sending queue, after the departure itself, and the
+    // destination is found in the lists kept on the device.
+    const [lignes, gares] = await Promise.all([getLignes(), getGares()]);
     let arrivalStationId = existing.arrival_station_id;
-    let destName: string | undefined;
-    let originName: string | undefined;
-
-    // Resolve destination station from route if missing
     if (!arrivalStationId && existing.route_id) {
-      try {
-        const { data: route } = await supabase
-          .from('routes')
-          .select('destination_station_id, destination_city_id')
-          .eq('id', existing.route_id)
-          .maybeSingle();
-        if (route?.destination_station_id) {
-          arrivalStationId = route.destination_station_id;
-        } else if (route?.destination_city_id) {
-          const { data: station } = await supabase
-            .from('stations')
-            .select('id, name')
-            .eq('city_id', route.destination_city_id)
-            .eq('is_active', true)
-            .order('name')
-            .limit(1)
-            .maybeSingle();
-          if (station) {
-            arrivalStationId = station.id;
-            destName = station.name;
-          }
-        }
-      } catch { /* offline resolution failed */ }
+      const route = lignes.find(l => l.id === existing.route_id);
+      arrivalStationId = route?.destination_station_id
+        || gares
+          .filter(g => g.is_active !== false && g.city_id === route?.destination_city_id)
+          .sort((a, b) => a.name.localeCompare(b.name))[0]?.id;
     }
 
     if (!arrivalStationId) {
@@ -313,23 +336,11 @@ export async function cloturerDepart(
       return updated;
     }
 
-    let createdById: string | null = null;
-    try {
-      const { data: { session: authSession } } = await supabase.auth.getSession();
-      createdById = authSession?.user.id ?? null;
-    } catch { /* no active session — insert with null created_by */ }
-
-    try {
-      try {
-        const { data: sts } = await supabase
-          .from('stations')
-          .select('id,name')
-          .in('id', [existing.station_id, arrivalStationId]);
-        originName = sts?.find(s => s.id === existing.station_id)?.name;
-        if (!destName) destName = sts?.find(s => s.id === arrivalStationId)?.name;
-      } catch { /* offline: names optional */ }
-
-      const { error: insertError } = await supabase.from('ramassage_notifications').insert({
+    const notificationId = uuidV4();
+    await enqueueInsert('ramassages', {
+      id: notificationId,
+      rows: [{
+        id: notificationId,
         local_depart_id: existing.id,
         schedule_id: existing.id,
         route_id: existing.route_id || null,
@@ -343,23 +354,20 @@ export async function cloturerDepart(
         seats_sold: existing.seats_sold ?? null,
         company_id: existing.company_id ?? null,
         origin_station_id: existing.station_id || null,
-        origin_station_name: originName ?? existing.station_name ?? null,
+        origin_station_name: gares.find(g => g.id === existing.station_id)?.name ?? existing.station_name ?? null,
         destination_station_id: arrivalStationId,
-        destination_station_name: destName ?? null,
+        destination_station_name: gares.find(g => g.id === arrivalStationId)?.name ?? null,
         status: 'pending',
-        created_by: createdById,
-      });
+        created_at: trustedNowIso(),
+      }],
+    });
 
-      if (insertError) {
-        console.error('[ramassage] insert failed:', insertError.message, insertError.details, {
-          departId: existing.id, route: existing.route_name, arrival: arrivalStationId,
-        });
-      } else {
-        await localUpdate<DepartRecord>('departs', departId, { ramassage_notified: true, arrival_station_id: arrivalStationId });
-      }
-    } catch (err) {
-      console.error('[ramassage] notification error:', err);
-    }
+    // is_ramassage lets the destination station identify the departure; both are sent by the queue
+    await localUpdate<DepartRecord>('departs', departId, {
+      is_ramassage: true,
+      ramassage_notified: true,
+      arrival_station_id: arrivalStationId,
+    });
   }
 
   return updated;
@@ -445,7 +453,7 @@ export async function findNextDepartForRoute(
   counterId?: string,
 ): Promise<DepartRecord | null> {
   const all = await getAllDeparts(stationId, counterId);
-  const now = new Date();
+  const now = trustedNow();
   const candidates = all.filter(d =>
     d.id !== currentDepartId &&
     d.route_id === routeId &&
@@ -610,7 +618,7 @@ export async function transferSeatsBetweenStations(params: {
       seat_from: seatFrom,
       seat_to: seatTo,
       seats: seatsToTransfer,
-      transferred_at: new Date().toISOString(),
+      transferred_at: trustedNowIso(),
       transferred_by: params.transferredBy,
     },
   ];
@@ -624,7 +632,7 @@ export async function transferSeatsBetweenStations(params: {
       .from('schedules')
       .update({
         seat_transfers: transfers,
-        updated_at: new Date().toISOString(),
+        updated_at: trustedNowIso(),
       })
       .eq('id', params.departId);
   } catch {

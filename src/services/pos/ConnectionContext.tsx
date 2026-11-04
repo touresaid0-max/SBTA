@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import { supabase } from '@/services/supabase';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
 import { requestPersistentStorage } from './persistentStorage';
+import { applyDataRetention } from '@/services/offline/dataRetention';
 import { preloadPrintLogos } from './printLogos';
 
 export type ConnectionStatus = 'online' | 'offline' | 'checking';
@@ -91,6 +92,8 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   // The sales not yet sent live in the browser: ask it not to erase them when the disk is full
   useEffect(() => {
     void requestPersistentStorage();
+    // Personal data kept on the device for a limited time only (once a day, also offline)
+    void applyDataRetention().catch(() => { /* tried again at the next start */ });
   }, []);
 
   // Logos of the tickets and bordereaux kept on the device, for printing without network

@@ -17,6 +17,10 @@ import {
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
+import PhoneInputCI from '@/components/shared/PhoneInputCI';
+import { normalizePhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -107,7 +111,8 @@ export default function POSBagages() {
       setLinkedTicketInfo(`Ticket ${ticket.ticket_number} — Siège ${ticket.seat_number} — ${ticket.destination} — ${formatCurrency(ticket.price)}`);
       setDestination(ticket.destination_id ?? '');
       setOwnerName(ticket.passenger_name || ownerName);
-      setOwnerPhone(ticket.passenger_phone || ownerPhone);
+      // The ticket's phone may be stored as 225 + 10 digits: the field keeps the 10 digits
+      setOwnerPhone(ticket.passenger_phone ? normalizePhoneCI(ticket.passenger_phone) : ownerPhone);
     } else {
       setLinkedTicketInfo(null);
       setError('Aucun ticket trouvé avec ce numéro pour ce départ');
@@ -131,6 +136,18 @@ export default function POSBagages() {
       setError('Veuillez saisir un prix valide');
       return;
     }
+    // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
+    const priceCheck = checkAmounts([{ value: price, rule: AMOUNT_RULES.baggagePrice }]);
+    if (!priceCheck.ok) {
+      if (priceCheck.error) setError(priceCheck.error);
+      return;
+    }
+    // Optional, but a valid number when given
+    const ownerPhoneError = phoneCIError(ownerPhone, false);
+    if (ownerPhoneError) {
+      setError(`Contact du propriétaire : ${ownerPhoneError}`);
+      return;
+    }
     if (!destination) {
       setError('Veuillez sélectionner une destination');
       return;
@@ -146,9 +163,10 @@ export default function POSBagages() {
         ticketNumber: ticketNumber.trim() || undefined,
         price,
         destination: station?.name ?? destination,
-        description,
-        ownerName,
-        ownerPhone,
+        // Cleaned and limited as saved (audit m2)
+        description: cleanText(description, TEXT_LIMITS.description),
+        ownerName: cleanText(ownerName, TEXT_LIMITS.name),
+        ownerPhone: toStoredPhoneCI(ownerPhone),
         printBagage,
       });
 
@@ -444,6 +462,7 @@ export default function POSBagages() {
                   <input
                     type="text"
                     value={description}
+                    maxLength={TEXT_LIMITS.description}
                     onChange={e => setDescription(e.target.value)}
                     className={fieldInput}
                     style={fieldStyle}
@@ -457,6 +476,7 @@ export default function POSBagages() {
                   <input
                     type="text"
                     value={ownerName}
+                    maxLength={TEXT_LIMITS.name}
                     onChange={e => setOwnerName(e.target.value)}
                     className={fieldInput}
                     style={fieldStyle}
@@ -466,14 +486,13 @@ export default function POSBagages() {
 
                 {/* Contact */}
                 <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
-                  <input
-                    type="tel"
+                  <label htmlFor="owner-phone" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
+                  <PhoneInputCI
+                    id="owner-phone"
                     value={ownerPhone}
-                    onChange={e => setOwnerPhone(e.target.value)}
+                    onChange={setOwnerPhone}
                     className={fieldInput}
                     style={fieldStyle}
-                    placeholder="Téléphone"
                   />
                 </div>
               </div>

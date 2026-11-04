@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConnection } from './ConnectionContext';
-import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError } from './syncEngine';
+import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError, recoverUnqueuedRecords } from './syncEngine';
 import { syncParcelsFromServer } from './offlineStore';
 import { ensureAuthSession } from './offlineAuth';
 import { refreshAllReferentiels } from './referentiels';
+import { syncServerClock } from '@/services/offline/deviceClock';
+
+// Like the guichet's sales: queued operations leave fast, server data is pulled less often
+// (it used to be the whole parcel history every 5 seconds).
+const SEND_INTERVAL_MS = 5_000;
+const PULL_INTERVAL_MS = 30_000;
+const REFERENTIELS_INTERVAL_MS = 10 * 60_000;
 
 export function useAutoSync(stationId?: string) {
   const {
@@ -16,6 +23,9 @@ export function useAutoSync(stationId?: string) {
   const runningRef = useRef(false);
   const stationRef = useRef(stationId);
   stationRef.current = stationId;
+  const lastPullRef = useRef(0);
+  const lastReferentielsRef = useRef(0);
+  const lastClockRef = useRef(0);
 
   const updateQueueState = useCallback(async () => {
     const count = await getPendingCount();
@@ -24,7 +34,8 @@ export function useAutoSync(stationId?: string) {
     return count;
   }, [setLastSyncError, setPendingCount]);
 
-  const runSync = useCallback(async () => {
+  // force: pull and refresh reference data now (on start, on reconnection)
+  const runSync = useCallback(async (force = false) => {
     if (runningRef.current || !isOnline()) {
       await updateQueueState();
       return;
@@ -35,19 +46,35 @@ export function useAutoSync(stationId?: string) {
     setLastSyncError(null);
 
     try {
-      const authValid = await ensureAuthSession();
-      if (!authValid) {
-        setLastSyncError('Session expirée. Veuillez vous reconnecter pour synchroniser les opérations en attente.');
-        await updateQueueState();
-        return;
+      // Gap between this device's clock and the server's: used to date what is recorded (deviceClock)
+      if (force || Date.now() - lastClockRef.current >= REFERENTIELS_INTERVAL_MS) {
+        lastClockRef.current = Date.now();
+        await syncServerClock();
+      }
+      let result = { failed: 0, conflicts: [] as unknown[] };
+      // Parcels whose send was cut before this version, in no queue: queued again (once per session)
+      await recoverUnqueuedRecords().catch(() => { /* tried again at the next sync */ });
+      if (await getPendingCount() > 0) {
+        const authValid = await ensureAuthSession();
+        if (!authValid) {
+          setLastSyncError('Session expirée. Veuillez vous reconnecter pour synchroniser les opérations en attente.');
+          await updateQueueState();
+          return;
+        }
+        result = await flushSyncQueue();
+        if (!isOnline()) return;
       }
 
-      const result = await flushSyncQueue();
-      if (!isOnline()) return;
-
-      await syncParcelsFromServer(stationRef.current);
-
-      await refreshAllReferentiels(stationRef.current);
+      const now = Date.now();
+      const visible = typeof document === 'undefined' || document.visibilityState === 'visible';
+      if (force || (visible && now - lastPullRef.current >= PULL_INTERVAL_MS)) {
+        lastPullRef.current = now;
+        await syncParcelsFromServer(stationRef.current);
+      }
+      if (force || now - lastReferentielsRef.current >= REFERENTIELS_INTERVAL_MS) {
+        lastReferentielsRef.current = now;
+        await refreshAllReferentiels(stationRef.current);
+      }
 
       const remaining = await updateQueueState();
       if (result.failed === 0 && result.conflicts.length === 0 && remaining === 0) {
@@ -64,20 +91,20 @@ export function useAutoSync(stationId?: string) {
 
   useEffect(() => {
     const unsubscribe = onOnlineChange((online) => {
-      if (online) void runSync();
+      if (online) void runSync(true);
     });
     return unsubscribe;
   }, [runSync]);
 
   useEffect(() => {
-    if (status === 'online') void runSync();
+    if (status === 'online') void runSync(true);
   }, [runSync, status]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       if (status === 'online') void runSync();
       else void updateQueueState();
-    }, 5000);
+    }, SEND_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [runSync, status, updateQueueState]);
 }

@@ -284,13 +284,13 @@ export function printDeparturesList(summaries: DepartSummary[], stationName?: st
 function buildPrintHTML(summaries: DepartSummary[], stationName?: string): string {
   const dateStr = new Date().toLocaleString('fr-FR');
   const rows = summaries.map(s => `<tr>
-    <td style="text-align:center">${s.route_number}</td>
-    <td>${escapeHtml(s.route_name)}</td>
-    <td style="text-align:center">${s.departure_date} ${s.departure_time}</td>
-    <td style="text-align:center">${s.bus_plate}</td>
-    <td>${escapeHtml(s.driver_name)}</td>
+    <td style="text-align:center">${escapeHtml(String(s.route_number ?? ''))}</td>
+    <td>${escapeHtml(s.route_name ?? '')}</td>
+    <td style="text-align:center">${escapeHtml(`${s.departure_date} ${s.departure_time}`)}</td>
+    <td style="text-align:center">${escapeHtml(String(s.bus_plate ?? ''))}</td>
+    <td>${escapeHtml(s.driver_name ?? '')}</td>
     <td style="text-align:center">${s.seats_allocated}</td>
-    <td style="text-align:center">${s.seat_range}</td>
+    <td style="text-align:center">${escapeHtml(String(s.seat_range ?? ''))}</td>
     <td style="text-align:center">${s.seats_sold}</td>
     <td style="text-align:center">${s.seats_libres}</td>
     <td style="text-align:center">${s.fill_rate}%</td>
@@ -299,7 +299,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
     <td style="text-align:right">${fmt(s.tot_depense)}</td>
     <td style="text-align:right;font-weight:bold">${fmt(s.solde)}</td>
     <td style="text-align:right">${fmt(s.caisse)}</td>
-    <td style="text-align:center">${s.status}</td>
+    <td style="text-align:center">${escapeHtml(String(s.status ?? ''))}</td>
   </tr>`).join('');
 
   const totals = {

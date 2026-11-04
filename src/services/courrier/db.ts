@@ -1,7 +1,8 @@
 import Dexie, { type Table } from 'dexie';
+import type { QueueStatus } from '@/services/offline/queueRules';
 
 export type SyncOp = 'insert' | 'update' | 'delete';
-export type SyncStatus = 'pending' | 'syncing' | 'done' | 'error';
+export type SyncStatus = QueueStatus;
 
 export interface ParcelRecord {
   id: string;
@@ -42,6 +43,8 @@ export interface ParcelRecord {
   sms_sent_at: string | null;
   company_id: string | null;
   ticket_printed: boolean;
+  /** Storage paths of the parcel's photos (courrier-photos), or URLs of older public photos */
+  parcel_photos?: string[];
   // Delivery recipient info (for livre status)
   delivery_recipient_name: string | null;
   delivery_recipient_phone: string | null;
@@ -50,6 +53,22 @@ export interface ParcelRecord {
   created_at: string;
   updated_at: string;
   synced?: boolean;
+}
+
+/**
+ * Photo of a parcel taken at the counter (audit m3), kept on the device until it reaches the
+ * private storage space: reduced JPEG, sent by the sending queue like the parcel itself.
+ */
+export interface PhotoRecord {
+  id: string;
+  parcel_id: string;
+  /** Path in the storage space courrier-photos: <author id>/<parcel id>/<photo id>.jpg */
+  path: string;
+  /** The image, until it has been sent (then removed to free the device's storage) */
+  blob?: Blob;
+  size: number;
+  uploaded: boolean;
+  created_at: string;
 }
 
 export interface TrackingEventRecord {
@@ -85,6 +104,12 @@ export interface SyncQueueItem {
   last_error?: string;
   /** When the operation was last marked 'syncing' (being sent) */
   sending_since?: string;
+  /** Account logged in on the device when the operation was made: only its server session sends it */
+  user_id?: string;
+  /** Abandoned operation: why, when and by whom (kept as a trace, never sent) */
+  abandon_reason?: string;
+  abandoned_at?: string;
+  abandoned_by?: string;
 }
 
 export interface SessionRecord {
@@ -97,12 +122,14 @@ export interface SessionRecord {
   station_name: string;
   login_at: string;
   offline: boolean;
+  /** @deprecated Unsalted SHA-256 of earlier versions: never read, erased when found (audit M8). */
   password_hash?: string;
 }
 
 class CourrierDatabase extends Dexie {
   parcels!: Table<ParcelRecord, string>;
   tracking_events!: Table<TrackingEventRecord, string>;
+  photos!: Table<PhotoRecord, string>;
   referentiels!: Table<ReferentielRecord, string>;
   sync_queue!: Table<SyncQueueItem, number>;
   session!: Table<SessionRecord, string>;
@@ -112,6 +139,15 @@ class CourrierDatabase extends Dexie {
     this.version(1).stores({
       parcels: 'id, parcel_code, reference, status, origin_station_id, destination_station_id, registered_at, synced',
       tracking_events: 'id, parcel_id, event_at, synced',
+      referentiels: 'key, type, updated_at',
+      sync_queue: '++id, entity, status, created_at, tries',
+      session: 'id, user_id, station_id',
+    });
+    // v2: photos of the parcels (audit m3)
+    this.version(2).stores({
+      parcels: 'id, parcel_code, reference, status, origin_station_id, destination_station_id, registered_at, synced',
+      tracking_events: 'id, parcel_id, event_at, synced',
+      photos: 'id, parcel_id, uploaded',
       referentiels: 'key, type, updated_at',
       sync_queue: '++id, entity, status, created_at, tries',
       session: 'id, user_id, station_id',

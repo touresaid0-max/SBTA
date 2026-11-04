@@ -1,14 +1,16 @@
 import { db, type BagageRecord, type DepenseRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
-import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType, UNIQUE_CHARGE_TYPES } from './syncEngine';
+import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType } from './syncEngine';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
 
 function uuid(): string {
-  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return uuidV4();
 }
 
 function nowIso(): string {
-  return new Date().toISOString();
+  return trustedNowIso();
 }
 
 type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses';
@@ -22,7 +24,7 @@ const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'is_ac', 'seats_from', 'seat_allocations', 'station_name',
   'counter_id', 'other_station_id', 'other_station_name',
   'synced', 'updated_at', 'id',
-  'printed', 'printed_at',
+  'printed', 'printed_at', 'reopened_at',
 ]);
 
 function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknown>): boolean {
@@ -39,6 +41,11 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
   }
   if (entity === 'bagages') {
     const remoteMappable = ['payment_status', 'paid_at', 'paid_by', 'destination', 'price', 'description', 'owner_name', 'owner_phone'];
+    return keys.some(k => remoteMappable.includes(k));
+  }
+  if (entity === 'depenses') {
+    // A modified expense is sent to the server (it used to stay on the device only)
+    const remoteMappable = ['amount', 'label', 'type', 'description', 'expense_date'];
     return keys.some(k => remoteMappable.includes(k));
   }
   return false;
@@ -63,20 +70,11 @@ export async function localInsert<
     synced: false,
   } as unknown as T;
 
-  // Always write to local IndexedDB first (offline-first)
-  await (db[store] as any).put(full);
-
-  // Then attempt remote sync (or queue if offline)
-  try {
-    const result = await enqueueInsert(store, full as unknown as Record<string, unknown>);
-    if (!result.queued) {
-      // Successfully synced — mark as synced
-      await (db[store] as any).put({ ...full, synced: true });
-    }
-  } catch (err) {
-    // Network error — record stays locally with synced=false
-    // It will be synced when connection returns
-  }
+  // Saved on the device together with its queued operation, then sent at once when online
+  // (marked synced once the server has it, or later from the queue)
+  await enqueueInsert(store, full as unknown as Record<string, unknown>, undefined, {
+    table: db[store], write: () => (db[store] as any).put(full),
+  });
 
   return full;
 }
@@ -99,20 +97,12 @@ export async function localUpdate<
     synced: false,
   } as unknown as T;
 
-  // Always write locally first
-  await (db[store] as any).put(updated);
-
-  // Then sync/queue remotely
   const patchRecord = patch as unknown as Record<string, unknown>;
   if (hasRemoteMappableFields(store, patchRecord)) {
-    try {
-      const result = await enqueueUpdate(store, id, patchRecord);
-      if (!result.queued) {
-        await (db[store] as any).put({ ...updated, synced: true });
-      }
-    } catch {
-      // Network error — local update is preserved, will sync later
-    }
+    // Saved on the device together with its queued operation (see localInsert)
+    await enqueueUpdate(store, id, patchRecord, {
+      table: db[store], write: () => (db[store] as any).put(updated),
+    });
   } else {
     // No remote-mappable fields — mark as synced since there's nothing to send
     await (db[store] as any).put({ ...updated, synced: true });
@@ -122,14 +112,8 @@ export async function localUpdate<
 }
 
 export async function localDelete(store: StoreName, id: string): Promise<void> {
-  // Delete locally first
-  await (db[store] as any).delete(id);
-  // Then sync/queue
-  try {
-    await enqueueDelete(store, id);
-  } catch {
-    // Network error — deletion will be synced later
-  }
+  // Deleted on the device together with the queueing of the deletion
+  await enqueueDelete(store, id, { table: db[store], write: () => (db[store] as any).delete(id) });
 }
 
 export async function getAll<T>(store: StoreName): Promise<T[]> {
@@ -160,7 +144,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
   const bus = s.buses as { seats_sold_from?: number } | null | undefined;
   const seatsSoldFrom = Math.max(1, Number(bus?.seats_sold_from ?? 1));
   const depIso = s.departure_datetime as string;
-  const depDate = depIso ? depIso.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const depDate = depIso ? depIso.slice(0, 10) : trustedNowIso().slice(0, 10);
   const depTime = depIso ? depIso.slice(11, 16) : '00:00';
   return {
     id: s.id,
@@ -182,6 +166,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     is_ac: false,
     is_ramassage: s.is_ramassage ?? false,
     ramassage_notified: false,
+    reopened_at: s.admin_reactivated_at ?? null,
     confirmed: s.status === 'en_cours',
     cancelled: s.status === 'annule',
     cloture: s.status === 'termine',
@@ -251,6 +236,10 @@ function markAutoTerminateDone(stationId: string | undefined, todayStr: string):
 // baggage and expenses recorded on other counters after a departure's day reach this device too.
 // The other syncs of the day only pull today's and future departures, to stay light.
 const HISTORY_DAYS = 7;
+// Departures re-opened by the admin within these days are pulled whatever their date
+const REOPENED_DAYS = 60;
+
+const SCHEDULE_COLUMNS = 'id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, admin_reactivated_at, buses:bus_id(seats_sold_from)';
 const HISTORY_SYNC_KEY = 'sbta_history_sync_day';
 
 function historySyncDoneToday(stationId: string | undefined, todayStr: string): boolean {
@@ -308,7 +297,7 @@ async function getPendingIds(entity: StoreName): Promise<Set<string>> {
   const items = await db.sync_queue.where('entity').equals(entity).toArray();
   return new Set(
     items
-      .filter(i => i.status !== 'done')
+      .filter(i => i.status !== 'done' && i.status !== 'abandoned')
       .map(i => String((i.payload as Record<string, unknown> | undefined)?.id ?? '')),
   );
 }
@@ -355,6 +344,7 @@ function mapRemoteBaggageToLocal(b: Record<string, unknown>): Record<string, unk
     payment_status: b.payment_status === 'en_attente' ? 'en_attente' : 'paye',
     paid_at: b.paid_at ?? undefined,
     paid_by: b.paid_by ?? undefined,
+    sold_by: b.sold_by ?? undefined,
   };
 }
 
@@ -388,7 +378,7 @@ function mapRemoteChargeToLocal(c: Record<string, unknown>): Record<string, unkn
 export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceDate?: string): Promise<void> {
   if (!isOnline()) return;
   try {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = trustedNowIso().slice(0, 10);
 
     // Auto-close departures from past days (server UTC midnight rollover)
     // This runs BEFORE syncing so closed status is reflected in the pulled data
@@ -413,22 +403,23 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         (d: Record<string, unknown>) =>
           (d as any).departure_date < todayStr &&
           !(d as any).cloture &&
-          !(d as any).cancelled,
+          !(d as any).cancelled &&
+          !(d as { reopened_at?: string | null }).reopened_at,
       );
       for (const d of toClose) {
         await (db.departs as any).put({
           ...d,
           cloture: true,
-          cloture_at: new Date().toISOString(),
+          cloture_at: trustedNowIso(),
           status: 'termine',
-          updated_at: new Date().toISOString(),
+          updated_at: trustedNowIso(),
           synced: true,
         });
       }
     } catch { /* non-critical */ }
 
     const withHistory = !historySyncDoneToday(stationId, todayStr);
-    const fromDate = new Date();
+    const fromDate = trustedNow();
     if (withHistory) fromDate.setUTCDate(fromDate.getUTCDate() - HISTORY_DAYS);
     const defaultFrom = fromDate.toISOString().slice(0, 10);
     const fromStr = sinceDate && sinceDate < defaultFrom ? sinceDate : defaultFrom;
@@ -439,7 +430,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
     for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
       let scheduleQuery = supabase
         .from('schedules')
-        .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, buses:bus_id(seats_sold_from)')
+        .select(SCHEDULE_COLUMNS)
         .gte('departure_datetime', `${fromStr}T00:00:00`);
       // Only this station's departures: other stations' ones are never shown here (shared
       // buses rely on seat allocations kept on the device, not on pulled rows)
@@ -454,6 +445,21 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       if (!data || data.length < RESERVATION_PAGE_SIZE) break;
     }
 
+    // Departures of earlier days the admin re-opened: pulled too, so that the guichet sees them
+    // open again and can correct them (older than the days pulled above otherwise)
+    try {
+      const reopenedSince = new Date(trustedNow().getTime() - REOPENED_DAYS * 86_400_000).toISOString();
+      let reopenedQuery = supabase
+        .from('schedules')
+        .select(SCHEDULE_COLUMNS)
+        .gte('admin_reactivated_at', reopenedSince)
+        .lt('departure_datetime', `${fromStr}T00:00:00`);
+      if (stationId) reopenedQuery = reopenedQuery.eq('departure_station_id', stationId);
+      const { data: reopened } = await reopenedQuery.limit(RESERVATION_PAGE_SIZE);
+      const known = new Set(remoteSchedules.map(s => s.id));
+      for (const s of (reopened ?? []) as unknown as RemoteSchedule[]) if (!known.has(s.id)) remoteSchedules.push(s);
+    } catch { /* server without the column: the usual days only */ }
+
     if (remoteSchedules && remoteSchedules.length > 0) {
       const scheduleIds = remoteSchedules.map(s => s.id);
 
@@ -465,6 +471,9 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         Array.from(new Set(remoteSchedules.map(s => s.driver_id).filter(Boolean))) as string[],
       );
 
+      // Departures with a change made here and not sent yet (a closing, for instance)
+      const pendingDeparts = await getPendingIds('departs');
+
       for (const s of remoteSchedules) {
         const localRecord = mapRemoteScheduleToLocal(s as unknown as Record<string, unknown>);
         const plate = s.bus_id ? plates.get(s.bus_id) : undefined;
@@ -472,8 +481,14 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         const existing = await (db.departs as any).get(s.id);
         if (existing) {
           // A past-day departure already closed on this device stays closed, even if the
-          // server has not closed it yet (its nightly closing may not have run)
-          const keepClosed = existing.cloture && String(localRecord.departure_date) < todayStr;
+          // server has not closed it yet (its nightly closing may not have run) — unless the
+          // admin re-opened it: the guichet then sees it open and can correct it. A closing
+          // made here and not sent yet is kept too.
+          const reopenedByAdmin = Boolean(localRecord.reopened_at) && localRecord.cloture === false;
+          const keepClosed = existing.cloture && (
+            pendingDeparts.has(s.id) ||
+            (String(localRecord.departure_date) < todayStr && !reopenedByAdmin)
+          );
           await (db.departs as any).put({
             ...existing,
             ...localRecord,
@@ -507,8 +522,8 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             bus_plate: plate ?? '',
             bus_name: plate ?? '',
             driver_name: driverName ?? '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            created_at: trustedNowIso(),
+            updated_at: trustedNowIso(),
             synced: true,
           });
         }
@@ -548,10 +563,10 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
               price: ticketRecord.price,
               status: ticketRecord.status,
               destination: ticketRecord.destination || existingTicket.destination,
-              updated_at: new Date().toISOString(),
+              updated_at: trustedNowIso(),
             });
           } else {
-            await (db.tickets as any).put({ ...ticketRecord, created_at: r.created_at ?? new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
+            await (db.tickets as any).put({ ...ticketRecord, created_at: r.created_at ?? trustedNowIso(), updated_at: trustedNowIso(), synced: true });
           }
         }
 
@@ -584,7 +599,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
               breakdown_transfer: breakdownTransfer,
               solde: newMtTicket + existing.mt_bagage - existing.tot_depense,
               caisse: newMtTicket + existing.mt_bagage - existing.tot_depense,
-              updated_at: new Date().toISOString(),
+              updated_at: trustedNowIso(),
             });
           }
         }
@@ -626,14 +641,15 @@ async function syncBaggageFromServer(scheduleIds: string[]): Promise<boolean> {
         payment_status: remote.payment_status,
         paid_at: remote.paid_at ?? existing.paid_at,
         paid_by: remote.paid_by ?? existing.paid_by,
+        sold_by: existing.sold_by ?? remote.sold_by,
         description: remote.description,
-        updated_at: new Date().toISOString(),
+        updated_at: trustedNowIso(),
       } as BagageRecord);
     } else {
       await db.bagages.put({
         ...remote,
-        created_at: row.created_at ?? new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: row.created_at ?? trustedNowIso(),
+        updated_at: trustedNowIso(),
         synced: true,
       } as unknown as BagageRecord);
     }
@@ -642,37 +658,69 @@ async function syncBaggageFromServer(scheduleIds: string[]): Promise<boolean> {
 }
 
 /**
- * Expenses entered on another device were never pulled: Tot Dépense, Solde and Caisse only counted
- * the expenses entered on this device. Only the missing ones are added, the device's own records are
- * left as they are. Returns false if the server could not be read.
+ * Expenses of the departures from the server. One expense per departure and type (audit M3): the
+ * server's amount is the one that counts (modified on another device of the counter, or
+ * corrected at the office), unless the device has a change of it not sent yet. Former entries
+ * of a type added up on the device are replaced by the server's expense. The departures'
+ * Tot Dépense, Solde and Caisse are then computed again. Returns false if the server could not
+ * be read.
  */
 async function syncChargesFromServer(scheduleIds: string[]): Promise<boolean> {
   const rows = await fetchRowsForSchedules('counter_charges', '*', scheduleIds);
   if (!rows) return false;
   const pending = await getPendingIds('depenses');
-  const local = await db.depenses.toArray();
+  const local = (await db.depenses.toArray()).filter(d => d.description !== '__deleted__');
   const localIds = new Set(local.map(d => d.id));
+  const touched = new Set<string>();
+
+  // Server expenses by departure and type
+  const groups = new Map<string, Record<string, unknown>[]>();
   for (const row of rows) {
-    const id = String(row.id);
     if (row.status === 'rejete') continue;
-    if (localIds.has(id) || pending.has(id)) continue;
-    // Ratio, carburant and péage are one row per departure on the server: when this device sent
-    // a second amount, the server row kept another id. Skip it rather than count the expense twice.
-    const chargeType = String(row.charge_type);
-    if (UNIQUE_CHARGE_TYPES.has(chargeType)) {
-      const alreadyHere = local.some(d =>
-        d.depart_id === row.schedule_id &&
-        d.description !== '__deleted__' &&
-        normalizeExpenseType(d.type ?? d.label) === chargeType,
-      );
-      if (alreadyHere) continue;
+    const key = `${row.schedule_id}|${row.charge_type}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  for (const group of groups.values()) {
+    if (group.length > 1) {
+      // Several « autres » recorded before the rule: added as they are, until one is modified
+      for (const row of group) {
+        if (localIds.has(String(row.id)) || pending.has(String(row.id))) continue;
+        await db.depenses.put({ ...mapRemoteChargeToLocal(row), created_at: row.created_at ?? trustedNowIso(), updated_at: trustedNowIso(), synced: true } as unknown as DepenseRecord);
+        touched.add(String(row.schedule_id));
+      }
+      continue;
     }
-    await db.depenses.put({
-      ...mapRemoteChargeToLocal(row),
-      created_at: row.created_at ?? new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      synced: true,
-    } as unknown as DepenseRecord);
+    const row = group[0];
+    const id = String(row.id);
+    const chargeType = String(row.charge_type);
+    const same = local.filter(d => d.depart_id === row.schedule_id && normalizeExpenseType(d.type ?? d.label) === chargeType);
+    // A change made on the device and not sent yet wins until it is sent
+    if (pending.has(id) || same.some(d => pending.has(d.id))) continue;
+    const remote = mapRemoteChargeToLocal(row) as unknown as DepenseRecord;
+
+    if (same.length === 1 && same[0].id === id) {
+      const mine = same[0];
+      if (mine.amount === remote.amount && mine.description === remote.description && mine.expense_date === remote.expense_date) continue;
+      await db.depenses.put({ ...mine, amount: remote.amount, description: remote.description, expense_date: remote.expense_date || mine.expense_date, updated_at: trustedNowIso(), synced: true });
+    } else {
+      await db.transaction('rw', db.depenses, async () => {
+        await db.depenses.bulkDelete(same.map(d => d.id));
+        await db.depenses.put({ ...remote, created_at: (row.created_at as string) ?? trustedNowIso(), updated_at: trustedNowIso(), synced: true } as DepenseRecord);
+      });
+    }
+    touched.add(String(row.schedule_id));
+  }
+
+  // Tot Dépense, Solde and Caisse of the departures whose expenses changed (device only)
+  for (const departId of touched) {
+    const depart = await db.departs.get(departId);
+    if (!depart) continue;
+    const total = (await db.depenses.where('depart_id').equals(departId).toArray())
+      .filter(d => d.description !== '__deleted__')
+      .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+    if (total === depart.tot_depense) continue;
+    await db.departs.put({ ...depart, tot_depense: total, solde: depart.mt_ticket - total, caisse: depart.mt_ticket - total });
   }
   return true;
 }

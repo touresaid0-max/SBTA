@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
-  getAllDeparts, updateDepart, type DepartRecord,
+  getAllDeparts, updateDepart, cloturerDepart, type DepartRecord,
   type VehiculeRef, type ChauffeurRef,
   seatsLibres,
   seatsCommercialisables,
@@ -39,6 +39,7 @@ import {
   ChevronUp, ChevronDown, Loader2, X, AlertCircle,
   FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange,
 } from 'lucide-react';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
 type SortDir = 'asc' | 'desc';
@@ -168,7 +169,7 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
   const totalCharges = totalRations + totalCarburant + totalPeages + totalAutres;
   const soldeTicket = totalTicketAmount - totalCharges;
 
-  const now = new Date();
+  const now = trustedNow();
   const pad = (n: number) => String(n).padStart(2, '0');
   const printDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
   const printTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -245,7 +246,7 @@ function shiftDays(day: string, days: number): string {
 
 /** First and last day (inclusive) of a period; undefined means no limit on that side. */
 function periodRange(period: Period, customFrom: string, customTo: string): { from?: string; to?: string } {
-  const today = isoDay(new Date());
+  const today = isoDay(trustedNow());
   const now = new Date(`${today}T00:00:00Z`);
   switch (period) {
     case 'today': return { from: today, to: today };
@@ -358,7 +359,7 @@ export default function POSDeparts() {
     loadDeparts();
   }, [loadDeparts]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = trustedNowIso().split('T')[0];
 
   const range = useMemo(() => periodRange(period, customFrom, customTo), [period, customFrom, customTo]);
   const periodText = periodDescription(period, range);
@@ -400,6 +401,11 @@ export default function POSDeparts() {
       .filter(d => !routeFilter || d.route_name === routeFilter)
       .sort((a, b) => (a.route_number ?? a.departure_number ?? 0) - (b.route_number ?? b.departure_number ?? 0));
   }, [filterBaseDeparts, routeFilter]);
+
+  const reopenedDeparts = useMemo(
+    () => departs.filter(d => d.reopened_at && !d.cloture && !d.cancelled),
+    [departs],
+  );
 
   const visibleDeparts = useMemo(() => {
     let list = filterBaseDeparts.filter(d =>
@@ -546,7 +552,7 @@ export default function POSDeparts() {
         solde_ticket: acc.solde_ticket + r.solde_ticket,
         total_baggage: acc.total_baggage + r.total_baggage,
       }), { departures: 0, seats_sold: 0, total_ticket: 0, total_rations: 0, total_carburant: 0, total_peages: 0, total_autres: 0, total_charges: 0, solde_ticket: 0, total_baggage: 0 });
-      const now = new Date();
+      const now = trustedNow();
       const pad = (n: number) => String(n).padStart(2, '0');
       const data: BordereauRecettesData = {
         station_name: session?.station_name ?? '',
@@ -581,7 +587,9 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'fermer') {
-        await updateDepart(depart.id, { cloture: true });
+        // Same closing as the Clôture screen: a ramassage ligne is announced to the destination
+        // station (it was not when the departure was closed from here)
+        await cloturerDepart(depart.id, session?.full_name);
       }
       if (action === 'modifier') {
         const [vehs, chfs] = await Promise.all([getVehicules(), getChauffeurs()]);
@@ -778,6 +786,31 @@ export default function POSDeparts() {
           )}
         </div>
       </div>
+
+      {/* Departures re-opened by the admin: shown whatever the period, to be corrected then closed */}
+      {reopenedDeparts.length > 0 && (
+        <div className="mb-4 rounded-xl border p-3" style={{ borderColor: '#FDBA74', backgroundColor: '#FFF7ED' }}>
+          <p className="text-sm font-bold" style={{ color: '#9A3412' }}>
+            {reopenedDeparts.length} départ{reopenedDeparts.length > 1 ? 's' : ''} rouvert{reopenedDeparts.length > 1 ? 's' : ''} par l'administration
+          </p>
+          <p className="mt-0.5 text-xs" style={{ color: '#9A3412' }}>
+            Vous pouvez corriger ses ventes, bagages et dépenses, puis le clôturer à nouveau. Les modifications sont visibles par l'administration.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {reopenedDeparts.map(d => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => { setPeriod('custom'); setCustomFrom(d.departure_date); setCustomTo(d.departure_date); setDepartureFilter(''); }}
+                className="rounded-lg border px-3 py-1.5 text-xs font-bold"
+                style={{ borderColor: '#FDBA74', backgroundColor: 'var(--surface)', color: '#9A3412' }}
+              >
+                #{d.departure_number ?? d.route_number ?? '—'} · {d.route_name ?? 'Départ'} · {d.departure_date.split('-').reverse().join('/')} {d.departure_time}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
@@ -994,6 +1027,7 @@ export default function POSDeparts() {
                       <td className={td}>
                         {d.cancelled ? <span style={{ color: 'var(--danger)' }}>Annulé</span>
                           : d.cloture ? <span style={{ color: 'var(--danger)' }}>Clôturé</span>
+                          : d.reopened_at ? <span style={{ color: '#EA580C', fontWeight: 600 }} title="Décloturé par l'administration : vous pouvez le modifier puis le clôturer à nouveau">Rouvert (admin)</span>
                           : d.is_ramassage ? <span style={{ color: '#0EA5E9' }}>Ramassage</span>
                           : d.status === 'panne' ? <span style={{ color: 'var(--warning)' }}>Panne</span>
                           : d.status === 'convoi' ? <span style={{ color: 'var(--info)' }}>Convoi</span>

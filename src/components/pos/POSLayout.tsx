@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin } from 'lucide-react';
 import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
+import { StorageAlert } from '@/components/pos/StorageAlert';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { useAutoSync } from '@/services/pos/useAutoSync';
 
@@ -17,7 +18,7 @@ interface POSLayoutProps {
 export default function POSLayout({ children, stationName, activeRoute, showBack, backTo, headerActions }: POSLayoutProps) {
   const navigate = useNavigate();
   const { session } = usePOSSession();
-  useAutoSync(session?.station_id);
+  useAutoSync(session?.station_id, session?.courrier_enabled === true);
 
   const goBack = () => {
     if (backTo) {
@@ -72,6 +73,7 @@ export default function POSLayout({ children, stationName, activeRoute, showBack
       </header>
 
       <ConnectionBanner />
+      <StorageAlert />
 
       <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
         {children}

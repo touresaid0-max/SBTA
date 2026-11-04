@@ -30,6 +30,11 @@ import { fetchScheduleSeatMap } from '@/services/seatMap.service';
 import { fetchPendingReprints, consumeReprint, type TicketReprintAuthorization } from '@/services/ticketReprint.service';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
+import { trustedNowIso } from '@/services/offline/deviceClock';
+import PhoneInputCI from '@/components/shared/PhoneInputCI';
+import { isValidPhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 // A bus can be shared by several stations, each on its own départ: the structure
 // only shows the sales of this départ, never those of the other stations.
@@ -510,7 +515,7 @@ export default function POSVente() {
     if (!depart || !departId) return;
     if (depart.cancelled) { setError('Ce départ est annulé — vente impossible'); return; }
     if (depart.cloture) { setError('Ce départ est clôturé — vente impossible'); return; }
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = trustedNowIso().slice(0, 10);
     if (depart.departure_date < todayStr) { setError('Ce départ appartient à une journée antérieure — vente impossible'); return; }
     if (depart.status === 'panne') { setError('Ce départ est en panne — vente impossible'); return; }
     setError(''); setSuccess('');
@@ -533,6 +538,9 @@ export default function POSVente() {
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
     if (tarif <= 0) { setError('Tarif invalide — vérifiez la destination'); return; }
+    // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
+    const tarifCheck = checkAmounts([{ value: tarif, rule: AMOUNT_RULES.ticketPrice }]);
+    if (!tarifCheck.ok) { if (tarifCheck.error) setError(tarifCheck.error); return; }
 
     setSelling(true);
     try {
@@ -555,7 +563,7 @@ export default function POSVente() {
         price: tarif, originalPrice: tarif,
         isReduced, isReported, isAc: depart.is_ac, printTicket,
         loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
-        loyaltyName: loyaltyEnabled ? loyaltyName : undefined,
+        loyaltyName: loyaltyEnabled ? cleanText(loyaltyName, TEXT_LIMITS.name) : undefined,
         stationAgencyCode: session?.station_name,
       });
 
@@ -612,7 +620,7 @@ export default function POSVente() {
     const failed = ticketsToPrint.filter(t => !printedIds.has(t.id)).sort((a, b) => a.seat_number - b.seat_number);
     // Mark successfully printed tickets as printed
     for (const ticket of succeeded) {
-      await localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: new Date().toISOString() });
+      await localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: trustedNowIso() });
     }
     // Reload tickets to reflect printed status
     if (departId) {
@@ -707,12 +715,14 @@ export default function POSVente() {
     if (!depart || !departId || !bagMode) return;
     if (depart.cancelled) { setBagError('Ce départ est annulé — opération impossible'); return; }
     if (depart.cloture) { setBagError('Ce départ est clôturé — opération impossible'); return; }
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = trustedNowIso().slice(0, 10);
     if (depart.departure_date < todayStr) { setBagError('Ce départ appartient à une journée antérieure — opération impossible'); return; }
     if (depart.status === 'panne') { setBagError('Ce départ est en panne — opération impossible'); return; }
     setBagError(''); setBagSuccess('');
 
     if (bagPrice <= 0) { setBagError('Veuillez saisir un prix de bagage valide'); return; }
+    const bagPriceCheck = checkAmounts([{ value: bagPrice, rule: AMOUNT_RULES.baggagePrice }]);
+    if (!bagPriceCheck.ok) { if (bagPriceCheck.error) setBagError(bagPriceCheck.error); return; }
     if (bagMode === 'avec' && !seatNumber) {
       setBagError('Veuillez sélectionner ou saisir un numéro de siège'); return;
     }
@@ -727,8 +737,10 @@ export default function POSVente() {
     }
     if (bagMode === 'sans') {
       if (!bagOwnerName.trim()) { setBagError('Veuillez saisir le nom du propriétaire'); return; }
-      if (!bagOwnerPhone.trim()) { setBagError('Veuillez saisir le contact du propriétaire'); return; }
     }
+    // Required without ticket; with a ticket, optional but a valid number when given
+    const bagPhoneError = phoneCIError(bagOwnerPhone, bagMode === 'sans');
+    if (bagPhoneError) { setBagError(`Contact du propriétaire : ${bagPhoneError}`); return; }
 
     setBagSelling(true);
     try {
@@ -741,9 +753,10 @@ export default function POSVente() {
         ticketNumber: bagMode === 'avec' ? (linkedBusTicket?.ticket_number ?? undefined) : undefined,
         price: bagPrice,
         destination: destStationName,
-        description: bagDescription,
-        ownerName: bagOwnerName || 'N/A',
-        ownerPhone: bagOwnerPhone || '',
+        // Cleaned and limited as saved (audit m2)
+        description: cleanText(bagDescription, TEXT_LIMITS.description),
+        ownerName: cleanText(bagOwnerName, TEXT_LIMITS.name) || 'N/A',
+        ownerPhone: toStoredPhoneCI(bagOwnerPhone),
         linkedSeatNumber: resolvedSeat || undefined,
         printBagage: true,
       });
@@ -846,7 +859,7 @@ export default function POSVente() {
             <Lock className="w-4 h-4" /> Ce départ est clôturé — vente verrouillée
           </div>
         )}
-        {!depart.cancelled && !depart.cloture && depart.departure_date < new Date().toISOString().slice(0, 10) && (
+        {!depart.cancelled && !depart.cloture && depart.departure_date < trustedNowIso().slice(0, 10) && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm font-bold" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
             <Lock className="w-4 h-4" /> Ce départ appartient à une journée antérieure — vente verrouillée
           </div>
@@ -1521,7 +1534,7 @@ export default function POSVente() {
               )}
               <button
                 onClick={handleSell}
-                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < new Date().toISOString().slice(0, 10)}
+                disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < trustedNowIso().slice(0, 10)}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
               >
@@ -1807,7 +1820,7 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Propriétaire (optionnel)</label>
                       <input
                         type="text"
-                        value={bagOwnerName}
+                        value={bagOwnerName} maxLength={TEXT_LIMITS.name}
                         onChange={e => setBagOwnerName(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1818,7 +1831,7 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
                       <input
                         type="text"
-                        value={bagDescription}
+                        value={bagDescription} maxLength={TEXT_LIMITS.description}
                         onChange={e => setBagDescription(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1890,7 +1903,7 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Propriétaire *</label>
                       <input
                         type="text"
-                        value={bagOwnerName}
+                        value={bagOwnerName} maxLength={TEXT_LIMITS.name}
                         onChange={e => setBagOwnerName(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1898,21 +1911,21 @@ export default function POSVente() {
                       />
                     </div>
                     <div>
-                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact *</label>
-                      <input
-                        type="tel"
+                      <label htmlFor="bag-owner-phone" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact *</label>
+                      <PhoneInputCI
+                        id="bag-owner-phone"
                         value={bagOwnerPhone}
-                        onChange={e => setBagOwnerPhone(e.target.value)}
+                        onChange={setBagOwnerPhone}
+                        required={bagMode === 'sans'}
                         className={fieldInput}
                         style={fieldStyle}
-                        placeholder="Numéro de téléphone"
                       />
                     </div>
                     <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
                       <input
                         type="text"
-                        value={bagDescription}
+                        value={bagDescription} maxLength={TEXT_LIMITS.description}
                         onChange={e => setBagDescription(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1927,7 +1940,7 @@ export default function POSVente() {
               {bagMode && (
                 <button
                   onClick={handleSellBagage}
-                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < new Date().toISOString().slice(0, 10) || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && (!seatNumber || !linkedBusTicket))}
+                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < trustedNowIso().slice(0, 10) || (bagMode === 'sans' && (!bagOwnerName.trim() || !isValidPhoneCI(bagOwnerPhone))) || (bagMode === 'avec' && (!seatNumber || !linkedBusTicket))}
                   className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                   style={{ backgroundColor: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)' }}
                 >
@@ -1966,11 +1979,11 @@ export default function POSVente() {
                     </div>
                     <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nom et prénoms</label>
-                      <input type="text" value={loyaltyName} onChange={e => setLoyaltyName(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Nom du client" />
+                      <input type="text" value={loyaltyName} maxLength={TEXT_LIMITS.name} onChange={e => setLoyaltyName(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Nom du client" />
                     </div>
                     <div>
-                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
-                      <input type="tel" value={loyaltyPhone} onChange={e => setLoyaltyPhone(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Téléphone" />
+                      <label htmlFor="loyalty-phone" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
+                      <PhoneInputCI id="loyalty-phone" value={loyaltyPhone} onChange={setLoyaltyPhone} className={fieldInput} style={fieldStyle} />
                     </div>
                   </div>
                   <div className="flex gap-2">

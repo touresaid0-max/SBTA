@@ -1,7 +1,8 @@
 import Dexie, { type Table } from 'dexie';
+import type { QueueStatus } from '@/services/offline/queueRules';
 
 export type SyncOp = 'insert' | 'update' | 'delete';
-export type SyncStatus = 'pending' | 'syncing' | 'done' | 'error';
+export type SyncStatus = QueueStatus;
 
 export interface SeatAllocation {
   station_id: string;
@@ -41,6 +42,8 @@ export interface DepartRecord {
   is_ac: boolean;
   is_ramassage?: boolean;
   ramassage_notified?: boolean;
+  /** Re-opened by the admin after it was closed (server: schedules.admin_reactivated_at) */
+  reopened_at?: string | null;
   company_id?: string;
   status: string;
   seats_total: number;
@@ -121,6 +124,8 @@ export interface BagageRecord {
   payment_status: 'paye' | 'en_attente';
   paid_at?: string;
   paid_by?: string;
+  /** Guichetier who sold it (user id): the Recette bagage screen counts his own baggage */
+  sold_by?: string;
   created_at: string;
   updated_at: string;
   synced?: boolean;
@@ -145,7 +150,7 @@ export interface DepenseRecord {
 export interface ReferentielRecord {
   key: string;
   /** convois_master / convois_list: lists of the convoy screen, kept for working offline */
-  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops' | 'convois_master' | 'convois_list';
+  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops' | 'convois_master' | 'convois_list' | 'ramassage_list' | 'ramassage_report';
   data: unknown;
   updated_at: string;
 }
@@ -165,6 +170,10 @@ export interface SyncQueueItem {
   user_id?: string;
   /** Kept on the device only, never sent (e.g. the convoy row shown until it reaches the server) */
   meta?: Record<string, unknown>;
+  /** Abandoned operation: why, when and by whom (kept as a trace, never sent) */
+  abandon_reason?: string;
+  abandoned_at?: string;
+  abandoned_by?: string;
 }
 
 export interface TransferLogRecord {
@@ -223,6 +232,7 @@ export interface SessionRecord {
   assigned_route_ids?: string[];
   login_at: string;
   offline: boolean;
+  /** @deprecated Unsalted SHA-256 of earlier versions: never read, erased when found (audit M8). */
   password_hash?: string;
   tpe_pos_enabled?: boolean;
   tpe_mode?: 'sans_guichet' | 'avec_guichet';

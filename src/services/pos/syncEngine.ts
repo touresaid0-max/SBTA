@@ -1,5 +1,10 @@
+import type { Table } from 'dexie';
 import { db, type SyncQueueItem } from './db';
+import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, byQueueOrder, isPermanentError, isWaitingToSend, nextRetryAt, retryDelayMs } from '@/services/offline/queueRules';
 import { supabase } from '@/services/supabase';
+import { trustedNowIso } from '@/services/offline/deviceClock';
+import { storedPhoneOrEmpty } from '@/utils/phoneCI';
+import { uuidV4 } from '@/utils/uuid';
 
 // ── Online/offline state (single source of truth) ──
 
@@ -23,9 +28,12 @@ export function onOnlineChange(fn: (online: boolean) => void): () => void {
 
 // ── Sync queue helpers ──
 
-// convoi_trajets / convois: the convoy screen writes its rows as they are (no local table). An
-// insert carries { id, rows }: the outbound and return legs go in one request, all or nothing.
-export type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses' | 'convoi_trajets' | 'convois';
+// convoi_trajets / convois / ramassages / ramassage_collectes: the convoy and ramassage screens
+// write their rows as they are (no local table). An insert carries { id, rows }: all the rows go
+// in one request, all or nothing.
+export type StoreName =
+  | 'departs' | 'tickets' | 'bagages' | 'depenses'
+  | 'convoi_trajets' | 'convois' | 'ramassages' | 'ramassage_collectes';
 
 const TABLE_MAP: Record<StoreName, string> = {
   departs: 'schedules',
@@ -34,16 +42,38 @@ const TABLE_MAP: Record<StoreName, string> = {
   depenses: 'counter_charges',
   convoi_trajets: 'schedules',
   convois: 'convoys',
+  ramassages: 'ramassage_notifications',
+  ramassage_collectes: 'ramassage_collections',
 };
 
-const RAW_ROW_STORES = new Set<StoreName>(['convoi_trajets', 'convois']);
+const RAW_ROW_STORES = new Set<StoreName>(['convoi_trajets', 'convois', 'ramassages', 'ramassage_collectes']);
+
+/**
+ * Rows the guichet may not read back once written: a ramassage ligne is announced to the
+ * DESTINATION station, and only that station may read it (access rules). An upsert (insert or
+ * update) needs to read the row: the server refused it (« row-level security policy »), so the
+ * notification of a ramassage ligne never reached the destination station. These rows are
+ * inserted, one by one; a row already received (resend after a cut) counts as sent.
+ */
+const INSERT_ONLY_STORES = new Set<StoreName>(['ramassages']);
+
+function isAlreadyReceived(error: { code?: string; message?: string } | null): boolean {
+  return !!error && error.code === '23505' && /_pkey/.test(error.message ?? '');
+}
+
+// Column naming the guichetier who made the row, filled with the account the row is sent with
+const RAW_AUTHOR_COLUMN: Partial<Record<StoreName, string>> = {
+  convois: 'created_by',
+  ramassages: 'created_by',
+  ramassage_collectes: 'collected_by',
+};
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 function uuid(): string {
-  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return uuidV4();
 }
 
 // Account the operation is sent with, read from the session kept on the device. getUser() asked
@@ -77,15 +107,14 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     arrival_datetime: computeArrivalDatetime(depIso),
     status,
     seats_total: p.seats_total ?? 0,
-    seats_available: p.seats_total ?? 0,
-    seats_reserved: p.seats_sold ?? 0,
+    // seats_reserved / seats_available: counted by the server from the reservations (see below)
     route_name: p.route_name ?? null,
     source: 'guichet',
     counter_id: p.counter_id ?? null,
     departure_number: p.departure_number ?? null,
     route_number: p.route_number ?? null,
-    created_at: p.created_at ?? nowIso(),
-    updated_at: p.updated_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
+    updated_at: p.updated_at ?? trustedNowIso(),
     is_ramassage: p.is_ramassage ?? false,
     is_anticipated: false,
   };
@@ -94,11 +123,10 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
 function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unknown> | null {
   const p = payload;
   const result: Record<string, unknown> = {};
-  if (p.seats_sold !== undefined) result.seats_reserved = p.seats_sold;
-  if (p.seats_total !== undefined) {
-    result.seats_total = p.seats_total;
-    result.seats_available = p.seats_total;
-  }
+  // The seats sold and left are counted by the server from the reservations (and mobile
+  // bookings) of the departure. The device sent its own count, which knows only its own sales:
+  // a late or replayed send could put back an outdated number. It no longer sends them.
+  if (p.seats_total !== undefined) result.seats_total = p.seats_total;
   if (p.cancelled === true) result.status = 'annule';
   if (p.cloture === true) result.status = 'termine';
   if (p.confirmed === true) result.status = 'en_cours';
@@ -114,7 +142,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
     result.departure_datetime = p.departure_datetime;
     result.arrival_datetime = computeArrivalDatetime(p.departure_datetime as string);
   }
-  result.updated_at = nowIso();
+  result.updated_at = trustedNowIso();
   if (Object.keys(result).length <= 1) return null;
   return result;
 }
@@ -135,8 +163,8 @@ function mapTicketInsert(payload: Record<string, unknown>): Record<string, unkno
     status: p.status === 'cancelled' ? 'annulee' : 'confirmee',
     payment_status: p.status === 'cancelled' ? 'remboursee' : 'payee',
     booking_reference: p.ticket_number ?? null,
-    created_at: p.created_at ?? nowIso(),
-    updated_at: p.updated_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
+    updated_at: p.updated_at ?? trustedNowIso(),
   };
   if (p.destination) result.destination_city_name = p.destination;
   return result;
@@ -157,7 +185,7 @@ function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unkno
     result.seat_numbers = [String(p.seat_number)];
     result.total_seats = 1;
   }
-  result.updated_at = nowIso();
+  result.updated_at = trustedNowIso();
   if (Object.keys(result).length <= 1) return null;
   return result;
 }
@@ -175,13 +203,15 @@ function mapBagageInsert(payload: Record<string, unknown>): Record<string, unkno
     bus_registration: p.car_plate ?? null,
     description: p.description ?? null,
     owner_name: p.owner_name ?? '',
-    owner_phone: p.owner_phone ?? '',
+    // Côte d'Ivoire rule (audit M10): 225 + 10 digits, or empty for a number saved by an earlier
+    // version that is not valid (the database would refuse it)
+    owner_phone: storedPhoneOrEmpty(p.owner_phone),
     has_ticket: p.with_ticket ?? false,
     station_id: p.station_id ?? null,
     counter_id: p.counter_id ?? null,
     declared_value: p.declared_value ?? 0,
     payment_status: p.payment_status ?? 'paye',
-    created_at: p.created_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
   };
 }
 
@@ -195,7 +225,7 @@ function mapBagageUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.price !== undefined) result.price = p.price;
   if (p.description !== undefined) result.description = p.description;
   if (p.owner_name !== undefined) result.owner_name = p.owner_name;
-  if (p.owner_phone !== undefined) result.owner_phone = p.owner_phone;
+  if (p.owner_phone !== undefined) result.owner_phone = storedPhoneOrEmpty(p.owner_phone);
   if (Object.keys(result).length === 0) return null;
   return result;
 }
@@ -224,41 +254,85 @@ export function normalizeExpenseType(raw: string | undefined): string {
   return EXPENSE_TYPE_MAP[key] ?? 'autres';
 }
 
-export const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage']);
+/**
+ * Expense types of a departure: one expense of each type per departure, never added up (audit M3).
+ * The guichetier modifies the recorded expense; a second one of the same type is refused.
+ */
+export const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage', 'autres']);
 
-async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-  const p = payload;
-  const chargeType = normalizeExpenseType((p.type as string) ?? (p.label as string));
-  const scheduleId = (p.depart_id as string) ?? null;
-  const row = {
-    id: p.id,
-    schedule_id: scheduleId,
-    counter_id: p.counter_id ?? null,
-    station_id: p.station_id ?? null,
-    bus_id: p.bus_id ?? null,
-    charge_type: chargeType,
-    description: (p.description as string) || (p.label as string) || '',
-    amount: p.amount ?? 0,
-    charge_date: (p.expense_date as string) ?? new Date().toISOString().slice(0, 10),
-    status: 'en_attente',
-    created_at: p.created_at ?? nowIso(),
-  };
-  if (UNIQUE_CHARGE_TYPES.has(chargeType) && scheduleId) {
-    const { data: existing } = await supabase
+/** Server without the function of the 04/11/2026 migration (not applied yet). */
+function isMissingFunction(error: { code?: string; message?: string } | null): boolean {
+  return !!error && (error.code === 'PGRST202' || error.code === '42883');
+}
+
+/**
+ * Sends the device's expense as it is now (creation or modification): the server keeps one
+ * expense per departure and type, whose amount is REPLACED by this one, not added to it. Sending
+ * it again (cut, retry, insert then update in the queue) gives the same result.
+ */
+async function sendDepense(payload: Record<string, unknown>): Promise<void> {
+  const id = String(payload.id ?? '');
+  const current = ((id ? await db.depenses.get(id) : undefined) as Record<string, unknown> | undefined) ?? payload;
+  if (current.description === '__deleted__') return;
+  const scheduleId = (current.depart_id as string) || null;
+  if (!scheduleId) return; // not attached to a departure: nothing the server can record
+  const chargeType = normalizeExpenseType((current.type as string) ?? (current.label as string));
+  const description = (current.description as string) || (current.label as string) || '';
+  const amount = Number(current.amount ?? 0);
+  const chargeDate = (current.expense_date as string) || trustedNowIso().slice(0, 10);
+
+  const { error } = await supabase.rpc('save_counter_charge', {
+    p_id: id || null,
+    p_schedule_id: scheduleId,
+    p_charge_type: chargeType,
+    p_amount: amount,
+    p_description: description,
+    p_charge_date: chargeDate,
+    p_counter_id: (current.counter_id as string) || null,
+    p_station_id: (current.station_id as string) || null,
+    p_bus_id: (current.bus_id as string) || null,
+    p_created_at: (current.created_at as string) || null,
+  });
+  if (!error) return;
+  if (!isMissingFunction(error)) throw error;
+
+  // Until the migration is applied: same rule with the table itself (a validated expense cannot
+  // be modified this way: the server refuses it, the change stays in the queue with the error)
+  const { data: existing, error: findError } = await supabase
+    .from('counter_charges')
+    .select('id')
+    .eq('schedule_id', scheduleId)
+    .eq('charge_type', chargeType)
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (findError) throw findError;
+  const target = (existing ?? [])[0] as { id: string } | undefined;
+  if (target) {
+    const { data, error: updateError } = await supabase
       .from('counter_charges')
-      .select('id')
-      .eq('schedule_id', scheduleId)
-      .eq('charge_type', chargeType)
-      .maybeSingle();
-    if (existing) {
-      await supabase
-        .from('counter_charges')
-        .update({ amount: row.amount, description: row.description, charge_date: row.charge_date, updated_at: nowIso() })
-        .eq('id', existing.id);
-      return null;
-    }
+      .update({ amount, description, charge_date: chargeDate, updated_at: trustedNowIso() })
+      .eq('id', target.id)
+      .select('id');
+    if (updateError) throw updateError;
+    if ((data ?? []).length === 0) throw new RefusedByServer('Modification refusée par le serveur (dépense déjà validée) : appliquez la migration du 04/11/2026');
+    return;
   }
-  return row;
+  const userId = await getCurrentUserId();
+  const { error: insertError } = await supabase.from('counter_charges').upsert({
+    id: id || undefined,
+    schedule_id: scheduleId,
+    counter_id: current.counter_id ?? null,
+    station_id: current.station_id ?? null,
+    bus_id: current.bus_id ?? null,
+    charge_type: chargeType,
+    description,
+    amount,
+    charge_date: chargeDate,
+    status: 'en_attente',
+    created_at: current.created_at ?? trustedNowIso(),
+    ...(userId ? { created_by: userId } : {}),
+  });
+  if (insertError) throw insertError;
 }
 
 // ── Who sends what ──
@@ -299,26 +373,28 @@ function sentBy(item: Pick<SyncQueueItem, 'user_id'>, serverUserId: string | und
 
 // ── Queue operations ──
 
-async function addToQueue(
-  store: StoreName,
-  op: SyncQueueItem['op'],
-  payload: Record<string, unknown>,
-  userId: string | undefined,
-  lastError?: string,
-  meta?: Record<string, unknown>,
-): Promise<void> {
-  await db.sync_queue.add({
-    entity: store,
-    op,
-    payload,
-    created_at: nowIso(),
-    tries: 0,
-    status: 'pending',
-    ...(lastError ? { last_error: lastError } : {}),
-    ...(userId ? { user_id: userId } : {}),
-    ...(meta ? { meta } : {}),
+/** Change of the device's copy, saved in the same transaction as the operation that sends it. */
+export interface LocalWrite {
+  table: Table<any, any>;
+  write: () => Promise<unknown>;
+}
+
+/**
+ * Saves the operation in the queue, together with the change of the device's copy when given:
+ * both are saved, or neither (a record saved on the device always has its operation).
+ */
+async function saveInQueue(item: SyncQueueItem, local?: LocalWrite): Promise<number> {
+  if (!local) return db.sync_queue.add(item);
+  return db.transaction('rw', local.table, db.sync_queue, async () => {
+    await local.write();
+    return db.sync_queue.add(item);
   });
 }
+
+// An operation sent at once (online) was put in the queue only after a failed send. If the page
+// closed during the send (up to 15 s: tab closed, reload after an update, power cut), the sale
+// stayed on the device, in no queue, and never reached the server. The operation is now in the
+// queue before it is sent, marked 'syncing': an interrupted send is sent again by the queue.
 
 /**
  * Sends an operation now when online and the server session is its author's; otherwise (offline,
@@ -330,32 +406,55 @@ async function sendOrQueue(
   payload: Record<string, unknown>,
   send: () => Promise<void>,
   meta?: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
   const userId = await currentSellerId();
-  if (isOnline() && sentBy({ user_id: userId }, await serverSessionUserId())) {
-    try {
-      await send();
-      return { queued: false };
-    } catch (err: any) {
-      // Network failed mid-operation — queue it for retry
-      await addToQueue(store, op, payload, userId, err?.message, meta);
-      return { queued: true, error: err?.message };
-    }
+  const sendNow = isOnline() && sentBy({ user_id: userId }, await serverSessionUserId());
+  const queueId = await saveInQueue({
+    entity: store,
+    op,
+    payload,
+    created_at: nowIso(),
+    tries: sendNow ? 1 : 0,
+    status: sendNow ? 'syncing' : 'pending',
+    ...(sendNow ? { sending_since: nowIso() } : {}),
+    ...(userId ? { user_id: userId } : {}),
+    ...(meta ? { meta } : {}),
+  }, local);
+  if (!sendNow) return { queued: true };
+
+  try {
+    await send();
+  } catch (err: any) {
+    // Network failed mid-operation — sent again by the queue; refused by the server — kept, to deal with
+    const refused = isPermanentError(err);
+    await db.sync_queue.update(queueId, refused
+      ? { ...failureState(err), sending_since: undefined }
+      : { status: 'pending', tries: 0, sending_since: undefined, last_error: err?.message })
+      .catch(() => { /* stays 'syncing': sent again once the send is considered interrupted */ });
+    return { queued: true, error: err?.message };
   }
-  await addToQueue(store, op, payload, userId, undefined, meta);
-  return { queued: true };
+  try {
+    await db.sync_queue.delete(queueId);
+    if (op !== 'delete') await markSyncedIfNothingLeft(store, String(payload.id ?? ''));
+  } catch {
+    // Left in the queue: sent once more later, without effect (same id)
+  }
+  return { queued: false };
 }
 
 /**
  * Insert: sent now if possible, otherwise queued. `meta`: kept with a queued operation only, never
- * sent (e.g. what the convoy list shows until the convoy reaches the server).
+ * sent (e.g. what the convoy list shows until the convoy reaches the server). `local`: the saving
+ * of the record on the device, done together with the queueing.
  */
 export async function enqueueInsert(
   store: StoreName,
   record: Record<string, unknown>,
   meta?: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record), meta);
+  return sendOrQueue(store, 'insert', record, () => executeInsert(store, record), meta, local);
 }
 
 /** Update: sent now if possible, otherwise queued. */
@@ -363,16 +462,18 @@ export async function enqueueUpdate(
   store: StoreName,
   id: string,
   patch: Record<string, unknown>,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  return sendOrQueue(store, 'update', { id, ...patch }, () => executeUpdate(store, id, patch));
+  return sendOrQueue(store, 'update', { id, ...patch }, () => executeUpdate(store, id, patch), undefined, local);
 }
 
 /** Delete: sent now if possible, otherwise queued. */
 export async function enqueueDelete(
   store: StoreName,
   id: string,
+  local?: LocalWrite,
 ): Promise<{ queued: boolean; error?: string }> {
-  return sendOrQueue(store, 'delete', { id }, () => executeDelete(store, id));
+  return sendOrQueue(store, 'delete', { id }, () => executeDelete(store, id), undefined, local);
 }
 
 // ── Execute individual operations against Supabase ──
@@ -394,16 +495,21 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
     const userId = await getCurrentUserId();
     if (userId) payload.sold_by = userId;
   } else if (store === 'depenses') {
-    const depensePayload = await mapDepenseInsert(record);
-    if (!depensePayload) return; // already merged server-side
-    payload = depensePayload;
-    const userId = await getCurrentUserId();
-    if (userId) payload.created_by = userId;
+    await sendDepense(record);
+    return;
   } else if (RAW_ROW_STORES.has(store)) {
     // Rows written as they are, all in one request; ids made on the device, so a retry is a no-op
     const rows = (record.rows as Record<string, unknown>[] | undefined) ?? [];
-    const userId = store === 'convois' ? await getCurrentUserId() : null;
-    const toSend = rows.map(r => (userId ? { ...r, created_by: userId } : r));
+    const authorColumn = RAW_AUTHOR_COLUMN[store];
+    const userId = authorColumn ? await getCurrentUserId() : null;
+    const toSend = rows.map(r => (authorColumn && userId ? { ...r, [authorColumn]: userId } : r));
+    if (INSERT_ONLY_STORES.has(store)) {
+      for (const row of toSend) {
+        const { error } = await supabase.from(table).insert(row);
+        if (error && !isAlreadyReceived(error)) throw error;
+      }
+      return;
+    }
     const { error } = await supabase.from(table).upsert(toSend);
     if (error) throw error;
     return;
@@ -475,19 +581,24 @@ async function generateUniqueBagageNumber(): Promise<string> {
 async function checkNothingChanged(store: StoreName, table: string, id: string): Promise<void> {
   const insertWaiting = await db.sync_queue
     .where('entity').equals(store)
-    .filter(i => i.op === 'insert' && i.status !== 'done' && String(i.payload?.id ?? '') === id)
+    .filter(i => i.op === 'insert' && i.status !== 'done' && i.status !== 'abandoned' && String(i.payload?.id ?? '') === id)
     .count();
   if (insertWaiting > 0) throw new Error('En attente de l\'envoi de l\'enregistrement concerné');
 
   const { data, error } = await supabase.from(table).select('id').eq('id', id).maybeSingle();
   if (error) throw error;
-  if (data) throw new Error('Modification refusée par le serveur (droits insuffisants)');
+  if (data) throw new RefusedByServer('Modification refusée par le serveur (droits insuffisants)');
 }
 
 async function executeUpdate(store: StoreName, id: string, patch: Record<string, unknown>): Promise<void> {
   const table = TABLE_MAP[store];
   let remotePayload: Record<string, unknown> | null = null;
 
+  if (store === 'depenses') {
+    // The expense is sent whole as it is now on the device (amount replaced on the server)
+    await sendDepense({ id, ...patch });
+    return;
+  }
   if (store === 'departs') {
     remotePayload = mapDepartUpdate({ id, ...patch });
   } else if (store === 'tickets') {
@@ -524,34 +635,15 @@ export interface FlushResult {
   waitingOtherUser: number;
 }
 
-// An operation is marked 'syncing' while it is being sent. If the page closes or reloads at that
-// moment (update of the site, power cut, tab closed), it stays 'syncing': it must then be sent
-// again, otherwise the sale never reaches the server. Older than this delay = interrupted send.
-const STALE_SENDING_MS = 2 * 60_000;
+// Retry delays, interrupted sends and refusals: rules shared with the courrier queue (queueRules)
+export { retryDelayMs, nextRetryAt };
 
-// A failed operation was sent again every 5 s, forever. It now waits longer after each failure:
-// 5 s, 10 s, 20 s… up to 10 minutes. « Réessayer » in the queue window sends it at once.
-const FIRST_RETRY_MS = 5_000;
-const MAX_RETRY_MS = 10 * 60_000;
-
-/** Wait before sending again an operation that failed `tries` times. */
-export function retryDelayMs(tries: number): number {
-  return Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** Math.max(0, Math.min(tries, 20) - 1));
-}
-
-/** When a failed operation will be sent again (null: at the next sending). */
-export function nextRetryAt(item: SyncQueueItem): number | null {
-  if (item.status !== 'error' || !item.sending_since) return null;
-  const last = Date.parse(item.sending_since);
-  return Number.isNaN(last) ? null : last + retryDelayMs(item.tries ?? 1);
-}
-
-function isWaitingToSend(item: SyncQueueItem): boolean {
-  if (item.status === 'pending') return true;
-  if (item.status === 'error') return !(Date.now() < (nextRetryAt(item) ?? 0));
-  if (item.status !== 'syncing') return false;
-  const since = item.sending_since ? Date.parse(item.sending_since) : NaN;
-  return !(Date.now() - since < STALE_SENDING_MS);
+/** State after a failed send: refused by the server (no automatic resend) or passing failure. */
+function failureState(err: unknown): Pick<SyncQueueItem, 'status' | 'last_error'> {
+  return {
+    status: isPermanentError(err) ? 'failed' : 'error',
+    last_error: (err as { message?: string } | null)?.message ?? 'Unknown error',
+  };
 }
 
 /**
@@ -571,6 +663,22 @@ async function markSyncedIfNothingLeft(entity: StoreName, id: string): Promise<v
 
 let flushing = false;
 
+/**
+ * Ramassage notifications refused by the access rules with the former way of sending (upsert):
+ * kept in the queue as refused, they never reached the destination station. Sent again with
+ * the insert, which the server accepts.
+ */
+async function retryRefusedRamassages(): Promise<void> {
+  try {
+    const refused = await db.sync_queue.where('entity').equals('ramassages')
+      .filter(i => i.op === 'insert' && i.status === 'failed' && /row-level security/i.test(i.last_error ?? ''))
+      .primaryKeys();
+    for (const id of refused) {
+      await db.sync_queue.update(id, { status: 'pending', tries: 0, last_error: undefined });
+    }
+  } catch { /* sent again at the next flush */ }
+}
+
 export async function flushSyncQueue(): Promise<FlushResult> {
   if (flushing) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
   if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
@@ -582,13 +690,14 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   let waitingOtherUser = 0;
 
   try {
+    await retryRefusedRamassages();
     const serverUserId = await serverSessionUserId();
-    const waiting = (await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray())
+    const waiting = (await db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).toArray())
       .filter(isWaitingToSend);
     const pending = waiting.filter(item => sentBy(item, serverUserId));
     waitingOtherUser = waiting.length - pending.length;
     // Sort by created_at to preserve operation order
-    pending.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+    pending.sort(byQueueOrder);
 
     for (const item of pending) {
       if (!item.id) continue;
@@ -614,10 +723,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         if (item.op !== 'delete') await markSyncedIfNothingLeft(item.entity as StoreName, String(item.payload.id ?? ''));
         succeeded++;
       } catch (err: any) {
-        await db.sync_queue.update(item.id, {
-          status: 'error',
-          last_error: err?.message ?? 'Unknown error',
-        });
+        // Refused by the server: kept, no longer sent by itself (it would be refused again)
+        await db.sync_queue.update(item.id, failureState(err));
         failed++;
         // If network drops mid-flush, stop processing
         if (!isOnline()) break;
@@ -630,26 +737,96 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   return { processed, succeeded, failed, waitingOtherUser };
 }
 
-/** Operations not yet confirmed by the server, including those being sent or whose sending was interrupted. */
+/**
+ * Operations not yet on the server: waiting, being sent, failed or refused (abandoned ones are
+ * not counted).
+ */
 export async function getPendingCount(): Promise<number> {
-  return db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).count();
+  return db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).count();
 }
 
-/** Operations not yet confirmed by the server, oldest first (queue window). */
+/** Operations not yet on the server, then the abandoned ones, oldest first (queue window). */
 export async function getQueueItems(): Promise<SyncQueueItem[]> {
-  const items = await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray();
-  return items.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+  const items = await db.sync_queue.where('status').anyOf([...NOT_SENT_STATUSES, 'abandoned']).toArray();
+  return items.sort(byQueueOrder);
 }
 
-/** Sends a failed operation again at the next sending, without waiting for its retry delay. */
+/** Sends a failed or refused operation again at the next sending, without waiting. */
 export async function retryQueueItem(id: number): Promise<void> {
   await db.sync_queue.update(id, { status: 'pending', tries: 0, sending_since: undefined });
 }
 
+/**
+ * Gives up a failed or refused operation, with the reason written by the guichetier. It stays on
+ * the device as a trace (never sent, no longer counted): a sale is money already collected.
+ */
+export async function abandonQueueItem(id: number, reason: string, by: string): Promise<void> {
+  const text = reason.trim();
+  if (text.length < MIN_ABANDON_REASON) throw new Error(`Justification trop courte (${MIN_ABANDON_REASON} caractères au moins)`);
+  const item = await db.sync_queue.get(id);
+  if (!item || (item.status !== 'error' && item.status !== 'failed')) throw new Error('Seule une opération en échec peut être abandonnée');
+  await db.sync_queue.update(id, { status: 'abandoned', abandon_reason: text, abandoned_at: nowIso(), abandoned_by: by });
+}
+
+/** Message of the banner: refused operations to deal with first, else the latest failure. */
 export async function getLastSyncError(): Promise<string | null> {
+  const refused = await db.sync_queue.where('status').equals('failed').count();
+  if (refused > 0) {
+    return `${refused} opération${refused > 1 ? 's' : ''} refusée${refused > 1 ? 's' : ''} par le serveur : à traiter dans la liste`;
+  }
   const errors = await db.sync_queue.where('status').equals('error').toArray();
-  errors.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  errors.sort((a, b) => byQueueOrder(b, a));
   return errors[0]?.last_error ?? null;
+}
+
+// ── Records left out of the queue ──
+// Before the queue-first sending above, a record whose send was cut (page closed during the send)
+// stayed on the device « not synced », with no operation: it never reached the server. Once per
+// session, online: each such record is looked for on the server; there, it is marked synced;
+// missing, its creation is queued again, at the end of the queue.
+
+const RECOVERABLE_STORES: Array<'departs' | 'tickets' | 'bagages' | 'depenses'> = ['departs', 'tickets', 'bagages', 'depenses'];
+let recoveryDone = false;
+
+/** Queues again the records not synced that have no operation. Returns how many were queued. */
+export async function recoverUnqueuedRecords(): Promise<number> {
+  if (recoveryDone || !isOnline()) return 0;
+  const tables = RECOVERABLE_STORES.map(s => db[s] as Table<any, string>);
+  // Records and queue read together: a record saved meanwhile comes with its operation
+  const orphans = await db.transaction('r', [...tables, db.sync_queue], async () => {
+    const queued = new Set((await db.sync_queue.toArray()).map(i => `${i.entity}:${String(i.payload?.id ?? '')}`));
+    const found: Array<{ store: StoreName; record: Record<string, unknown> }> = [];
+    for (const store of RECOVERABLE_STORES) {
+      const rows = await (db[store] as Table<any, string>).filter(r => r.synced === false && !queued.has(`${store}:${r.id}`)).toArray();
+      for (const record of rows) found.push({ store, record });
+    }
+    return found;
+  });
+
+  let requeued = 0;
+  for (const store of RECOVERABLE_STORES) {
+    const records = orphans.filter(o => o.store === store).map(o => o.record);
+    for (let i = 0; i < records.length; i += 100) {
+      const chunk = records.slice(i, i + 100);
+      const { data, error } = await supabase.from(TABLE_MAP[store]).select('id').in('id', chunk.map(r => String(r.id)));
+      if (error) throw error; // tried again at the next sync
+      const onServer = new Set((data ?? []).map((r: { id: string }) => r.id));
+      for (const record of chunk) {
+        const id = String(record.id);
+        if (onServer.has(id)) {
+          await (db[store] as Table<any, string>).update(id, { synced: true });
+        } else {
+          await db.sync_queue.add({
+            entity: store, op: 'insert', payload: record,
+            created_at: String(record.created_at ?? nowIso()), tries: 0, status: 'pending',
+          });
+          requeued++;
+        }
+      }
+    }
+  }
+  recoveryDone = true;
+  return requeued;
 }
 
 export async function generateId(): Promise<string> {

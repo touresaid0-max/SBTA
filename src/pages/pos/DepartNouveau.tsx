@@ -16,6 +16,7 @@ import {
 import { checkAndApplyPendingTransfers } from '@/services/pos/transferService';
 import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair, Lock, Info } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 export default function POSDepartNouveau({ forceRamassage = false }: { forceRamassage?: boolean }) {
   const navigate = useNavigate();
@@ -233,7 +234,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
     }
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = trustedNowIso().split('T')[0];
 
   const fieldLabel = 'block text-xs font-bold mb-1.5';
   const fieldInput = 'w-full px-3 py-3 rounded-xl border-2 text-base outline-none transition-colors';

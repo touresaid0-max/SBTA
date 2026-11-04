@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase } from '@/services/supabase';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
+import { applyDataRetention } from '@/services/offline/dataRetention';
 
 export type ConnectionStatus = 'online' | 'offline' | 'checking';
 
@@ -63,6 +64,11 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   }, []);
 
   const recheck = useCallback(() => { void doCheck(); }, [doCheck]);
+
+  // Personal data kept on the device for a limited time only (once a day, also offline)
+  useEffect(() => {
+    void applyDataRetention().catch(() => { /* tried again at the next start */ });
+  }, []);
 
   useEffect(() => {
     void doCheck();

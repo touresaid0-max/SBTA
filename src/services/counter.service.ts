@@ -27,7 +27,13 @@ export async function assignDepartureNumber(scheduleId: string, counterId: strin
   return data as number
 }
 
-const UNIQUE_CHARGE_TYPES = ['ration', 'carburant_complement', 'peage']
+// One expense of each type per departure, « autres » included (audit M3)
+const UNIQUE_CHARGE_TYPES = ['ration', 'carburant_complement', 'peage', 'autres']
+
+function alreadyRecordedMessage(chargeType: string): string {
+  const name = chargeType === 'ration' ? 'Les ratios' : chargeType === 'carburant_complement' ? 'Les compléments carburant' : chargeType === 'peage' ? 'Les péages' : 'Les autres dépenses'
+  return `${name} de ce voyage ont déjà été enregistrés : modifiez le montant enregistré au lieu d'en ajouter.`
+}
 
 export async function checkChargeExists(
   scheduleId: string,
@@ -56,7 +62,7 @@ export async function createCounterCharge(charge: {
   if (UNIQUE_CHARGE_TYPES.includes(charge.charge_type)) {
     const existing = await checkChargeExists(charge.schedule_id, charge.charge_type)
     if (existing) {
-      throw new Error(`Les ${charge.charge_type === 'ration' ? 'ratios' : charge.charge_type === 'carburant_complement' ? 'compléments carburant' : 'péages'} de ce voyage ont déjà été enregistrés.`)
+      throw new Error(alreadyRecordedMessage(charge.charge_type))
     }
   }
 
@@ -70,7 +76,7 @@ export async function createCounterCharge(charge: {
 
   if (error) {
     if (error.code === '23505') {
-      throw new Error(`Les ${charge.charge_type === 'ration' ? 'ratios' : charge.charge_type === 'carburant_complement' ? 'compléments carburant' : 'péages'} de ce voyage ont déjà été enregistrés.`)
+      throw new Error(alreadyRecordedMessage(charge.charge_type))
     }
     throw error
   }

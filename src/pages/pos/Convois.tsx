@@ -14,6 +14,10 @@ import { db } from '@/services/pos/db';
 import { enqueueInsert, enqueueUpdate, isOnline } from '@/services/pos/syncEngine';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { uuidV4 } from '@/utils/uuid';
+import { cleanMultiline, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption {
@@ -218,8 +222,8 @@ export default function POSConvois() {
 
   // Filters
   const [preset, setPreset] = useState<PeriodPreset>('today');
-  const [dateFrom, setDateFrom] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [dateFrom, setDateFrom] = useState(format(trustedNow(), 'yyyy-MM-dd'));
+  const [dateTo, setDateTo] = useState(format(trustedNow(), 'yyyy-MM-dd'));
   const [filterRoute, setFilterRoute] = useState('');
   const [filterBus, setFilterBus] = useState('');
 
@@ -313,7 +317,7 @@ export default function POSConvois() {
           stations: keep((stationsRes.data || []) as unknown as StationOption[], copy?.stations),
         };
         apply(m);
-        await db.referentiels.put({ key: masterKey, type: 'convois_master', data: m, updated_at: new Date().toISOString() });
+        await db.referentiels.put({ key: masterKey, type: 'convois_master', data: m, updated_at: trustedNowIso() });
       } catch (err: any) {
         if (!copy) toast.error(err.message || 'Erreur de chargement');
       } finally {
@@ -326,7 +330,7 @@ export default function POSConvois() {
   // ─── Load convoys list ──────────────────────────────────────────────────────
   const applyPreset = useCallback((p: PeriodPreset) => {
     setPreset(p);
-    const now = new Date();
+    const now = trustedNow();
     if (p === 'today') {
       const d = format(now, 'yyyy-MM-dd'); setDateFrom(d); setDateTo(d);
     } else if (p === 'week') {
@@ -342,7 +346,7 @@ export default function POSConvois() {
   const loadPendingConvoys = useCallback(async (): Promise<ConvoyRow[]> => {
     const items = await db.sync_queue.where('entity').equals('convois').toArray().catch(() => []);
     return items
-      .filter(i => i.op === 'insert' && i.status !== 'done' && i.meta?.row)
+      .filter(i => i.op === 'insert' && i.status !== 'done' && i.status !== 'abandoned' && i.meta?.row)
       .map(i => ({ ...(i.meta!.row as ConvoyRow), pending: true }));
   }, []);
 
@@ -430,7 +434,7 @@ export default function POSConvois() {
       const kept = [...merged.values()]
         .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
         .slice(0, 500);
-      await db.referentiels.put({ key: listKey, type: 'convois_list', data: kept, updated_at: new Date().toISOString() });
+      await db.referentiels.put({ key: listKey, type: 'convois_list', data: kept, updated_at: trustedNowIso() });
     } catch (err: any) {
       // Without network: the convoys kept on the device for the period, plus those not yet sent
       setConvoys(await withPending((await keptOnDevice()).filter(inPeriod)));
@@ -511,10 +515,10 @@ export default function POSConvois() {
     setForm({
       ...EMPTY_FORM,
       departure_station_id: stationId || '',
-      departure_datetime: `${format(new Date(), 'yyyy-MM-dd')}T08:00`,
-      arrival_datetime: `${format(new Date(), 'yyyy-MM-dd')}T12:00`,
-      retour_departure_datetime: `${format(new Date(), 'yyyy-MM-dd')}T14:00`,
-      retour_arrival_datetime: `${format(new Date(), 'yyyy-MM-dd')}T20:00`,
+      departure_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T08:00`,
+      arrival_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T12:00`,
+      retour_departure_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T14:00`,
+      retour_arrival_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T20:00`,
     });
     setShowModal(true);
   };
@@ -599,6 +603,15 @@ export default function POSConvois() {
   const handleSubmit = async () => {
     if (!stationId) { toast.error('Session de guichet invalide'); return; }
     if (!canSubmit) { toast.error('Veuillez renseigner les champs obligatoires'); return; }
+    // Typing slip on an amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([
+      { value: Number(form.amount) || 0, rule: AMOUNT_RULES.convoyAmount },
+      { value: Number(form.ratio_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'ratio' },
+      { value: Number(form.carburant_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'carburant' },
+      { value: Number(form.peage_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'péage' },
+      { value: Number(form.autres_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'autres' },
+    ]);
+    if (!amountCheck.ok) { if (amountCheck.error) toast.error(amountCheck.error); return; }
     if (isOverload && !window.confirm(`Risque de surcharge : ${passengers} passagers pour ${busCapacity} places. Continuer ?`)) return;
 
     setSubmitting(true);
@@ -611,7 +624,8 @@ export default function POSConvois() {
         peage_amount: Number(form.peage_amount) || 0,
         autres_amount: Number(form.autres_amount) || 0,
       };
-      const observation = form.observation.trim() || null;
+      // Cleaned and limited as saved (audit m2)
+      const observation = cleanMultiline(form.observation, TEXT_LIMITS.note) || null;
 
       let createdConvoy: ConvoyRow | null = null;
 
@@ -629,7 +643,7 @@ export default function POSConvois() {
             departure_datetime: depDate,
             arrival_datetime: arrDate,
             route_id: form.route_id,
-            updated_at: new Date().toISOString(),
+            updated_at: trustedNowIso(),
           }),
         ];
 
@@ -665,7 +679,7 @@ export default function POSConvois() {
         const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
         const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
         // Ids made on the device: the convoys can point to their trips before anything is sent
-        const allerScheduleId = crypto.randomUUID();
+        const allerScheduleId = uuidV4();
         const baseSchedule: Record<string, any> = {
           id: allerScheduleId,
           route_id: form.route_id,
@@ -684,7 +698,7 @@ export default function POSConvois() {
         };
 
         const hasRetour = form.trip_type === 'aller_retour' && !!form.retour_route_id;
-        const retourScheduleId = hasRetour ? crypto.randomUUID() : null;
+        const retourScheduleId = hasRetour ? uuidV4() : null;
         const schedulesToInsert: Record<string, any>[] = [baseSchedule];
         if (hasRetour) {
           const retDep = form.retour_departure_datetime.includes('T')
@@ -703,8 +717,8 @@ export default function POSConvois() {
         }
 
         const convoyBase = { amount, passengers_count: passengersCount, observation, ...charges };
-        const allerConvoyId = crypto.randomUUID();
-        const retourConvoyId = hasRetour ? crypto.randomUUID() : null;
+        const allerConvoyId = uuidV4();
+        const retourConvoyId = hasRetour ? uuidV4() : null;
         const convoysToInsert: Record<string, any>[] = [{
           ...convoyBase,
           id: allerConvoyId,
@@ -730,7 +744,7 @@ export default function POSConvois() {
           passengers_count: passengersCount,
           ...charges,
           observation,
-          created_at: new Date().toISOString(),
+          created_at: trustedNowIso(),
           return_convoy_id: retourConvoyId,
           return_departure_datetime: hasRetour ? form.retour_departure_datetime : null,
           departure_datetime: depDate,
@@ -1188,7 +1202,7 @@ export default function POSConvois() {
               {/* Observation */}
               <div>
                 <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Observations</label>
-                <textarea value={form.observation} rows={2}
+                <textarea value={form.observation} rows={2} maxLength={TEXT_LIMITS.note}
                   onChange={e => setForm(p => ({ ...p, observation: e.target.value }))}
                   placeholder="Notes optionnelles…"
                   className="w-full px-3 py-2.5 border rounded-lg text-sm resize-none"

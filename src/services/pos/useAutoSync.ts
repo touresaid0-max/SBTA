@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useConnection } from './ConnectionContext';
-import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError, isServerSessionOfAnotherUser } from './syncEngine';
+import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncError, isServerSessionOfAnotherUser, recoverUnqueuedRecords } from './syncEngine';
 import { syncDepartsAndTicketsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
 import { ensureAuthSession } from './offlineAuth';
+import { syncServerClock } from '@/services/offline/deviceClock';
+import { syncCourrierInBackground, setCourrierOnline } from '@/services/courrier/backgroundSync';
 
 // Sending queued sales stays fast; pulling server data is spaced out to spare the database.
 const SEND_INTERVAL_MS = 5_000;
 const PULL_INTERVAL_MS = 30_000;
 const REFERENTIELS_INTERVAL_MS = 10 * 60_000;
 
-export function useAutoSync(stationId?: string) {
+/** courrierEnabled: the counter also handles parcels, synced here whatever the page shown. */
+export function useAutoSync(stationId?: string, courrierEnabled = false) {
   const {
     status,
     setSyncing,
@@ -21,8 +24,11 @@ export function useAutoSync(stationId?: string) {
   const runningRef = useRef(false);
   const stationRef = useRef(stationId);
   stationRef.current = stationId;
+  const courrierRef = useRef(courrierEnabled);
+  courrierRef.current = courrierEnabled;
   const lastPullRef = useRef(0);
   const lastReferentielsRef = useRef(0);
+  const lastClockRef = useRef(0);
 
   const updateQueueState = useCallback(async () => {
     const count = await getPendingCount();
@@ -43,8 +49,15 @@ export function useAutoSync(stationId?: string) {
     setLastSyncError(null);
 
     try {
+      // Gap between this device's clock and the server's: used to date what is recorded (deviceClock)
+      if (force || Date.now() - lastClockRef.current >= REFERENTIELS_INTERVAL_MS) {
+        lastClockRef.current = Date.now();
+        await syncServerClock();
+      }
       // 1. Send the operations recorded on this device (sales, cancellations…), if any
       let result = { failed: 0, waitingOtherUser: 0 };
+      // Records whose send was cut before this version, in no queue: queued again (once per session)
+      await recoverUnqueuedRecords().catch(() => { /* tried again at the next sync */ });
       if (await getPendingCount() > 0) {
         // Before flushing, ensure the Supabase auth session is still valid.
         // After a long offline period the access token may have expired.
@@ -76,6 +89,15 @@ export function useAutoSync(stationId?: string) {
         }
       }
 
+      // 4. Courrier: parcels registered here without network, parcels to receive
+      if (courrierRef.current) {
+        try {
+          await syncCourrierInBackground(stationRef.current, force);
+        } catch {
+          // The courrier queue stays on the device and is sent at the next run.
+        }
+      }
+
       const remaining = await updateQueueState();
       if (await isServerSessionOfAnotherUser()) {
         // The guichetier signed in offline after another one: his operations wait for his own login
@@ -97,6 +119,8 @@ export function useAutoSync(stationId?: string) {
 
   useEffect(() => {
     const unsubscribe = onOnlineChange((online) => {
+      // The courrier screens then switch to the device's data at once, as the sale does
+      if (courrierRef.current) setCourrierOnline(online);
       if (online) void runSync(true);
     });
     return unsubscribe;

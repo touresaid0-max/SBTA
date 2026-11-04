@@ -3,13 +3,17 @@ import { } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getAllDeparts, getDepartById, computeSolde, type DepartRecord } from '@/services/pos/departService';
-import { createDepense, getDepensesForDepart, getDepenseTotalForDepart, type DepenseRecord } from '@/services/pos/depenseService';
+import { saveDepense, getDepensesForDepart, expenseCategory, EXPENSE_CATEGORY_NAMES, type DepenseRecord } from '@/services/pos/depenseService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
-  AlertCircle, CheckCircle, Loader2, Plus,
+  AlertCircle, CheckCircle, Loader2, Plus, Pencil,
   Receipt, Calendar,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import { trustedNowIso } from '@/services/offline/deviceClock';
+import { expenseDateBounds, expenseDateError } from '@/utils/operationDates';
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 const EXPENSE_TYPES = [
   'Carburant compl.',
@@ -17,6 +21,11 @@ const EXPENSE_TYPES = [
   'Péages',
   'Autre',
 ];
+
+/** Entry of the Type list for an expense type (ration, carburant_complement, peage, autres). */
+function typeOfCategory(category: string): string {
+  return EXPENSE_TYPES.find(t => expenseCategory({ type: t }) === category) ?? 'Autre';
+}
 
 export default function POSDepenses() {
   const { session } = usePOSSession();
@@ -31,14 +40,14 @@ export default function POSDepenses() {
   const [success, setSuccess] = useState('');
 
   const [liveTotDepense, setLiveTotDepense] = useState(0);
-  const [departDateFilter, setDepartDateFilter] = useState(new Date().toISOString().split('T')[0]);
+  const [departDateFilter, setDepartDateFilter] = useState(trustedNowIso().split('T')[0]);
 
   // Form state
   const [type, setType] = useState(EXPENSE_TYPES[0]);
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState('');
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(trustedNowIso().split('T')[0]);
 
   const loadData = useCallback(async () => {
     try {
@@ -72,6 +81,29 @@ export default function POSDepenses() {
     })();
   }, [selectedDepartId]);
 
+  // One expense of each type per departure (audit M3): the type chosen already has one → modified
+  const recordedOfType = useMemo(
+    () => depenses.filter(d => expenseCategory(d) === expenseCategory({ type })),
+    [depenses, type],
+  );
+  const editing = recordedOfType[0] ?? null;
+  const recordedAmount = recordedOfType.reduce((sum, d) => sum + d.amount, 0);
+
+  // Form filled with the recorded expense of the type, emptied for a type without one
+  useEffect(() => {
+    if (editing) {
+      setLabel(editing.label);
+      setAmount(recordedAmount);
+      setDescription(editing.description);
+      if (editing.expense_date) setExpenseDate(editing.expense_date);
+    } else {
+      setLabel('');
+      setAmount(0);
+      setDescription('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id, recordedAmount, selectedDepartId]);
+
   const solde = useMemo(() => {
     if (!selectedDepart) return 0;
     return selectedDepart.mt_ticket - liveTotDepense;
@@ -80,17 +112,25 @@ export default function POSDepenses() {
   const handleAdd = async () => {
     if (!selectedDepartId) { setError('Veuillez sélectionner un départ'); return; }
     if (amount <= 0) { setError('Montant invalide'); return; }
-    if (!label.trim()) { setError('Veuillez saisir un libellé'); return; }
+    // Typing slip on the amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = editing && amount === recordedAmount
+      ? { ok: true as const }
+      : checkAmounts([{ value: amount, rule: AMOUNT_RULES.expense }]);
+    if (!amountCheck.ok) { if ('error' in amountCheck && amountCheck.error) setError(amountCheck.error); return; }
+    if (!cleanText(label)) { setError('Veuillez saisir un libellé'); return; }
+    const dateError = expenseDateError(expenseDate);
+    if (dateError) { setError(dateError); return; }
 
     setSaving(true);
     setError('');
     try {
-      await createDepense({
+      const { mode } = await saveDepense({
         departId: selectedDepartId,
         type,
-        label: label.trim(),
+        // Cleaned and limited as saved (audit m2)
+        label: cleanText(label, TEXT_LIMITS.label),
         amount,
-        description: description.trim(),
+        description: cleanText(description, TEXT_LIMITS.description),
         stationId: session?.station_id ?? '',
         busId: selectedDepart?.bus_id,
         counterId: selectedDepart?.counter_id ?? session?.counter_id,
@@ -106,11 +146,12 @@ export default function POSDepenses() {
       setDepenses(visible);
       setLiveTotDepense(visible.reduce((sum, x) => sum + x.amount, 0));
 
-      setSuccess('Dépense enregistrée');
-      setLabel('');
-      setAmount(0);
-      setDescription('');
-      setTimeout(() => setSuccess(''), 2500);
+      setSuccess(mode === 'created'
+        ? 'Dépense enregistrée'
+        : mode === 'updated'
+          ? 'Dépense modifiée : le nouveau montant remplace l\'ancien'
+          : 'Aucune modification');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
       setError(err?.message ?? 'Erreur');
     } finally {
@@ -160,7 +201,7 @@ export default function POSDepenses() {
             />
           </div>
           <button
-            onClick={() => setDepartDateFilter(new Date().toISOString().split('T')[0])}
+            onClick={() => setDepartDateFilter(trustedNowIso().split('T')[0])}
             className="px-3 py-2.5 rounded-lg text-xs font-bold flex-shrink-0"
             style={{ border: '2px solid var(--border)', color: 'var(--text-secondary)' }}
           >
@@ -210,8 +251,14 @@ export default function POSDepenses() {
           {/* Form */}
           <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h3 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-              <Plus className="w-4 h-4" /> Nouvelle dépense
+              {editing ? <><Pencil className="w-4 h-4" /> Modifier la dépense</> : <><Plus className="w-4 h-4" /> Nouvelle dépense</>}
             </h3>
+            {editing && (
+              <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                {EXPENSE_CATEGORY_NAMES[expenseCategory({ type })]} de ce départ est déjà enregistré{expenseCategory({ type }) === 'autres' ? 'e' : ''} ({formatCurrency(recordedAmount)}).
+                {' '}Une seule dépense de chaque type par départ : le montant saisi <strong>remplace</strong> l'ancien, il ne s'y ajoute pas.
+              </div>
+            )}
             <div className="space-y-3">
               <div>
                 <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Type</label>
@@ -221,7 +268,7 @@ export default function POSDepenses() {
               </div>
               <div>
                 <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Libellé</label>
-                <input type="text" value={label} onChange={e => setLabel(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Ex: Carburant trajet" />
+                <input type="text" value={label} maxLength={TEXT_LIMITS.label} onChange={e => setLabel(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Ex: Carburant trajet" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -233,12 +280,12 @@ export default function POSDepenses() {
                 </div>
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Date</label>
-                  <input type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)} className={fieldInput} style={fieldStyle} />
+                  <input type="date" value={expenseDate} min={expenseDateBounds().min} max={expenseDateBounds().max} onChange={e => setExpenseDate(e.target.value)} className={fieldInput} style={fieldStyle} />
                 </div>
               </div>
               <div>
                 <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description (optionnel)</label>
-                <input type="text" value={description} onChange={e => setDescription(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Détails..." />
+                <input type="text" value={description} maxLength={TEXT_LIMITS.description} onChange={e => setDescription(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Détails..." />
               </div>
               <button
                 onClick={handleAdd}
@@ -246,8 +293,8 @@ export default function POSDepenses() {
                 className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2"
                 style={{ backgroundColor: 'var(--primary)' }}
               >
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                Enregistrer la dépense
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : editing ? <Pencil className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                {editing ? 'Enregistrer la modification' : 'Enregistrer la dépense'}
               </button>
             </div>
           </div>
@@ -278,7 +325,17 @@ export default function POSDepenses() {
                         <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-primary)' }}>{d.label}</td>
                         <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{d.type}</td>
                         <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(d.amount)}</td>
-                        <td className="px-2 py-2 text-center">
+                        <td className="px-2 py-2 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setType(typeOfCategory(expenseCategory(d)))}
+                            disabled={!!selectedDepart?.cloture}
+                            className="inline-flex items-center gap-1 px-2 py-1 mr-1 rounded-md text-xs font-bold disabled:opacity-50"
+                            style={{ border: '1px solid var(--border)', color: 'var(--primary)' }}
+                            title="Modifier cette dépense"
+                          >
+                            <Pencil className="w-3 h-3" /> Modifier
+                          </button>
                           <ChangeRequestButton
                             compact
                             operationType={d.type.toLowerCase().includes('carburant') ? 'carburant' : d.type.toLowerCase().includes('péage') || d.type.toLowerCase().includes('peage') ? 'peage' : d.type.toLowerCase().includes('ration') ? 'ration' : 'autres_depense'}

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle, Loader2, Receipt, X } from 'lucide-react';
-import { createDepense, getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
+import { saveDepense, getDepensesForDepart, expenseCategory, type DepenseRecord } from '@/services/pos/depenseService';
 import type { DepartRecord } from '@/services/pos/db';
 import { formatCurrency } from '@/utils/formatCurrency';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 interface Props {
   depart: DepartRecord;
@@ -23,37 +24,55 @@ const EXPENSES: { field: ExpenseField; label: string; type: string }[] = [
   { field: 'autres', label: 'Autres', type: 'autres' },
 ];
 
-function expenseCategory(type: string, label: string): ExpenseField {
-  const value = `${type} ${label}`.toLowerCase();
-  if (value.includes('ratio') || value.includes('ration') || value.includes('frais de route')) return 'ratio';
-  if (value.includes('péage') || value.includes('peage')) return 'peages';
-  if (value.includes('carburant')) return 'carburant';
-  return 'autres';
+const FIELD_OF_CATEGORY: Record<string, ExpenseField> = {
+  ration: 'ratio',
+  peage: 'peages',
+  carburant_complement: 'carburant',
+  autres: 'autres',
+};
+
+const EMPTY_VALUES: ExpenseValues = { ratio: '', peages: '', carburant: '', autres: '' };
+
+/** Amount recorded for each type (one expense per type and departure, audit M3). */
+function recordedAmounts(depenses: DepenseRecord[]): Record<ExpenseField, number | null> {
+  const totals: Record<ExpenseField, number | null> = { ratio: null, peages: null, carburant: null, autres: null };
+  for (const depense of depenses) {
+    const field = FIELD_OF_CATEGORY[expenseCategory(depense)] ?? 'autres';
+    totals[field] = (totals[field] ?? 0) + depense.amount;
+  }
+  return totals;
+}
+
+function valuesOf(recorded: Record<ExpenseField, number | null>): ExpenseValues {
+  const values = { ...EMPTY_VALUES };
+  for (const { field } of EXPENSES) values[field] = recorded[field] !== null ? String(recorded[field]) : '';
+  return values;
 }
 
 export default function DepartExpensesModal({ depart, stationId, counterId, onClose, onSaved }: Props) {
   const [depenses, setDepenses] = useState<DepenseRecord[]>([]);
-  const [values, setValues] = useState<ExpenseValues>({ ratio: '', peages: '', carburant: '', autres: '' });
+  const [values, setValues] = useState<ExpenseValues>(EMPTY_VALUES);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const load = async () => {
+    const items = (await getDepensesForDepart(depart.id)).filter(item => item.description !== '__deleted__');
+    setDepenses(items);
+    setValues(valuesOf(recordedAmounts(items)));
+  };
+
   useEffect(() => {
-    getDepensesForDepart(depart.id)
-      .then(items => setDepenses(items.filter(item => item.description !== '__deleted__')))
+    load()
       .catch(() => setError('Impossible de charger les dépenses du départ.'))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depart.id]);
 
-  const existingTotals = useMemo(() => depenses.reduce<Record<ExpenseField, number>>((totals, depense) => {
-    const field = expenseCategory(depense.type, depense.label);
-    totals[field] += depense.amount;
-    return totals;
-  }, { ratio: 0, peages: 0, carburant: 0, autres: 0 }), [depenses]);
-
-  const totalExisting = depenses.reduce((total, depense) => total + depense.amount, 0);
-  const hasValue = Object.values(values).some(value => Number(value) > 0);
+  const recorded = useMemo(() => recordedAmounts(depenses), [depenses]);
+  const totalRecorded = depenses.reduce((total, depense) => total + depense.amount, 0);
+  const changed = EXPENSES.filter(({ field }) => values[field] !== (recorded[field] !== null ? String(recorded[field]) : ''));
 
   const updateValue = (field: ExpenseField, value: string) => {
     setValues(previous => ({ ...previous, [field]: value.replace(/[^0-9]/g, '') }));
@@ -62,11 +81,23 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
   };
 
   const handleSave = async () => {
-    const entries = EXPENSES
+    // A recorded expense is modified, never emptied here (an expense is cancelled by a change request)
+    const emptied = changed.find(({ field }) => recorded[field] !== null && !(Number(values[field]) > 0));
+    if (emptied) {
+      setError(`Le montant « ${emptied.label} » ne peut pas être vide ou nul. Pour annuler cette dépense, faites une demande de modification.`);
+      return;
+    }
+    const entries = changed
       .map(expense => ({ ...expense, amount: Number(values[expense.field]) || 0 }))
       .filter(expense => expense.amount > 0);
     if (entries.length === 0) {
-      setError('Saisissez au moins un montant.');
+      setError('Aucun montant modifié.');
+      return;
+    }
+    // Typing slip on an amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts(entries.map(e => ({ value: e.amount, rule: AMOUNT_RULES.expense, detail: e.label })));
+    if (!amountCheck.ok) {
+      if (amountCheck.error) setError(amountCheck.error);
       return;
     }
 
@@ -74,8 +105,10 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
     setError('');
     setSuccess('');
     try {
+      let created = 0;
+      let updated = 0;
       for (const expense of entries) {
-        await createDepense({
+        const { mode } = await saveDepense({
           departId: depart.id,
           type: expense.type,
           label: expense.label,
@@ -86,12 +119,14 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
           counterId: counterId ?? depart.counter_id,
           expenseDate: depart.departure_date,
         });
+        if (mode === 'created') created++;
+        if (mode === 'updated') updated++;
       }
-      const updated = await getDepensesForDepart(depart.id);
-      setDepenses(updated.filter(item => item.description !== '__deleted__'));
-      setValues({ ratio: '', peages: '', carburant: '', autres: '' });
+      await load();
       await onSaved();
-      setSuccess('Dépenses enregistrées et synchronisées.');
+      setSuccess(updated > 0
+        ? `${created > 0 ? `${created} dépense(s) enregistrée(s), ` : ''}${updated} dépense(s) modifiée(s) : le nouveau montant remplace l'ancien.`
+        : 'Dépenses enregistrées.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de l’enregistrement.');
     } finally {
@@ -128,7 +163,7 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
 
           <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-raised)' }}>
             <div className="mb-2 flex items-center gap-2 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-              <Receipt className="h-4 w-4" /> Déjà enregistré
+              <Receipt className="h-4 w-4" /> Enregistré pour ce départ
             </div>
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--primary)' }} />
@@ -137,24 +172,25 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
                 {EXPENSES.map(expense => (
                   <div key={expense.field}>
                     <p style={{ color: 'var(--text-muted)' }}>{expense.label}</p>
-                    <p className="font-bold" style={{ color: 'var(--text-primary)' }}>{formatCurrency(existingTotals[expense.field])}</p>
+                    <p className="font-bold" style={{ color: 'var(--text-primary)' }}>{recorded[expense.field] !== null ? formatCurrency(recorded[expense.field] ?? 0) : '—'}</p>
                   </div>
                 ))}
               </div>
             )}
             {depenses.length > 0 && (
               <p className="mt-2 border-t pt-2 text-xs font-bold" style={{ borderColor: 'var(--border)', color: 'var(--danger)' }}>
-                Total dépenses : {formatCurrency(totalExisting)}
+                Total dépenses : {formatCurrency(totalRecorded)}
               </p>
             )}
           </div>
 
           <div>
-            <p className="mb-3 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Ajouter des dépenses</p>
+            <p className="mb-3 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Montants des dépenses</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {EXPENSES.map(expense => (
                 <label key={expense.field} className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>
                   {expense.label}
+                  {recorded[expense.field] !== null && <span className="ml-1 font-normal" style={{ color: 'var(--text-muted)' }}>(à modifier)</span>}
                   <div className="relative mt-1">
                     <input
                       type="number"
@@ -175,14 +211,15 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
           </div>
 
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Les montants ajoutés apparaîtront automatiquement dans « Nouvelle dépense », « Dépenses du départ » et dans les totaux du départ.
+            Une seule dépense de chaque type par départ. Une dépense déjà enregistrée se modifie : le montant saisi remplace l'ancien, il ne s'y ajoute pas.
+            Une dépense déjà validée repasse « en attente » si son montant change.
           </p>
 
           <div className="flex gap-3">
             <button type="button" onClick={onClose} disabled={saving} className="flex-1 rounded-xl border-2 py-3 text-sm font-bold" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
               Annuler
             </button>
-            <button type="button" onClick={handleSave} disabled={saving || !hasValue} className="flex-1 rounded-xl py-3 text-sm font-bold text-white disabled:opacity-60" style={{ backgroundColor: 'var(--primary)' }}>
+            <button type="button" onClick={handleSave} disabled={saving || loading || changed.length === 0} className="flex-1 rounded-xl py-3 text-sm font-bold text-white disabled:opacity-60" style={{ backgroundColor: 'var(--primary)' }}>
               {saving ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : 'Enregistrer'}
             </button>
           </div>
