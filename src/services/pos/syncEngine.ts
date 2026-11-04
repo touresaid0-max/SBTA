@@ -3,6 +3,7 @@ import { db, type SyncQueueItem } from './db';
 import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, byQueueOrder, isPermanentError, isWaitingToSend, nextRetryAt, retryDelayMs } from '@/services/offline/queueRules';
 import { supabase } from '@/services/supabase';
 import { trustedNowIso } from '@/services/offline/deviceClock';
+import { storedPhoneOrEmpty } from '@/utils/phoneCI';
 
 // ── Online/offline state (single source of truth) ──
 
@@ -188,7 +189,9 @@ function mapBagageInsert(payload: Record<string, unknown>): Record<string, unkno
     bus_registration: p.car_plate ?? null,
     description: p.description ?? null,
     owner_name: p.owner_name ?? '',
-    owner_phone: p.owner_phone ?? '',
+    // Côte d'Ivoire rule (audit M10): 225 + 10 digits, or empty for a number saved by an earlier
+    // version that is not valid (the database would refuse it)
+    owner_phone: storedPhoneOrEmpty(p.owner_phone),
     has_ticket: p.with_ticket ?? false,
     station_id: p.station_id ?? null,
     counter_id: p.counter_id ?? null,
@@ -208,7 +211,7 @@ function mapBagageUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.price !== undefined) result.price = p.price;
   if (p.description !== undefined) result.description = p.description;
   if (p.owner_name !== undefined) result.owner_name = p.owner_name;
-  if (p.owner_phone !== undefined) result.owner_phone = p.owner_phone;
+  if (p.owner_phone !== undefined) result.owner_phone = storedPhoneOrEmpty(p.owner_phone);
   if (Object.keys(result).length === 0) return null;
   return result;
 }

@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, byQueueOrder, isPermanentError, isWaitingToSend, nextRetryAt } from '@/services/offline/queueRules';
 import { sendCourierCreatedSms, sendCourierArrivedSms } from '@/services/emisSms.service';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { storedPhoneOrEmpty } from '@/utils/phoneCI';
 
 // ── Online/offline state (single source of truth) ──
 
@@ -161,10 +162,12 @@ function mapParcelInsert(payload: Record<string, unknown>): Record<string, unkno
     daily_sequence: p.daily_sequence ?? null,
     tracking_url: p.tracking_url ?? null,
     sender_name: p.sender_name ?? '',
-    sender_phone: p.sender_phone ?? '',
+    // Côte d'Ivoire rule (audit M10): 225 + 10 digits, or empty for a number saved by an earlier
+    // version that is not valid (the database would refuse the parcel)
+    sender_phone: storedPhoneOrEmpty(p.sender_phone),
     sender_address: p.sender_address ?? null,
     recipient_name: p.recipient_name ?? '',
-    recipient_phone: p.recipient_phone ?? '',
+    recipient_phone: storedPhoneOrEmpty(p.recipient_phone),
     recipient_city: p.recipient_city ?? '',
     recipient_address: p.recipient_address ?? null,
     origin_station_id: p.origin_station_id ?? null,
@@ -232,6 +235,10 @@ function mapParcelUpdate(payload: Record<string, unknown>): Record<string, unkno
 
   for (const [localKey, remoteKey] of Object.entries(fieldMap)) {
     if (p[localKey] !== undefined) result[remoteKey] = p[localKey];
+  }
+  // Côte d'Ivoire rule for the phones (audit M10), as for a new parcel
+  for (const key of ['sender_phone', 'recipient_phone', 'delivery_recipient_phone']) {
+    if (result[key] !== undefined && result[key] !== null) result[key] = storedPhoneOrEmpty(result[key]);
   }
 
   result.updated_at = trustedNowIso();

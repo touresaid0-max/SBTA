@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
+import PhoneInputCI from '@/components/shared/PhoneInputCI';
+import { normalizePhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -107,7 +109,8 @@ export default function POSBagages() {
       setLinkedTicketInfo(`Ticket ${ticket.ticket_number} — Siège ${ticket.seat_number} — ${ticket.destination} — ${formatCurrency(ticket.price)}`);
       setDestination(ticket.destination_id ?? '');
       setOwnerName(ticket.passenger_name || ownerName);
-      setOwnerPhone(ticket.passenger_phone || ownerPhone);
+      // The ticket's phone may be stored as 225 + 10 digits: the field keeps the 10 digits
+      setOwnerPhone(ticket.passenger_phone ? normalizePhoneCI(ticket.passenger_phone) : ownerPhone);
     } else {
       setLinkedTicketInfo(null);
       setError('Aucun ticket trouvé avec ce numéro pour ce départ');
@@ -131,6 +134,12 @@ export default function POSBagages() {
       setError('Veuillez saisir un prix valide');
       return;
     }
+    // Optional, but a valid number when given
+    const ownerPhoneError = phoneCIError(ownerPhone, false);
+    if (ownerPhoneError) {
+      setError(`Contact du propriétaire : ${ownerPhoneError}`);
+      return;
+    }
     if (!destination) {
       setError('Veuillez sélectionner une destination');
       return;
@@ -148,7 +157,7 @@ export default function POSBagages() {
         destination: station?.name ?? destination,
         description,
         ownerName,
-        ownerPhone,
+        ownerPhone: toStoredPhoneCI(ownerPhone),
         printBagage,
       });
 
@@ -466,14 +475,13 @@ export default function POSBagages() {
 
                 {/* Contact */}
                 <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
-                  <input
-                    type="tel"
+                  <label htmlFor="owner-phone" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
+                  <PhoneInputCI
+                    id="owner-phone"
                     value={ownerPhone}
-                    onChange={e => setOwnerPhone(e.target.value)}
+                    onChange={setOwnerPhone}
                     className={fieldInput}
                     style={fieldStyle}
-                    placeholder="Téléphone"
                   />
                 </div>
               </div>

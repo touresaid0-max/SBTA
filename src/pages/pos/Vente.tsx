@@ -31,6 +31,8 @@ import { fetchPendingReprints, consumeReprint, type TicketReprintAuthorization }
 import { useConnection } from '@/services/pos/ConnectionContext';
 import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
 import { trustedNowIso } from '@/services/offline/deviceClock';
+import PhoneInputCI from '@/components/shared/PhoneInputCI';
+import { isValidPhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
 
 // A bus can be shared by several stations, each on its own départ: the structure
 // only shows the sales of this départ, never those of the other stations.
@@ -728,8 +730,10 @@ export default function POSVente() {
     }
     if (bagMode === 'sans') {
       if (!bagOwnerName.trim()) { setBagError('Veuillez saisir le nom du propriétaire'); return; }
-      if (!bagOwnerPhone.trim()) { setBagError('Veuillez saisir le contact du propriétaire'); return; }
     }
+    // Required without ticket; with a ticket, optional but a valid number when given
+    const bagPhoneError = phoneCIError(bagOwnerPhone, bagMode === 'sans');
+    if (bagPhoneError) { setBagError(`Contact du propriétaire : ${bagPhoneError}`); return; }
 
     setBagSelling(true);
     try {
@@ -744,7 +748,7 @@ export default function POSVente() {
         destination: destStationName,
         description: bagDescription,
         ownerName: bagOwnerName || 'N/A',
-        ownerPhone: bagOwnerPhone || '',
+        ownerPhone: toStoredPhoneCI(bagOwnerPhone),
         linkedSeatNumber: resolvedSeat || undefined,
         printBagage: true,
       });
@@ -1899,14 +1903,14 @@ export default function POSVente() {
                       />
                     </div>
                     <div>
-                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact *</label>
-                      <input
-                        type="tel"
+                      <label htmlFor="bag-owner-phone" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact *</label>
+                      <PhoneInputCI
+                        id="bag-owner-phone"
                         value={bagOwnerPhone}
-                        onChange={e => setBagOwnerPhone(e.target.value)}
+                        onChange={setBagOwnerPhone}
+                        required={bagMode === 'sans'}
                         className={fieldInput}
                         style={fieldStyle}
-                        placeholder="Numéro de téléphone"
                       />
                     </div>
                     <div>
@@ -1928,7 +1932,7 @@ export default function POSVente() {
               {bagMode && (
                 <button
                   onClick={handleSellBagage}
-                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < trustedNowIso().slice(0, 10) || (bagMode === 'sans' && (!bagOwnerName.trim() || !bagOwnerPhone.trim())) || (bagMode === 'avec' && (!seatNumber || !linkedBusTicket))}
+                  disabled={bagSelling || bagPrice <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < trustedNowIso().slice(0, 10) || (bagMode === 'sans' && (!bagOwnerName.trim() || !isValidPhoneCI(bagOwnerPhone))) || (bagMode === 'avec' && (!seatNumber || !linkedBusTicket))}
                   className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                   style={{ backgroundColor: bagMode === 'avec' ? 'var(--info)' : 'var(--warning)' }}
                 >
@@ -1970,8 +1974,8 @@ export default function POSVente() {
                       <input type="text" value={loyaltyName} onChange={e => setLoyaltyName(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Nom du client" />
                     </div>
                     <div>
-                      <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
-                      <input type="tel" value={loyaltyPhone} onChange={e => setLoyaltyPhone(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Téléphone" />
+                      <label htmlFor="loyalty-phone" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>
+                      <PhoneInputCI id="loyalty-phone" value={loyaltyPhone} onChange={setLoyaltyPhone} className={fieldInput} style={fieldStyle} />
                     </div>
                   </div>
                   <div className="flex gap-2">

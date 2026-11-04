@@ -9,6 +9,8 @@ import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
+import PhoneInputCI from '@/components/shared/PhoneInputCI'
+import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
 import { getReferentiel } from '@/services/courrier/referentiels'
 import { supabase } from '@/services/supabase'
 import {
@@ -542,13 +544,19 @@ export default function AgentColisDashboard() {
       toast.error('Veuillez renseigner au moins une information d\u2019identification du client')
       return
     }
+    // A phone given must be a valid number (stored as 225 + 10 digits)
+    const deliveryPhoneError = phoneCIError(phone, false)
+    if (deliveryPhoneError) {
+      toast.error(`Téléphone du client : ${deliveryPhoneError}`)
+      return
+    }
     const additionalData: Record<string, unknown> = {}
     if (name) {
       additionalData.delivery_recipient_name = name
       additionalData.delivery_id_type = 'name'
     }
     if (phone) {
-      additionalData.delivery_recipient_phone = phone
+      additionalData.delivery_recipient_phone = toStoredPhoneCI(phone)
       if (!additionalData.delivery_id_type) additionalData.delivery_id_type = 'phone'
     }
     if (cni) {
@@ -1442,11 +1450,9 @@ export default function AgentColisDashboard() {
                   <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                     Numéro de téléphone
                   </label>
-                  <input
-                    type="tel"
+                  <PhoneInputCI
                     value={deliveryPhone}
-                    onChange={e => setDeliveryPhone(e.target.value)}
-                    placeholder="Ex : 07 00 00 00 00"
+                    onChange={setDeliveryPhone}
                     className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"
                     style={{ backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
                   />

@@ -15,6 +15,8 @@ import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import type { ParcelNature, ParcelPriority, Parcel, ParcelReceiptData } from '@/types/parcel.types'
 import { trustedNowIso } from '@/services/offline/deviceClock'
+import PhoneInputCI from '@/components/shared/PhoneInputCI'
+import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
 
 interface Station { id: string; name: string; city_name?: string }
 
@@ -59,6 +61,8 @@ export default function NewParcelForm() {
 
   const [stations, setStations] = useState<Station[]>([])
   const [loading, setLoading] = useState(false)
+  // Phone errors shown at once after a submit attempt, otherwise when the field is left
+  const [showPhoneErrors, setShowPhoneErrors] = useState(false)
 
   const [form, setForm] = useState({
     sender_name: '',
@@ -202,7 +206,7 @@ export default function NewParcelForm() {
       daily_sequence,
       tracking_url,
       sender_name: form.sender_name,
-      sender_phone: form.sender_phone,
+      sender_phone: toStoredPhoneCI(form.sender_phone),
       sender_address: null,
       recipient_name: form.recipient_name,
       recipient_phone: fullRecipientPhone,
@@ -299,7 +303,14 @@ export default function NewParcelForm() {
       return
     }
 
-    const fullRecipientPhone = '225' + form.recipient_phone.replace(/\D/g, '')
+    // Both numbers follow the Côte d'Ivoire rule (10 digits, 01/05/07/21/25/27) and are stored as 225 + 10 digits
+    const senderPhoneError = phoneCIError(form.sender_phone, true)
+    if (senderPhoneError) { setShowPhoneErrors(true); toast.error(`Téléphone de l'expéditeur : ${senderPhoneError}`); return }
+    const recipientPhoneError = phoneCIError(form.recipient_phone, true)
+    if (recipientPhoneError) { setShowPhoneErrors(true); toast.error(`Téléphone du destinataire : ${recipientPhoneError}`); return }
+
+    const fullRecipientPhone = toStoredPhoneCI(form.recipient_phone)
+    const fullSenderPhone = toStoredPhoneCI(form.sender_phone)
 
     setLoading(true)
     try {
@@ -326,7 +337,7 @@ export default function NewParcelForm() {
       try {
         parcel = await createParcel({
           sender_name:            form.sender_name,
-          sender_phone:           form.sender_phone,
+          sender_phone:           fullSenderPhone,
           sender_address:         null,
           recipient_name:         form.recipient_name,
           recipient_phone:        fullRecipientPhone,
@@ -501,8 +512,8 @@ export default function NewParcelForm() {
               <input className={inputCls} style={inputStyle} value={form.sender_name} onChange={e => set('sender_name', e.target.value)} required />
             </div>
             <div>
-              <label className={labelCls} style={labelStyle}>Téléphone *</label>
-              <input className={inputCls} style={inputStyle} value={form.sender_phone} onChange={e => set('sender_phone', e.target.value)} required />
+              <label htmlFor="sender-phone" className={labelCls} style={labelStyle}>Téléphone *</label>
+              <PhoneInputCI id="sender-phone" value={form.sender_phone} onChange={v => set('sender_phone', v)} required showError={showPhoneErrors} className={inputCls} style={inputStyle} />
             </div>
           </div>
         </section>
@@ -519,30 +530,8 @@ export default function NewParcelForm() {
               <input className={inputCls} style={inputStyle} value={form.recipient_name} onChange={e => set('recipient_name', e.target.value)} required />
             </div>
             <div>
-              <label className={labelCls} style={labelStyle}>Téléphone (SMS/WhatsApp) *</label>
-              <div className="flex">
-                <span
-                  className="inline-flex items-center px-3 rounded-l-lg border-r-0 text-sm font-semibold select-none"
-                  style={{
-                    border: '1px solid var(--border)',
-                    backgroundColor: 'var(--bg-subtle)',
-                    color: 'var(--text-secondary)',
-                    minWidth: '3.5rem',
-                    justifyContent: 'center',
-                  }}
-                >225</span>
-                <input
-                  className={inputCls + ' rounded-l-none'}
-                  style={inputStyle}
-                  type="tel"
-                  pattern="[0-9]{10}"
-                  maxLength={10}
-                  placeholder="0759818155"
-                  value={form.recipient_phone}
-                  onChange={e => set('recipient_phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  required
-                />
-              </div>
+              <label htmlFor="recipient-phone" className={labelCls} style={labelStyle}>Téléphone (SMS/WhatsApp) *</label>
+              <PhoneInputCI id="recipient-phone" value={form.recipient_phone} onChange={v => set('recipient_phone', v)} required showError={showPhoneErrors} placeholder="07 59 81 81 55" className={inputCls} style={inputStyle} />
             </div>
             <div>
               <label className={labelCls} style={labelStyle}>Gare d'arrivée *</label>

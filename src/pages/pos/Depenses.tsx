@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNowIso } from '@/services/offline/deviceClock';
+import { expenseDateBounds, expenseDateError } from '@/utils/operationDates';
 
 const EXPENSE_TYPES = [
   'Carburant compl.',
@@ -82,6 +83,8 @@ export default function POSDepenses() {
     if (!selectedDepartId) { setError('Veuillez sélectionner un départ'); return; }
     if (amount <= 0) { setError('Montant invalide'); return; }
     if (!label.trim()) { setError('Veuillez saisir un libellé'); return; }
+    const dateError = expenseDateError(expenseDate);
+    if (dateError) { setError(dateError); return; }
 
     setSaving(true);
     setError('');
@@ -234,7 +237,7 @@ export default function POSDepenses() {
                 </div>
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Date</label>
-                  <input type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)} className={fieldInput} style={fieldStyle} />
+                  <input type="date" value={expenseDate} min={expenseDateBounds().min} max={expenseDateBounds().max} onChange={e => setExpenseDate(e.target.value)} className={fieldInput} style={fieldStyle} />
                 </div>
               </div>
               <div>
