@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase } from '@/services/supabase';
-import { Download, Printer, Bus, RefreshCw, Filter, FileText } from 'lucide-react';
+import { Download, Printer, Bus, RefreshCw, Filter, FileText, WifiOff } from 'lucide-react';
+import { isOnline } from '@/services/pos/syncEngine';
+import { getLignes } from '@/services/pos/departService';
+import { cachedReportRows, keepReportRows, withDeviceChanges, type ReportRamassage } from '@/services/pos/ramassageReport';
 import { format, subDays, startOfWeek, startOfYear } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -25,6 +28,10 @@ interface RamassageRow {
   counter_number: string | null;
   is_direct: boolean | null;
   status: string;
+  route_id?: string | null;
+  destination_station_id?: string | null;
+  /** Recorded on this device and not yet sent (guichet offline) */
+  not_sent?: boolean;
 }
 
 const PERIODS = [
@@ -48,9 +55,14 @@ interface Props {
   stationName?: string | null;
   title?: string;
   layout?: (children: ReactNode) => ReactNode;
+  /**
+   * Guichet: also the ramassages kept on this device and those recorded offline and not yet sent
+   * (ramassage direct, collection validated). Without network, the report is made from them.
+   */
+  withDevice?: boolean;
 }
 
-export default function RamassageReportView({ stationId, stationName, title = 'Rapport des ventes de ramassage', layout }: Props) {
+export default function RamassageReportView({ stationId, stationName, title = 'Rapport des ventes de ramassage', layout, withDevice = false }: Props) {
   const [periodId, setPeriodId] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -61,6 +73,8 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
   const [destinationCityNames, setDestinationCityNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Server not reachable: report made from the ramassages kept on this device
+  const [deviceOnly, setDeviceOnly] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
 
   const { from: dateFrom, to: dateTo } = getRange(periodId, customFrom, customTo);
@@ -68,6 +82,10 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
   useEffect(() => {
     supabase.from('routes').select('id, name').order('name').then(({ data }) => {
       if (data) setRoutes(data as { id: string; name: string }[]);
+      // Without network on the guichet: the lines kept on the device
+      else if (withDevice) getLignes().then(lines => setRoutes(lines.map(l => ({ id: l.id, name: l.name })))).catch(() => {});
+    }, () => {
+      if (withDevice) getLignes().then(lines => setRoutes(lines.map(l => ({ id: l.id, name: l.name })))).catch(() => {});
     });
     supabase.from('cities').select('id, name').then(({ data }) => {
       if (data) {
@@ -75,25 +93,51 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
           data.map(city => [String(city.id), String(city.name)]),
         ));
       }
-    });
-  }, []);
+    }, () => { /* offline: the city is already in the label of a ramassage direct */ });
+  }, [withDevice]);
 
   const load = useCallback(async (silent = false) => {
     if (!stationId) return;
     if (!silent) setLoading(true); else setRefreshing(true);
-    let q = supabase
-      .from('ramassage_notifications')
-      .select('*')
-      .eq('status', 'done')
-      .eq('destination_station_id', stationId)
-      .gte('collected_at', `${dateFrom}T00:00:00`)
-      .lte('collected_at', `${dateTo}T23:59:59`)
-      .order('collected_at', { ascending: false });
+    let serverRows: RamassageRow[] | null = null;
+    if (!withDevice || isOnline()) {
+      try {
+        let q = supabase
+          .from('ramassage_notifications')
+          .select('*')
+          .eq('status', 'done')
+          .eq('destination_station_id', stationId)
+          .gte('collected_at', `${dateFrom}T00:00:00`)
+          .lte('collected_at', `${dateTo}T23:59:59`)
+          .order('collected_at', { ascending: false });
 
-    if (filterRoute !== 'all') q = q.eq('route_id', filterRoute);
+        if (filterRoute !== 'all') q = q.eq('route_id', filterRoute);
 
-    const { data } = await q;
-    let result = (data as RamassageRow[]) ?? [];
+        const { data, error } = await q;
+        if (!error) serverRows = (data as RamassageRow[]) ?? [];
+      } catch {
+        // network cut: the device's copy below
+      }
+    }
+
+    let result: RamassageRow[] = serverRows ?? [];
+    if (withDevice) {
+      if (serverRows) void keepReportRows(stationId, serverRows as unknown as ReportRamassage[]);
+      // Server's list (or, without network, the copy kept on the device) + what was recorded
+      // on this device and not yet sent
+      const base = (serverRows ?? (await cachedReportRows(stationId))) as unknown as ReportRamassage[];
+      const { rows: merged, notSent } = await withDeviceChanges(stationId, base);
+      result = (merged as unknown as RamassageRow[])
+        .filter(r => r.status === 'done' && (r.destination_station_id ?? stationId) === stationId)
+        .filter(r => {
+          const day = (r.collected_at ?? r.created_at ?? '').slice(0, 10);
+          return day >= dateFrom && day <= dateTo;
+        })
+        .filter(r => filterRoute === 'all' || r.route_id === filterRoute)
+        .map(r => (notSent.has(r.id) ? { ...r, not_sent: true } : r))
+        .sort((a, b) => (b.collected_at ?? b.created_at ?? '').localeCompare(a.collected_at ?? a.created_at ?? ''));
+      setDeviceOnly(!serverRows);
+    }
 
     if (filterPlate.trim()) {
       const p = filterPlate.trim().toLowerCase();
@@ -103,7 +147,7 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
     setRows(result);
     setLoading(false);
     setRefreshing(false);
-  }, [stationId, dateFrom, dateTo, filterRoute, filterPlate]);
+  }, [stationId, dateFrom, dateTo, filterRoute, filterPlate, withDevice]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -220,6 +264,14 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
         </div>
       </div>
 
+      {deviceOnly && (
+        <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-sm"
+          style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+          <WifiOff className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>Hors ligne : rapport fait avec les ramassages gardés sur ce poste et ceux enregistrés hors ligne. Il sera complété au retour du réseau.</span>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="rounded-2xl border p-4 flex flex-wrap gap-3 items-center"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -308,6 +360,9 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
                         style={{ backgroundColor: r.is_direct ? 'var(--primary-light, #E0F2FE)' : 'var(--surface-raised)', color: r.is_direct ? '#0EA5E9' : 'var(--text-secondary)' }}>
                         {r.is_direct ? 'Direct' : 'Ligne'}
                       </span>
+                      {r.not_sent && (
+                        <div className="mt-0.5 text-[10px] font-bold whitespace-nowrap" style={{ color: '#B45309' }}>Pas encore envoyé</div>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
                       {r.departure_number ?? '—'}

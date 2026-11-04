@@ -260,6 +260,7 @@ export default function POSRamassage() {
           stationId={session?.station_id ?? null}
           stationName={session?.station_name}
           title="Rapport des ventes de ramassage"
+          withDevice
         />
       ) : (
       <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-4">
