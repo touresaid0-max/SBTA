@@ -132,7 +132,12 @@ function failureState(err: unknown): Pick<SyncQueueItem, 'status' | 'last_error'
   };
 }
 
-async function executeSms(payload: Record<string, unknown>): Promise<void> {
+// A SMS the SMS service refuses is tried again this many times before it is shown as refused
+const SMS_MAX_TRIES = 5;
+// Gap between two queued SMS: sent all at once on reconnection, they could be refused by the provider
+const SMS_GAP_MS = 1_200;
+
+async function executeSms(payload: Record<string, unknown>, tries = 1): Promise<void> {
   const sms = payload as unknown as QueuedSms;
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('SMS en attente d\'une session en ligne');
@@ -153,20 +158,36 @@ async function executeSms(payload: Record<string, unknown>): Promise<void> {
       : 'SMS en attente : le courrier n\'est pas encore sur le serveur');
   }
 
-  // A network failure throws (kept for later). A refusal by the SMS service is recorded in the
-  // parcel's SMS history by the server and can be sent again from the parcel's page.
-  if (sms.kind === 'created') {
-    await sendCourierCreatedSms({
+  // A network failure throws (kept for later). A SMS not sent used to be removed from the queue
+  // as if it had left: the recipient of a parcel registered offline got nothing, and nobody knew.
+  // It now stays in the queue: tried again when the session or the server refused it, shown as
+  // refused after several refusals by the SMS service (recorded in the parcel's SMS history, and
+  // can be sent again from the parcel's page or the queue list).
+  const result = sms.kind === 'created'
+    ? await sendCourierCreatedSms({
       id: sms.parcel_id,
       parcel_code: sms.parcel_code,
       recipient_name: sms.recipient_name,
       recipient_phone: sms.recipient_phone,
       recipient_city: sms.recipient_city,
       tracking_url: sms.tracking_url,
-    });
-  } else {
-    await sendCourierArrivedSms({ id: sms.parcel_id, recipient_phone: sms.recipient_phone });
+    })
+    : await sendCourierArrivedSms({ id: sms.parcel_id, recipient_phone: sms.recipient_phone });
+  if (result.success || result.duplicate) return;
+
+  const status = result.http_status;
+  if (status === 400) {
+    throw new RefusedByServer('SMS refusé : informations du destinataire incomplètes');
   }
+  if (status !== undefined) {
+    // Session not yet renewed after the reconnection (401), server busy or failing (5xx)
+    throw new Error(`SMS non envoyé (erreur ${status}) : nouvel essai automatique`);
+  }
+  // Answered, but the SMS service did not send it (credit, provider refusal…)
+  if (tries >= SMS_MAX_TRIES) {
+    throw new RefusedByServer('SMS refusé par le service d\'envoi après plusieurs essais : renvoyez-le depuis la fiche du courrier');
+  }
+  throw new Error('SMS refusé par le service d\'envoi : nouvel essai automatique');
 }
 
 function nowIso(): string {
@@ -558,6 +579,7 @@ export interface FlushConflict {
 export { nextRetryAt };
 
 let flushing = false;
+let lastSmsAt = 0;
 
 export async function flushSyncQueue(): Promise<FlushResult> {
   if (flushing) return { processed: 0, succeeded: 0, failed: 0, conflicts: [] };
@@ -587,7 +609,10 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1, sending_since: nowIso() });
 
         if (item.entity === SMS_ENTITY) {
-          await executeSms(item.payload);
+          const wait = lastSmsAt + SMS_GAP_MS - Date.now();
+          if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+          lastSmsAt = Date.now();
+          await executeSms(item.payload, (item.tries ?? 0) + 1);
         } else if (item.entity === PHOTO_ENTITY) {
           await uploadQueuedPhoto(String(item.payload.id ?? ''));
         } else if (item.op === 'insert') {

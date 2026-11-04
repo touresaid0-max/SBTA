@@ -1,6 +1,7 @@
 import { setOnline, flushSyncQueue, getPendingCount, recoverUnqueuedRecords } from './syncEngine';
 import { syncParcelsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
+import { ensureAuthSession } from '@/services/pos/offlineAuth';
 
 // From the guichet's other pages, the parcels are pulled less often than on the courrier screens
 const PULL_INTERVAL_MS = 60_000;
@@ -19,7 +20,9 @@ let lastReferentiels = 0;
 export async function syncCourrierInBackground(stationId: string | undefined, force = false): Promise<void> {
   setOnline(true);
   await recoverUnqueuedRecords().catch(() => { /* tried again at the next sync */ });
-  if (await getPendingCount() > 0) await flushSyncQueue();
+  // After a long time offline the session may have expired: renewed first, otherwise the SMS
+  // function refused the queued SMS (the guichet only did it when it had sales to send itself)
+  if (await getPendingCount() > 0 && await ensureAuthSession()) await flushSyncQueue();
 
   const now = Date.now();
   if (force || now - lastPull >= PULL_INTERVAL_MS) {

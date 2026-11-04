@@ -20,6 +20,8 @@ interface SendResult {
   success: boolean
   duplicate?: boolean
   log_id?: string
+  /** HTTP status of the SMS function when it answered with an error (401, 500…) */
+  http_status?: number
 }
 
 /**
@@ -46,8 +48,9 @@ async function callSmsEdgeFunction(payload: {
     if (name === 'FunctionsFetchError' || name === 'FunctionsRelayError') {
       throw new Error('SMS non envoyé : le service d\'envoi des SMS ne répond pas')
     }
-    // FunctionsHttpError: the function answered with an error (refused, provider failure…)
-    return { success: false }
+    // FunctionsHttpError: the function answered with an error (session refused, server error…)
+    const status = Number((error as { context?: { status?: number } }).context?.status) || undefined
+    return { success: false, http_status: status }
   }
   return (data ?? { success: false }) as SendResult
 }
