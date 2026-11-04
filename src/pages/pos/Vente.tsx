@@ -33,6 +33,7 @@ import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMa
 import { trustedNowIso } from '@/services/offline/deviceClock';
 import PhoneInputCI from '@/components/shared/PhoneInputCI';
 import { isValidPhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
 
 // A bus can be shared by several stations, each on its own départ: the structure
 // only shows the sales of this départ, never those of the other stations.
@@ -558,7 +559,7 @@ export default function POSVente() {
         price: tarif, originalPrice: tarif,
         isReduced, isReported, isAc: depart.is_ac, printTicket,
         loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
-        loyaltyName: loyaltyEnabled ? loyaltyName : undefined,
+        loyaltyName: loyaltyEnabled ? cleanText(loyaltyName, TEXT_LIMITS.name) : undefined,
         stationAgencyCode: session?.station_name,
       });
 
@@ -746,8 +747,9 @@ export default function POSVente() {
         ticketNumber: bagMode === 'avec' ? (linkedBusTicket?.ticket_number ?? undefined) : undefined,
         price: bagPrice,
         destination: destStationName,
-        description: bagDescription,
-        ownerName: bagOwnerName || 'N/A',
+        // Cleaned and limited as saved (audit m2)
+        description: cleanText(bagDescription, TEXT_LIMITS.description),
+        ownerName: cleanText(bagOwnerName, TEXT_LIMITS.name) || 'N/A',
         ownerPhone: toStoredPhoneCI(bagOwnerPhone),
         linkedSeatNumber: resolvedSeat || undefined,
         printBagage: true,
@@ -1812,7 +1814,7 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Propriétaire (optionnel)</label>
                       <input
                         type="text"
-                        value={bagOwnerName}
+                        value={bagOwnerName} maxLength={TEXT_LIMITS.name}
                         onChange={e => setBagOwnerName(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1823,7 +1825,7 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
                       <input
                         type="text"
-                        value={bagDescription}
+                        value={bagDescription} maxLength={TEXT_LIMITS.description}
                         onChange={e => setBagDescription(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1895,7 +1897,7 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Propriétaire *</label>
                       <input
                         type="text"
-                        value={bagOwnerName}
+                        value={bagOwnerName} maxLength={TEXT_LIMITS.name}
                         onChange={e => setBagOwnerName(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1917,7 +1919,7 @@ export default function POSVente() {
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
                       <input
                         type="text"
-                        value={bagDescription}
+                        value={bagDescription} maxLength={TEXT_LIMITS.description}
                         onChange={e => setBagDescription(e.target.value)}
                         className={fieldInput}
                         style={fieldStyle}
@@ -1971,7 +1973,7 @@ export default function POSVente() {
                     </div>
                     <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nom et prénoms</label>
-                      <input type="text" value={loyaltyName} onChange={e => setLoyaltyName(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Nom du client" />
+                      <input type="text" value={loyaltyName} maxLength={TEXT_LIMITS.name} onChange={e => setLoyaltyName(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Nom du client" />
                     </div>
                     <div>
                       <label htmlFor="loyalty-phone" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact</label>

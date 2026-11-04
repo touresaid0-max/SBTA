@@ -17,6 +17,7 @@ import type { ParcelNature, ParcelPriority, Parcel, ParcelReceiptData } from '@/
 import { trustedNowIso } from '@/services/offline/deviceClock'
 import PhoneInputCI from '@/components/shared/PhoneInputCI'
 import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput'
 
 interface Station { id: string; name: string; city_name?: string }
 
@@ -183,6 +184,16 @@ export default function NewParcelForm() {
    * here, ticket printed at once; the parcel, its "registered" event and the recipient's SMS are
    * sent when the network is back.
    */
+  // Texts as saved: cleaned (spaces, invisible characters) and limited (audit m2)
+  function cleanedTexts() {
+    return {
+      sender_name: cleanText(form.sender_name, TEXT_LIMITS.name),
+      recipient_name: cleanText(form.recipient_name, TEXT_LIMITS.name),
+      recipient_city: cleanText(form.recipient_city, TEXT_LIMITS.city),
+      content_description: cleanText(form.content_description, TEXT_LIMITS.description),
+    }
+  }
+
   async function saveOffline(fullRecipientPhone: string) {
     if (!myStation) return
     const now = trustedNowIso()
@@ -210,12 +221,12 @@ export default function NewParcelForm() {
       reference,
       daily_sequence,
       tracking_url,
-      sender_name: form.sender_name,
+      sender_name: cleanedTexts().sender_name,
       sender_phone: toStoredPhoneCI(form.sender_phone),
       sender_address: null,
-      recipient_name: form.recipient_name,
+      recipient_name: cleanedTexts().recipient_name,
       recipient_phone: fullRecipientPhone,
-      recipient_city: form.recipient_city,
+      recipient_city: cleanedTexts().recipient_city,
       recipient_address: null,
       origin_station_id: myStation.id,
       origin_station_name: myStation.name,
@@ -231,7 +242,7 @@ export default function NewParcelForm() {
       priority: form.priority,
       planned_date: form.planned_date || null,
       nature: form.nature,
-      content_description: form.content_description,
+      content_description: cleanedTexts().content_description,
       notes: form.notes || null,
       status: 'enregistre',
       registered_at: now,
@@ -303,7 +314,8 @@ export default function NewParcelForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!myStation) { toast.error('Aucune gare associée à votre compte'); return }
-    if (!form.recipient_name || !form.recipient_phone || !form.destination_station_id || !form.content_description) {
+    const texts = cleanedTexts()
+    if (!texts.sender_name || !texts.recipient_name || !form.recipient_phone || !form.destination_station_id || !texts.content_description) {
       toast.error('Veuillez remplir tous les champs obligatoires')
       return
     }
@@ -341,12 +353,12 @@ export default function NewParcelForm() {
       let parcel: Awaited<ReturnType<typeof createParcel>>
       try {
         parcel = await createParcel({
-          sender_name:            form.sender_name,
+          sender_name:            cleanedTexts().sender_name,
           sender_phone:           fullSenderPhone,
           sender_address:         null,
-          recipient_name:         form.recipient_name,
+          recipient_name:         cleanedTexts().recipient_name,
           recipient_phone:        fullRecipientPhone,
-          recipient_city:         form.recipient_city,
+          recipient_city:         cleanedTexts().recipient_city,
           recipient_address:      null,
           origin_station_id:      myStation.id,
           destination_station_id: form.destination_station_id,
@@ -359,7 +371,7 @@ export default function NewParcelForm() {
           bus_id:                 null,
           driver_id:              null,
           nature:                 form.nature,
-          content_description:    form.content_description,
+          content_description:    cleanedTexts().content_description,
           parcel_photos:          [],
           notes:                  form.notes || null,
           company_id:             null,
@@ -514,7 +526,7 @@ export default function NewParcelForm() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelCls} style={labelStyle}>Nom complet *</label>
-              <input className={inputCls} style={inputStyle} value={form.sender_name} onChange={e => set('sender_name', e.target.value)} required />
+              <input className={inputCls} style={inputStyle} value={form.sender_name} maxLength={TEXT_LIMITS.name} onChange={e => set('sender_name', e.target.value)} required />
             </div>
             <div>
               <label htmlFor="sender-phone" className={labelCls} style={labelStyle}>Téléphone *</label>
@@ -532,7 +544,7 @@ export default function NewParcelForm() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelCls} style={labelStyle}>Nom complet *</label>
-              <input className={inputCls} style={inputStyle} value={form.recipient_name} onChange={e => set('recipient_name', e.target.value)} required />
+              <input className={inputCls} style={inputStyle} value={form.recipient_name} maxLength={TEXT_LIMITS.name} onChange={e => set('recipient_name', e.target.value)} required />
             </div>
             <div>
               <label htmlFor="recipient-phone" className={labelCls} style={labelStyle}>Téléphone (SMS/WhatsApp) *</label>
@@ -603,6 +615,7 @@ export default function NewParcelForm() {
               rows={3}
               placeholder="ex: 01 SHT BLC (HABIT)"
               value={form.content_description}
+              maxLength={TEXT_LIMITS.description}
               onChange={e => set('content_description', e.target.value)}
               required
             />

@@ -11,6 +11,7 @@ import { fr } from 'date-fns/locale'
 import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
 import PhoneInputCI from '@/components/shared/PhoneInputCI'
 import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput'
 import { getReferentiel } from '@/services/courrier/referentiels'
 import { supabase } from '@/services/supabase'
 import {
@@ -537,9 +538,10 @@ export default function AgentColisDashboard() {
 
   async function confirmDelivery() {
     if (!deliveryTarget) return
-    const name = deliveryName.trim()
+    // Cleaned and limited as saved (audit m2)
+    const name = cleanText(deliveryName, TEXT_LIMITS.name)
     const phone = deliveryPhone.trim()
-    const cni = deliveryCni.trim()
+    const cni = cleanText(deliveryCni, TEXT_LIMITS.idNumber).toUpperCase()
     if (!name && !phone && !cni) {
       toast.error('Veuillez renseigner au moins une information d\u2019identification du client')
       return
@@ -1427,6 +1429,7 @@ export default function AgentColisDashboard() {
                   <input
                     type="text"
                     value={deliveryCni}
+                    maxLength={TEXT_LIMITS.idNumber}
                     onChange={e => setDeliveryCni(e.target.value)}
                     placeholder="Ex : C123456789"
                     className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"
@@ -1440,6 +1443,7 @@ export default function AgentColisDashboard() {
                   <input
                     type="text"
                     value={deliveryName}
+                    maxLength={TEXT_LIMITS.name}
                     onChange={e => setDeliveryName(e.target.value)}
                     placeholder="Nom et prénom"
                     className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"

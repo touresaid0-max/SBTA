@@ -7,6 +7,7 @@ import { fr } from 'date-fns/locale'
 import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
 import PhoneInputCI from '@/components/shared/PhoneInputCI'
 import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput'
 import { supabase } from '@/services/supabase'
 import { fetchTrackingEvents, updateParcelStatus, updateParcelNames } from '@/services/parcel.service'
 import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
@@ -77,27 +78,28 @@ export default function ParcelDetail() {
 
   async function handleSaveName(field: 'sender_name' | 'recipient_name') {
     if (!parcel) return
-    const value = field === 'sender_name' ? editSenderName : editRecipientName
-    if (!value.trim()) { toast.error('Le nom ne peut pas être vide'); return }
+    // Cleaned and limited as saved (audit m2)
+    const value = cleanText(field === 'sender_name' ? editSenderName : editRecipientName, TEXT_LIMITS.name)
+    if (!value) { toast.error('Le nom ne peut pas être vide'); return }
     setSavingName(true)
     try {
       // Without network (or when the server stops answering): saved on the device and queued.
       // The status check is the one shown on screen (names cannot be changed once shipped).
       const saveLocally = async () => {
-        await localUpdateParcel(parcel.id, { [field]: value.trim() })
+        await localUpdateParcel(parcel.id, { [field]: value })
         conn.setPendingCount(await getPendingCount())
       }
       if (!courrierIsOnline()) {
         await saveLocally()
       } else {
         try {
-          await updateParcelNames(parcel.id, { [field]: value.trim() })
+          await updateParcelNames(parcel.id, { [field]: value })
         } catch (err) {
           if (!isNetworkError(err)) throw err
           await saveLocally()
         }
       }
-      setParcel(prev => prev ? { ...prev, [field]: value.trim() } : prev)
+      setParcel(prev => prev ? { ...prev, [field]: value } : prev)
       toast.success('Nom mis à jour')
       if (field === 'sender_name') setEditingSender(false)
       else setEditingRecipient(false)
@@ -272,9 +274,10 @@ export default function ParcelDetail() {
 
   async function confirmDelivery() {
     if (!parcel) return
-    const name = deliveryName.trim()
+    // Cleaned and limited as saved (audit m2)
+    const name = cleanText(deliveryName, TEXT_LIMITS.name)
     const phone = deliveryPhone.trim()
-    const cni = deliveryCni.trim()
+    const cni = cleanText(deliveryCni, TEXT_LIMITS.idNumber).toUpperCase()
     if (!name && !phone && !cni) {
       toast.error('Veuillez renseigner au moins une information d\u2019identification du client')
       return
@@ -479,6 +482,7 @@ export default function ParcelDetail() {
                 className="flex-1 text-sm font-semibold px-2 py-1.5 rounded-lg border outline-none focus:ring-2 focus:ring-green-500"
                 style={{ borderColor: 'var(--border)', color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }}
                 value={editSenderName}
+                maxLength={TEXT_LIMITS.name}
                 onChange={e => setEditSenderName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSaveName('sender_name'); if (e.key === 'Escape') setEditingSender(false) }}
                 disabled={savingName}
@@ -529,6 +533,7 @@ export default function ParcelDetail() {
                 className="flex-1 text-sm font-semibold px-2 py-1.5 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500"
                 style={{ borderColor: 'var(--border)', color: 'var(--text-primary)', backgroundColor: 'var(--surface)' }}
                 value={editRecipientName}
+                maxLength={TEXT_LIMITS.name}
                 onChange={e => setEditRecipientName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSaveName('recipient_name'); if (e.key === 'Escape') setEditingRecipient(false) }}
                 disabled={savingName}
@@ -938,6 +943,7 @@ export default function ParcelDetail() {
                   <input
                     type="text"
                     value={deliveryCni}
+                    maxLength={TEXT_LIMITS.idNumber}
                     onChange={e => setDeliveryCni(e.target.value)}
                     placeholder="Ex : C123456789"
                     className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"
@@ -951,6 +957,7 @@ export default function ParcelDetail() {
                   <input
                     type="text"
                     value={deliveryName}
+                    maxLength={TEXT_LIMITS.name}
                     onChange={e => setDeliveryName(e.target.value)}
                     placeholder="Nom et prénom"
                     className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 focus:ring-emerald-500"

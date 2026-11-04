@@ -19,6 +19,7 @@ import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
 import PhoneInputCI from '@/components/shared/PhoneInputCI';
 import { normalizePhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -155,8 +156,9 @@ export default function POSBagages() {
         ticketNumber: ticketNumber.trim() || undefined,
         price,
         destination: station?.name ?? destination,
-        description,
-        ownerName,
+        // Cleaned and limited as saved (audit m2)
+        description: cleanText(description, TEXT_LIMITS.description),
+        ownerName: cleanText(ownerName, TEXT_LIMITS.name),
         ownerPhone: toStoredPhoneCI(ownerPhone),
         printBagage,
       });
@@ -453,6 +455,7 @@ export default function POSBagages() {
                   <input
                     type="text"
                     value={description}
+                    maxLength={TEXT_LIMITS.description}
                     onChange={e => setDescription(e.target.value)}
                     className={fieldInput}
                     style={fieldStyle}
@@ -466,6 +469,7 @@ export default function POSBagages() {
                   <input
                     type="text"
                     value={ownerName}
+                    maxLength={TEXT_LIMITS.name}
                     onChange={e => setOwnerName(e.target.value)}
                     className={fieldInput}
                     style={fieldStyle}

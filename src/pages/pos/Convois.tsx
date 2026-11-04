@@ -16,6 +16,7 @@ import { useConnection } from '@/services/pos/ConnectionContext';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 import { uuidV4 } from '@/utils/uuid';
+import { cleanMultiline, TEXT_LIMITS } from '@/utils/textInput';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption {
@@ -613,7 +614,8 @@ export default function POSConvois() {
         peage_amount: Number(form.peage_amount) || 0,
         autres_amount: Number(form.autres_amount) || 0,
       };
-      const observation = form.observation.trim() || null;
+      // Cleaned and limited as saved (audit m2)
+      const observation = cleanMultiline(form.observation, TEXT_LIMITS.note) || null;
 
       let createdConvoy: ConvoyRow | null = null;
 
@@ -1190,7 +1192,7 @@ export default function POSConvois() {
               {/* Observation */}
               <div>
                 <label className="block mb-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Observations</label>
-                <textarea value={form.observation} rows={2}
+                <textarea value={form.observation} rows={2} maxLength={TEXT_LIMITS.note}
                   onChange={e => setForm(p => ({ ...p, observation: e.target.value }))}
                   placeholder="Notes optionnelles…"
                   className="w-full px-3 py-2.5 border rounded-lg text-sm resize-none"

@@ -12,6 +12,7 @@ import {
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNowIso } from '@/services/offline/deviceClock';
 import { expenseDateBounds, expenseDateError } from '@/utils/operationDates';
+import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
 
 const EXPENSE_TYPES = [
   'Carburant compl.',
@@ -82,7 +83,7 @@ export default function POSDepenses() {
   const handleAdd = async () => {
     if (!selectedDepartId) { setError('Veuillez sélectionner un départ'); return; }
     if (amount <= 0) { setError('Montant invalide'); return; }
-    if (!label.trim()) { setError('Veuillez saisir un libellé'); return; }
+    if (!cleanText(label)) { setError('Veuillez saisir un libellé'); return; }
     const dateError = expenseDateError(expenseDate);
     if (dateError) { setError(dateError); return; }
 
@@ -92,9 +93,10 @@ export default function POSDepenses() {
       await createDepense({
         departId: selectedDepartId,
         type,
-        label: label.trim(),
+        // Cleaned and limited as saved (audit m2)
+        label: cleanText(label, TEXT_LIMITS.label),
         amount,
-        description: description.trim(),
+        description: cleanText(description, TEXT_LIMITS.description),
         stationId: session?.station_id ?? '',
         busId: selectedDepart?.bus_id,
         counterId: selectedDepart?.counter_id ?? session?.counter_id,
@@ -225,7 +227,7 @@ export default function POSDepenses() {
               </div>
               <div>
                 <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Libellé</label>
-                <input type="text" value={label} onChange={e => setLabel(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Ex: Carburant trajet" />
+                <input type="text" value={label} maxLength={TEXT_LIMITS.label} onChange={e => setLabel(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Ex: Carburant trajet" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -242,7 +244,7 @@ export default function POSDepenses() {
               </div>
               <div>
                 <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description (optionnel)</label>
-                <input type="text" value={description} onChange={e => setDescription(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Détails..." />
+                <input type="text" value={description} maxLength={TEXT_LIMITS.description} onChange={e => setDescription(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Détails..." />
               </div>
               <button
                 onClick={handleAdd}
