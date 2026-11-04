@@ -42,7 +42,12 @@ interface RetentionOptions {
   personalDataDays: number;
   /** Days after which a finished parcel is removed (0: at once). */
   finishedParcelDays: number;
+  /** Days after which a past departure is removed from the device (default PURGE_DAYS). */
+  purgeDays?: number;
 }
+
+/** Days of departures kept when the device's storage is nearly full (audit m7). */
+export const FREE_SPACE_KEEP_DAYS = 3;
 
 function shiftDays(day: string, days: number): string {
   const d = new Date(`${day}T00:00:00Z`);
@@ -60,7 +65,7 @@ function hasPersonalData(...values: unknown[]): boolean {
 
 async function applyToGuichet(today: string, options: RetentionOptions, result: RetentionResult): Promise<void> {
   const personalBefore = shiftDays(today, -options.personalDataDays);
-  const purgeBefore = shiftDays(today, -PURGE_DAYS);
+  const purgeBefore = shiftDays(today, -(options.purgeDays ?? PURGE_DAYS));
 
   // Queue and records read and changed together: a sale recorded meanwhile comes with its operation
   await posDb.transaction(
@@ -194,4 +199,14 @@ export async function applyDataRetention(force = false): Promise<RetentionResult
  */
 export async function clearPersonalDataOnLogout(): Promise<RetentionResult> {
   return run({ personalDataDays: 0, finishedParcelDays: 0 });
+}
+
+/**
+ * When the device's storage is nearly full (audit m7): the same rules with the shortest delays —
+ * names and phones of past days erased, finished parcels removed, departures older than
+ * FREE_SPACE_KEEP_DAYS days removed from the device (the server keeps them). Never what is still
+ * to be sent.
+ */
+export async function freeDeviceSpace(): Promise<RetentionResult> {
+  return run({ personalDataDays: 0, finishedParcelDays: 0, purgeDays: FREE_SPACE_KEEP_DAYS });
 }

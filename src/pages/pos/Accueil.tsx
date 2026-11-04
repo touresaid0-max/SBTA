@@ -8,6 +8,7 @@ import { supabase } from '@/services/supabase';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
 import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
+import { StorageAlert } from '@/components/pos/StorageAlert';
 import { useAutoSync } from '@/services/pos/useAutoSync';
 import { getPendingCount } from '@/services/pos/syncEngine';
 
@@ -113,6 +114,7 @@ export default function POSAccueil() {
       </header>
 
       <ConnectionBanner />
+      <StorageAlert />
 
       <main className="flex-1 px-4 py-6 sm:px-6">
         <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>

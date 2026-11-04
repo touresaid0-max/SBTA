@@ -30,3 +30,26 @@ export async function getStorageStatus(): Promise<StorageStatus> {
     return { persisted: null };
   }
 }
+
+// ── Quota of the device's storage (audit m7) ──
+// The space used was shown in Paramètres but nobody looked at it. When the browser's quota is
+// nearly reached, new sales can no longer be saved on the device (« QuotaExceededError ») and
+// the browser may erase the guichet's data. The level is now checked and shown to the guichetier.
+
+export type StorageLevel = 'ok' | 'warning' | 'critical' | 'unknown';
+
+/** Share of the quota from which the guichetier is warned, then urged to free space. */
+export const STORAGE_WARNING_RATIO = 0.8;
+export const STORAGE_CRITICAL_RATIO = 0.95;
+
+export function storageLevel(status: StorageStatus): { level: StorageLevel; ratio: number | null } {
+  if (!status.usageBytes || !status.quotaBytes) return { level: 'unknown', ratio: null };
+  const ratio = status.usageBytes / status.quotaBytes;
+  if (ratio >= STORAGE_CRITICAL_RATIO) return { level: 'critical', ratio };
+  if (ratio >= STORAGE_WARNING_RATIO) return { level: 'warning', ratio };
+  return { level: 'ok', ratio };
+}
+
+export function formatMegabytes(bytes: number | undefined): string {
+  return `${((bytes ?? 0) / 1_048_576).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Mo`;
+}
