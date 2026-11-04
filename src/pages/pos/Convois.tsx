@@ -342,7 +342,7 @@ export default function POSConvois() {
   const loadPendingConvoys = useCallback(async (): Promise<ConvoyRow[]> => {
     const items = await db.sync_queue.where('entity').equals('convois').toArray().catch(() => []);
     return items
-      .filter(i => i.op === 'insert' && i.status !== 'done' && i.meta?.row)
+      .filter(i => i.op === 'insert' && i.status !== 'done' && i.status !== 'abandoned' && i.meta?.row)
       .map(i => ({ ...(i.meta!.row as ConvoyRow), pending: true }));
   }, []);
 

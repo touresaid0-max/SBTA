@@ -1,7 +1,8 @@
 import Dexie, { type Table } from 'dexie';
+import type { QueueStatus } from '@/services/offline/queueRules';
 
 export type SyncOp = 'insert' | 'update' | 'delete';
-export type SyncStatus = 'pending' | 'syncing' | 'done' | 'error';
+export type SyncStatus = QueueStatus;
 
 export interface SeatAllocation {
   station_id: string;
@@ -165,6 +166,10 @@ export interface SyncQueueItem {
   user_id?: string;
   /** Kept on the device only, never sent (e.g. the convoy row shown until it reaches the server) */
   meta?: Record<string, unknown>;
+  /** Abandoned operation: why, when and by whom (kept as a trace, never sent) */
+  abandon_reason?: string;
+  abandoned_at?: string;
+  abandoned_by?: string;
 }
 
 export interface TransferLogRecord {

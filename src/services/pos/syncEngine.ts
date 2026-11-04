@@ -1,5 +1,6 @@
 import type { Table } from 'dexie';
 import { db, type SyncQueueItem } from './db';
+import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, isPermanentError, isWaitingToSend, nextRetryAt, retryDelayMs } from '@/services/offline/queueRules';
 import { supabase } from '@/services/supabase';
 
 // ── Online/offline state (single source of truth) ──
@@ -378,8 +379,11 @@ async function sendOrQueue(
   try {
     await send();
   } catch (err: any) {
-    // Network failed mid-operation — sent again by the queue
-    await db.sync_queue.update(queueId, { status: 'pending', tries: 0, sending_since: undefined, last_error: err?.message })
+    // Network failed mid-operation — sent again by the queue; refused by the server — kept, to deal with
+    const refused = isPermanentError(err);
+    await db.sync_queue.update(queueId, refused
+      ? { ...failureState(err), sending_since: undefined }
+      : { status: 'pending', tries: 0, sending_since: undefined, last_error: err?.message })
       .catch(() => { /* stays 'syncing': sent again once the send is considered interrupted */ });
     return { queued: true, error: err?.message };
   }
@@ -526,13 +530,13 @@ async function generateUniqueBagageNumber(): Promise<string> {
 async function checkNothingChanged(store: StoreName, table: string, id: string): Promise<void> {
   const insertWaiting = await db.sync_queue
     .where('entity').equals(store)
-    .filter(i => i.op === 'insert' && i.status !== 'done' && String(i.payload?.id ?? '') === id)
+    .filter(i => i.op === 'insert' && i.status !== 'done' && i.status !== 'abandoned' && String(i.payload?.id ?? '') === id)
     .count();
   if (insertWaiting > 0) throw new Error('En attente de l\'envoi de l\'enregistrement concerné');
 
   const { data, error } = await supabase.from(table).select('id').eq('id', id).maybeSingle();
   if (error) throw error;
-  if (data) throw new Error('Modification refusée par le serveur (droits insuffisants)');
+  if (data) throw new RefusedByServer('Modification refusée par le serveur (droits insuffisants)');
 }
 
 async function executeUpdate(store: StoreName, id: string, patch: Record<string, unknown>): Promise<void> {
@@ -575,34 +579,15 @@ export interface FlushResult {
   waitingOtherUser: number;
 }
 
-// An operation is marked 'syncing' while it is being sent. If the page closes or reloads at that
-// moment (update of the site, power cut, tab closed), it stays 'syncing': it must then be sent
-// again, otherwise the sale never reaches the server. Older than this delay = interrupted send.
-const STALE_SENDING_MS = 2 * 60_000;
+// Retry delays, interrupted sends and refusals: rules shared with the courrier queue (queueRules)
+export { retryDelayMs, nextRetryAt };
 
-// A failed operation was sent again every 5 s, forever. It now waits longer after each failure:
-// 5 s, 10 s, 20 s… up to 10 minutes. « Réessayer » in the queue window sends it at once.
-const FIRST_RETRY_MS = 5_000;
-const MAX_RETRY_MS = 10 * 60_000;
-
-/** Wait before sending again an operation that failed `tries` times. */
-export function retryDelayMs(tries: number): number {
-  return Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** Math.max(0, Math.min(tries, 20) - 1));
-}
-
-/** When a failed operation will be sent again (null: at the next sending). */
-export function nextRetryAt(item: SyncQueueItem): number | null {
-  if (item.status !== 'error' || !item.sending_since) return null;
-  const last = Date.parse(item.sending_since);
-  return Number.isNaN(last) ? null : last + retryDelayMs(item.tries ?? 1);
-}
-
-function isWaitingToSend(item: SyncQueueItem): boolean {
-  if (item.status === 'pending') return true;
-  if (item.status === 'error') return !(Date.now() < (nextRetryAt(item) ?? 0));
-  if (item.status !== 'syncing') return false;
-  const since = item.sending_since ? Date.parse(item.sending_since) : NaN;
-  return !(Date.now() - since < STALE_SENDING_MS);
+/** State after a failed send: refused by the server (no automatic resend) or passing failure. */
+function failureState(err: unknown): Pick<SyncQueueItem, 'status' | 'last_error'> {
+  return {
+    status: isPermanentError(err) ? 'failed' : 'error',
+    last_error: (err as { message?: string } | null)?.message ?? 'Unknown error',
+  };
 }
 
 /**
@@ -634,7 +619,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
 
   try {
     const serverUserId = await serverSessionUserId();
-    const waiting = (await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray())
+    const waiting = (await db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).toArray())
       .filter(isWaitingToSend);
     const pending = waiting.filter(item => sentBy(item, serverUserId));
     waitingOtherUser = waiting.length - pending.length;
@@ -665,10 +650,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         if (item.op !== 'delete') await markSyncedIfNothingLeft(item.entity as StoreName, String(item.payload.id ?? ''));
         succeeded++;
       } catch (err: any) {
-        await db.sync_queue.update(item.id, {
-          status: 'error',
-          last_error: err?.message ?? 'Unknown error',
-        });
+        // Refused by the server: kept, no longer sent by itself (it would be refused again)
+        await db.sync_queue.update(item.id, failureState(err));
         failed++;
         // If network drops mid-flush, stop processing
         if (!isOnline()) break;
@@ -681,23 +664,43 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   return { processed, succeeded, failed, waitingOtherUser };
 }
 
-/** Operations not yet confirmed by the server, including those being sent or whose sending was interrupted. */
+/**
+ * Operations not yet on the server: waiting, being sent, failed or refused (abandoned ones are
+ * not counted).
+ */
 export async function getPendingCount(): Promise<number> {
-  return db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).count();
+  return db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).count();
 }
 
-/** Operations not yet confirmed by the server, oldest first (queue window). */
+/** Operations not yet on the server, then the abandoned ones, oldest first (queue window). */
 export async function getQueueItems(): Promise<SyncQueueItem[]> {
-  const items = await db.sync_queue.where('status').anyOf(['pending', 'error', 'syncing']).toArray();
+  const items = await db.sync_queue.where('status').anyOf([...NOT_SENT_STATUSES, 'abandoned']).toArray();
   return items.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
 }
 
-/** Sends a failed operation again at the next sending, without waiting for its retry delay. */
+/** Sends a failed or refused operation again at the next sending, without waiting. */
 export async function retryQueueItem(id: number): Promise<void> {
   await db.sync_queue.update(id, { status: 'pending', tries: 0, sending_since: undefined });
 }
 
+/**
+ * Gives up a failed or refused operation, with the reason written by the guichetier. It stays on
+ * the device as a trace (never sent, no longer counted): a sale is money already collected.
+ */
+export async function abandonQueueItem(id: number, reason: string, by: string): Promise<void> {
+  const text = reason.trim();
+  if (text.length < MIN_ABANDON_REASON) throw new Error(`Justification trop courte (${MIN_ABANDON_REASON} caractères au moins)`);
+  const item = await db.sync_queue.get(id);
+  if (!item || (item.status !== 'error' && item.status !== 'failed')) throw new Error('Seule une opération en échec peut être abandonnée');
+  await db.sync_queue.update(id, { status: 'abandoned', abandon_reason: text, abandoned_at: nowIso(), abandoned_by: by });
+}
+
+/** Message of the banner: refused operations to deal with first, else the latest failure. */
 export async function getLastSyncError(): Promise<string | null> {
+  const refused = await db.sync_queue.where('status').equals('failed').count();
+  if (refused > 0) {
+    return `${refused} opération${refused > 1 ? 's' : ''} refusée${refused > 1 ? 's' : ''} par le serveur : à traiter dans la liste`;
+  }
   const errors = await db.sync_queue.where('status').equals('error').toArray();
   errors.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
   return errors[0]?.last_error ?? null;

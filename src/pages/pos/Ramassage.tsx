@@ -62,7 +62,7 @@ export default function POSRamassage() {
     const items = await db.sync_queue.where('entity').equals('ramassages').toArray().catch(() => []);
     const byId = new Map(rows.map(r => [r.id, r]));
     for (const item of items.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))) {
-      if (item.status === 'done') continue;
+      if (item.status === 'done' || item.status === 'abandoned') continue;
       if (item.op === 'insert') {
         for (const r of (item.payload.rows as RamassageNotif[] | undefined) ?? []) {
           if (r.destination_station_id === stationId && !byId.has(r.id)) byId.set(r.id, r);

@@ -275,7 +275,7 @@ export async function syncParcelsFromServer(stationId?: string): Promise<void> {
     // Operations not yet sent: the device's copy is more recent than the server's
     const pendingIds = new Set(
       (await db.sync_queue.where('entity').equals('parcels').toArray())
-        .filter(i => i.status !== 'done')
+        .filter(i => i.status !== 'done' && i.status !== 'abandoned')
         .map(i => String(i.payload?.id ?? '')),
     );
 

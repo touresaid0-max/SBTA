@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { X, RefreshCw, AlertCircle, Clock, CheckCircle } from 'lucide-react';
-import { getQueueItems, retryQueueItem, nextRetryAt } from '@/services/pos/syncEngine';
+import { getQueueItems, retryQueueItem, nextRetryAt, abandonQueueItem } from '@/services/pos/syncEngine';
 import type { SyncQueueItem } from '@/services/pos/db';
+import { usePOSSession } from '@/services/pos/POSSessionContext';
+import { AbandonOperation } from '@/components/shared/AbandonOperation';
 
 interface SyncQueueModalProps {
   open: boolean;
@@ -87,11 +89,13 @@ function nextTry(item: SyncQueueItem): string {
 }
 
 /**
- * Operations recorded on this device and not yet confirmed by the server. Nothing can be deleted
- * here: a sale not yet sent is money already collected.
+ * Operations recorded on this device and not yet confirmed by the server. Nothing is deleted
+ * here: a sale not yet sent is money already collected. An operation refused by the server can be
+ * sent again, or given up with a written reason, kept with it on the device.
  */
 export function SyncQueueModal({ open, onClose }: SyncQueueModalProps) {
   const [items, setItems] = useState<SyncQueueItem[]>([]);
+  const { session } = usePOSSession();
 
   const refresh = async () => setItems(await getQueueItems());
 
@@ -105,6 +109,8 @@ export function SyncQueueModal({ open, onClose }: SyncQueueModalProps) {
   if (!open) return null;
 
   const failed = items.filter(i => i.status === 'error').length;
+  const refused = items.filter(i => i.status === 'failed').length;
+  const canRetry = (item: SyncQueueItem) => item.status === 'error' || item.status === 'failed';
 
   return (
     <div
@@ -155,6 +161,16 @@ export function SyncQueueModal({ open, onClose }: SyncQueueModalProps) {
                         <AlertCircle className="w-3 h-3" /> Échec
                       </span>
                     )}
+                    {item.status === 'failed' && (
+                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded flex items-center gap-1" style={{ backgroundColor: '#DC2626', color: '#fff' }}>
+                        <AlertCircle className="w-3 h-3" /> Refusée par le serveur
+                      </span>
+                    )}
+                    {item.status === 'abandoned' && (
+                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)' }}>
+                        Abandonnée
+                      </span>
+                    )}
                     {item.status === 'pending' && (
                       <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
                         En attente
@@ -172,11 +188,29 @@ export function SyncQueueModal({ open, onClose }: SyncQueueModalProps) {
                     {item.tries > 0 && ` · ${item.tries} essai${item.tries > 1 ? 's' : ''}`}
                     {item.status === 'error' && nextTry(item) && ` · ${nextTry(item)}`}
                   </p>
-                  {item.status === 'error' && item.last_error && (
+                  {canRetry(item) && item.last_error && (
                     <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{item.last_error}</p>
                   )}
+                  {item.status === 'failed' && (
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      Plus renvoyée automatiquement : « Réessayer » après correction, ou abandonner avec une justification.
+                    </p>
+                  )}
+                  {item.status === 'abandoned' && (
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Abandonnée le {formatTime(item.abandoned_at)}{item.abandoned_by ? ` par ${item.abandoned_by}` : ''} : {item.abandon_reason}
+                    </p>
+                  )}
+                  {canRetry(item) && item.id && (
+                    <AbandonOperation
+                      onAbandon={async reason => {
+                        await abandonQueueItem(item.id!, reason, session?.full_name || session?.email || 'guichetier');
+                        await refresh();
+                      }}
+                    />
+                  )}
                 </div>
-                {item.status === 'error' && (
+                {canRetry(item) && (
                   <button
                     onClick={async () => { if (item.id) { await retryQueueItem(item.id); await refresh(); } }}
                     className="p-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0"
@@ -192,7 +226,9 @@ export function SyncQueueModal({ open, onClose }: SyncQueueModalProps) {
         </div>
 
         <div className="px-5 py-3 text-xs" style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-          {failed > 0
+          {refused > 0
+            ? 'Une opération refusée par le serveur serait refusée à nouveau telle quelle : elle n\'est plus renvoyée automatiquement.'
+            : failed > 0
             ? 'Les opérations en échec sont renvoyées automatiquement, de plus en plus espacées (jusqu\'à 10 min). « Réessayer » les renvoie tout de suite.'
             : 'Les opérations partent automatiquement dès que la connexion le permet.'}
         </div>

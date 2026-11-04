@@ -285,7 +285,7 @@ async function getPendingIds(entity: StoreName): Promise<Set<string>> {
   const items = await db.sync_queue.where('entity').equals(entity).toArray();
   return new Set(
     items
-      .filter(i => i.status !== 'done')
+      .filter(i => i.status !== 'done' && i.status !== 'abandoned')
       .map(i => String((i.payload as Record<string, unknown> | undefined)?.id ?? '')),
   );
 }

@@ -1,7 +1,8 @@
 import Dexie, { type Table } from 'dexie';
+import type { QueueStatus } from '@/services/offline/queueRules';
 
 export type SyncOp = 'insert' | 'update' | 'delete';
-export type SyncStatus = 'pending' | 'syncing' | 'done' | 'error';
+export type SyncStatus = QueueStatus;
 
 export interface ParcelRecord {
   id: string;
@@ -85,6 +86,12 @@ export interface SyncQueueItem {
   last_error?: string;
   /** When the operation was last marked 'syncing' (being sent) */
   sending_since?: string;
+  /** Account logged in on the device when the operation was made: only its server session sends it */
+  user_id?: string;
+  /** Abandoned operation: why, when and by whom (kept as a trace, never sent) */
+  abandon_reason?: string;
+  abandoned_at?: string;
+  abandoned_by?: string;
 }
 
 export interface SessionRecord {
