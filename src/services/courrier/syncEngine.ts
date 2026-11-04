@@ -53,15 +53,24 @@ export async function enqueueSms(sms: QueuedSms): Promise<void> {
 
 async function executeSms(payload: Record<string, unknown>): Promise<void> {
   const sms = payload as unknown as QueuedSms;
-  // The parcel must be on the server first (insert queued earlier and not sent yet)
-  const parcelWaiting = await db.sync_queue
-    .where('entity').equals('parcels')
-    .filter(i => i.op === 'insert' && i.status !== 'done' && String(i.payload?.id ?? '') === sms.parcel_id)
-    .count();
-  if (parcelWaiting > 0) throw new Error('SMS en attente de l\'envoi du courrier');
-
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('SMS en attente d\'une session en ligne');
+
+  // The parcel must be on the server first. Waiting for every queued insert of the parcel held
+  // the SMS back behind a later re-save (ticket printed offline) — for good if that one kept
+  // failing: the server is asked whether the parcel is there.
+  const { data: onServer, error: parcelError } = await supabase
+    .from('parcels').select('id').eq('id', sms.parcel_id).maybeSingle();
+  if (parcelError) throw parcelError;
+  if (!onServer) {
+    const parcelWaiting = await db.sync_queue
+      .where('entity').equals('parcels')
+      .filter(i => i.op === 'insert' && i.status !== 'done' && String(i.payload?.id ?? '') === sms.parcel_id)
+      .count();
+    throw new Error(parcelWaiting > 0
+      ? 'SMS en attente de l\'envoi du courrier'
+      : 'SMS en attente : le courrier n\'est pas encore sur le serveur');
+  }
 
   // A network failure throws (kept for later). A refusal by the SMS service is recorded in the
   // parcel's SMS history by the server and can be sent again from the parcel's page.

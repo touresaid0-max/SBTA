@@ -6,7 +6,7 @@ import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrier
 import { supabase } from '@/services/supabase'
 import { createParcel, fetchParcelAgentInfo, fetchPosOriginPhones, markTicketPrinted } from '@/services/parcel.service'
 import { isOnline as courrierIsOnline, getPendingCount, enqueueSms } from '@/services/courrier/syncEngine'
-import { localInsertParcel, localInsertTrackingEvent } from '@/services/courrier/offlineStore'
+import { localInsertParcel, localInsertTrackingEvent, localUpdateParcel } from '@/services/courrier/offlineStore'
 import { getReferentiel } from '@/services/courrier/referentiels'
 import { generateOfflineParcelCodes } from '@/services/courrier/parcelCodeGenerator'
 import { useConnection } from '@/services/courrier/ConnectionContext'
@@ -129,7 +129,9 @@ export default function NewParcelForm() {
       if (printCopy === 'client') {
         try {
           if (printModal.isOffline && printModal.localParcel) {
-            await localInsertParcel({ ...printModal.localParcel, ticket_printed: true } as any)
+            // An update, sent after the parcel: a second full insert of the parcel was queued
+            // behind the recipient's SMS and held it back until it was sent
+            await localUpdateParcel(printModal.parcelId, { ticket_printed: true })
           } else {
             await markTicketPrinted(printModal.parcelId)
           }
