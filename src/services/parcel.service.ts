@@ -66,7 +66,13 @@ export async function updateParcelStatus(
         .eq('id', parcelId)
         .maybeSingle()
       if (p?.recipient_phone) {
-        await sendCourierArrivedSms({ id: p.id, recipient_phone: p.recipient_phone })
+        try {
+          await sendCourierArrivedSms({ id: p.id, recipient_phone: p.recipient_phone })
+        } catch {
+          // Service unreachable: kept in the courrier queue and sent again later
+          const { enqueueSms } = await import('./courrier/syncEngine')
+          await enqueueSms({ kind: 'arrived', parcel_id: p.id, recipient_phone: p.recipient_phone })
+        }
       }
     } catch { /* SMS must not block status update */ }
   }

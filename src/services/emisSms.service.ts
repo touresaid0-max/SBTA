@@ -22,6 +22,15 @@ interface SendResult {
   log_id?: string
 }
 
+/**
+ * Calls the SMS edge function through the Supabase client: it adds the "apikey" header the API
+ * gateway requires and an up-to-date access token. The former direct fetch had no apikey: the
+ * gateway refused the call before the function (without CORS headers), and the browser only
+ * reported "Failed to fetch".
+ *
+ * Throws when the server cannot be reached (the caller may retry later); a refusal by the function
+ * or the SMS provider returns success: false (recorded in sms_logs, resendable from the parcel page).
+ */
 async function callSmsEdgeFunction(payload: {
   parcel_id: string
   recipient_phone: string
@@ -29,22 +38,18 @@ async function callSmsEdgeFunction(payload: {
   sms_type: SmsType
 }): Promise<SendResult> {
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return { success: false }
+  if (!session) throw new Error('SMS non envoyé : aucune session en ligne')
 
-  const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-parcel-sms`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    },
-  )
-
-  if (!resp.ok) return { success: false }
-  return resp.json()
+  const { data, error } = await supabase.functions.invoke('send-parcel-sms', { body: payload })
+  if (error) {
+    const name = (error as { name?: string }).name ?? ''
+    if (name === 'FunctionsFetchError' || name === 'FunctionsRelayError') {
+      throw new Error('SMS non envoyé : le service d\'envoi des SMS ne répond pas')
+    }
+    // FunctionsHttpError: the function answered with an error (refused, provider failure…)
+    return { success: false }
+  }
+  return (data ?? { success: false }) as SendResult
 }
 
 const APP_BASE_URL = 'https://sbta-gestion.cloud'

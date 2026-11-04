@@ -4,7 +4,7 @@ import { QrCode, CheckCircle2, AlertTriangle, ArrowLeft, RefreshCw, Loader2, Cam
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
-import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
+import { isOnline as courrierIsOnline, getPendingCount, enqueueSms } from '@/services/courrier/syncEngine'
 import { receiveParcelLocally } from '@/services/courrier/offlineStore'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { sendCourierArrivedSms } from '@/services/emisSms.service'
@@ -117,7 +117,12 @@ export default function QrScanner() {
               .eq('id', result.parcel_id)
               .maybeSingle()
             if (p?.recipient_phone) {
-              await sendCourierArrivedSms({ id: p.id, recipient_phone: p.recipient_phone })
+              try {
+                await sendCourierArrivedSms({ id: p.id, recipient_phone: p.recipient_phone })
+              } catch {
+                // Service unreachable: kept and sent again with the other pending operations
+                await enqueueSms({ kind: 'arrived', parcel_id: p.id, recipient_phone: p.recipient_phone })
+              }
             }
           } catch { /* SMS must not block */ }
         }

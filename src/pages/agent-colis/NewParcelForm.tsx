@@ -157,7 +157,11 @@ export default function NewParcelForm() {
         if (!smsResult.success && !smsResult.duplicate) {
           toast('Courrier enregistre, mais SMS non envoye.', { icon: '⚠️' })
         }
-      } catch { /* SMS failure must not block */ }
+      } catch {
+        // Service unreachable: kept and sent again with the other pending operations
+        await enqueueSms({ kind: 'created', parcel_id: m.smsData.id, parcel_code: m.smsData.parcel_code, recipient_name: m.smsData.recipient_name, recipient_phone: m.smsData.recipient_phone, recipient_city: m.smsData.recipient_city, tracking_url: m.smsData.tracking_url }).catch(() => {})
+        conn.setPendingCount(await getPendingCount())
+      }
     }
 
     if (m.isOffline) {
@@ -401,7 +405,10 @@ export default function NewParcelForm() {
           if (!smsResult.success && !smsResult.duplicate) {
             toast('Courrier enregistre, mais SMS non envoye.', { icon: '⚠️' })
           }
-        } catch { /* SMS failure must not block */ }
+        } catch {
+          // Service unreachable: kept and sent again with the other pending operations
+          await enqueueSms({ kind: 'created', parcel_id: parcel.id, parcel_code: parcel.parcel_code, recipient_name: parcel.recipient_name, recipient_phone: parcel.recipient_phone, recipient_city: parcel.recipient_city ?? form.recipient_city, tracking_url: parcel.tracking_url ?? '' }).catch(() => {})
+        }
         navigate(`${basePath}/dashboard`)
       }
     } catch (e: any) {
