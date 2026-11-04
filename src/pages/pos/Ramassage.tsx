@@ -7,8 +7,10 @@ import { Bus, Search, MapPin, Hash, Loader2, CheckCircle, Clock, Lock, Printer, 
 import { printRamassageBordereau } from '@/services/pos/printService';
 import { db } from '@/services/pos/db';
 import { enqueueUpdate, isOnline } from '@/services/pos/syncEngine';
+import { byQueueOrder } from '@/services/offline/queueRules';
 import RamassageReportView from '@/components/shared/RamassageReportView';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 type RamassageNotif = {
   id: string;
@@ -61,7 +63,7 @@ export default function POSRamassage() {
   const withPendingChanges = async (rows: RamassageNotif[]): Promise<RamassageNotif[]> => {
     const items = await db.sync_queue.where('entity').equals('ramassages').toArray().catch(() => []);
     const byId = new Map(rows.map(r => [r.id, r]));
-    for (const item of items.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))) {
+    for (const item of items.sort(byQueueOrder)) {
       if (item.status === 'done' || item.status === 'abandoned') continue;
       if (item.op === 'insert') {
         for (const r of (item.payload.rows as RamassageNotif[] | undefined) ?? []) {
@@ -159,7 +161,7 @@ export default function POSRamassage() {
     setError('');
     if (n.status === 'pending') {
       setMarking(true);
-      await saveChange(n.id, { status: 'consulted', consulted_at: new Date().toISOString() });
+      await saveChange(n.id, { status: 'consulted', consulted_at: trustedNowIso() });
       setMarking(false);
     }
   };
@@ -188,7 +190,7 @@ export default function POSRamassage() {
       collected_places: p,
       collected_amount: m,
       collected_by_name: session?.full_name ?? null,
-      collected_at: new Date().toISOString(),
+      collected_at: trustedNowIso(),
     });
     setSubmitting(false);
     setSavedOffline(result.queued);

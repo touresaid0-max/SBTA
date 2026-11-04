@@ -1,6 +1,7 @@
-import { Wifi, WifiOff, RefreshCw, CheckCircle, ChevronRight } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw, CheckCircle, ChevronRight, Clock } from 'lucide-react';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import { SyncQueueModal } from '@/components/pos/SyncQueueModal';
+import { clockWarning } from '@/services/offline/deviceClock';
 
 export function ConnectionBanner() {
   const { status, sessionExpired, syncing, pendingCount, lastSyncError, bannerLabel, queueOpen, setQueueOpen } = useConnection();
@@ -28,6 +29,9 @@ export function ConnectionBanner() {
     Icon = CheckCircle;
   }
 
+  // Device's clock off by more than 5 min (measured at the last sync): read again at each render of the banner
+  const clockAlert = clockWarning();
+
   // With operations waiting, the banner opens the list of what is not yet on the server
   const canOpenQueue = pendingCount > 0;
 
@@ -51,6 +55,12 @@ export function ConnectionBanner() {
           </span>
         )}
       </div>
+      {clockAlert && (
+        <div className="flex items-center gap-2 px-4 py-1.5 text-xs font-medium" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }} role="alert">
+          <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="flex-1">{clockAlert}</span>
+        </div>
+      )}
       <SyncQueueModal open={queueOpen} onClose={() => setQueueOpen(false)} />
     </>
   );

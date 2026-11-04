@@ -39,6 +39,7 @@ import {
   ChevronUp, ChevronDown, Loader2, X, AlertCircle,
   FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange,
 } from 'lucide-react';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
 type SortDir = 'asc' | 'desc';
@@ -168,7 +169,7 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
   const totalCharges = totalRations + totalCarburant + totalPeages + totalAutres;
   const soldeTicket = totalTicketAmount - totalCharges;
 
-  const now = new Date();
+  const now = trustedNow();
   const pad = (n: number) => String(n).padStart(2, '0');
   const printDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
   const printTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -245,7 +246,7 @@ function shiftDays(day: string, days: number): string {
 
 /** First and last day (inclusive) of a period; undefined means no limit on that side. */
 function periodRange(period: Period, customFrom: string, customTo: string): { from?: string; to?: string } {
-  const today = isoDay(new Date());
+  const today = isoDay(trustedNow());
   const now = new Date(`${today}T00:00:00Z`);
   switch (period) {
     case 'today': return { from: today, to: today };
@@ -358,7 +359,7 @@ export default function POSDeparts() {
     loadDeparts();
   }, [loadDeparts]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = trustedNowIso().split('T')[0];
 
   const range = useMemo(() => periodRange(period, customFrom, customTo), [period, customFrom, customTo]);
   const periodText = periodDescription(period, range);
@@ -546,7 +547,7 @@ export default function POSDeparts() {
         solde_ticket: acc.solde_ticket + r.solde_ticket,
         total_baggage: acc.total_baggage + r.total_baggage,
       }), { departures: 0, seats_sold: 0, total_ticket: 0, total_rations: 0, total_carburant: 0, total_peages: 0, total_autres: 0, total_charges: 0, solde_ticket: 0, total_baggage: 0 });
-      const now = new Date();
+      const now = trustedNow();
       const pad = (n: number) => String(n).padStart(2, '0');
       const data: BordereauRecettesData = {
         station_name: session?.station_name ?? '',

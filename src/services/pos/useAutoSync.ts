@@ -4,6 +4,7 @@ import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncE
 import { syncDepartsAndTicketsFromServer } from './offlineStore';
 import { refreshAllReferentiels } from './referentiels';
 import { ensureAuthSession } from './offlineAuth';
+import { syncServerClock } from '@/services/offline/deviceClock';
 import { syncCourrierInBackground, setCourrierOnline } from '@/services/courrier/backgroundSync';
 
 // Sending queued sales stays fast; pulling server data is spaced out to spare the database.
@@ -27,6 +28,7 @@ export function useAutoSync(stationId?: string, courrierEnabled = false) {
   courrierRef.current = courrierEnabled;
   const lastPullRef = useRef(0);
   const lastReferentielsRef = useRef(0);
+  const lastClockRef = useRef(0);
 
   const updateQueueState = useCallback(async () => {
     const count = await getPendingCount();
@@ -47,6 +49,11 @@ export function useAutoSync(stationId?: string, courrierEnabled = false) {
     setLastSyncError(null);
 
     try {
+      // Gap between this device's clock and the server's: used to date what is recorded (deviceClock)
+      if (force || Date.now() - lastClockRef.current >= REFERENTIELS_INTERVAL_MS) {
+        lastClockRef.current = Date.now();
+        await syncServerClock();
+      }
       // 1. Send the operations recorded on this device (sales, cancellations…), if any
       let result = { failed: 0, waitingOtherUser: 0 };
       // Records whose send was cut before this version, in no queue: queued again (once per session)

@@ -2,6 +2,7 @@ import type { TicketRecord, BagageRecord, DepartRecord } from './db';
 import type { PrintSettings } from './db';
 import type { BordereauRecettesData, BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 export interface PrintTicketData {
   ticket: TicketRecord;
@@ -276,7 +277,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const parts: Uint8Array[] = [init(), setLineSpacing(24), setFontB()];
   const value = (input: string | number | null | undefined) => String(input ?? '').trim();
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
-  const nowIso = new Date().toISOString();
+  const nowIso = trustedNowIso();
   const printed = formatDateTime(nowIso);
   const departDate = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departDate.split(' ');
@@ -357,7 +358,7 @@ export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSetti
   const { bagage, depart, stationName } = data;
   const value = (input: string | number | null | undefined): string => String(input ?? '').trim();
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
-  const nowIso = new Date().toISOString();
+  const nowIso = trustedNowIso();
   const printed = formatDateTime(nowIso);
   const departDate = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departDate.split(' ');

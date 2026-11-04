@@ -6,6 +6,7 @@ import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getChauffeurs, getGares, getVehicules, type ChauffeurRef, type GareRef, type VehiculeRef } from '@/services/pos/departService';
 import { enqueueInsert } from '@/services/pos/syncEngine';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 export default function POSRamassageDirect() {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ export default function POSRamassageDirect() {
   const [vehicules, setVehicules] = useState<VehiculeRef[]>([]);
   const [chauffeurs, setChauffeurs] = useState<ChauffeurRef[]>([]);
   const [gares, setGares] = useState<GareRef[]>([]);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(trustedNowIso().slice(0, 10));
   const [time, setTime] = useState('');
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
@@ -64,7 +65,7 @@ export default function POSRamassageDirect() {
 
   const handleSave = async () => {
     setError('');
-    if (date < new Date().toISOString().slice(0, 10)) {
+    if (date < trustedNowIso().slice(0, 10)) {
       setError('La date ne peut pas être antérieure à la date du jour.');
       return;
     }
@@ -115,8 +116,8 @@ export default function POSRamassageDirect() {
         collected_places: 0,
         collected_amount: numericAmount,
         collected_by_name: session.full_name ?? null,
-        collected_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
+        collected_at: trustedNowIso(),
+        created_at: trustedNowIso(),
         is_direct: true,
         counter_id: session.counter_id ?? null,
         counter_number: session.counter_number ?? null,
@@ -155,7 +156,7 @@ export default function POSRamassageDirect() {
 
         {loading ? <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} /></div> : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Date *<input type="date" value={date} min={new Date().toISOString().slice(0, 10)} onChange={e => setDate(e.target.value)} className={`mt-1.5 ${inputClass}`} style={inputStyle} /></label>
+            <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Date *<input type="date" value={date} min={trustedNowIso().slice(0, 10)} onChange={e => setDate(e.target.value)} className={`mt-1.5 ${inputClass}`} style={inputStyle} /></label>
             <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Heure *<input type="time" value={time} onChange={e => setTime(e.target.value)} className={`mt-1.5 ${inputClass}`} style={inputStyle} /></label>
             <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Matricule du bus *<div className="mt-1.5"><AutocompleteSelect options={vehicules.map(bus => ({ id: bus.id, label: bus.plate_number, sublabel: [bus.brand, bus.model, `${bus.capacity} places`].filter(Boolean).join(' · '), keywords: `${bus.plate_number} ${bus.brand ?? ''} ${bus.model ?? ''}` }))} value={busId} onChange={setBusId} placeholder="Rechercher par immatriculation..." required emptyText="Aucun véhicule trouvé" /></div></label>
             <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Chauffeur du bus *<div className="mt-1.5"><AutocompleteSelect options={chauffeurs.map(driver => ({ id: driver.id, label: driver.full_name, sublabel: [driver.employee_id, driver.phone].filter(Boolean).join(' · '), keywords: `${driver.full_name} ${driver.employee_id ?? ''} ${driver.phone ?? ''}` }))} value={driverId} onChange={setDriverId} placeholder="Rechercher un chauffeur..." required emptyText="Aucun chauffeur trouvé" /></div></label>

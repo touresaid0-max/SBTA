@@ -14,6 +14,7 @@ import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import type { ParcelNature, ParcelPriority, Parcel, ParcelReceiptData } from '@/types/parcel.types'
+import { trustedNowIso } from '@/services/offline/deviceClock'
 
 interface Station { id: string; name: string; city_name?: string }
 
@@ -180,7 +181,7 @@ export default function NewParcelForm() {
    */
   async function saveOffline(fullRecipientPhone: string) {
     if (!myStation) return
-    const now = new Date().toISOString()
+    const now = trustedNowIso()
     const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
     // Look up agency_code from cached station referentiels

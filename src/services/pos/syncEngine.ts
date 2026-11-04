@@ -1,7 +1,8 @@
 import type { Table } from 'dexie';
 import { db, type SyncQueueItem } from './db';
-import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, isPermanentError, isWaitingToSend, nextRetryAt, retryDelayMs } from '@/services/offline/queueRules';
+import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, byQueueOrder, isPermanentError, isWaitingToSend, nextRetryAt, retryDelayMs } from '@/services/offline/queueRules';
 import { supabase } from '@/services/supabase';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 // ── Online/offline state (single source of truth) ──
 
@@ -97,8 +98,8 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     counter_id: p.counter_id ?? null,
     departure_number: p.departure_number ?? null,
     route_number: p.route_number ?? null,
-    created_at: p.created_at ?? nowIso(),
-    updated_at: p.updated_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
+    updated_at: p.updated_at ?? trustedNowIso(),
     is_ramassage: p.is_ramassage ?? false,
     is_anticipated: false,
   };
@@ -126,7 +127,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
     result.departure_datetime = p.departure_datetime;
     result.arrival_datetime = computeArrivalDatetime(p.departure_datetime as string);
   }
-  result.updated_at = nowIso();
+  result.updated_at = trustedNowIso();
   if (Object.keys(result).length <= 1) return null;
   return result;
 }
@@ -147,8 +148,8 @@ function mapTicketInsert(payload: Record<string, unknown>): Record<string, unkno
     status: p.status === 'cancelled' ? 'annulee' : 'confirmee',
     payment_status: p.status === 'cancelled' ? 'remboursee' : 'payee',
     booking_reference: p.ticket_number ?? null,
-    created_at: p.created_at ?? nowIso(),
-    updated_at: p.updated_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
+    updated_at: p.updated_at ?? trustedNowIso(),
   };
   if (p.destination) result.destination_city_name = p.destination;
   return result;
@@ -169,7 +170,7 @@ function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unkno
     result.seat_numbers = [String(p.seat_number)];
     result.total_seats = 1;
   }
-  result.updated_at = nowIso();
+  result.updated_at = trustedNowIso();
   if (Object.keys(result).length <= 1) return null;
   return result;
 }
@@ -193,7 +194,7 @@ function mapBagageInsert(payload: Record<string, unknown>): Record<string, unkno
     counter_id: p.counter_id ?? null,
     declared_value: p.declared_value ?? 0,
     payment_status: p.payment_status ?? 'paye',
-    created_at: p.created_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
   };
 }
 
@@ -251,9 +252,9 @@ async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Recor
     charge_type: chargeType,
     description: (p.description as string) || (p.label as string) || '',
     amount: p.amount ?? 0,
-    charge_date: (p.expense_date as string) ?? new Date().toISOString().slice(0, 10),
+    charge_date: (p.expense_date as string) ?? trustedNowIso().slice(0, 10),
     status: 'en_attente',
-    created_at: p.created_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
   };
   if (UNIQUE_CHARGE_TYPES.has(chargeType) && scheduleId) {
     // The server keeps one row per departure for these types, while the guichet adds the amounts
@@ -271,7 +272,7 @@ async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Recor
     if (existing) {
       const { error: updateError } = await supabase
         .from('counter_charges')
-        .update({ amount: row.amount, description: row.description, charge_date: row.charge_date, updated_at: nowIso() })
+        .update({ amount: row.amount, description: row.description, charge_date: row.charge_date, updated_at: trustedNowIso() })
         .eq('id', existing.id);
       if (updateError) throw updateError;
       return null;
@@ -624,7 +625,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     const pending = waiting.filter(item => sentBy(item, serverUserId));
     waitingOtherUser = waiting.length - pending.length;
     // Sort by created_at to preserve operation order
-    pending.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+    pending.sort(byQueueOrder);
 
     for (const item of pending) {
       if (!item.id) continue;
@@ -675,7 +676,7 @@ export async function getPendingCount(): Promise<number> {
 /** Operations not yet on the server, then the abandoned ones, oldest first (queue window). */
 export async function getQueueItems(): Promise<SyncQueueItem[]> {
   const items = await db.sync_queue.where('status').anyOf([...NOT_SENT_STATUSES, 'abandoned']).toArray();
-  return items.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+  return items.sort(byQueueOrder);
 }
 
 /** Sends a failed or refused operation again at the next sending, without waiting. */
@@ -702,7 +703,7 @@ export async function getLastSyncError(): Promise<string | null> {
     return `${refused} opération${refused > 1 ? 's' : ''} refusée${refused > 1 ? 's' : ''} par le serveur : à traiter dans la liste`;
   }
   const errors = await db.sync_queue.where('status').equals('error').toArray();
-  errors.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  errors.sort((a, b) => byQueueOrder(b, a));
   return errors[0]?.last_error ?? null;
 }
 
@@ -710,7 +711,7 @@ export async function getLastSyncError(): Promise<string | null> {
 // Before the queue-first sending above, a record whose send was cut (page closed during the send)
 // stayed on the device « not synced », with no operation: it never reached the server. Once per
 // session, online: each such record is looked for on the server; there, it is marked synced;
-// missing, its creation is queued again, at its original place in the order.
+// missing, its creation is queued again, at the end of the queue.
 
 const RECOVERABLE_STORES: Array<'departs' | 'tickets' | 'bagages' | 'depenses'> = ['departs', 'tickets', 'bagages', 'depenses'];
 let recoveryDone = false;

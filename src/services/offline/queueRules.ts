@@ -78,3 +78,12 @@ export function isPermanentError(err: unknown): boolean {
 
 /** Shortest reason accepted to abandon an operation. */
 export const MIN_ABANDON_REASON = 10;
+
+/**
+ * Order in which the operations were recorded on the device: their queue number, given in
+ * sequence by the device's database. It used to be their time (created_at), taken from the
+ * device's clock: a clock changed between two operations sent them out of order.
+ */
+export function byQueueOrder(a: { id?: number }, b: { id?: number }): number {
+  return (a.id ?? 0) - (b.id ?? 0);
+}

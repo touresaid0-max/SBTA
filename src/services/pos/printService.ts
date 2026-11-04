@@ -5,6 +5,7 @@ import { setPrintingGuard } from '@/store/authStore';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
 import { printLogoSrc, withPrintLogos } from './printLogos';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
 export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData };
 
@@ -243,7 +244,7 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
     }
   } catch { /* leave defaults */ }
 
-  const nowD = new Date();
+  const nowD = trustedNow();
   const printedAt = `${String(nowD.getDate()).padStart(2,'0')}/${String(nowD.getMonth()+1).padStart(2,'0')}/${nowD.getFullYear()} ${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}:${String(nowD.getSeconds()).padStart(2,'0')}`;
 
   const reducedBadge = ticket.is_reduced ? `<div class="badge">** REDUCTION APPLIQUEE **</div>` : '';
@@ -384,7 +385,7 @@ async function buildHTMLTickets(list: PrintTicketData[], settings: PrintSettings
 function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string {
   const { bagage, depart, stationName, phoneLine } = data;
   const phone = phoneLine || '01 14 34 60 / 01 14 34 87';
-  const nowIso = new Date().toISOString();
+  const nowIso = trustedNowIso();
   const printed = formatDateTime(nowIso).replace('H', ':');
   const departFmt = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departFmt.split(' ');
@@ -474,8 +475,8 @@ function buildHTMLTpeBagage(data: PrintBagageData, notice?: string | null, provi
   const { bagage, depart, stationName, phoneLine } = data;
   const value = (input: string | number | null | undefined): string => String(input ?? '').trim();
   const formatMoney = (amount: number): string => `${amount.toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
-  const departureDate = formatDateTime(depart.departure_datetime || new Date().toISOString()).split(' ');
-  const printed = formatDateTime(new Date().toISOString());
+  const departureDate = formatDateTime(depart.departure_datetime || trustedNowIso()).split(' ');
+  const printed = formatDateTime(trustedNowIso());
   const stripStationLabel = (input: string): string => input.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
   const origin = stripStationLabel((stationName || depart.station_name || '').toUpperCase()) || '—';
   const destination = stripStationLabel(value(bagage.destination).toUpperCase()) || '—';
@@ -829,7 +830,7 @@ function buildHTMLRamassageBordereau(data: PrintRamassageData, settings: PrintSe
     } catch { /* defaults */ }
   }
 
-  const nowD = new Date();
+  const nowD = trustedNow();
   const printedAt = `${String(nowD.getDate()).padStart(2,'0')}/${String(nowD.getMonth()+1).padStart(2,'0')}/${nowD.getFullYear()} ${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau Ramassage</title><style>
@@ -917,7 +918,7 @@ function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings
     } catch { /* defaults */ }
   }
 
-  const nowD = new Date();
+  const nowD = trustedNow();
   const printedAt = `${String(nowD.getDate()).padStart(2,'0')}/${String(nowD.getMonth()+1).padStart(2,'0')}/${nowD.getFullYear()} ${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}`;
 
   const totalCharges = (convoy.ratio_amount ?? 0) + (convoy.carburant_amount ?? 0) + (convoy.peage_amount ?? 0) + (convoy.autres_amount ?? 0);

@@ -4,8 +4,9 @@ import { APP_TRACKING_URL, agencyCodeOf, formatReference, generateOfflineParcelC
 import { supabase } from '@/services/supabase';
 import { db as posDb } from '@/services/pos/db';
 import { useAuthStore } from '@/store/authStore';
-import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, isPermanentError, isWaitingToSend, nextRetryAt } from '@/services/offline/queueRules';
+import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, byQueueOrder, isPermanentError, isWaitingToSend, nextRetryAt } from '@/services/offline/queueRules';
 import { sendCourierCreatedSms, sendCourierArrivedSms } from '@/services/emisSms.service';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
 // ── Online/offline state (single source of truth) ──
 
@@ -180,12 +181,12 @@ function mapParcelInsert(payload: Record<string, unknown>): Record<string, unkno
     content_description: p.content_description ?? '',
     notes: p.notes ?? null,
     status: p.status ?? 'enregistre',
-    registered_at: p.registered_at ?? nowIso(),
+    registered_at: p.registered_at ?? trustedNowIso(),
     registered_by: p.registered_by ?? null,
     company_id: p.company_id ?? null,
     ticket_printed: p.ticket_printed ?? false,
-    created_at: p.created_at ?? nowIso(),
-    updated_at: p.updated_at ?? nowIso(),
+    created_at: p.created_at ?? trustedNowIso(),
+    updated_at: p.updated_at ?? trustedNowIso(),
   };
 }
 
@@ -233,7 +234,7 @@ function mapParcelUpdate(payload: Record<string, unknown>): Record<string, unkno
     if (p[localKey] !== undefined) result[remoteKey] = p[localKey];
   }
 
-  result.updated_at = nowIso();
+  result.updated_at = trustedNowIso();
   if (Object.keys(result).length <= 1) return null;
   return result;
 }
@@ -375,10 +376,10 @@ async function newCodeFor(record: Record<string, unknown>): Promise<Record<strin
     return Boolean(data);
   };
   const code = await generateOfflineParcelCode(agencyCodeOf(printed) || null, isTaken);
-  const registeredAt = new Date(String(record.registered_at ?? record.created_at ?? nowIso()));
+  const registeredAt = new Date(String(record.registered_at ?? record.created_at ?? trustedNowIso()));
   return {
     parcel_code: code,
-    reference: formatReference(Number.isNaN(registeredAt.getTime()) ? new Date() : registeredAt, code),
+    reference: formatReference(Number.isNaN(registeredAt.getTime()) ? trustedNow() : registeredAt, code),
     tracking_url: `${APP_TRACKING_URL}/track/${code}`,
     notes: [record.notes, `Code imprimé sur le reçu : ${printed}`].filter(Boolean).join(' — '),
   };
@@ -429,7 +430,7 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
       station_id: p.station_id ?? null,
       performed_by: p.performed_by ?? null,
       performer_name: p.performer_name ?? null,
-      event_at: p.event_at ?? nowIso(),
+      event_at: p.event_at ?? trustedNowIso(),
       metadata: p.metadata ?? {},
     };
     const { error } = await supabase.from(table).upsert(payload);
@@ -516,7 +517,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     const pending = (await db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).toArray())
       .filter(isWaitingToSend)
       .filter(item => sentBy(item, serverUserId));
-    pending.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+    pending.sort(byQueueOrder);
 
     for (const listed of pending) {
       if (!listed.id) continue;
@@ -573,7 +574,7 @@ export async function getLastSyncError(): Promise<string | null> {
     return `${refused} opération${refused > 1 ? 's' : ''} courrier refusée${refused > 1 ? 's' : ''} par le serveur : à traiter dans la liste`;
   }
   const errors = await db.sync_queue.where('status').equals('error').toArray();
-  errors.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  errors.sort((a, b) => byQueueOrder(b, a));
   return errors[0]?.last_error ?? null;
 }
 

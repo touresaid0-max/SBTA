@@ -5,6 +5,7 @@ import type { SyncQueueItem } from '@/services/courrier/db';
 import { useConnection } from '@/services/courrier/ConnectionContext';
 import { useCourrierUser } from '@/services/courrier/useCourrierUser';
 import { AbandonOperation } from '@/components/shared/AbandonOperation';
+import { byQueueOrder } from '@/services/offline/queueRules';
 
 interface CourrierSyncQueueModalProps {
   open: boolean;
@@ -63,7 +64,7 @@ export function CourrierSyncQueueModal({ open, onClose, onSyncNow }: CourrierSyn
 
   async function refreshItems() {
     const queueItems = await getQueueItems();
-    queueItems.sort((a, b) => Number(a.status === 'abandoned') - Number(b.status === 'abandoned') || (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+    queueItems.sort((a, b) => Number(a.status === 'abandoned') - Number(b.status === 'abandoned') || byQueueOrder(a, b));
     setItems(queueItems);
   }
 

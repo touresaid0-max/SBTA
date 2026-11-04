@@ -29,6 +29,7 @@ import { isOnline as courrierIsOnline, flushSyncQueue, getPendingCount } from '@
 import { getAllLocalParcels, localAdvanceParcel, parcelRecordToParcel, syncParcelsFromServer } from '@/services/courrier/offlineStore'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { CourrierSyncQueueModal } from '@/components/parcel/CourrierSyncQueueModal'
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock'
 
 // A bordereau group = all parcels sharing the same bus + destination
 interface BordereauGroup {
@@ -388,7 +389,7 @@ export default function AgentColisDashboard() {
   }
 
   // ── KPI counters — always based on TODAY regardless of list period filter ──
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = trustedNowIso().slice(0, 10)
 
   // Sortants du jour = enregistrés aujourd'hui depuis cette gare
   const kpiSortants = useMemo(
@@ -568,7 +569,7 @@ export default function AgentColisDashboard() {
     setShowCourrierModal(true)
 
     // Use today's outgoing parcels; fall back to all loaded outgoing parcels
-    const todayStr    = new Date().toISOString().slice(0, 10)
+    const todayStr    = trustedNowIso().slice(0, 10)
     const todayParcels = outgoing.filter(p => p.registered_at?.startsWith(todayStr))
     const source       = todayParcels.length > 0 ? todayParcels : outgoing
 
@@ -652,7 +653,7 @@ export default function AgentColisDashboard() {
   }
 
   function handlePrintGroup(group: BordereauGroup) {
-    const now        = new Date()
+    const now        = trustedNow()
     const driverName = group.driverName
     printBordereauCourrier({
       station_name:     stationName,
@@ -674,7 +675,7 @@ export default function AgentColisDashboard() {
     })
   }
 
-  const today = format(new Date(), 'dd/MM/yyyy', { locale: fr })
+  const today = format(trustedNow(), 'dd/MM/yyyy', { locale: fr })
 
   // ── No station guard ───────────────────────────────────────────────────────
   if (!loading && !stationId) {
@@ -704,14 +705,14 @@ export default function AgentColisDashboard() {
         pendingCount={conn.pendingCount}
         lastSyncError={conn.lastSyncError}
         onShowQueue={() => setShowSyncQueue(true)}
-        onSyncNow={async () => { const r = await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); if (r.failed === 0 && r.processed > 0) conn.setLastSyncedAt(new Date().toISOString()); void syncParcelsFromServer(stationId ?? undefined); loadParcels(); }}
+        onSyncNow={async () => { const r = await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); if (r.failed === 0 && r.processed > 0) conn.setLastSyncedAt(trustedNowIso()); void syncParcelsFromServer(stationId ?? undefined); loadParcels(); }}
       />
 
       {/* Sync queue modal */}
       <CourrierSyncQueueModal
         open={showSyncQueue}
         onClose={() => setShowSyncQueue(false)}
-        onSyncNow={async () => { const r = await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); if (r.failed === 0 && r.processed > 0) conn.setLastSyncedAt(new Date().toISOString()); void syncParcelsFromServer(stationId ?? undefined); loadParcels(); }}
+        onSyncNow={async () => { const r = await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); if (r.failed === 0 && r.processed > 0) conn.setLastSyncedAt(trustedNowIso()); void syncParcelsFromServer(stationId ?? undefined); loadParcels(); }}
       />
 
       {/* Header */}
@@ -1497,7 +1498,7 @@ export default function AgentColisDashboard() {
                     Bordereaux Courrier
                   </h2>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {format(new Date(), 'dd/MM/yyyy', { locale: fr })} — {stationName}
+                    {format(trustedNow(), 'dd/MM/yyyy', { locale: fr })} — {stationName}
                   </p>
                 </div>
               </div>

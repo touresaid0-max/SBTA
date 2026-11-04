@@ -2,13 +2,14 @@ import { db, type TransferLogRecord, type PendingTransferRecord, type TicketReco
 import { getAll, localUpdate } from './offlineStore';
 import { supabase } from '@/services/supabase';
 import { transferTicketsToDepart, getDepartById, updateDepart } from './departService';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 function uuid(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function nowIso(): string {
-  return new Date().toISOString();
+  return trustedNowIso();
 }
 
 async function getCurrentUserId(): Promise<string | null> {

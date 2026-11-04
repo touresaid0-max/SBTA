@@ -4,6 +4,7 @@ import { getDepartById, updateDepart } from './departService';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
 import { isOnline } from './syncEngine';
+import { trustedNow } from '@/services/offline/deviceClock';
 
 export type { TicketRecord };
 
@@ -178,7 +179,7 @@ export async function getSoldSeats(departId: string): Promise<number[]> {
 }
 
 export function generateTicketNumber(_stationAgencyCode?: string): string {
-  const year = new Date().getFullYear();
+  const year = trustedNow().getFullYear();
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return `${year}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   }

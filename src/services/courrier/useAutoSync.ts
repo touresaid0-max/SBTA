@@ -4,6 +4,7 @@ import { flushSyncQueue, getPendingCount, onOnlineChange, isOnline, getLastSyncE
 import { syncParcelsFromServer } from './offlineStore';
 import { ensureAuthSession } from './offlineAuth';
 import { refreshAllReferentiels } from './referentiels';
+import { syncServerClock } from '@/services/offline/deviceClock';
 
 // Like the guichet's sales: queued operations leave fast, server data is pulled less often
 // (it used to be the whole parcel history every 5 seconds).
@@ -24,6 +25,7 @@ export function useAutoSync(stationId?: string) {
   stationRef.current = stationId;
   const lastPullRef = useRef(0);
   const lastReferentielsRef = useRef(0);
+  const lastClockRef = useRef(0);
 
   const updateQueueState = useCallback(async () => {
     const count = await getPendingCount();
@@ -44,6 +46,11 @@ export function useAutoSync(stationId?: string) {
     setLastSyncError(null);
 
     try {
+      // Gap between this device's clock and the server's: used to date what is recorded (deviceClock)
+      if (force || Date.now() - lastClockRef.current >= REFERENTIELS_INTERVAL_MS) {
+        lastClockRef.current = Date.now();
+        await syncServerClock();
+      }
       let result = { failed: 0, conflicts: [] as unknown[] };
       // Parcels whose send was cut before this version, in no queue: queued again (once per session)
       await recoverUnqueuedRecords().catch(() => { /* tried again at the next sync */ });

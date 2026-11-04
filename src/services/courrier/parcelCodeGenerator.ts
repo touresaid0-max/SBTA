@@ -1,4 +1,5 @@
 import { db } from './db'
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock'
 
 export const APP_TRACKING_URL = 'https://sbta-gestion.cloud'
 
@@ -61,7 +62,7 @@ export async function generateOfflineParcelCode(
  * local parcels and matching the online trigger's logic (max + 1).
  */
 async function getNextDailySequence(stationId: string): Promise<number> {
-  const today = new Date().toISOString().split('T')[0]
+  const today = trustedNowIso().split('T')[0]
   const localParcels = await db.parcels
     .where('origin_station_id')
     .equals(stationId)
@@ -90,7 +91,7 @@ export async function generateOfflineParcelCodes(
   tracking_url: string
 }> {
   const code = await generateOfflineParcelCode(agencyCode)
-  const now = new Date()
+  const now = trustedNow()
   const reference = formatReference(now, code)
   const daily_sequence = await getNextDailySequence(stationId)
   const tracking_url = `${APP_TRACKING_URL}/track/${code}`

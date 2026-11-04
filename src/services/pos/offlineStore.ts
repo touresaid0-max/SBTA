@@ -2,13 +2,14 @@ import { db, type BagageRecord, type DepenseRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType, UNIQUE_CHARGE_TYPES } from './syncEngine';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
 function uuid(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function nowIso(): string {
-  return new Date().toISOString();
+  return trustedNowIso();
 }
 
 type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses';
@@ -137,7 +138,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
   const bus = s.buses as { seats_sold_from?: number } | null | undefined;
   const seatsSoldFrom = Math.max(1, Number(bus?.seats_sold_from ?? 1));
   const depIso = s.departure_datetime as string;
-  const depDate = depIso ? depIso.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const depDate = depIso ? depIso.slice(0, 10) : trustedNowIso().slice(0, 10);
   const depTime = depIso ? depIso.slice(11, 16) : '00:00';
   return {
     id: s.id,
@@ -365,7 +366,7 @@ function mapRemoteChargeToLocal(c: Record<string, unknown>): Record<string, unkn
 export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceDate?: string): Promise<void> {
   if (!isOnline()) return;
   try {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = trustedNowIso().slice(0, 10);
 
     // Auto-close departures from past days (server UTC midnight rollover)
     // This runs BEFORE syncing so closed status is reflected in the pulled data
@@ -396,16 +397,16 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         await (db.departs as any).put({
           ...d,
           cloture: true,
-          cloture_at: new Date().toISOString(),
+          cloture_at: trustedNowIso(),
           status: 'termine',
-          updated_at: new Date().toISOString(),
+          updated_at: trustedNowIso(),
           synced: true,
         });
       }
     } catch { /* non-critical */ }
 
     const withHistory = !historySyncDoneToday(stationId, todayStr);
-    const fromDate = new Date();
+    const fromDate = trustedNow();
     if (withHistory) fromDate.setUTCDate(fromDate.getUTCDate() - HISTORY_DAYS);
     const defaultFrom = fromDate.toISOString().slice(0, 10);
     const fromStr = sinceDate && sinceDate < defaultFrom ? sinceDate : defaultFrom;
@@ -484,8 +485,8 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             bus_plate: plate ?? '',
             bus_name: plate ?? '',
             driver_name: driverName ?? '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            created_at: trustedNowIso(),
+            updated_at: trustedNowIso(),
             synced: true,
           });
         }
@@ -525,10 +526,10 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
               price: ticketRecord.price,
               status: ticketRecord.status,
               destination: ticketRecord.destination || existingTicket.destination,
-              updated_at: new Date().toISOString(),
+              updated_at: trustedNowIso(),
             });
           } else {
-            await (db.tickets as any).put({ ...ticketRecord, created_at: r.created_at ?? new Date().toISOString(), updated_at: new Date().toISOString(), synced: true });
+            await (db.tickets as any).put({ ...ticketRecord, created_at: r.created_at ?? trustedNowIso(), updated_at: trustedNowIso(), synced: true });
           }
         }
 
@@ -561,7 +562,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
               breakdown_transfer: breakdownTransfer,
               solde: newMtTicket + existing.mt_bagage - existing.tot_depense,
               caisse: newMtTicket + existing.mt_bagage - existing.tot_depense,
-              updated_at: new Date().toISOString(),
+              updated_at: trustedNowIso(),
             });
           }
         }
@@ -604,13 +605,13 @@ async function syncBaggageFromServer(scheduleIds: string[]): Promise<boolean> {
         paid_at: remote.paid_at ?? existing.paid_at,
         paid_by: remote.paid_by ?? existing.paid_by,
         description: remote.description,
-        updated_at: new Date().toISOString(),
+        updated_at: trustedNowIso(),
       } as BagageRecord);
     } else {
       await db.bagages.put({
         ...remote,
-        created_at: row.created_at ?? new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: row.created_at ?? trustedNowIso(),
+        updated_at: trustedNowIso(),
         synced: true,
       } as unknown as BagageRecord);
     }
@@ -646,8 +647,8 @@ async function syncChargesFromServer(scheduleIds: string[]): Promise<boolean> {
     }
     await db.depenses.put({
       ...mapRemoteChargeToLocal(row),
-      created_at: row.created_at ?? new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: row.created_at ?? trustedNowIso(),
+      updated_at: trustedNowIso(),
       synced: true,
     } as unknown as DepenseRecord);
   }

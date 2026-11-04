@@ -2,6 +2,7 @@ import { type BagageRecord } from './db';
 import { localInsert, getAll, localUpdate } from './offlineStore';
 import { getDepartById, updateDepart } from './departService';
 import { getTicketsForDepart, type TicketRecord } from './ticketService';
+import { trustedNow } from '@/services/offline/deviceClock';
 
 export type { BagageRecord };
 
@@ -11,7 +12,7 @@ export async function getBagagesForDepart(departId: string): Promise<BagageRecor
 }
 
 export async function generateBagageNumber(): Promise<string> {
-  const now = new Date();
+  const now = trustedNow();
   const dd = String(now.getDate()).padStart(2, '0');
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yyyy = now.getFullYear();

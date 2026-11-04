@@ -10,6 +10,7 @@ import {
   Receipt, Calendar,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 const EXPENSE_TYPES = [
   'Carburant compl.',
@@ -31,14 +32,14 @@ export default function POSDepenses() {
   const [success, setSuccess] = useState('');
 
   const [liveTotDepense, setLiveTotDepense] = useState(0);
-  const [departDateFilter, setDepartDateFilter] = useState(new Date().toISOString().split('T')[0]);
+  const [departDateFilter, setDepartDateFilter] = useState(trustedNowIso().split('T')[0]);
 
   // Form state
   const [type, setType] = useState(EXPENSE_TYPES[0]);
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState('');
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(trustedNowIso().split('T')[0]);
 
   const loadData = useCallback(async () => {
     try {
@@ -160,7 +161,7 @@ export default function POSDepenses() {
             />
           </div>
           <button
-            onClick={() => setDepartDateFilter(new Date().toISOString().split('T')[0])}
+            onClick={() => setDepartDateFilter(trustedNowIso().split('T')[0])}
             className="px-3 py-2.5 rounded-lg text-xs font-bold flex-shrink-0"
             style={{ border: '2px solid var(--border)', color: 'var(--text-secondary)' }}
           >

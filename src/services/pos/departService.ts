@@ -3,6 +3,7 @@ import { localInsert, localUpdate, getAll } from './offlineStore';
 import { enqueueInsert } from './syncEngine';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
 export type { DepartRecord, SeatAllocation, SeatTransfer };
 
@@ -264,7 +265,7 @@ export async function cloturerDepart(
   const existing = (await getAll<DepartRecord>('departs')).find(d => d.id === departId) ?? null;
   const updated = await localUpdate<DepartRecord>('departs', departId, {
     cloture: true,
-    cloture_at: new Date().toISOString(),
+    cloture_at: trustedNowIso(),
     cloture_by: userName,
   });
 
@@ -310,7 +311,7 @@ export async function cloturerDepart(
         destination_station_id: arrivalStationId,
         destination_station_name: gares.find(g => g.id === arrivalStationId)?.name ?? null,
         status: 'pending',
-        created_at: new Date().toISOString(),
+        created_at: trustedNowIso(),
       }],
     });
 
@@ -405,7 +406,7 @@ export async function findNextDepartForRoute(
   counterId?: string,
 ): Promise<DepartRecord | null> {
   const all = await getAllDeparts(stationId, counterId);
-  const now = new Date();
+  const now = trustedNow();
   const candidates = all.filter(d =>
     d.id !== currentDepartId &&
     d.route_id === routeId &&
@@ -570,7 +571,7 @@ export async function transferSeatsBetweenStations(params: {
       seat_from: seatFrom,
       seat_to: seatTo,
       seats: seatsToTransfer,
-      transferred_at: new Date().toISOString(),
+      transferred_at: trustedNowIso(),
       transferred_by: params.transferredBy,
     },
   ];
@@ -584,7 +585,7 @@ export async function transferSeatsBetweenStations(params: {
       .from('schedules')
       .update({
         seat_transfers: transfers,
-        updated_at: new Date().toISOString(),
+        updated_at: trustedNowIso(),
       })
       .eq('id', params.departId);
   } catch {

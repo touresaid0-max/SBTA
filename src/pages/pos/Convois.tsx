@@ -14,6 +14,7 @@ import { db } from '@/services/pos/db';
 import { enqueueInsert, enqueueUpdate, isOnline } from '@/services/pos/syncEngine';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
+import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption {
@@ -218,8 +219,8 @@ export default function POSConvois() {
 
   // Filters
   const [preset, setPreset] = useState<PeriodPreset>('today');
-  const [dateFrom, setDateFrom] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [dateFrom, setDateFrom] = useState(format(trustedNow(), 'yyyy-MM-dd'));
+  const [dateTo, setDateTo] = useState(format(trustedNow(), 'yyyy-MM-dd'));
   const [filterRoute, setFilterRoute] = useState('');
   const [filterBus, setFilterBus] = useState('');
 
@@ -313,7 +314,7 @@ export default function POSConvois() {
           stations: keep((stationsRes.data || []) as unknown as StationOption[], copy?.stations),
         };
         apply(m);
-        await db.referentiels.put({ key: masterKey, type: 'convois_master', data: m, updated_at: new Date().toISOString() });
+        await db.referentiels.put({ key: masterKey, type: 'convois_master', data: m, updated_at: trustedNowIso() });
       } catch (err: any) {
         if (!copy) toast.error(err.message || 'Erreur de chargement');
       } finally {
@@ -326,7 +327,7 @@ export default function POSConvois() {
   // ─── Load convoys list ──────────────────────────────────────────────────────
   const applyPreset = useCallback((p: PeriodPreset) => {
     setPreset(p);
-    const now = new Date();
+    const now = trustedNow();
     if (p === 'today') {
       const d = format(now, 'yyyy-MM-dd'); setDateFrom(d); setDateTo(d);
     } else if (p === 'week') {
@@ -430,7 +431,7 @@ export default function POSConvois() {
       const kept = [...merged.values()]
         .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
         .slice(0, 500);
-      await db.referentiels.put({ key: listKey, type: 'convois_list', data: kept, updated_at: new Date().toISOString() });
+      await db.referentiels.put({ key: listKey, type: 'convois_list', data: kept, updated_at: trustedNowIso() });
     } catch (err: any) {
       // Without network: the convoys kept on the device for the period, plus those not yet sent
       setConvoys(await withPending((await keptOnDevice()).filter(inPeriod)));
@@ -511,10 +512,10 @@ export default function POSConvois() {
     setForm({
       ...EMPTY_FORM,
       departure_station_id: stationId || '',
-      departure_datetime: `${format(new Date(), 'yyyy-MM-dd')}T08:00`,
-      arrival_datetime: `${format(new Date(), 'yyyy-MM-dd')}T12:00`,
-      retour_departure_datetime: `${format(new Date(), 'yyyy-MM-dd')}T14:00`,
-      retour_arrival_datetime: `${format(new Date(), 'yyyy-MM-dd')}T20:00`,
+      departure_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T08:00`,
+      arrival_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T12:00`,
+      retour_departure_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T14:00`,
+      retour_arrival_datetime: `${format(trustedNow(), 'yyyy-MM-dd')}T20:00`,
     });
     setShowModal(true);
   };
@@ -629,7 +630,7 @@ export default function POSConvois() {
             departure_datetime: depDate,
             arrival_datetime: arrDate,
             route_id: form.route_id,
-            updated_at: new Date().toISOString(),
+            updated_at: trustedNowIso(),
           }),
         ];
 
@@ -730,7 +731,7 @@ export default function POSConvois() {
           passengers_count: passengersCount,
           ...charges,
           observation,
-          created_at: new Date().toISOString(),
+          created_at: trustedNowIso(),
           return_convoy_id: retourConvoyId,
           return_departure_datetime: hasRetour ? form.retour_departure_datetime : null,
           departure_datetime: depDate,

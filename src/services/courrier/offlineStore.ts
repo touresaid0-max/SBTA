@@ -2,13 +2,14 @@ import { db, type ParcelRecord, type TrackingEventRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { enqueueInsert, enqueueUpdate, enqueueDelete, enqueueSms, isOnline, getPendingCount } from './syncEngine';
 import type { Parcel } from '@/types/parcel.types';
+import { trustedNowIso } from '@/services/offline/deviceClock';
 
 function uuid(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function nowIso(): string {
-  return new Date().toISOString();
+  return trustedNowIso();
 }
 
 type StoreName = 'parcels' | 'tracking_events';
