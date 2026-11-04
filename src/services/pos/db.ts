@@ -42,6 +42,8 @@ export interface DepartRecord {
   is_ac: boolean;
   is_ramassage?: boolean;
   ramassage_notified?: boolean;
+  /** Re-opened by the admin after it was closed (server: schedules.admin_reactivated_at) */
+  reopened_at?: string | null;
   company_id?: string;
   status: string;
   seats_total: number;

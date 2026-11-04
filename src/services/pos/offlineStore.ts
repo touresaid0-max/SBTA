@@ -24,7 +24,7 @@ const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'is_ac', 'seats_from', 'seat_allocations', 'station_name',
   'counter_id', 'other_station_id', 'other_station_name',
   'synced', 'updated_at', 'id',
-  'printed', 'printed_at',
+  'printed', 'printed_at', 'reopened_at',
 ]);
 
 function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknown>): boolean {
@@ -166,6 +166,7 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     is_ac: false,
     is_ramassage: s.is_ramassage ?? false,
     ramassage_notified: false,
+    reopened_at: s.admin_reactivated_at ?? null,
     confirmed: s.status === 'en_cours',
     cancelled: s.status === 'annule',
     cloture: s.status === 'termine',
@@ -235,6 +236,10 @@ function markAutoTerminateDone(stationId: string | undefined, todayStr: string):
 // baggage and expenses recorded on other counters after a departure's day reach this device too.
 // The other syncs of the day only pull today's and future departures, to stay light.
 const HISTORY_DAYS = 7;
+// Departures re-opened by the admin within these days are pulled whatever their date
+const REOPENED_DAYS = 60;
+
+const SCHEDULE_COLUMNS = 'id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, admin_reactivated_at, buses:bus_id(seats_sold_from)';
 const HISTORY_SYNC_KEY = 'sbta_history_sync_day';
 
 function historySyncDoneToday(stationId: string | undefined, todayStr: string): boolean {
@@ -398,7 +403,8 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         (d: Record<string, unknown>) =>
           (d as any).departure_date < todayStr &&
           !(d as any).cloture &&
-          !(d as any).cancelled,
+          !(d as any).cancelled &&
+          !(d as { reopened_at?: string | null }).reopened_at,
       );
       for (const d of toClose) {
         await (db.departs as any).put({
@@ -424,7 +430,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
     for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
       let scheduleQuery = supabase
         .from('schedules')
-        .select('id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, buses:bus_id(seats_sold_from)')
+        .select(SCHEDULE_COLUMNS)
         .gte('departure_datetime', `${fromStr}T00:00:00`);
       // Only this station's departures: other stations' ones are never shown here (shared
       // buses rely on seat allocations kept on the device, not on pulled rows)
@@ -439,6 +445,21 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       if (!data || data.length < RESERVATION_PAGE_SIZE) break;
     }
 
+    // Departures of earlier days the admin re-opened: pulled too, so that the guichet sees them
+    // open again and can correct them (older than the days pulled above otherwise)
+    try {
+      const reopenedSince = new Date(trustedNow().getTime() - REOPENED_DAYS * 86_400_000).toISOString();
+      let reopenedQuery = supabase
+        .from('schedules')
+        .select(SCHEDULE_COLUMNS)
+        .gte('admin_reactivated_at', reopenedSince)
+        .lt('departure_datetime', `${fromStr}T00:00:00`);
+      if (stationId) reopenedQuery = reopenedQuery.eq('departure_station_id', stationId);
+      const { data: reopened } = await reopenedQuery.limit(RESERVATION_PAGE_SIZE);
+      const known = new Set(remoteSchedules.map(s => s.id));
+      for (const s of (reopened ?? []) as unknown as RemoteSchedule[]) if (!known.has(s.id)) remoteSchedules.push(s);
+    } catch { /* server without the column: the usual days only */ }
+
     if (remoteSchedules && remoteSchedules.length > 0) {
       const scheduleIds = remoteSchedules.map(s => s.id);
 
@@ -450,6 +471,9 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         Array.from(new Set(remoteSchedules.map(s => s.driver_id).filter(Boolean))) as string[],
       );
 
+      // Departures with a change made here and not sent yet (a closing, for instance)
+      const pendingDeparts = await getPendingIds('departs');
+
       for (const s of remoteSchedules) {
         const localRecord = mapRemoteScheduleToLocal(s as unknown as Record<string, unknown>);
         const plate = s.bus_id ? plates.get(s.bus_id) : undefined;
@@ -457,8 +481,14 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         const existing = await (db.departs as any).get(s.id);
         if (existing) {
           // A past-day departure already closed on this device stays closed, even if the
-          // server has not closed it yet (its nightly closing may not have run)
-          const keepClosed = existing.cloture && String(localRecord.departure_date) < todayStr;
+          // server has not closed it yet (its nightly closing may not have run) — unless the
+          // admin re-opened it: the guichet then sees it open and can correct it. A closing
+          // made here and not sent yet is kept too.
+          const reopenedByAdmin = Boolean(localRecord.reopened_at) && localRecord.cloture === false;
+          const keepClosed = existing.cloture && (
+            pendingDeparts.has(s.id) ||
+            (String(localRecord.departure_date) < todayStr && !reopenedByAdmin)
+          );
           await (db.departs as any).put({
             ...existing,
             ...localRecord,
