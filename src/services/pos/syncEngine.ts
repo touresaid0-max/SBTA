@@ -241,56 +241,85 @@ export function normalizeExpenseType(raw: string | undefined): string {
   return EXPENSE_TYPE_MAP[key] ?? 'autres';
 }
 
-export const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage']);
+/**
+ * Expense types of a departure: one expense of each type per departure, never added up (audit M3).
+ * The guichetier modifies the recorded expense; a second one of the same type is refused.
+ */
+export const UNIQUE_CHARGE_TYPES = new Set(['ration', 'carburant_complement', 'peage', 'autres']);
 
-async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-  const p = payload;
-  const chargeType = normalizeExpenseType((p.type as string) ?? (p.label as string));
-  const scheduleId = (p.depart_id as string) ?? null;
-  const row = {
-    id: p.id,
-    schedule_id: scheduleId,
-    counter_id: p.counter_id ?? null,
-    station_id: p.station_id ?? null,
-    bus_id: p.bus_id ?? null,
-    charge_type: chargeType,
-    description: (p.description as string) || (p.label as string) || '',
-    amount: p.amount ?? 0,
-    charge_date: (p.expense_date as string) ?? trustedNowIso().slice(0, 10),
-    status: 'en_attente',
-    created_at: p.created_at ?? trustedNowIso(),
-  };
-  if (UNIQUE_CHARGE_TYPES.has(chargeType) && scheduleId) {
-    // The server keeps one row per departure for these types, while the guichet adds the amounts
-    // (« Déjà enregistré » + « Ajouter des dépenses »): two entries of 5 000 and 3 000 gave
-    // 8 000 on the device and 3 000 on the server. The row now holds the total of the device's
-    // entries, computed again at each send: a send repeated after a cut gives the same total.
-    row.amount = (await deviceTotalOfType(scheduleId, chargeType)) || Number(p.amount ?? 0);
-    const { data: existing, error: findError } = await supabase
-      .from('counter_charges')
-      .select('id')
-      .eq('schedule_id', scheduleId)
-      .eq('charge_type', chargeType)
-      .maybeSingle();
-    if (findError) throw findError;
-    if (existing) {
-      const { error: updateError } = await supabase
-        .from('counter_charges')
-        .update({ amount: row.amount, description: row.description, charge_date: row.charge_date, updated_at: trustedNowIso() })
-        .eq('id', existing.id);
-      if (updateError) throw updateError;
-      return null;
-    }
-  }
-  return row;
+/** Server without the function of the 04/11/2026 migration (not applied yet). */
+function isMissingFunction(error: { code?: string; message?: string } | null): boolean {
+  return !!error && (error.code === 'PGRST202' || error.code === '42883');
 }
 
-/** Sum of the device's expenses of one type (ratio, carburant, péage) for a departure. */
-async function deviceTotalOfType(scheduleId: string, chargeType: string): Promise<number> {
-  const entries = await db.depenses
-    .filter(d => d.depart_id === scheduleId && d.description !== '__deleted__' && normalizeExpenseType(d.type ?? d.label) === chargeType)
-    .toArray();
-  return entries.reduce((total, d) => total + Number(d.amount || 0), 0);
+/**
+ * Sends the device's expense as it is now (creation or modification): the server keeps one
+ * expense per departure and type, whose amount is REPLACED by this one, not added to it. Sending
+ * it again (cut, retry, insert then update in the queue) gives the same result.
+ */
+async function sendDepense(payload: Record<string, unknown>): Promise<void> {
+  const id = String(payload.id ?? '');
+  const current = ((id ? await db.depenses.get(id) : undefined) as Record<string, unknown> | undefined) ?? payload;
+  if (current.description === '__deleted__') return;
+  const scheduleId = (current.depart_id as string) || null;
+  if (!scheduleId) return; // not attached to a departure: nothing the server can record
+  const chargeType = normalizeExpenseType((current.type as string) ?? (current.label as string));
+  const description = (current.description as string) || (current.label as string) || '';
+  const amount = Number(current.amount ?? 0);
+  const chargeDate = (current.expense_date as string) || trustedNowIso().slice(0, 10);
+
+  const { error } = await supabase.rpc('save_counter_charge', {
+    p_id: id || null,
+    p_schedule_id: scheduleId,
+    p_charge_type: chargeType,
+    p_amount: amount,
+    p_description: description,
+    p_charge_date: chargeDate,
+    p_counter_id: (current.counter_id as string) || null,
+    p_station_id: (current.station_id as string) || null,
+    p_bus_id: (current.bus_id as string) || null,
+    p_created_at: (current.created_at as string) || null,
+  });
+  if (!error) return;
+  if (!isMissingFunction(error)) throw error;
+
+  // Until the migration is applied: same rule with the table itself (a validated expense cannot
+  // be modified this way: the server refuses it, the change stays in the queue with the error)
+  const { data: existing, error: findError } = await supabase
+    .from('counter_charges')
+    .select('id')
+    .eq('schedule_id', scheduleId)
+    .eq('charge_type', chargeType)
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (findError) throw findError;
+  const target = (existing ?? [])[0] as { id: string } | undefined;
+  if (target) {
+    const { data, error: updateError } = await supabase
+      .from('counter_charges')
+      .update({ amount, description, charge_date: chargeDate, updated_at: trustedNowIso() })
+      .eq('id', target.id)
+      .select('id');
+    if (updateError) throw updateError;
+    if ((data ?? []).length === 0) throw new RefusedByServer('Modification refusée par le serveur (dépense déjà validée) : appliquez la migration du 04/11/2026');
+    return;
+  }
+  const userId = await getCurrentUserId();
+  const { error: insertError } = await supabase.from('counter_charges').upsert({
+    id: id || undefined,
+    schedule_id: scheduleId,
+    counter_id: current.counter_id ?? null,
+    station_id: current.station_id ?? null,
+    bus_id: current.bus_id ?? null,
+    charge_type: chargeType,
+    description,
+    amount,
+    charge_date: chargeDate,
+    status: 'en_attente',
+    created_at: current.created_at ?? trustedNowIso(),
+    ...(userId ? { created_by: userId } : {}),
+  });
+  if (insertError) throw insertError;
 }
 
 // ── Who sends what ──
@@ -453,11 +482,8 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
     const userId = await getCurrentUserId();
     if (userId) payload.sold_by = userId;
   } else if (store === 'depenses') {
-    const depensePayload = await mapDepenseInsert(record);
-    if (!depensePayload) return; // already merged server-side
-    payload = depensePayload;
-    const userId = await getCurrentUserId();
-    if (userId) payload.created_by = userId;
+    await sendDepense(record);
+    return;
   } else if (RAW_ROW_STORES.has(store)) {
     // Rows written as they are, all in one request; ids made on the device, so a retry is a no-op
     const rows = (record.rows as Record<string, unknown>[] | undefined) ?? [];
@@ -548,6 +574,11 @@ async function executeUpdate(store: StoreName, id: string, patch: Record<string,
   const table = TABLE_MAP[store];
   let remotePayload: Record<string, unknown> | null = null;
 
+  if (store === 'depenses') {
+    // The expense is sent whole as it is now on the device (amount replaced on the server)
+    await sendDepense({ id, ...patch });
+    return;
+  }
   if (store === 'departs') {
     remotePayload = mapDepartUpdate({ id, ...patch });
   } else if (store === 'tickets') {

@@ -1,7 +1,7 @@
 import { db, type BagageRecord, type DepenseRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
-import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType, UNIQUE_CHARGE_TYPES } from './syncEngine';
+import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType } from './syncEngine';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 import { uuidV4 } from '@/utils/uuid';
 
@@ -41,6 +41,11 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
   }
   if (entity === 'bagages') {
     const remoteMappable = ['payment_status', 'paid_at', 'paid_by', 'destination', 'price', 'description', 'owner_name', 'owner_phone'];
+    return keys.some(k => remoteMappable.includes(k));
+  }
+  if (entity === 'depenses') {
+    // A modified expense is sent to the server (it used to stay on the device only)
+    const remoteMappable = ['amount', 'label', 'type', 'description', 'expense_date'];
     return keys.some(k => remoteMappable.includes(k));
   }
   return false;
@@ -621,37 +626,69 @@ async function syncBaggageFromServer(scheduleIds: string[]): Promise<boolean> {
 }
 
 /**
- * Expenses entered on another device were never pulled: Tot Dépense, Solde and Caisse only counted
- * the expenses entered on this device. Only the missing ones are added, the device's own records are
- * left as they are. Returns false if the server could not be read.
+ * Expenses of the departures from the server. One expense per departure and type (audit M3): the
+ * server's amount is the one that counts (modified on another device of the counter, or
+ * corrected at the office), unless the device has a change of it not sent yet. Former entries
+ * of a type added up on the device are replaced by the server's expense. The departures'
+ * Tot Dépense, Solde and Caisse are then computed again. Returns false if the server could not
+ * be read.
  */
 async function syncChargesFromServer(scheduleIds: string[]): Promise<boolean> {
   const rows = await fetchRowsForSchedules('counter_charges', '*', scheduleIds);
   if (!rows) return false;
   const pending = await getPendingIds('depenses');
-  const local = await db.depenses.toArray();
+  const local = (await db.depenses.toArray()).filter(d => d.description !== '__deleted__');
   const localIds = new Set(local.map(d => d.id));
+  const touched = new Set<string>();
+
+  // Server expenses by departure and type
+  const groups = new Map<string, Record<string, unknown>[]>();
   for (const row of rows) {
-    const id = String(row.id);
     if (row.status === 'rejete') continue;
-    if (localIds.has(id) || pending.has(id)) continue;
-    // Ratio, carburant and péage are one row per departure on the server: when this device sent
-    // a second amount, the server row kept another id. Skip it rather than count the expense twice.
-    const chargeType = String(row.charge_type);
-    if (UNIQUE_CHARGE_TYPES.has(chargeType)) {
-      const alreadyHere = local.some(d =>
-        d.depart_id === row.schedule_id &&
-        d.description !== '__deleted__' &&
-        normalizeExpenseType(d.type ?? d.label) === chargeType,
-      );
-      if (alreadyHere) continue;
+    const key = `${row.schedule_id}|${row.charge_type}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  for (const group of groups.values()) {
+    if (group.length > 1) {
+      // Several « autres » recorded before the rule: added as they are, until one is modified
+      for (const row of group) {
+        if (localIds.has(String(row.id)) || pending.has(String(row.id))) continue;
+        await db.depenses.put({ ...mapRemoteChargeToLocal(row), created_at: row.created_at ?? trustedNowIso(), updated_at: trustedNowIso(), synced: true } as unknown as DepenseRecord);
+        touched.add(String(row.schedule_id));
+      }
+      continue;
     }
-    await db.depenses.put({
-      ...mapRemoteChargeToLocal(row),
-      created_at: row.created_at ?? trustedNowIso(),
-      updated_at: trustedNowIso(),
-      synced: true,
-    } as unknown as DepenseRecord);
+    const row = group[0];
+    const id = String(row.id);
+    const chargeType = String(row.charge_type);
+    const same = local.filter(d => d.depart_id === row.schedule_id && normalizeExpenseType(d.type ?? d.label) === chargeType);
+    // A change made on the device and not sent yet wins until it is sent
+    if (pending.has(id) || same.some(d => pending.has(d.id))) continue;
+    const remote = mapRemoteChargeToLocal(row) as unknown as DepenseRecord;
+
+    if (same.length === 1 && same[0].id === id) {
+      const mine = same[0];
+      if (mine.amount === remote.amount && mine.description === remote.description && mine.expense_date === remote.expense_date) continue;
+      await db.depenses.put({ ...mine, amount: remote.amount, description: remote.description, expense_date: remote.expense_date || mine.expense_date, updated_at: trustedNowIso(), synced: true });
+    } else {
+      await db.transaction('rw', db.depenses, async () => {
+        await db.depenses.bulkDelete(same.map(d => d.id));
+        await db.depenses.put({ ...remote, created_at: (row.created_at as string) ?? trustedNowIso(), updated_at: trustedNowIso(), synced: true } as DepenseRecord);
+      });
+    }
+    touched.add(String(row.schedule_id));
+  }
+
+  // Tot Dépense, Solde and Caisse of the departures whose expenses changed (device only)
+  for (const departId of touched) {
+    const depart = await db.departs.get(departId);
+    if (!depart) continue;
+    const total = (await db.depenses.where('depart_id').equals(departId).toArray())
+      .filter(d => d.description !== '__deleted__')
+      .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+    if (total === depart.tot_depense) continue;
+    await db.departs.put({ ...depart, tot_depense: total, solde: depart.mt_ticket - total, caisse: depart.mt_ticket - total });
   }
   return true;
 }
