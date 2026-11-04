@@ -101,6 +101,24 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
           updated_at: nowIso(),
         });
       }
+
+      // Agency code of each destination for this station (audit M11): a parcel created without
+      // network gets the same prefix as online. Kept as answered, even empty (no code configured);
+      // a failed request keeps the list already on the device.
+      try {
+        const { data: destCodes, error: destCodesError } = await supabase
+          .from('station_destination_agency_codes')
+          .select('destination_station_id, agency_code')
+          .eq('origin_station_id', stationId);
+        if (!destCodesError && destCodes) {
+          await db.referentiels.put({
+            key: `destination_agency_codes_${stationId}`,
+            type: 'stations',
+            data: destCodes,
+            updated_at: nowIso(),
+          });
+        }
+      } catch { /* the station's general code is used meanwhile */ }
     }
   } catch (err) {
     console.warn('[courrier-sync] Failed to refresh referentiels:', err);

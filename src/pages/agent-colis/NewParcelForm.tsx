@@ -188,11 +188,16 @@ export default function NewParcelForm() {
     const now = trustedNowIso()
     const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
-    // Look up agency_code from cached station referentiels
+    // Same prefix as online (audit M11): the agency code of the destination for this station,
+    // otherwise the station's general agency code, both kept on the device
     let agencyCode: string | null = null
-    const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
-    if (cachedStations) {
-      const myStationData = cachedStations.find(s => s.id === myStation.id)
+    const destCodes = await getReferentiel<{ destination_station_id: string; agency_code?: string | null }>(`destination_agency_codes_${myStation.id}`)
+    const destCode = destCodes?.find(c => c.destination_station_id === form.destination_station_id)?.agency_code
+    if (destCode) {
+      agencyCode = destCode
+    } else {
+      const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
+      const myStationData = cachedStations?.find(s => s.id === myStation.id)
       agencyCode = myStationData?.agency_code ?? null
     }
 
