@@ -8,6 +8,7 @@ import {
   Plus, Trash2, AlertCircle, Cable, HardDrive, ShieldCheck,
 } from 'lucide-react';
 import { getStorageStatus, requestPersistentStorage, type StorageStatus } from '@/services/pos/persistentStorage';
+import { clearPersonalDataOnLogout, PERSONAL_DATA_DAYS, PURGE_DAYS } from '@/services/offline/dataRetention';
 
 const BACKENDS: { value: PrintBackend; label: string; icon: typeof Printer; desc: string }[] = [
   { value: 'webserial', label: 'Web Serial (USB-Serial)', icon: Cable, desc: 'Imprimante thermique connectée en USB-Série (ESC/POS)' },
@@ -35,6 +36,26 @@ export default function POSParametres() {
   useEffect(() => { load(); }, [load]);
 
   const [storage, setStorage] = useState<StorageStatus | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [clearMessage, setClearMessage] = useState('');
+
+  // Before lending the device or at the end of a shift: customers' names and phones of past days
+  const handleClearPersonalData = async () => {
+    setClearing(true);
+    setClearMessage('');
+    try {
+      const r = await clearPersonalDataOnLogout();
+      const n = r.ticketsAnonymised + r.bagagesAnonymised + r.parcelsRemoved;
+      setClearMessage(n > 0
+        ? `Effacé : ${r.ticketsAnonymised} ticket(s), ${r.bagagesAnonymised} bagage(s), ${r.parcelsRemoved} courrier(s) terminé(s).`
+        : 'Rien à effacer : aucune donnée personnelle des jours passés sur ce poste.');
+      setStorage(await getStorageStatus());
+    } catch {
+      setClearMessage('Effacement impossible. Réessayez.');
+    } finally {
+      setClearing(false);
+    }
+  };
   useEffect(() => { void getStorageStatus().then(setStorage); }, []);
 
   const handleProtectStorage = async () => {
@@ -222,6 +243,22 @@ export default function POSParametres() {
               {storage.quotaBytes ? ` sur ${(storage.quotaBytes / 1_073_741_824).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Go disponibles` : ''}
             </p>
           )}
+          <div className="mt-3 pt-3 space-y-2" style={{ borderTop: '1px solid var(--border)' }}>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              Données des clients gardées sur ce poste : les noms et téléphones des jours passés sont effacés
+              après {PERSONAL_DATA_DAYS} jours (et à chaque déconnexion), les départs de plus de {PURGE_DAYS} jours
+              sont retirés du poste. Ce qui n'a pas encore été envoyé au serveur n'est jamais effacé.
+            </p>
+            <button
+              onClick={handleClearPersonalData}
+              disabled={clearing}
+              className="px-3 py-2 rounded-lg text-sm font-semibold border-2 disabled:opacity-60"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+            >
+              {clearing ? 'Effacement…' : 'Effacer maintenant les données des jours passés'}
+            </button>
+            {clearMessage && <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{clearMessage}</p>}
+          </div>
         </div>
 
         {/* Printer backend selection */}

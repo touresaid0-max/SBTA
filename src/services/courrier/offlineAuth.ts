@@ -2,6 +2,7 @@ import { db, type SessionRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { isOnline } from './syncEngine';
+import { clearPersonalDataOnLogout } from '@/services/offline/dataRetention';
 
 export interface CourrierLoginResult {
   success: boolean;
@@ -130,6 +131,9 @@ export async function logoutCourrier(): Promise<void> {
   } catch {
     // non-critical
   }
+  // Shared device: the customers' names and phones of past days do not stay for the next account
+  // (today's sales, parcels in progress and anything still to be sent are kept)
+  try { await clearPersonalDataOnLogout(); } catch { /* the daily rule will catch up */ }
   await db.session.clear();
 }
 
