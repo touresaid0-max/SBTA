@@ -90,8 +90,7 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     arrival_datetime: computeArrivalDatetime(depIso),
     status,
     seats_total: p.seats_total ?? 0,
-    seats_available: p.seats_total ?? 0,
-    seats_reserved: p.seats_sold ?? 0,
+    // seats_reserved / seats_available: counted by the server from the reservations (see below)
     route_name: p.route_name ?? null,
     source: 'guichet',
     counter_id: p.counter_id ?? null,
@@ -107,11 +106,10 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
 function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unknown> | null {
   const p = payload;
   const result: Record<string, unknown> = {};
-  if (p.seats_sold !== undefined) result.seats_reserved = p.seats_sold;
-  if (p.seats_total !== undefined) {
-    result.seats_total = p.seats_total;
-    result.seats_available = p.seats_total;
-  }
+  // The seats sold and left are counted by the server from the reservations (and mobile
+  // bookings) of the departure. The device sent its own count, which knows only its own sales:
+  // a late or replayed send could put back an outdated number. It no longer sends them.
+  if (p.seats_total !== undefined) result.seats_total = p.seats_total;
   if (p.cancelled === true) result.status = 'annule';
   if (p.cloture === true) result.status = 'termine';
   if (p.confirmed === true) result.status = 'en_cours';
@@ -257,21 +255,36 @@ async function mapDepenseInsert(payload: Record<string, unknown>): Promise<Recor
     created_at: p.created_at ?? nowIso(),
   };
   if (UNIQUE_CHARGE_TYPES.has(chargeType) && scheduleId) {
-    const { data: existing } = await supabase
+    // The server keeps one row per departure for these types, while the guichet adds the amounts
+    // (« Déjà enregistré » + « Ajouter des dépenses »): two entries of 5 000 and 3 000 gave
+    // 8 000 on the device and 3 000 on the server. The row now holds the total of the device's
+    // entries, computed again at each send: a send repeated after a cut gives the same total.
+    row.amount = (await deviceTotalOfType(scheduleId, chargeType)) || Number(p.amount ?? 0);
+    const { data: existing, error: findError } = await supabase
       .from('counter_charges')
       .select('id')
       .eq('schedule_id', scheduleId)
       .eq('charge_type', chargeType)
       .maybeSingle();
+    if (findError) throw findError;
     if (existing) {
-      await supabase
+      const { error: updateError } = await supabase
         .from('counter_charges')
         .update({ amount: row.amount, description: row.description, charge_date: row.charge_date, updated_at: nowIso() })
         .eq('id', existing.id);
+      if (updateError) throw updateError;
       return null;
     }
   }
   return row;
+}
+
+/** Sum of the device's expenses of one type (ratio, carburant, péage) for a departure. */
+async function deviceTotalOfType(scheduleId: string, chargeType: string): Promise<number> {
+  const entries = await db.depenses
+    .filter(d => d.depart_id === scheduleId && d.description !== '__deleted__' && normalizeExpenseType(d.type ?? d.label) === chargeType)
+    .toArray();
+  return entries.reduce((total, d) => total + Number(d.amount || 0), 0);
 }
 
 // ── Who sends what ──
