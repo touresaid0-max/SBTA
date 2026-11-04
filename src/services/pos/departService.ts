@@ -1,6 +1,6 @@
 import { type DepartRecord, type SeatAllocation, type SeatTransfer, type TicketRecord } from './db';
 import { localInsert, localUpdate, getAll } from './offlineStore';
-import { enqueueInsert } from './syncEngine';
+import { enqueueInsert, isOnline } from './syncEngine';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
@@ -39,14 +39,59 @@ export async function getGares(): Promise<GareRef[]> {
   return getReferentiel<GareRef>('gares');
 }
 
+// ── Departure and line numbers (audit m6) ──
+// Each counter numbers its own departures of the day (n° de départ) and, per line, its line
+// departures (n° de ligne). They were computed from the departures kept on THIS device only: a
+// second device on the same counter, or a new device, gave a number already used. The database
+// refuses a departure number used twice by a counter on the same day (departure_sequence): the
+// whole departure, and the tickets sold on it, were then refused.
+// Online, the numbers already used on the server are now taken into account. Offline, the device
+// keeps its own count, and the database gives the next free number if it was taken meanwhile
+// (migration 20261104150000_departure_numbers_server_safe.sql); the device gets it at the next sync.
+
+function nextDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Highest numbers already used on the server for this counter (or station) and day; null offline. */
+async function serverMaxNumbers(
+  stationId: string,
+  counterId: string | undefined,
+  departureDate: string | undefined,
+  routeId?: string,
+): Promise<{ departure: number; route: number } | null> {
+  if (!isOnline() || !departureDate) return null;
+  try {
+    let query = supabase
+      .from('schedules')
+      .select('departure_number, route_number, route_id')
+      .eq('departure_station_id', stationId)
+      .gte('departure_datetime', `${departureDate}T00:00:00`)
+      .lt('departure_datetime', `${nextDay(departureDate)}T00:00:00`);
+    if (counterId) query = query.eq('counter_id', counterId);
+    const { data, error } = await query;
+    if (error || !data) return null;
+    const rows = data as Array<{ departure_number: number | null; route_number: number | null; route_id: string | null }>;
+    return {
+      departure: Math.max(0, ...rows.map(r => r.departure_number ?? 0)),
+      route: Math.max(0, ...rows.filter(r => !routeId || r.route_id === routeId).map(r => r.route_number ?? 0)),
+    };
+  } catch {
+    return null; // the device's own count is used
+  }
+}
+
 export async function nextDepartureNumber(stationId: string, counterId?: string, departureDate?: string): Promise<number> {
   const all = await getAll<DepartRecord>('departs');
   let stationDeparts = all.filter(d => d.station_id === stationId && d.departure_date === departureDate);
   if (counterId) {
     stationDeparts = stationDeparts.filter(d => d.counter_id === counterId);
   }
-  if (stationDeparts.length === 0) return 1;
-  return Math.max(...stationDeparts.map(d => d.departure_number ?? 0)) + 1;
+  const localMax = Math.max(0, ...stationDeparts.map(d => d.departure_number ?? 0));
+  const server = await serverMaxNumbers(stationId, counterId, departureDate);
+  return Math.max(localMax, server?.departure ?? 0) + 1;
 }
 
 export async function nextRouteNumber(stationId: string, routeId: string, counterId?: string, departureDate?: string): Promise<number> {
@@ -55,8 +100,9 @@ export async function nextRouteNumber(stationId: string, routeId: string, counte
   if (counterId) {
     routeDeparts = routeDeparts.filter(d => d.counter_id === counterId);
   }
-  if (routeDeparts.length === 0) return 1;
-  return Math.max(...routeDeparts.map(d => d.route_number ?? 0)) + 1;
+  const localMax = Math.max(0, ...routeDeparts.map(d => d.route_number ?? 0));
+  const server = await serverMaxNumbers(stationId, counterId, departureDate, routeId);
+  return Math.max(localMax, server?.route ?? 0) + 1;
 }
 
 export async function createDepart(
