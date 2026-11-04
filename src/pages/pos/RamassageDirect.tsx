@@ -5,7 +5,7 @@ import POSLayout from '@/components/pos/POSLayout';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getChauffeurs, getGares, getVehicules, type ChauffeurRef, type GareRef, type VehiculeRef } from '@/services/pos/departService';
-import { supabase } from '@/services/supabase';
+import { enqueueInsert } from '@/services/pos/syncEngine';
 
 export default function POSRamassageDirect() {
   const navigate = useNavigate();
@@ -22,6 +22,7 @@ export default function POSRamassageDirect() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [savedOffline, setSavedOffline] = useState(false);
   const [error, setError] = useState('');
 
   const loadReferences = useCallback(async () => {
@@ -80,19 +81,20 @@ export default function POSRamassageDirect() {
     try {
       const departureDatetime = `${date}T${time}:00`;
       const ramassageId = crypto.randomUUID();
+      const collectionId = crypto.randomUUID();
 
-      const { data: userData } = await supabase.auth.getUser();
-      const { error: collectionError } = await supabase.from('ramassage_collections').insert({
+      // Through the sending queue, like the ticket sales: sent at once when online, otherwise kept
+      // on the device. The author (collected_by / created_by) is filled with the guichetier's account.
+      const collection = {
+        id: collectionId,
         schedule_id: null,
         amount: numericAmount,
         station_id: session.station_id,
-        collected_by: userData.user?.id ?? null,
         observation: 'Ramassage direct',
         local_depart_id: ramassageId,
-      });
-      if (collectionError) throw collectionError;
-
-      const { error: notificationError } = await supabase.from('ramassage_notifications').insert({
+      };
+      const notification = {
+        id: ramassageId,
         local_depart_id: ramassageId,
         schedule_id: null,
         route_id: null,
@@ -114,12 +116,16 @@ export default function POSRamassageDirect() {
         collected_amount: numericAmount,
         collected_by_name: session.full_name ?? null,
         collected_at: new Date().toISOString(),
-        created_by: userData.user?.id ?? null,
+        created_at: new Date().toISOString(),
         is_direct: true,
         counter_id: session.counter_id ?? null,
         counter_number: session.counter_number ?? null,
-      });
-      if (notificationError) throw notificationError;
+      };
+      const results = [
+        await enqueueInsert('ramassage_collectes', { id: collectionId, rows: [collection] }),
+        await enqueueInsert('ramassages', { id: ramassageId, rows: [notification] }),
+      ];
+      setSavedOffline(results.some(r => r.queued));
 
       setSuccess(true);
       window.setTimeout(() => navigate('/guichet/ramassage'), 900);
@@ -145,7 +151,7 @@ export default function POSRamassageDirect() {
         </div>
 
         {error && <div className="mb-4 flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
-        {success && <div className="mb-4 flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium" style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}><CheckCircle className="h-4 w-4" /> Ramassage direct enregistré avec succès.</div>}
+        {success && <div className="mb-4 flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium" style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)' }}><CheckCircle className="h-4 w-4" /> {savedOffline ? 'Ramassage direct enregistré sur le poste : envoi dès le retour de la connexion.' : 'Ramassage direct enregistré avec succès.'}</div>}
 
         {loading ? <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--primary)' }} /></div> : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

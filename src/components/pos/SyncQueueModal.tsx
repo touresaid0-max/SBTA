@@ -15,6 +15,8 @@ const ENTITY_LABELS: Record<string, string> = {
   depenses: 'Dépense',
   convoi_trajets: 'Convoi (trajets)',
   convois: 'Convoi',
+  ramassages: 'Ramassage',
+  ramassage_collectes: 'Ramassage (recette)',
 };
 
 const OP_LABELS: Record<string, string> = {
@@ -29,6 +31,10 @@ function describe(item: SyncQueueItem): string {
   const p = item.payload;
   if (item.op === 'delete') return `${ENTITY_LABELS[item.entity] ?? item.entity} supprimé`;
   if (item.op === 'update') {
+    if (item.entity === 'ramassages') {
+      if (p.status === 'done') return `Collecte validée · ${p.collected_places ?? 0} place(s) · ${money(p.collected_amount)}`;
+      if (p.status === 'consulted') return 'Ramassage consulté';
+    }
     if (p.cancelled === true || p.status === 'cancelled') return 'Annulation';
     if (p.cloture === true) return 'Clôture du départ';
     if (p.confirmed === true) return 'Confirmation du départ';
@@ -48,6 +54,14 @@ function describe(item: SyncQueueItem): string {
     case 'convoi_trajets': {
       const n = Array.isArray(p.rows) ? p.rows.length : 1;
       return n > 1 ? 'Trajets aller et retour' : 'Trajet aller';
+    }
+    case 'ramassages': {
+      const r = (Array.isArray(p.rows) ? p.rows[0] : undefined) as { route_name?: string; bus_registration?: string; destination_station_name?: string; is_direct?: boolean } | undefined;
+      return r ? `${r.is_direct ? 'Ramassage direct' : `Vers ${r.destination_station_name ?? '—'}`} · ${r.bus_registration ?? ''}` : 'Ramassage';
+    }
+    case 'ramassage_collectes': {
+      const r = (Array.isArray(p.rows) ? p.rows[0] : undefined) as { amount?: number } | undefined;
+      return `Recette de ramassage · ${money(r?.amount)}`;
     }
     case 'convois': {
       const row = item.meta?.row as { destination_city?: string; bus_registration?: string; amount?: number } | undefined;

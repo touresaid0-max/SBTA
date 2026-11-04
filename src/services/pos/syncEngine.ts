@@ -23,9 +23,12 @@ export function onOnlineChange(fn: (online: boolean) => void): () => void {
 
 // ── Sync queue helpers ──
 
-// convoi_trajets / convois: the convoy screen writes its rows as they are (no local table). An
-// insert carries { id, rows }: the outbound and return legs go in one request, all or nothing.
-export type StoreName = 'departs' | 'tickets' | 'bagages' | 'depenses' | 'convoi_trajets' | 'convois';
+// convoi_trajets / convois / ramassages / ramassage_collectes: the convoy and ramassage screens
+// write their rows as they are (no local table). An insert carries { id, rows }: all the rows go
+// in one request, all or nothing.
+export type StoreName =
+  | 'departs' | 'tickets' | 'bagages' | 'depenses'
+  | 'convoi_trajets' | 'convois' | 'ramassages' | 'ramassage_collectes';
 
 const TABLE_MAP: Record<StoreName, string> = {
   departs: 'schedules',
@@ -34,9 +37,18 @@ const TABLE_MAP: Record<StoreName, string> = {
   depenses: 'counter_charges',
   convoi_trajets: 'schedules',
   convois: 'convoys',
+  ramassages: 'ramassage_notifications',
+  ramassage_collectes: 'ramassage_collections',
 };
 
-const RAW_ROW_STORES = new Set<StoreName>(['convoi_trajets', 'convois']);
+const RAW_ROW_STORES = new Set<StoreName>(['convoi_trajets', 'convois', 'ramassages', 'ramassage_collectes']);
+
+// Column naming the guichetier who made the row, filled with the account the row is sent with
+const RAW_AUTHOR_COLUMN: Partial<Record<StoreName, string>> = {
+  convois: 'created_by',
+  ramassages: 'created_by',
+  ramassage_collectes: 'collected_by',
+};
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -402,8 +414,9 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
   } else if (RAW_ROW_STORES.has(store)) {
     // Rows written as they are, all in one request; ids made on the device, so a retry is a no-op
     const rows = (record.rows as Record<string, unknown>[] | undefined) ?? [];
-    const userId = store === 'convois' ? await getCurrentUserId() : null;
-    const toSend = rows.map(r => (userId ? { ...r, created_by: userId } : r));
+    const authorColumn = RAW_AUTHOR_COLUMN[store];
+    const userId = authorColumn ? await getCurrentUserId() : null;
+    const toSend = rows.map(r => (authorColumn && userId ? { ...r, [authorColumn]: userId } : r));
     const { error } = await supabase.from(table).upsert(toSend);
     if (error) throw error;
     return;

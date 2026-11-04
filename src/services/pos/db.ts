@@ -145,7 +145,7 @@ export interface DepenseRecord {
 export interface ReferentielRecord {
   key: string;
   /** convois_master / convois_list: lists of the convoy screen, kept for working offline */
-  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops' | 'convois_master' | 'convois_list';
+  type: 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops' | 'convois_master' | 'convois_list' | 'ramassage_list';
   data: unknown;
   updated_at: string;
 }
