@@ -339,6 +339,7 @@ function mapRemoteBaggageToLocal(b: Record<string, unknown>): Record<string, unk
     payment_status: b.payment_status === 'en_attente' ? 'en_attente' : 'paye',
     paid_at: b.paid_at ?? undefined,
     paid_by: b.paid_by ?? undefined,
+    sold_by: b.sold_by ?? undefined,
   };
 }
 
@@ -610,6 +611,7 @@ async function syncBaggageFromServer(scheduleIds: string[]): Promise<boolean> {
         payment_status: remote.payment_status,
         paid_at: remote.paid_at ?? existing.paid_at,
         paid_by: remote.paid_by ?? existing.paid_by,
+        sold_by: existing.sold_by ?? remote.sold_by,
         description: remote.description,
         updated_at: trustedNowIso(),
       } as BagageRecord);

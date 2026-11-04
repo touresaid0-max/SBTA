@@ -122,6 +122,8 @@ export interface BagageRecord {
   payment_status: 'paye' | 'en_attente';
   paid_at?: string;
   paid_by?: string;
+  /** Guichetier who sold it (user id): the Recette bagage screen counts his own baggage */
+  sold_by?: string;
   created_at: string;
   updated_at: string;
   synced?: boolean;
