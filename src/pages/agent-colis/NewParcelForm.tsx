@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { useCourrierUser, isNetworkError } from '@/services/courrier/useCourrierUser'
 import { supabase } from '@/services/supabase'
 import { createParcel, fetchParcelAgentInfo, fetchPosOriginPhones, markTicketPrinted } from '@/services/parcel.service'
-import { isOnline as courrierIsOnline, getPendingCount, enqueueSms } from '@/services/courrier/syncEngine'
+import { isOnline as courrierIsOnline, getPendingCount, enqueueSms, keepAndQueuePhotos, plannedPhotoPaths, flushSyncQueue } from '@/services/courrier/syncEngine'
 import { localInsertParcel, localInsertTrackingEvent, localUpdateParcel } from '@/services/courrier/offlineStore'
 import { getReferentiel } from '@/services/courrier/referentiels'
 import { generateOfflineParcelCodes } from '@/services/courrier/parcelCodeGenerator'
@@ -18,6 +18,8 @@ import { trustedNowIso } from '@/services/offline/deviceClock'
 import PhoneInputCI from '@/components/shared/PhoneInputCI'
 import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
 import { cleanText, TEXT_LIMITS } from '@/utils/textInput'
+import { uuidV4 } from '@/utils/uuid'
+import ParcelPhotoCapture, { type CapturedPhoto } from '@/components/parcel/ParcelPhotoCapture'
 
 interface Station { id: string; name: string; city_name?: string }
 
@@ -64,6 +66,8 @@ export default function NewParcelForm() {
   const [loading, setLoading] = useState(false)
   // Phone errors shown at once after a submit attempt, otherwise when the field is left
   const [showPhoneErrors, setShowPhoneErrors] = useState(false)
+  // Photos of the parcel (audit m3): reduced on the device, sent by the queue after the parcel
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([])
 
   const [form, setForm] = useState({
     sender_name: '',
@@ -194,7 +198,7 @@ export default function NewParcelForm() {
     }
   }
 
-  async function saveOffline(fullRecipientPhone: string) {
+  async function saveOffline(fullRecipientPhone: string, parcelId: string, photoPaths: string[]) {
     if (!myStation) return
     const now = trustedNowIso()
     const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
@@ -217,6 +221,8 @@ export default function NewParcelForm() {
       await generateOfflineParcelCodes(myStation.id, agencyCode)
 
     const localParcel = await localInsertParcel({
+      id: parcelId,
+      parcel_photos: photoPaths,
       parcel_code,
       reference,
       daily_sequence,
@@ -284,6 +290,11 @@ export default function NewParcelForm() {
       })
     } catch { /* the parcel itself is saved */ }
 
+    // Photos kept with the parcel, sent after it when the network is back (audit m3)
+    try {
+      await keepAndQueuePhotos(localParcel.id, photos)
+    } catch { toast('Photos non gardées sur ce poste : le courrier est enregistré sans elles.', { icon: '⚠️' }) }
+
     toast.success('Courrier enregistré localement (hors ligne) — sera synchronisé au retour de la connexion')
 
     try {
@@ -329,11 +340,15 @@ export default function NewParcelForm() {
     const fullRecipientPhone = toStoredPhoneCI(form.recipient_phone)
     const fullSenderPhone = toStoredPhoneCI(form.sender_phone)
 
+    // Id fixed now: the photos' storage paths name the parcel, offline as online
+    const parcelId = uuidV4()
+    const photoPaths = await plannedPhotoPaths(parcelId, photos.map(p => p.id))
+
     setLoading(true)
     try {
       // Offline path: save locally, queue for sync, skip server-only features
       if (!courrierIsOnline()) {
-        await saveOffline(fullRecipientPhone)
+        await saveOffline(fullRecipientPhone, parcelId, photoPaths)
         return
       }
 
@@ -372,14 +387,15 @@ export default function NewParcelForm() {
           driver_id:              null,
           nature:                 form.nature,
           content_description:    cleanedTexts().content_description,
-          parcel_photos:          [],
+          id:                     parcelId,
+          parcel_photos:          photoPaths,
           notes:                  form.notes || null,
           company_id:             null,
         } as any)
       } catch (err) {
         // The connection dropped: the parcel is not on the server, save it on the device instead
         if (!isNetworkError(err)) throw err
-        await saveOffline(fullRecipientPhone)
+        await saveOffline(fullRecipientPhone, parcelId, photoPaths)
         return
       }
 
@@ -392,6 +408,14 @@ export default function NewParcelForm() {
       })
 
       toast.success('Courrier enregistré avec succès !')
+
+      // Photos sent right away by the queue (kept on the device if the connection drops)
+      if (photos.length > 0) {
+        try {
+          await keepAndQueuePhotos(parcelId, photos)
+          void flushSyncQueue()
+        } catch { toast('Courrier enregistré, mais photos non gardées sur ce poste.', { icon: '⚠️' }) }
+      }
 
       try {
         const agentInfo = await loadAgentInfo(myStation.id, form.destination_station_id)
@@ -619,6 +643,9 @@ export default function NewParcelForm() {
               onChange={e => set('content_description', e.target.value)}
               required
             />
+          </div>
+          <div className="mt-4">
+            <ParcelPhotoCapture photos={photos} onChange={setPhotos} disabled={loading} />
           </div>
         </section>
 

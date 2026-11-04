@@ -17,6 +17,7 @@ const ENTITY_LABELS: Record<string, string> = {
   parcels: 'Courrier',
   tracking_events: 'Événement de suivi',
   sms: 'SMS au destinataire',
+  photos: 'Photo du courrier',
 };
 
 const OP_LABELS: Record<string, string> = {
@@ -40,6 +41,9 @@ function describePayload(item: SyncQueueItem): string {
   }
   if (item.entity === 'tracking_events') {
     return `Suivi — ${p.description ?? p.event_type ?? ''}`;
+  }
+  if (item.entity === 'photos') {
+    return 'Photo du courrier (envoi vers l\'espace privé)';
   }
   if (item.entity === 'sms') {
     return p.kind === 'arrived' ? 'SMS « courrier arrivé »' : `SMS « courrier enregistré » — ${p.parcel_code ?? ''}`;

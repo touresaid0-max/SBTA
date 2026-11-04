@@ -1,5 +1,5 @@
 import type { Table } from 'dexie';
-import { db, type SyncQueueItem } from './db';
+import { db, type SyncQueueItem, type ParcelRecord } from './db';
 import { APP_TRACKING_URL, agencyCodeOf, formatReference, generateOfflineParcelCode } from './parcelCodeGenerator';
 import { supabase } from '@/services/supabase';
 import { db as posDb } from '@/services/pos/db';
@@ -8,6 +8,7 @@ import { MIN_ABANDON_REASON, NOT_SENT_STATUSES, RefusedByServer, byQueueOrder, i
 import { sendCourierCreatedSms, sendCourierArrivedSms } from '@/services/emisSms.service';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 import { storedPhoneOrEmpty } from '@/utils/phoneCI';
+import { uploadQueuedPhoto, photoPath } from './photos';
 import { uuidV4 } from '@/utils/uuid';
 
 // ── Online/offline state (single source of truth) ──
@@ -59,6 +60,39 @@ export async function enqueueSms(sms: QueuedSms): Promise<void> {
     status: 'pending',
     ...(userId ? { user_id: userId } : {}),
   });
+}
+
+// Photos of a parcel (audit m3): kept on the device and sent after the parcel, like its SMS
+const PHOTO_ENTITY = 'photos';
+
+/**
+ * Keeps the photos of a new parcel on the device and queues their sending. Returns their storage
+ * paths, to be saved in the parcel (parcel_photos). Called after the parcel itself was saved, so
+ * that the queue sends the parcel first.
+ */
+export async function keepAndQueuePhotos(parcelId: string, photos: { id: string; blob: Blob }[]): Promise<void> {
+  if (photos.length === 0) return;
+  const authorId = (await currentAuthorId()) ?? 'unknown';
+  const now = nowIso();
+  for (const photo of photos) {
+    await db.transaction('rw', [db.photos, db.sync_queue], async () => {
+      await db.photos.put({
+        id: photo.id, parcel_id: parcelId, path: photoPath(authorId, parcelId, photo.id),
+        blob: photo.blob, size: photo.blob.size, uploaded: false, created_at: now,
+      });
+      await db.sync_queue.add({
+        entity: PHOTO_ENTITY, op: 'insert', payload: { id: photo.id, parcel_id: parcelId },
+        created_at: now, tries: 0, status: 'pending',
+        ...(authorId !== 'unknown' ? { user_id: authorId } : {}),
+      });
+    });
+  }
+}
+
+/** Storage paths the photos of a parcel will have (same author as keepAndQueuePhotos). */
+export async function plannedPhotoPaths(parcelId: string, photoIds: string[]): Promise<string[]> {
+  const authorId = (await currentAuthorId()) ?? 'unknown';
+  return photoIds.map(id => photoPath(authorId, parcelId, id));
 }
 
 // ── Who sends what ──
@@ -189,6 +223,8 @@ function mapParcelInsert(payload: Record<string, unknown>): Record<string, unkno
     registered_by: p.registered_by ?? null,
     company_id: p.company_id ?? null,
     ticket_printed: p.ticket_printed ?? false,
+    // Storage paths of the photos (sent by the queue as well, audit m3)
+    parcel_photos: Array.isArray(p.parcel_photos) ? p.parcel_photos : [],
     created_at: p.created_at ?? trustedNowIso(),
     updated_at: p.updated_at ?? trustedNowIso(),
   };
@@ -362,6 +398,19 @@ export async function recoverUnqueuedRecords(): Promise<number> {
       }
     }
   }
+  // Photos saved on the device whose sending was never queued (page closed in between)
+  const unsentPhotos = await db.transaction('r', [db.photos, db.sync_queue], async () => {
+    const queuedPhotos = new Set((await db.sync_queue.where('entity').equals(PHOTO_ENTITY).toArray()).map(i => String(i.payload?.id ?? '')));
+    return db.photos.filter(p => !p.uploaded && !!p.blob && !queuedPhotos.has(p.id)).toArray();
+  });
+  for (const photo of unsentPhotos) {
+    await db.sync_queue.add({
+      entity: PHOTO_ENTITY, op: 'insert', payload: { id: photo.id, parcel_id: photo.parcel_id },
+      created_at: photo.created_at, tries: 0, status: 'pending',
+    });
+    requeued++;
+  }
+
   recoveryDone = true;
   return requeued;
 }
@@ -395,7 +444,7 @@ async function newCodeFor(record: Record<string, unknown>): Promise<Record<strin
 
 /** The new code on the device's copy, in the parcel's other queued sends and in its queued SMS. */
 async function applyNewCode(parcelId: string, changes: Record<string, unknown>): Promise<void> {
-  await db.parcels.update(parcelId, changes);
+  await db.parcels.update(parcelId, changes as Partial<ParcelRecord>);
   await db.sync_queue
     .filter(i => (i.entity === 'parcels' && i.op === 'insert' && String(i.payload?.id ?? '') === parcelId)
       || (i.entity === SMS_ENTITY && String(i.payload?.parcel_id ?? '') === parcelId))
@@ -539,6 +588,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
 
         if (item.entity === SMS_ENTITY) {
           await executeSms(item.payload);
+        } else if (item.entity === PHOTO_ENTITY) {
+          await uploadQueuedPhoto(String(item.payload.id ?? ''));
         } else if (item.op === 'insert') {
           await executeInsert(item.entity as StoreName, item.payload);
         } else if (item.op === 'update') {

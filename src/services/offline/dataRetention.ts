@@ -137,7 +137,7 @@ async function applyToGuichet(today: string, options: RetentionOptions, result: 
 async function applyToCourrier(today: string, options: RetentionOptions, result: RetentionResult): Promise<void> {
   const finishedBefore = shiftDays(today, -options.finishedParcelDays);
 
-  await courrierDb.transaction('rw', [courrierDb.parcels, courrierDb.tracking_events, courrierDb.sync_queue], async () => {
+  await courrierDb.transaction('rw', [courrierDb.parcels, courrierDb.tracking_events, courrierDb.photos, courrierDb.sync_queue], async () => {
     // Parcels named by any queued operation (the parcel itself, its events, its SMS)
     const queued = new Set<string>();
     for (const item of await courrierDb.sync_queue.toArray()) {
@@ -152,7 +152,10 @@ async function applyToCourrier(today: string, options: RetentionOptions, result:
       const lastChange = dayOf(parcel.delivered_at) || dayOf(parcel.updated_at) || dayOf(parcel.registered_at);
       // finishedParcelDays 0 (logout): every finished parcel goes; otherwise only the older ones
       if (options.finishedParcelDays > 0 && (!lastChange || lastChange >= finishedBefore)) continue;
+      // A photo not sent yet keeps its parcel (its queued sending names the parcel, see above)
+      if (await courrierDb.photos.where('parcel_id').equals(parcel.id).filter(p => !p.uploaded).count() > 0) continue;
       await courrierDb.tracking_events.where('parcel_id').equals(parcel.id).delete();
+      await courrierDb.photos.where('parcel_id').equals(parcel.id).delete();
       await courrierDb.parcels.delete(parcel.id);
       result.parcelsRemoved++;
     }
