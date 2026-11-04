@@ -639,7 +639,9 @@ export async function getLastSyncError(): Promise<string | null> {
 
 /** Operations not yet on the server, then the abandoned ones (queue window). */
 export async function getQueueItems(): Promise<SyncQueueItem[]> {
-  return db.sync_queue.where('status').anyOf([...NOT_SENT_STATUSES, 'abandoned']).toArray();
+  // In the order the operations were recorded (queue number), like the guichet's list (audit m4)
+  const items = await db.sync_queue.where('status').anyOf([...NOT_SENT_STATUSES, 'abandoned']).toArray();
+  return items.sort(byQueueOrder);
 }
 
 /**
