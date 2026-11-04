@@ -20,6 +20,7 @@ import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
 import PhoneInputCI from '@/components/shared/PhoneInputCI';
 import { normalizePhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
 import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 export default function POSBagages() {
   const { id: departId } = useParams<{ id: string }>();
@@ -133,6 +134,12 @@ export default function POSBagages() {
     }
     if (price <= 0) {
       setError('Veuillez saisir un prix valide');
+      return;
+    }
+    // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
+    const priceCheck = checkAmounts([{ value: price, rule: AMOUNT_RULES.baggagePrice }]);
+    if (!priceCheck.ok) {
+      if (priceCheck.error) setError(priceCheck.error);
       return;
     }
     // Optional, but a valid number when given

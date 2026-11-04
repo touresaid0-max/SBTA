@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle, Loader2, Receipt, X } from 'lucide-react';
 import { createDepense, getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
 import type { DepartRecord } from '@/services/pos/db';
 import { formatCurrency } from '@/utils/formatCurrency';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 interface Props {
   depart: DepartRecord;
@@ -67,6 +68,12 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
       .filter(expense => expense.amount > 0);
     if (entries.length === 0) {
       setError('Saisissez au moins un montant.');
+      return;
+    }
+    // Typing slip on an amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts(entries.map(e => ({ value: e.amount, rule: AMOUNT_RULES.expense, detail: e.label })));
+    if (!amountCheck.ok) {
+      if (amountCheck.error) setError(amountCheck.error);
       return;
     }
 

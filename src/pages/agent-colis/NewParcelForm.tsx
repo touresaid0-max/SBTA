@@ -20,6 +20,7 @@ import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
 import { cleanText, TEXT_LIMITS } from '@/utils/textInput'
 import { uuidV4 } from '@/utils/uuid'
 import ParcelPhotoCapture, { type CapturedPhoto } from '@/components/parcel/ParcelPhotoCapture'
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits'
 
 interface Station { id: string; name: string; city_name?: string }
 
@@ -336,6 +337,13 @@ export default function NewParcelForm() {
     if (senderPhoneError) { setShowPhoneErrors(true); toast.error(`Téléphone de l'expéditeur : ${senderPhoneError}`); return }
     const recipientPhoneError = phoneCIError(form.recipient_phone, true)
     if (recipientPhoneError) { setShowPhoneErrors(true); toast.error(`Téléphone du destinataire : ${recipientPhoneError}`); return }
+
+    // Typing slip on an amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([
+      { value: Number(form.delivery_fee) || 0, rule: AMOUNT_RULES.parcelFee },
+      { value: Number(form.declared_value) || 0, rule: AMOUNT_RULES.declaredValue },
+    ])
+    if (!amountCheck.ok) { if (amountCheck.error) toast.error(amountCheck.error); return }
 
     const fullRecipientPhone = toStoredPhoneCI(form.recipient_phone)
     const fullSenderPhone = toStoredPhoneCI(form.sender_phone)

@@ -13,6 +13,7 @@ import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNowIso } from '@/services/offline/deviceClock';
 import { expenseDateBounds, expenseDateError } from '@/utils/operationDates';
 import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 const EXPENSE_TYPES = [
   'Carburant compl.',
@@ -83,6 +84,9 @@ export default function POSDepenses() {
   const handleAdd = async () => {
     if (!selectedDepartId) { setError('Veuillez sélectionner un départ'); return; }
     if (amount <= 0) { setError('Montant invalide'); return; }
+    // Typing slip on the amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([{ value: amount, rule: AMOUNT_RULES.expense }]);
+    if (!amountCheck.ok) { if (amountCheck.error) setError(amountCheck.error); return; }
     if (!cleanText(label)) { setError('Veuillez saisir un libellé'); return; }
     const dateError = expenseDateError(expenseDate);
     if (dateError) { setError(dateError); return; }

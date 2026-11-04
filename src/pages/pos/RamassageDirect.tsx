@@ -8,6 +8,7 @@ import { getChauffeurs, getGares, getVehicules, type ChauffeurRef, type GareRef,
 import { enqueueInsert } from '@/services/pos/syncEngine';
 import { trustedNowIso } from '@/services/offline/deviceClock';
 import { uuidV4 } from '@/utils/uuid';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 export default function POSRamassageDirect() {
   const navigate = useNavigate();
@@ -72,6 +73,12 @@ export default function POSRamassageDirect() {
     }
     if (missing.length > 0) {
       setError(`Veuillez renseigner : ${missing.join(', ')}.`);
+      return;
+    }
+    // Typing slip on the amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([{ value: numericAmount, rule: AMOUNT_RULES.ramassageAmount }]);
+    if (!amountCheck.ok) {
+      if (amountCheck.error) setError(amountCheck.error);
       return;
     }
     if (!session?.station_id) {

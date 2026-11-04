@@ -11,6 +11,7 @@ import { byQueueOrder } from '@/services/offline/queueRules';
 import RamassageReportView from '@/components/shared/RamassageReportView';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNowIso } from '@/services/offline/deviceClock';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 type RamassageNotif = {
   id: string;
@@ -180,6 +181,9 @@ export default function POSRamassage() {
     if (!selected) return;
     const err = validate();
     if (err) { setError(err); return; }
+    // Typing slip on the amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([{ value: parseFloat(montant) || 0, rule: AMOUNT_RULES.ramassageAmount }]);
+    if (!amountCheck.ok) { if (amountCheck.error) setError(amountCheck.error); return; }
     setError('');
     setSubmitting(true);
     const p = parseInt(places, 10) || 0;

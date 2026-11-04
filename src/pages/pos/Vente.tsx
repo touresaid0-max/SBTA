@@ -34,6 +34,7 @@ import { trustedNowIso } from '@/services/offline/deviceClock';
 import PhoneInputCI from '@/components/shared/PhoneInputCI';
 import { isValidPhoneCI, phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI';
 import { cleanText, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 // A bus can be shared by several stations, each on its own départ: the structure
 // only shows the sales of this départ, never those of the other stations.
@@ -537,6 +538,9 @@ export default function POSVente() {
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
     if (tarif <= 0) { setError('Tarif invalide — vérifiez la destination'); return; }
+    // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
+    const tarifCheck = checkAmounts([{ value: tarif, rule: AMOUNT_RULES.ticketPrice }]);
+    if (!tarifCheck.ok) { if (tarifCheck.error) setError(tarifCheck.error); return; }
 
     setSelling(true);
     try {
@@ -717,6 +721,8 @@ export default function POSVente() {
     setBagError(''); setBagSuccess('');
 
     if (bagPrice <= 0) { setBagError('Veuillez saisir un prix de bagage valide'); return; }
+    const bagPriceCheck = checkAmounts([{ value: bagPrice, rule: AMOUNT_RULES.baggagePrice }]);
+    if (!bagPriceCheck.ok) { if (bagPriceCheck.error) setBagError(bagPriceCheck.error); return; }
     if (bagMode === 'avec' && !seatNumber) {
       setBagError('Veuillez sélectionner ou saisir un numéro de siège'); return;
     }

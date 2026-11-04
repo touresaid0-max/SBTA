@@ -17,6 +17,7 @@ import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 import { uuidV4 } from '@/utils/uuid';
 import { cleanMultiline, TEXT_LIMITS } from '@/utils/textInput';
+import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption {
@@ -602,6 +603,15 @@ export default function POSConvois() {
   const handleSubmit = async () => {
     if (!stationId) { toast.error('Session de guichet invalide'); return; }
     if (!canSubmit) { toast.error('Veuillez renseigner les champs obligatoires'); return; }
+    // Typing slip on an amount (audit m5): refused above the maximum, confirmed when unusual
+    const amountCheck = checkAmounts([
+      { value: Number(form.amount) || 0, rule: AMOUNT_RULES.convoyAmount },
+      { value: Number(form.ratio_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'ratio' },
+      { value: Number(form.carburant_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'carburant' },
+      { value: Number(form.peage_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'péage' },
+      { value: Number(form.autres_amount) || 0, rule: AMOUNT_RULES.convoyCharge, detail: 'autres' },
+    ]);
+    if (!amountCheck.ok) { if (amountCheck.error) toast.error(amountCheck.error); return; }
     if (isOverload && !window.confirm(`Risque de surcharge : ${passengers} passagers pour ${busCapacity} places. Continuer ?`)) return;
 
     setSubmitting(true);
