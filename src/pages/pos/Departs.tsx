@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
-  getAllDeparts, updateDepart, type DepartRecord,
+  getAllDeparts, updateDepart, cloturerDepart, type DepartRecord,
   type VehiculeRef, type ChauffeurRef,
   seatsLibres,
   seatsCommercialisables,
@@ -582,7 +582,9 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'fermer') {
-        await updateDepart(depart.id, { cloture: true });
+        // Same closing as the Clôture screen: a ramassage ligne is announced to the destination
+        // station (it was not when the departure was closed from here)
+        await cloturerDepart(depart.id, session?.full_name);
       }
       if (action === 'modifier') {
         const [vehs, chfs] = await Promise.all([getVehicules(), getChauffeurs()]);

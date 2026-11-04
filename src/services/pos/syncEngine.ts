@@ -48,6 +48,19 @@ const TABLE_MAP: Record<StoreName, string> = {
 
 const RAW_ROW_STORES = new Set<StoreName>(['convoi_trajets', 'convois', 'ramassages', 'ramassage_collectes']);
 
+/**
+ * Rows the guichet may not read back once written: a ramassage ligne is announced to the
+ * DESTINATION station, and only that station may read it (access rules). An upsert (insert or
+ * update) needs to read the row: the server refused it (« row-level security policy »), so the
+ * notification of a ramassage ligne never reached the destination station. These rows are
+ * inserted, one by one; a row already received (resend after a cut) counts as sent.
+ */
+const INSERT_ONLY_STORES = new Set<StoreName>(['ramassages']);
+
+function isAlreadyReceived(error: { code?: string; message?: string } | null): boolean {
+  return !!error && error.code === '23505' && /_pkey/.test(error.message ?? '');
+}
+
 // Column naming the guichetier who made the row, filled with the account the row is sent with
 const RAW_AUTHOR_COLUMN: Partial<Record<StoreName, string>> = {
   convois: 'created_by',
@@ -490,6 +503,13 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
     const authorColumn = RAW_AUTHOR_COLUMN[store];
     const userId = authorColumn ? await getCurrentUserId() : null;
     const toSend = rows.map(r => (authorColumn && userId ? { ...r, [authorColumn]: userId } : r));
+    if (INSERT_ONLY_STORES.has(store)) {
+      for (const row of toSend) {
+        const { error } = await supabase.from(table).insert(row);
+        if (error && !isAlreadyReceived(error)) throw error;
+      }
+      return;
+    }
     const { error } = await supabase.from(table).upsert(toSend);
     if (error) throw error;
     return;
@@ -643,6 +663,22 @@ async function markSyncedIfNothingLeft(entity: StoreName, id: string): Promise<v
 
 let flushing = false;
 
+/**
+ * Ramassage notifications refused by the access rules with the former way of sending (upsert):
+ * kept in the queue as refused, they never reached the destination station. Sent again with
+ * the insert, which the server accepts.
+ */
+async function retryRefusedRamassages(): Promise<void> {
+  try {
+    const refused = await db.sync_queue.where('entity').equals('ramassages')
+      .filter(i => i.op === 'insert' && i.status === 'failed' && /row-level security/i.test(i.last_error ?? ''))
+      .primaryKeys();
+    for (const id of refused) {
+      await db.sync_queue.update(id, { status: 'pending', tries: 0, last_error: undefined });
+    }
+  } catch { /* sent again at the next flush */ }
+}
+
 export async function flushSyncQueue(): Promise<FlushResult> {
   if (flushing) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
   if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
@@ -654,6 +690,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   let waitingOtherUser = 0;
 
   try {
+    await retryRefusedRamassages();
     const serverUserId = await serverSessionUserId();
     const waiting = (await db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).toArray())
       .filter(isWaitingToSend);
