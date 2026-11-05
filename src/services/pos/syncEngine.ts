@@ -131,6 +131,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.cloture === true) result.status = 'termine';
   if (p.confirmed === true) result.status = 'en_cours';
   if (p.status !== undefined && !result.status) result.status = p.status;
+  if (p.route_id !== undefined) result.route_id = p.route_id;
   if (p.route_name !== undefined) result.route_name = p.route_name;
   if (p.route_number !== undefined) result.route_number = p.route_number;
   if (p.bus_id !== undefined) result.bus_id = p.bus_id;
@@ -181,6 +182,7 @@ function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.passenger_phone !== undefined) result.passenger_phone = p.passenger_phone;
   if (p.price !== undefined) result.total_price = p.price;
   if (p.depart_id !== undefined) result.schedule_id = p.depart_id;
+  if (p.destination !== undefined) result.destination_city_name = p.destination;
   if (p.seat_number !== undefined) {
     result.seat_numbers = [String(p.seat_number)];
     result.total_seats = 1;
