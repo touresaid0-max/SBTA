@@ -9,6 +9,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { db } from '../../services/pos/db';
+import { serverChangesOf } from '../../services/changeRequestChanges';
 
 const POS_STORE_MAP: Record<string, 'tickets' | 'bagages' | 'depenses' | 'departs'> = {
   tickets: 'tickets',
@@ -123,7 +124,14 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
     try {
       const oldValues = executeModal.operation_snapshot;
       const isSuppression = executeModal.status === 'autorisee_suppression';
-      const newValues = isSuppression ? null : (Object.keys(editedValues).length > 0 ? editedValues : null);
+      // Only the changed fields, with the server's column names (see serverChangesOf)
+      const newValues = isSuppression ? null : (pendingChanges && Object.keys(pendingChanges.changes).length > 0 ? pendingChanges.changes : null);
+      if (!isSuppression && !newValues) {
+        toast.error(pendingChanges && pendingChanges.ignored.length > 0
+          ? `Aucun changement applicable : ${pendingChanges.ignored.join(', ')} ne peu${pendingChanges.ignored.length > 1 ? 'vent' : 't'} pas être modifié${pendingChanges.ignored.length > 1 ? 's' : ''} ici`
+          : 'Modifiez au moins une valeur avant d\'exécuter');
+        return;
+      }
       const result = await executeChangeRequest(
         executeModal.id,
         executionNotes.trim() || 'Exécuté par l\'équipe technique',
@@ -150,12 +158,30 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
     }
   };
 
+  // What the modification will send: changed fields only, with the server's column names
+  const pendingChanges = useMemo(() => {
+    if (!executeModal || executeModal.status !== 'autorisee_modification') return null;
+    return serverChangesOf(
+      executeModal.operation_table,
+      (executeModal.operation_snapshot ?? {}) as Record<string, unknown>,
+      editedValues,
+    );
+  }, [executeModal, editedValues]);
+
   const snapshotEntries = useMemo(() => {
     if (!executeModal?.operation_snapshot) return [];
     return Object.entries(executeModal.operation_snapshot).filter(
       ([key]) => !['id', 'created_at', 'updated_at'].includes(key)
     );
   }, [executeModal]);
+
+  // Value in the edit field: as stored (dates stay in their stored form, so that they can be sent back)
+  const formatInputValue = (val: unknown): string => {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') return JSON.stringify(val);
+    if (typeof val === 'boolean') return val ? 'Oui' : 'Non';
+    return String(val);
+  };
 
   const formatFieldValue = (val: unknown): string => {
     if (val === null || val === undefined) return '—';
@@ -665,7 +691,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                           ) : (
                             <input
                               type="text"
-                              value={editedValues[key] !== undefined ? formatFieldValue(editedValues[key]) : ''}
+                              value={formatInputValue(editedValues[key])}
                               onChange={(e) => {
                                 const raw = e.target.value;
                                 setEditedValues(prev => {
@@ -693,6 +719,27 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                   <p className="text-sm" style={{ color: '#6B7280' }}>Aucune donnée d'opération disponible.</p>
                 )}
               </div>
+
+              {/* What the modification will apply */}
+              {pendingChanges && (
+                <div className="rounded-lg p-4 space-y-1" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#166534' }}>Sera appliqué sur le serveur</p>
+                  {Object.keys(pendingChanges.changes).length === 0 ? (
+                    <p className="text-xs" style={{ color: '#6B7280' }}>Aucun changement : modifiez les valeurs dans la colonne « Nouvelle valeur ».</p>
+                  ) : (
+                    Object.entries(pendingChanges.changes).map(([column, value]) => (
+                      <p key={column} className="text-xs" style={{ color: '#111827' }}>
+                        <span style={{ fontWeight: 600 }}>{column}</span> : {formatFieldValue(value)}
+                      </p>
+                    ))
+                  )}
+                  {pendingChanges.ignored.length > 0 && (
+                    <p className="text-xs pt-1" style={{ color: '#B45309' }}>
+                      Non modifiable ici : {pendingChanges.ignored.join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Execution notes */}
               <div>

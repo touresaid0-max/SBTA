@@ -335,6 +335,32 @@ async function sendDepense(payload: Record<string, unknown>): Promise<void> {
   if (insertError) throw insertError;
 }
 
+// ── Change requests executed by the admin ──
+// The change request keeps the guichet device's copy of the operation, with its own field names
+// (price, depart_id, ticket_number…). The admin's screen sent that whole copy as the new values:
+// the server only applied the fields named like its columns, so most changes were lost, and the
+// fields left as they were overwrote the server's copy with the device's old values.
+
+/** Server columns for a change of the device's copy, or null when none of it can be applied. */
+export function localChangeToServer(store: StoreName, patch: Record<string, unknown>): Record<string, unknown> | null {
+  let result: Record<string, unknown> | null = null;
+  if (store === 'departs') result = mapDepartUpdate(patch);
+  else if (store === 'tickets') result = mapTicketUpdate(patch);
+  else if (store === 'bagages') result = mapBagageUpdate(patch);
+  else if (store === 'depenses') {
+    result = {};
+    if (patch.amount !== undefined) result.amount = patch.amount;
+    if (patch.description !== undefined || patch.label !== undefined) result.description = patch.description ?? patch.label;
+    if (patch.type !== undefined) result.charge_type = normalizeExpenseType(String(patch.type));
+    if (patch.expense_date !== undefined) result.charge_date = patch.expense_date;
+  }
+  if (!result) return null;
+  // Set by the server itself
+  const { updated_at: _set, ...columns } = result;
+  void _set;
+  return Object.keys(columns).length > 0 ? columns : null;
+}
+
 // ── Who sends what ──
 // Each operation is sent with the account of the guichetier who made it. On a shared device the
 // server session may still be the previous guichetier's (logged out offline, or the next one
