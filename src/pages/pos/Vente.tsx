@@ -1827,7 +1827,17 @@ export default function POSVente() {
                         placeholder="Nom du client"
                       />
                     </div>
-                    <div className="col-span-2">
+                    <div>
+                      <label htmlFor="bag-owner-phone-avec" className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Contact (optionnel)</label>
+                      <PhoneInputCI
+                        id="bag-owner-phone-avec"
+                        value={bagOwnerPhone}
+                        onChange={setBagOwnerPhone}
+                        className={fieldInput}
+                        style={fieldStyle}
+                      />
+                    </div>
+                    <div>
                       <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
                       <input
                         type="text"

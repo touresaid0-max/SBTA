@@ -2,6 +2,7 @@ import { db, type PrintSettings, type TicketRecord, type BagageRecord, type Depa
 import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, concat, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization, type PrintCustomization } from '../printCustomization';
 import { setPrintingGuard } from '@/store/authStore';
+import { formatPhoneCI } from '@/utils/phoneCI';
 import type { BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
 import { printLogoSrc, withPrintLogos } from './printLogos';
@@ -395,7 +396,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const destCity = stripStationLabel((bagage.destination || '').toUpperCase().trim());
   const departNum = String(depart.route_number ?? depart.departure_number ?? '');
   const owner = (bagage.owner_name ?? '').toUpperCase();
-  const contact = bagage.owner_phone ?? '';
+  const contact = formatPhoneCI(bagage.owner_phone) || (bagage.owner_phone ?? '');
   const car = (bagage.car_plate || depart.bus_plate || '').toUpperCase();
   const bagNum = bagage.bagage_number ?? '';
   const seatRaw = bagage.with_ticket ? (bagage.linked_seat_number ?? '') : '';
@@ -484,7 +485,7 @@ function buildHTMLTpeBagage(data: PrintBagageData, notice?: string | null, provi
   const seat = bagage.with_ticket && value(bagage.linked_seat_number) ? value(bagage.linked_seat_number) : '—';
   const car = value(bagage.car_plate || depart.bus_plate).toUpperCase() || '—';
   const owner = value(bagage.owner_name).toUpperCase() || '—';
-  const contact = value(bagage.owner_phone) || '—';
+  const contact = formatPhoneCI(bagage.owner_phone) || value(bagage.owner_phone) || '—';
   const description = value(bagage.description);
   const bagageNumber = value(bagage.bagage_number) || '—';
   const row = (left: string, right: string): string => `<div class="row"><span>${escapeHtml(left)}</span><strong>${escapeHtml(right)}</strong></div>`;
@@ -962,7 +963,6 @@ function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings
     <div class="section">
       <div class="row"><span class="lbl">Immatriculation</span><span class="val">${escapeHtml(convoy.bus_registration ?? '—')}</span></div>
       <div class="row"><span class="lbl">Chauffeur</span><span class="val">${escapeHtml(convoy.driver_name ?? '—')}</span></div>
-      <div class="row"><span class="lbl">Société</span><span class="val">${escapeHtml(convoy.company_name ?? '—')}</span></div>
       <div class="row"><span class="lbl">Guichet</span><span class="val">${escapeHtml(stationName ?? '—')}</span></div>
     </div>
     <div class="section">

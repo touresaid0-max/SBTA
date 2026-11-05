@@ -5,13 +5,13 @@ import { supabase } from '@/services/supabase';
 import toast from 'react-hot-toast';
 import {
   Truck, Plus, Search, X, AlertTriangle, User, Banknote,
-  CreditCard as Edit3, ChevronRight, RotateCcw, Receipt, Printer,
+  ChevronRight, RotateCcw, Receipt, Printer,
 } from 'lucide-react';
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { formatCurrency, formatNumber } from '@/utils/formatCurrency';
 import { printConvoyBordereau, type PrintConvoyData } from '@/services/pos/printService';
 import { db } from '@/services/pos/db';
-import { enqueueInsert, enqueueUpdate, isOnline } from '@/services/pos/syncEngine';
+import { enqueueInsert, isOnline } from '@/services/pos/syncEngine';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
@@ -229,7 +229,6 @@ export default function POSConvois() {
 
   // Modal
   const [showModal, setShowModal] = useState(false);
-  const [editConvoy, setEditConvoy] = useState<ConvoyRow | null>(null);
   const [form, setForm] = useState<ConvoyForm>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
 
@@ -511,7 +510,6 @@ export default function POSConvois() {
 
   // ─── Modal handlers ─────────────────────────────────────────────────────────
   const openCreate = () => {
-    setEditConvoy(null);
     setForm({
       ...EMPTY_FORM,
       departure_station_id: stationId || '',
@@ -523,30 +521,7 @@ export default function POSConvois() {
     setShowModal(true);
   };
 
-  const openEdit = (c: ConvoyRow) => {
-    setEditConvoy(c);
-    setForm({
-      trip_type: c.trip_type,
-      route_id: c.route_id,
-      departure_station_id: stationId || '',
-      arrival_station_id: '',
-      departure_datetime: c.departure_datetime ? c.departure_datetime.slice(0, 16) : '',
-      arrival_datetime: '',
-      bus_id: c.bus_id,
-      driver_id: c.driver_id,
-      passengers_count: String(c.passengers_count),
-      amount: String(c.amount),
-      ratio_amount: String(c.ratio_amount),
-      carburant_amount: String(c.carburant_amount),
-      peage_amount: String(c.peage_amount),
-      autres_amount: String(c.autres_amount),
-      observation: c.observation || '',
-      retour_route_id: '', retour_departure_datetime: '', retour_arrival_datetime: '',
-    });
-    setShowModal(true);
-  };
-
-  const closeModal = () => { setShowModal(false); setEditConvoy(null); setForm(EMPTY_FORM); };
+  const closeModal = () => { setShowModal(false); setForm(EMPTY_FORM); };
 
   useEffect(() => {
     if (!selectedRoute || !showModal) return;
@@ -560,7 +535,7 @@ export default function POSConvois() {
 
   const canSubmit = form.route_id && form.bus_id && form.driver_id
     && form.departure_datetime && Number(form.amount) > 0
-    && (editConvoy || form.trip_type === 'aller_simple' || (form.retour_route_id && form.retour_departure_datetime));
+    && (form.trip_type === 'aller_simple' || (form.retour_route_id && form.retour_departure_datetime));
 
   // ─── Print bordereau ────────────────────────────────────────────────────────
   const handlePrint = async (c: ConvoyRow) => {
@@ -629,149 +604,102 @@ export default function POSConvois() {
 
       let createdConvoy: ConvoyRow | null = null;
 
-      if (editConvoy) {
-        const depDate = form.departure_datetime.includes('T') ? form.departure_datetime : `${form.departure_datetime}:00`;
-        const selectedRouteObj = routes.find(r => r.id === form.route_id);
-        const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
-        const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
+      const depDate = form.departure_datetime.includes('T') ? form.departure_datetime : `${form.departure_datetime}:00`;
+      const selectedRouteObj = routes.find(r => r.id === form.route_id);
+      const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
+      const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
+      // Ids made on the device: the convoys can point to their trips before anything is sent
+      const allerScheduleId = uuidV4();
+      const baseSchedule: Record<string, any> = {
+        id: allerScheduleId,
+        route_id: form.route_id,
+        departure_station_id: stationId,
+        arrival_station_id: form.arrival_station_id || null,
+        bus_id: form.bus_id,
+        driver_id: form.driver_id,
+        departure_datetime: depDate,
+        arrival_datetime: arrDate,
+        status: 'convoi',
+        seats_available: 0,
+        seats_reserved: passengersCount || busCapacity,
+        fill_rate: 100,
+        is_anticipated: false,
+        is_ramassage: false,
+      };
 
-        const results = [
-          await enqueueUpdate('convois', editConvoy.id, { amount, passengers_count: passengersCount, observation, ...charges }),
-          await enqueueUpdate('convoi_trajets', editConvoy.schedule_id, {
-            bus_id: form.bus_id,
-            driver_id: form.driver_id,
-            departure_datetime: depDate,
-            arrival_datetime: arrDate,
-            route_id: form.route_id,
-            updated_at: trustedNowIso(),
-          }),
-        ];
-
-        // A convoy not yet sent: what the list shows follows the change
-        if (editConvoy.pending) {
-          const item = await db.sync_queue.where('entity').equals('convois')
-            .filter(i => i.op === 'insert' && String(i.payload?.id ?? '') === editConvoy.id).first();
-          if (item?.id && item.meta?.row) {
-            const bus = buses.find(b => b.id === form.bus_id);
-            await db.sync_queue.update(item.id, {
-              meta: {
-                ...item.meta,
-                row: {
-                  ...(item.meta.row as ConvoyRow),
-                  amount, passengers_count: passengersCount, observation, ...charges,
-                  departure_datetime: depDate,
-                  bus_id: form.bus_id,
-                  bus_registration: bus?.registration_number ?? '—',
-                  bus_capacity: bus?.capacity ?? 0,
-                  company_name: bus?.company?.name ?? '—',
-                  driver_id: form.driver_id,
-                  driver_name: drivers.find(d => d.id === form.driver_id)?.full_name ?? '—',
-                },
-              },
-            });
-          }
-        }
-
-        toast.success(savedMessage('Convoi modifié', results));
-      } else {
-        const depDate = form.departure_datetime.includes('T') ? form.departure_datetime : `${form.departure_datetime}:00`;
-        const selectedRouteObj = routes.find(r => r.id === form.route_id);
-        const durationMin = (selectedRouteObj as any)?.estimated_duration_minutes || 60;
-        const arrDate = new Date(new Date(depDate).getTime() + durationMin * 60 * 1000).toISOString();
-        // Ids made on the device: the convoys can point to their trips before anything is sent
-        const allerScheduleId = uuidV4();
-        const baseSchedule: Record<string, any> = {
-          id: allerScheduleId,
-          route_id: form.route_id,
-          departure_station_id: stationId,
-          arrival_station_id: form.arrival_station_id || null,
-          bus_id: form.bus_id,
-          driver_id: form.driver_id,
-          departure_datetime: depDate,
-          arrival_datetime: arrDate,
-          status: 'convoi',
-          seats_available: 0,
-          seats_reserved: passengersCount || busCapacity,
-          fill_rate: 100,
-          is_anticipated: false,
-          is_ramassage: false,
-        };
-
-        const hasRetour = form.trip_type === 'aller_retour' && !!form.retour_route_id;
-        const retourScheduleId = hasRetour ? uuidV4() : null;
-        const schedulesToInsert: Record<string, any>[] = [baseSchedule];
-        if (hasRetour) {
-          const retDep = form.retour_departure_datetime.includes('T')
-            ? form.retour_departure_datetime : `${form.retour_departure_datetime}:00`;
-          const retArr = new Date(new Date(retDep).getTime() + durationMin * 60 * 1000).toISOString();
-          // The return leg comes back to this counter's station.
-          schedulesToInsert.push({
-            ...baseSchedule,
-            id: retourScheduleId,
-            route_id: form.retour_route_id,
-            departure_station_id: form.arrival_station_id || stationId,
-            arrival_station_id: stationId,
-            departure_datetime: retDep,
-            arrival_datetime: retArr,
-          });
-        }
-
-        const convoyBase = { amount, passengers_count: passengersCount, observation, ...charges };
-        const allerConvoyId = uuidV4();
-        const retourConvoyId = hasRetour ? uuidV4() : null;
-        const convoysToInsert: Record<string, any>[] = [{
-          ...convoyBase,
-          id: allerConvoyId,
-          schedule_id: allerScheduleId,
-          trip_type: form.trip_type,
-          return_convoy_id: retourConvoyId,
-        }];
-        if (hasRetour) {
-          convoysToInsert.push({
-            ...convoyBase,
-            id: retourConvoyId,
-            schedule_id: retourScheduleId,
-            trip_type: 'aller_retour',
-          });
-        }
-
-        // The row the list shows (and the bordereau prints) until the server has the convoy
-        createdConvoy = {
-          id: allerConvoyId,
-          schedule_id: allerScheduleId,
-          amount,
-          trip_type: form.trip_type,
-          passengers_count: passengersCount,
-          ...charges,
-          observation,
-          created_at: trustedNowIso(),
-          return_convoy_id: retourConvoyId,
-          return_departure_datetime: hasRetour ? form.retour_departure_datetime : null,
-          departure_datetime: depDate,
-          route_id: form.route_id,
-          route_name: selectedRoute?.destination_city?.name ?? '—',
-          origin_city: selectedRoute?.origin_city?.name ?? '—',
-          destination_city: selectedRoute?.destination_city?.name ?? '—',
-          bus_id: form.bus_id,
-          bus_registration: selectedBus?.registration_number ?? '—',
-          bus_capacity: selectedBus?.capacity ?? 0,
-          company_name: selectedBus?.company?.name ?? '—',
-          driver_id: form.driver_id,
-          driver_name: drivers.find(d => d.id === form.driver_id)?.full_name ?? '—',
-          station_name: stationName ?? '—',
-        };
-
-        // Trips first, then the convoys pointing to them (the queue is sent in this order)
-        const results = [
-          await enqueueInsert('convoi_trajets', { id: allerScheduleId, rows: schedulesToInsert }),
-          await enqueueInsert('convois', { id: allerConvoyId, rows: convoysToInsert }, { row: createdConvoy }),
-        ];
-
-        toast.success(savedMessage('Convoi enregistré', results));
+      const hasRetour = form.trip_type === 'aller_retour' && !!form.retour_route_id;
+      const retourScheduleId = hasRetour ? uuidV4() : null;
+      const schedulesToInsert: Record<string, any>[] = [baseSchedule];
+      if (hasRetour) {
+        const retDep = form.retour_departure_datetime.includes('T')
+          ? form.retour_departure_datetime : `${form.retour_departure_datetime}:00`;
+        const retArr = new Date(new Date(retDep).getTime() + durationMin * 60 * 1000).toISOString();
+        // The return leg comes back to this counter's station.
+        schedulesToInsert.push({
+          ...baseSchedule,
+          id: retourScheduleId,
+          route_id: form.retour_route_id,
+          departure_station_id: form.arrival_station_id || stationId,
+          arrival_station_id: stationId,
+          departure_datetime: retDep,
+          arrival_datetime: retArr,
+        });
       }
 
+      const convoyBase = { amount, passengers_count: passengersCount, observation, ...charges };
+      const allerConvoyId = uuidV4();
+      const retourConvoyId = hasRetour ? uuidV4() : null;
+      const convoysToInsert: Record<string, any>[] = [{
+        ...convoyBase,
+        id: allerConvoyId,
+        schedule_id: allerScheduleId,
+        trip_type: form.trip_type,
+        return_convoy_id: retourConvoyId,
+      }];
+      if (hasRetour) {
+        convoysToInsert.push({
+          ...convoyBase,
+          id: retourConvoyId,
+          schedule_id: retourScheduleId,
+          trip_type: 'aller_retour',
+        });
+      }
+
+      // The row the list shows (and the bordereau prints) until the server has the convoy
+      createdConvoy = {
+        id: allerConvoyId,
+        schedule_id: allerScheduleId,
+        amount,
+        trip_type: form.trip_type,
+        passengers_count: passengersCount,
+        ...charges,
+        observation,
+        created_at: trustedNowIso(),
+        return_convoy_id: retourConvoyId,
+        return_departure_datetime: hasRetour ? form.retour_departure_datetime : null,
+        departure_datetime: depDate,
+        route_id: form.route_id,
+        route_name: selectedRoute?.destination_city?.name ?? '—',
+        origin_city: selectedRoute?.origin_city?.name ?? '—',
+        destination_city: selectedRoute?.destination_city?.name ?? '—',
+        bus_id: form.bus_id,
+        bus_registration: selectedBus?.registration_number ?? '—',
+        bus_capacity: selectedBus?.capacity ?? 0,
+        company_name: selectedBus?.company?.name ?? '—',
+        driver_id: form.driver_id,
+        driver_name: drivers.find(d => d.id === form.driver_id)?.full_name ?? '—',
+        station_name: stationName ?? '—',
+      };
+
+      // Trips first, then the convoys pointing to them (the queue is sent in this order)
+      const results = [
+        await enqueueInsert('convoi_trajets', { id: allerScheduleId, rows: schedulesToInsert }),
+        await enqueueInsert('convois', { id: allerConvoyId, rows: convoysToInsert }, { row: createdConvoy }),
+      ];
+
+      toast.success(savedMessage('Convoi enregistré', results));
+
       setShowModal(false);
-      setEditConvoy(null);
       setForm(EMPTY_FORM);
       await loadConvoys();
 
@@ -970,10 +898,6 @@ export default function POSConvois() {
                               className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Imprimer bordereau">
                               <Printer className="w-4 h-4" style={{ color: 'var(--primary)' }} />
                             </button>
-                            <button onClick={() => openEdit(c)}
-                              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="Modifier">
-                              <Edit3 className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-                            </button>
                             {!c.pending && <ChangeRequestButton
                               compact
                               operationType="convoy"
@@ -1018,7 +942,7 @@ export default function POSConvois() {
               style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
               <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                 <Truck className="w-5 h-5" style={{ color: 'var(--primary)' }} />
-                {editConvoy ? 'Modifier le convoi' : 'Nouveau convoi'}
+                Nouveau convoi
               </h2>
               <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-gray-100">
                 <X className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
@@ -1222,7 +1146,7 @@ export default function POSConvois() {
                 className="px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 style={{ backgroundColor: 'var(--primary)' }}>
                 {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                {editConvoy ? 'Enregistrer' : 'Créer le convoi'}
+                Créer le convoi
               </button>
             </div>
           </div>

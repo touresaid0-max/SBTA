@@ -131,6 +131,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.cloture === true) result.status = 'termine';
   if (p.confirmed === true) result.status = 'en_cours';
   if (p.status !== undefined && !result.status) result.status = p.status;
+  if (p.route_id !== undefined) result.route_id = p.route_id;
   if (p.route_name !== undefined) result.route_name = p.route_name;
   if (p.route_number !== undefined) result.route_number = p.route_number;
   if (p.bus_id !== undefined) result.bus_id = p.bus_id;
@@ -181,6 +182,7 @@ function mapTicketUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.passenger_phone !== undefined) result.passenger_phone = p.passenger_phone;
   if (p.price !== undefined) result.total_price = p.price;
   if (p.depart_id !== undefined) result.schedule_id = p.depart_id;
+  if (p.destination !== undefined) result.destination_city_name = p.destination;
   if (p.seat_number !== undefined) {
     result.seat_numbers = [String(p.seat_number)];
     result.total_seats = 1;
@@ -333,6 +335,32 @@ async function sendDepense(payload: Record<string, unknown>): Promise<void> {
     ...(userId ? { created_by: userId } : {}),
   });
   if (insertError) throw insertError;
+}
+
+// ── Change requests executed by the admin ──
+// The change request keeps the guichet device's copy of the operation, with its own field names
+// (price, depart_id, ticket_number…). The admin's screen sent that whole copy as the new values:
+// the server only applied the fields named like its columns, so most changes were lost, and the
+// fields left as they were overwrote the server's copy with the device's old values.
+
+/** Server columns for a change of the device's copy, or null when none of it can be applied. */
+export function localChangeToServer(store: StoreName, patch: Record<string, unknown>): Record<string, unknown> | null {
+  let result: Record<string, unknown> | null = null;
+  if (store === 'departs') result = mapDepartUpdate(patch);
+  else if (store === 'tickets') result = mapTicketUpdate(patch);
+  else if (store === 'bagages') result = mapBagageUpdate(patch);
+  else if (store === 'depenses') {
+    result = {};
+    if (patch.amount !== undefined) result.amount = patch.amount;
+    if (patch.description !== undefined || patch.label !== undefined) result.description = patch.description ?? patch.label;
+    if (patch.type !== undefined) result.charge_type = normalizeExpenseType(String(patch.type));
+    if (patch.expense_date !== undefined) result.charge_date = patch.expense_date;
+  }
+  if (!result) return null;
+  // Set by the server itself
+  const { updated_at: _set, ...columns } = result;
+  void _set;
+  return Object.keys(columns).length > 0 ? columns : null;
 }
 
 // ── Who sends what ──
@@ -517,16 +545,20 @@ async function executeInsert(store: StoreName, record: Record<string, unknown>):
     return;
   }
 
-  // upsert ensures idempotency — if the UUID already exists (retry), it's a no-op
-  const { error } = await supabase.from(table).upsert(payload);
-  if (error) {
+  // A creation is inserted, never rewritten: the upsert (insert or update) sent again a ticket
+  // already on the server (resend after a cut, records recovered at start) as an update, which
+  // the access rules refuse to a guichetier (« row-level security policy (USING expression) »):
+  // hundreds of tickets already on the server showed as refused. A row already there (same id)
+  // counts as sent, and the server's copy is left as it is.
+  const { error } = await supabase.from(table).insert(payload);
+  if (error && !isAlreadyReceived(error)) {
     // Baggage number collision: another guichet generated the same number.
     // Regenerate a unique number and retry.
     if (store === 'bagages' && error.message.includes('baggage_number')) {
       const newNumber = await generateUniqueBagageNumber();
       payload.baggage_number = newNumber;
-      const { error: retryError } = await supabase.from(table).upsert(payload);
-      if (retryError) throw retryError;
+      const { error: retryError } = await supabase.from(table).insert(payload);
+      if (retryError && !isAlreadyReceived(retryError)) throw retryError;
       // Update local record with the new number
       const localId = record.id as string;
       const existing = await (db.bagages as any).get(localId);
@@ -679,6 +711,23 @@ async function retryRefusedRamassages(): Promise<void> {
   } catch { /* sent again at the next flush */ }
 }
 
+/**
+ * Tickets, baggage and departures already on the server, refused when sent again with the former
+ * upsert (an update, which the access rules refuse: « (USING expression) »). Sent again with the
+ * insert, which counts them as sent. Only that refusal: it cannot come back with the insert.
+ */
+async function retryRefusedReinserts(): Promise<void> {
+  try {
+    const refused = await db.sync_queue.where('status').equals('failed')
+      .filter(i => i.op === 'insert' && ['tickets', 'bagages', 'departs'].includes(i.entity)
+        && /row-level security policy \(USING expression\)/i.test(i.last_error ?? ''))
+      .primaryKeys();
+    for (const id of refused) {
+      await db.sync_queue.update(id, { status: 'pending', tries: 0, sending_since: undefined, last_error: undefined });
+    }
+  } catch { /* sent again at the next flush */ }
+}
+
 export async function flushSyncQueue(): Promise<FlushResult> {
   if (flushing) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
   if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
@@ -691,6 +740,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
 
   try {
     await retryRefusedRamassages();
+    await retryRefusedReinserts();
     const serverUserId = await serverSessionUserId();
     const waiting = (await db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).toArray())
       .filter(isWaitingToSend);
@@ -754,6 +804,11 @@ export async function getQueueItems(): Promise<SyncQueueItem[]> {
 /** Sends a failed or refused operation again at the next sending, without waiting. */
 export async function retryQueueItem(id: number): Promise<void> {
   await db.sync_queue.update(id, { status: 'pending', tries: 0, sending_since: undefined });
+}
+
+/** « Tout réessayer »: every refused operation sent again at the next sending (one click, not one per line). */
+export async function retryAllRefused(): Promise<number> {
+  return db.sync_queue.where('status').equals('failed').modify({ status: 'pending', tries: 0, sending_since: undefined });
 }
 
 /**

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, RefreshCw, AlertCircle, Clock, CheckCircle } from 'lucide-react';
-import { getQueueItems, retryQueueItem, nextRetryAt, abandonQueueItem } from '@/services/pos/syncEngine';
+import { getQueueItems, retryQueueItem, retryAllRefused, nextRetryAt, abandonQueueItem } from '@/services/pos/syncEngine';
 import type { SyncQueueItem } from '@/services/pos/db';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { AbandonOperation } from '@/components/shared/AbandonOperation';
@@ -231,6 +231,18 @@ export function SyncQueueModal({ open, onClose }: SyncQueueModalProps) {
             : failed > 0
             ? 'Les opérations en échec sont renvoyées automatiquement, de plus en plus espacées (jusqu\'à 10 min). « Réessayer » les renvoie tout de suite.'
             : 'Les opérations partent automatiquement dès que la connexion le permet.'}
+          {refused > 1 && (
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={async () => { await retryAllRefused(); await refresh(); }}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
+                style={{ backgroundColor: '#2563EB' }}
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Tout réessayer ({refused})
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

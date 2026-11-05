@@ -3,6 +3,7 @@ import type { PrintSettings } from './db';
 import type { BordereauRecettesData, BordereauDepartData } from '@/types/counter.types';
 import type { BordereauCourrierData } from '@/utils/printBordereau';
 import { trustedNowIso } from '@/services/offline/deviceClock';
+import { formatPhoneCI } from '@/utils/phoneCI';
 
 export interface PrintTicketData {
   ticket: TicketRecord;
@@ -286,7 +287,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const destCity = stripStationLabel((bagage.destination || '').toUpperCase().trim());
   const departNum = value(depart.route_number) || value(depart.departure_number);
   const owner = value(bagage.owner_name).toUpperCase();
-  const contact = value(bagage.owner_phone);
+  const contact = formatPhoneCI(bagage.owner_phone) || value(bagage.owner_phone);
   const car = value(bagage.car_plate || depart.bus_plate).toUpperCase();
   const bagNum = value(bagage.bagage_number);
   const seatRaw = bagage.with_ticket ? value(bagage.linked_seat_number) : '';
@@ -370,7 +371,7 @@ export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSetti
   const car = value(bagage.car_plate || depart.bus_plate).toUpperCase() || '—';
   const bagageNumber = value(bagage.bagage_number) || '—';
   const owner = value(bagage.owner_name).toUpperCase() || '—';
-  const contact = value(bagage.owner_phone) || '—';
+  const contact = formatPhoneCI(bagage.owner_phone) || value(bagage.owner_phone) || '—';
   const description = value(bagage.description).replace(/\s+/g, ' ');
   const parts: Uint8Array[] = [init(), setLineSpacing(20), setFontB()];
   const line = (input = ''): Uint8Array[] => [text(input.slice(0, w)), lineFeed()];

@@ -9,6 +9,8 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { db } from '../../services/pos/db';
+import { editFieldsFor, formChangesForServer, readableValue } from '../../services/changeRequestForms';
+import ChangeRequestEditForm from '../../components/shared/ChangeRequestEditForm';
 
 const POS_STORE_MAP: Record<string, 'tickets' | 'bagages' | 'depenses' | 'departs'> = {
   tickets: 'tickets',
@@ -18,6 +20,11 @@ const POS_STORE_MAP: Record<string, 'tickets' | 'bagages' | 'depenses' | 'depart
   depenses: 'depenses',
   schedules: 'departs',
 };
+
+/** The request's copy of the operation (as the guichet device recorded it). */
+function snapshotOf(req: ChangeRequest): Record<string, unknown> {
+  return (req.operation_snapshot ?? {}) as Record<string, unknown>;
+}
 
 async function cleanupLocalPosData(operationTable: string, operationId: string): Promise<void> {
   const store = POS_STORE_MAP[operationTable];
@@ -123,7 +130,14 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
     try {
       const oldValues = executeModal.operation_snapshot;
       const isSuppression = executeModal.status === 'autorisee_suppression';
-      const newValues = isSuppression ? null : (Object.keys(editedValues).length > 0 ? editedValues : null);
+      // Only the changed fields, with the server's column names (see serverChangesOf)
+      const newValues = isSuppression ? null : (pendingChanges && Object.keys(pendingChanges.changes).length > 0 ? pendingChanges.changes : null);
+      if (!isSuppression && !newValues) {
+        toast.error(pendingChanges && pendingChanges.ignored.length > 0
+          ? `Aucun changement applicable : ${pendingChanges.ignored.join(', ')} ne peu${pendingChanges.ignored.length > 1 ? 'vent' : 't'} pas être modifié${pendingChanges.ignored.length > 1 ? 's' : ''} ici`
+          : 'Modifiez au moins une valeur avant d\'exécuter');
+        return;
+      }
       const result = await executeChangeRequest(
         executeModal.id,
         executionNotes.trim() || 'Exécuté par l\'équipe technique',
@@ -149,6 +163,21 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
       setSubmitting(false);
     }
   };
+
+  // Fields the guichetier entered for this operation: the only ones the admin may correct
+  const editFields = useMemo(() => (
+    executeModal ? editFieldsFor(executeModal.operation_table, (executeModal.operation_snapshot ?? {}) as Record<string, unknown>) : []
+  ), [executeModal]);
+
+  // What the modification will send: the form's changed fields, with the server's column names
+  const pendingChanges = useMemo(() => {
+    if (!executeModal || executeModal.status !== 'autorisee_modification') return null;
+    return formChangesForServer(
+      executeModal.operation_table,
+      (executeModal.operation_snapshot ?? {}) as Record<string, unknown>,
+      editedValues,
+    );
+  }, [executeModal, editedValues]);
 
   const snapshotEntries = useMemo(() => {
     if (!executeModal?.operation_snapshot) return [];
@@ -641,7 +670,18 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                     {executeModal.status === 'autorisee_suppression' ? 'Données à supprimer' : 'Données de l\'opération'}
                   </p>
                 </div>
-                {snapshotEntries.length > 0 ? (
+                {executeModal.status === 'autorisee_modification' ? (
+                  editFields.length > 0 ? (
+                    <ChangeRequestEditForm
+                      fields={editFields}
+                      snapshot={(executeModal.operation_snapshot ?? {}) as Record<string, unknown>}
+                      edited={editedValues}
+                      onChange={values => setEditedValues(prev => ({ ...prev, ...values }))}
+                    />
+                  ) : (
+                    <p className="text-sm" style={{ color: '#6B7280' }}>Ce type d'opération ne se modifie pas depuis cet écran.</p>
+                  )
+                ) : snapshotEntries.length > 0 ? (
                   <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#E5E7EB' }}>
                     <div className="grid grid-cols-3 divide-x" style={{ borderColor: '#E5E7EB' }}>
                       {/* Header row */}
@@ -660,31 +700,7 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                           {formatFieldValue(value)}
                         </div>
                         <div className="px-3 py-2" style={{ borderColor: '#E5E7EB' }}>
-                          {executeModal.status === 'autorisee_suppression' ? (
-                            <span className="text-xs" style={{ color: '#991B1B' }}>À supprimer</span>
-                          ) : (
-                            <input
-                              type="text"
-                              value={editedValues[key] !== undefined ? formatFieldValue(editedValues[key]) : ''}
-                              onChange={(e) => {
-                                const raw = e.target.value;
-                                setEditedValues(prev => {
-                                  const originalVal = (executeModal.operation_snapshot ?? {}) as Record<string, unknown>;
-                                  const orig = originalVal[key];
-                                  if (typeof orig === 'number') {
-                                     const n = parseFloat(raw);
-                                     return { ...prev, [key]: isNaN(n) ? raw : n };
-                                  }
-                                  if (typeof orig === 'boolean') {
-                                     return { ...prev, [key]: raw === 'true' || raw === 'Oui' };
-                                  }
-                                  return { ...prev, [key]: raw };
-                                });
-                              }}
-                              className="w-full px-2 py-1 text-xs rounded border outline-none"
-                              style={{ borderColor: '#D1D5DB', background: '#F9FAFB', color: '#111827' }}
-                            />
-                          )}
+                          <span className="text-xs" style={{ color: '#991B1B' }}>À supprimer</span>
                         </div>
                       </div>
                     ))}
@@ -693,6 +709,29 @@ export default function ChangeRequestsPage({ mode }: ChangeRequestsPageProps) {
                   <p className="text-sm" style={{ color: '#6B7280' }}>Aucune donnée d'opération disponible.</p>
                 )}
               </div>
+
+              {/* What the modification will apply */}
+              {pendingChanges && (
+                <div className="rounded-lg p-4 space-y-1" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#166534' }}>Sera modifié</p>
+                  {Object.keys(pendingChanges.changes).length === 0 ? (
+                    <p className="text-xs" style={{ color: '#6B7280' }}>Aucun changement : modifiez les valeurs dans la colonne « Nouvelle valeur ».</p>
+                  ) : (
+                    editFields
+                      .filter(field => readableValue(field, snapshotOf(executeModal)) !== readableValue(field, editedValues))
+                      .map(field => (
+                        <p key={field.key} className="text-xs" style={{ color: '#111827' }}>
+                          <span style={{ fontWeight: 600 }}>{field.label}</span> : {readableValue(field, snapshotOf(executeModal))} → {readableValue(field, editedValues)}
+                        </p>
+                      ))
+                  )}
+                  {pendingChanges.ignored.length > 0 && (
+                    <p className="text-xs pt-1" style={{ color: '#B45309' }}>
+                      Non modifiable ici : {editFields.filter(f => pendingChanges.ignored.includes(f.key)).map(f => f.label).join(', ') || pendingChanges.ignored.join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Execution notes */}
               <div>

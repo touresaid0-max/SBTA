@@ -1,4 +1,4 @@
-import { db, type BagageRecord, type DepenseRecord } from './db';
+import { db, type BagageRecord, type DepenseRecord, type DepartRecord, type TicketRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType } from './syncEngine';
@@ -302,6 +302,22 @@ async function getPendingIds(entity: StoreName): Promise<Set<string>> {
   );
 }
 
+/**
+ * A departure deleted on the server: removed from the device, with its tickets, baggage and
+ * expenses already sent (one still waiting to be sent is kept, so that nothing unsent is lost).
+ */
+async function removeDeletedDepart(departId: string): Promise<void> {
+  const [pendingTickets, pendingBagages, pendingDepenses] = await Promise.all([
+    getPendingIds('tickets'), getPendingIds('bagages'), getPendingIds('depenses'),
+  ]);
+  await db.transaction('rw', [db.departs, db.tickets, db.bagages, db.depenses], async () => {
+    await db.tickets.where('depart_id').equals(departId).filter(t => !pendingTickets.has(t.id)).delete();
+    await db.bagages.where('depart_id').equals(departId).filter(b => !pendingBagages.has(b.id)).delete();
+    await db.depenses.where('depart_id').equals(departId).filter(d => !pendingDepenses.has(d.id)).delete();
+    await db.departs.delete(departId);
+  });
+}
+
 /** Registration numbers of the buses and names of the drivers, for the given ids. */
 async function fetchBusAndDriverNames(
   busIds: string[],
@@ -460,6 +476,25 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       for (const s of (reopened ?? []) as unknown as RemoteSchedule[]) if (!known.has(s.id)) remoteSchedules.push(s);
     } catch { /* server without the column: the usual days only */ }
 
+    // Departures shown re-opened on this device: read again by id. When the admin closes one again,
+    // the server clears its re-opening date, so the query above no longer returns it (nor the
+    // usual days, for a departure of an earlier day): it stayed « Rouvert (admin) » at the guichet
+    // for good. Read by id, it gets its closing back.
+    try {
+      const known = new Set(remoteSchedules.map(s => s.id));
+      const shownReopened = ((await db.departs.toArray()) as DepartRecord[])
+        .filter(d => d.reopened_at && !d.cloture && !d.cancelled && !known.has(d.id) && (!stationId || d.station_id === stationId))
+        .map(d => d.id);
+      for (let i = 0; i < shownReopened.length; i += SCHEDULE_ID_CHUNK) {
+        const { data, error } = await supabase
+          .from('schedules')
+          .select(SCHEDULE_COLUMNS)
+          .in('id', shownReopened.slice(i, i + SCHEDULE_ID_CHUNK));
+        if (error) break;
+        remoteSchedules.push(...((data ?? []) as unknown as RemoteSchedule[]));
+      }
+    } catch { /* read again at the next sync */ }
+
     if (remoteSchedules && remoteSchedules.length > 0) {
       const scheduleIds = remoteSchedules.map(s => s.id);
 
@@ -529,6 +564,23 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         }
       }
 
+      // Departures deleted on the server (a deletion request executed by the admin) stayed on the
+      // device for good: the guichet kept showing them. They are removed here too, with their
+      // tickets, baggage and expenses kept on the device — only within what was just read in full
+      // (this station, from fromStr on), and never one with a change not sent yet.
+      if (stationId) {
+        const onServer = new Set(scheduleIds);
+        const fromMs = Date.parse(`${fromStr}T00:00:00Z`);
+        const gone = ((await db.departs.toArray()) as DepartRecord[]).filter(d =>
+          d.station_id === stationId &&
+          d.synced !== false &&
+          !pendingDeparts.has(d.id) &&
+          !onServer.has(d.id) &&
+          Date.parse(d.departure_datetime) >= fromMs,
+        );
+        for (const d of gone) await removeDeletedDepart(d.id);
+      }
+
       // Supabase returns at most 1 000 rows per request, and a busy station sells more than that
       // in a day: read the tickets page by page until the last one. If any page fails, nothing
       // below is updated, so a departure's cash total is never computed from a partial list.
@@ -543,6 +595,19 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
 
       if (remoteReservations) {
         const pendingTickets = await getPendingIds('tickets');
+
+        // Tickets deleted on the server (deletion request executed by the admin): removed here too.
+        // All the tickets of these departures were just read: one missing is no longer on the server.
+        const remoteTicketIds = new Set(remoteReservations.map(r => String(r.id)));
+        const pulledDeparts = new Set(scheduleIds);
+        const goneTickets = ((await db.tickets.toArray()) as TicketRecord[]).filter(t =>
+          pulledDeparts.has(t.depart_id) &&
+          t.synced !== false &&
+          !pendingTickets.has(t.id) &&
+          !remoteTicketIds.has(t.id),
+        );
+        if (goneTickets.length > 0) await db.tickets.bulkDelete(goneTickets.map(t => t.id));
+
         for (const r of remoteReservations) {
           const id = String(r.id);
           // A local change not yet sent is more recent than the server copy
