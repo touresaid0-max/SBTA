@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/services/supabase';
 import PhoneInputCI from '@/components/shared/PhoneInputCI';
+import AutocompleteSelect, { type AutocompleteOption } from '@/components/pos/AutocompleteSelect';
 import { EXPENSE_TYPES, readableValue as readable, type EditField } from '@/services/changeRequestForms';
 import { normalizePhoneCI, toStoredPhoneCI } from '@/utils/phoneCI';
 
-interface Choice { id: string; label: string }
 
 interface Props {
   fields: EditField[];
@@ -14,19 +14,42 @@ interface Props {
   onChange: (values: Record<string, unknown>) => void;
 }
 
-/** Lines, buses and drivers to choose from: the same lists as the guichet's Nouveau départ. */
-async function loadChoices(kinds: Set<string>): Promise<Record<'route' | 'bus' | 'driver', Choice[]>> {
+type Choices = Record<'route' | 'bus' | 'driver', AutocompleteOption[]>;
+
+/**
+ * Lines, buses and drivers to choose from, searchable like on the guichet's Nouveau départ
+ * (registration, make and model of a bus; name, staff number and phone of a driver).
+ */
+async function loadChoices(kinds: Set<string>): Promise<Choices> {
   const [routes, buses, drivers] = await Promise.all([
     kinds.has('route') ? supabase.from('routes').select('id, name').eq('is_active', true).order('name') : null,
-    kinds.has('bus') ? supabase.from('buses').select('id, registration_number').is('archived_at', null).order('registration_number') : null,
-    kinds.has('driver') ? supabase.from('users').select('id, full_name').eq('role', 'chauffeur').eq('status', 'active').order('full_name') : null,
+    kinds.has('bus') ? supabase.from('buses').select('id, registration_number, brand, model, capacity').is('archived_at', null).order('registration_number') : null,
+    kinds.has('driver') ? supabase.from('users').select('id, full_name, employee_id, phone').eq('role', 'chauffeur').eq('status', 'active').order('full_name') : null,
   ]);
+  type Bus = { id: string; registration_number: string; brand?: string | null; model?: string | null; capacity?: number | null };
+  type Driver = { id: string; full_name: string; employee_id?: string | null; phone?: string | null };
   return {
     route: ((routes?.data ?? []) as { id: string; name: string }[]).map(r => ({ id: r.id, label: r.name })),
-    bus: ((buses?.data ?? []) as { id: string; registration_number: string }[]).map(b => ({ id: b.id, label: b.registration_number })),
-    driver: ((drivers?.data ?? []) as { id: string; full_name: string }[]).map(d => ({ id: d.id, label: d.full_name })),
+    bus: ((buses?.data ?? []) as Bus[]).map(b => ({
+      id: b.id,
+      label: b.registration_number,
+      sublabel: [b.brand, b.model, b.capacity ? `${b.capacity} places` : null].filter(Boolean).join(' · ') || undefined,
+      keywords: `${b.registration_number} ${b.brand ?? ''} ${b.model ?? ''}`,
+    })),
+    driver: ((drivers?.data ?? []) as Driver[]).map(d => ({
+      id: d.id,
+      label: d.full_name,
+      sublabel: [d.employee_id, d.phone].filter(Boolean).join(' · ') || undefined,
+      keywords: `${d.full_name} ${d.employee_id ?? ''} ${d.phone ?? ''}`,
+    })),
   };
 }
+
+const SEARCH_PLACEHOLDER: Record<'route' | 'bus' | 'driver', string> = {
+  route: 'Rechercher une ligne…',
+  bus: 'Rechercher par immatriculation, marque, modèle…',
+  driver: 'Rechercher par nom, matricule, téléphone…',
+};
 
 const inputClass = 'w-full px-2 py-1.5 text-xs rounded border outline-none';
 const inputStyle = { borderColor: '#D1D5DB', background: '#F9FAFB', color: '#111827' };
@@ -36,7 +59,7 @@ const inputStyle = { borderColor: '#D1D5DB', background: '#F9FAFB', color: '#111
  * dates and times, lists for the line, bus and driver, phone numbers checked like at the counter.
  */
 export default function ChangeRequestEditForm({ fields, snapshot, edited, onChange }: Props) {
-  const [choices, setChoices] = useState<Record<'route' | 'bus' | 'driver', Choice[]>>({ route: [], bus: [], driver: [] });
+  const [choices, setChoices] = useState<Choices>({ route: [], bus: [], driver: [] });
 
   useEffect(() => {
     const kinds = new Set(fields.map(f => f.kind).filter(k => k === 'route' || k === 'bus' || k === 'driver'));
@@ -52,22 +75,25 @@ export default function ChangeRequestEditForm({ fields, snapshot, edited, onChan
       case 'route':
       case 'bus':
       case 'driver': {
-        const list = choices[field.kind];
+        const kind = field.kind;
         const current = String(value ?? '');
-        const known = list.some(c => c.id === current);
+        // The current one stays shown even when it is no longer in the list (archived bus…)
+        const list = current && !choices[kind].some(c => c.id === current)
+          ? [{ id: current, label: readable(field, edited) }, ...choices[kind]]
+          : choices[kind];
         return (
-          <select
+          <AutocompleteSelect
+            compact
+            options={list}
             value={current}
-            onChange={e => {
-              const choice = list.find(c => c.id === e.target.value);
-              onChange({ [field.key]: e.target.value, ...(field.display ? { [field.display]: choice?.label ?? '' } : {}) });
+            allowClear={false}
+            placeholder={SEARCH_PLACEHOLDER[kind]}
+            emptyText="Aucun résultat"
+            onChange={id => {
+              const choice = list.find(c => c.id === id);
+              onChange({ [field.key]: id, ...(field.display ? { [field.display]: choice?.label ?? '' } : {}) });
             }}
-            className={inputClass}
-            style={inputStyle}
-          >
-            {!known && <option value={current}>{readable(field, edited)}</option>}
-            {list.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
+          />
         );
       }
       case 'expense_type':
@@ -113,7 +139,7 @@ export default function ChangeRequestEditForm({ fields, snapshot, edited, onChan
   };
 
   return (
-    <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#E5E7EB' }}>
+    <div className="rounded-lg border" style={{ borderColor: '#E5E7EB' }}>
       <div className="grid grid-cols-3 divide-x" style={{ borderColor: '#E5E7EB' }}>
         <div className="px-3 py-2 text-xs font-bold uppercase" style={{ background: '#F9FAFB', color: '#6B7280' }}>Champ</div>
         <div className="px-3 py-2 text-xs font-bold uppercase" style={{ background: '#F9FAFB', color: '#6B7280' }}>Saisi par le guichetier</div>

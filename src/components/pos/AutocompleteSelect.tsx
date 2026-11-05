@@ -17,6 +17,8 @@ interface AutocompleteSelectProps {
   allowClear?: boolean;
   emptyText?: string;
   disabled?: boolean;
+  /** Small field, like the other fields of a dense form */
+  compact?: boolean;
 }
 
 export default function AutocompleteSelect({
@@ -28,6 +30,7 @@ export default function AutocompleteSelect({
   allowClear = true,
   emptyText = 'Aucun résultat',
   disabled = false,
+  compact = false,
 }: AutocompleteSelectProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -105,7 +108,7 @@ export default function AutocompleteSelect({
   return (
     <div ref={containerRef} className="relative">
       <div
-        className="w-full flex items-center gap-2 px-3 py-3 rounded-xl border-2 text-base outline-none transition-colors"
+        className={`w-full flex items-center gap-2 border-2 outline-none transition-colors ${compact ? 'px-2 py-1 rounded-lg text-xs' : 'px-3 py-3 rounded-xl text-base'}`}
         style={{ borderColor: open ? 'var(--primary)' : 'var(--border)', backgroundColor: 'var(--surface)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.7 : 1 }}
         onClick={() => { if (!disabled) { setOpen(true); inputRef.current?.focus(); } }}
       >
@@ -119,7 +122,7 @@ export default function AutocompleteSelect({
               onChange={e => { setQuery(e.target.value); setOpen(true); setHighlighted(0); }}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              className="flex-1 bg-transparent outline-none text-base"
+              className={`flex-1 min-w-0 bg-transparent outline-none ${compact ? 'text-xs' : 'text-base'}`}
               style={{ color: 'var(--text-primary)' }}
               autoFocus
             />
