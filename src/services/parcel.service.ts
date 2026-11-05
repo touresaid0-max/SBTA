@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { sendCourierArrivedSms } from './emisSms.service'
 import type { Parcel, ParcelTrackingEvent, ParcelKPIs } from '@/types/parcel.types'
+import { trustedNow } from '@/services/offline/deviceClock'
 
 export async function createParcel(
   data: Omit<Parcel, 'id' | 'parcel_code' | 'reference' | 'daily_sequence' | 'tracking_url' | 'status' | 'registered_at' | 'origin_station_name' | 'destination_station_name' | 'bus_registration' | 'registered_by_name' | 'company_name' | 'total_amount'>
@@ -265,14 +266,14 @@ export async function fetchOutgoingParcels(stationId: string): Promise<Parcel[]>
 
 // Returns start-of-day ISO string for a given period offset in days (0 = today)
 function periodStart(daysAgo: number): string {
-  const d = new Date()
+  const d = trustedNow()
   d.setDate(d.getDate() - daysAgo)
   d.setHours(0, 0, 0, 0)
   return d.toISOString()
 }
 
 function startOfWeek(): string {
-  const d = new Date()
+  const d = trustedNow()
   const day = d.getDay()
   // Monday as week start
   const diff = (day === 0 ? -6 : 1 - day)
@@ -282,7 +283,7 @@ function startOfWeek(): string {
 }
 
 function startOfMonth(): string {
-  const d = new Date()
+  const d = trustedNow()
   d.setDate(1)
   d.setHours(0, 0, 0, 0)
   return d.toISOString()
@@ -297,6 +298,32 @@ export function getPeriodStart(period: ParcelPeriod): string | null {
     case 'month': return startOfMonth()
     case 'all':   return null
   }
+}
+
+// Same period rules as the server lists below, for the parcels kept on the device. Without them
+// the courrier screen showed every parcel of the device whatever the period chosen when offline
+// (« Aujourd'hui » listed yesterday's parcels), and a parcel not yet sent was added to any period.
+
+/** Instant `iso` is at or after `from` (null `from`: no limit). */
+function since(iso: string | null | undefined, from: string | null): boolean {
+  if (!from) return true
+  const at = iso ? Date.parse(iso) : NaN
+  return Number.isFinite(at) && at >= Date.parse(from)
+}
+
+/** Outgoing parcel in the period: registered during it (as fetchOutgoingParcelsPeriod). */
+export function isOutgoingInPeriod(p: Pick<Parcel, 'registered_at'>, period: ParcelPeriod): boolean {
+  return since(p.registered_at, getPeriodStart(period))
+}
+
+/** Incoming parcel in the period: shipped, arrived or delivered, and shipped, arrived or registered during it (as fetchIncomingParcelsPeriod). */
+export function isIncomingInPeriod(
+  p: Pick<Parcel, 'status' | 'registered_at' | 'shipped_at' | 'arrived_at'>,
+  period: ParcelPeriod,
+): boolean {
+  if (!['expedie', 'arrive', 'livre'].includes(p.status)) return false
+  const from = getPeriodStart(period)
+  return since(p.shipped_at, from) || since(p.arrived_at, from) || since(p.registered_at, from)
 }
 
 export async function fetchOutgoingParcelsPeriod(

@@ -21,6 +21,8 @@ import {
   bulkUpdateParcelStatus,
   fetchScheduleDriverName,
   fetchScheduleTransportInfo,
+  isOutgoingInPeriod,
+  isIncomingInPeriod,
   type ParcelPeriod,
 } from '@/services/parcel.service'
 import { getParcelActionPermission } from '@/utils/parcelPermissions'
@@ -168,12 +170,12 @@ export default function AgentColisDashboard() {
     if (!stationId) return
     setLoading(true)
     try {
-      // Offline mode: load from local IndexedDB
+      // Offline mode: load from local IndexedDB, with the same period rules as the server lists
       if (!courrierIsOnline()) {
         const localParcels = await getAllLocalParcels()
         const parcels = localParcels.map(parcelRecordToParcel)
-        const out = parcels.filter(p => p.origin_station_id === stationId)
-        const inc = parcels.filter(p => p.destination_station_id === stationId)
+        const out = parcels.filter(p => p.origin_station_id === stationId && isOutgoingInPeriod(p, period))
+        const inc = parcels.filter(p => p.destination_station_id === stationId && isIncomingInPeriod(p, period))
         setOutgoing(out)
         setIncoming(inc)
         prevIncomingIds.current = new Set(inc.map(p => p.id))
@@ -191,11 +193,11 @@ export default function AgentColisDashboard() {
       const unsyncedLocal = localParcels.filter(p => !p.synced)
       if (unsyncedLocal.length > 0) {
         const localOut = unsyncedLocal
-          .filter(p => p.origin_station_id === stationId)
           .map(parcelRecordToParcel)
+          .filter(p => p.origin_station_id === stationId && isOutgoingInPeriod(p, period))
         const localInc = unsyncedLocal
-          .filter(p => p.destination_station_id === stationId)
           .map(parcelRecordToParcel)
+          .filter(p => p.destination_station_id === stationId && isIncomingInPeriod(p, period))
         const existingIds = new Set([...out.map(p => p.id), ...inc.map(p => p.id)])
         const mergedOut = [...out, ...localOut.filter(p => !existingIds.has(p.id))]
         const mergedInc = [...inc, ...localInc.filter(p => !existingIds.has(p.id))]
@@ -226,8 +228,8 @@ export default function AgentColisDashboard() {
         try {
           const localParcels = await getAllLocalParcels()
           const parcels = localParcels.map(parcelRecordToParcel)
-          setOutgoing(parcels.filter(p => p.origin_station_id === stationId))
-          setIncoming(parcels.filter(p => p.destination_station_id === stationId))
+          setOutgoing(parcels.filter(p => p.origin_station_id === stationId && isOutgoingInPeriod(p, period)))
+          setIncoming(parcels.filter(p => p.destination_station_id === stationId && isIncomingInPeriod(p, period)))
         } catch {
           toast.error('Erreur chargement courriers')
         }
