@@ -721,21 +721,20 @@ export default function POSDeparts() {
                   >
                     <FileSpreadsheet className="w-4 h-4" /> Export Excel
                   </button>
-                  <div className="my-1" style={{ borderTop: '1px solid var(--border)' }} />
-                  <button
-                    onClick={() => { setShowExportsMenu(false); printGroupedBordereau(); }}
-                    disabled={selectedIds.size === 0 || actionLoading}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-bold text-left transition-colors disabled:opacity-50"
-                    style={{ color: 'var(--primary)' }}
-                    onMouseEnter={(e) => { if (selectedIds.size > 0) e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-                  >
-                    {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ListChecks className="w-4 h-4" />} Bordereau détaillé des recettes{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-                  </button>
                 </div>
               </>
             )}
           </div>
+          {/* Bordereau of the ticked departures: a button of its own, next to « États & exports » */}
+          <button
+            onClick={() => printGroupedBordereau()}
+            disabled={selectedIds.size === 0 || actionLoading}
+            title={selectedIds.size === 0 ? 'Cochez les départs à inclure dans le bordereau' : undefined}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+          >
+            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ListChecks className="w-4 h-4" />} Bordereau des recettes{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+          </button>
           {selectedRow && (
             <>
               <button onClick={() => handleAction('modifier', selectedRow)} disabled={selectedRow.cloture} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2 disabled:opacity-50 disabled:cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
