@@ -963,7 +963,6 @@ function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings
     <div class="section">
       <div class="row"><span class="lbl">Immatriculation</span><span class="val">${escapeHtml(convoy.bus_registration ?? '—')}</span></div>
       <div class="row"><span class="lbl">Chauffeur</span><span class="val">${escapeHtml(convoy.driver_name ?? '—')}</span></div>
-      <div class="row"><span class="lbl">Société</span><span class="val">${escapeHtml(convoy.company_name ?? '—')}</span></div>
       <div class="row"><span class="lbl">Guichet</span><span class="val">${escapeHtml(stationName ?? '—')}</span></div>
     </div>
     <div class="section">
