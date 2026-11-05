@@ -476,6 +476,25 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       for (const s of (reopened ?? []) as unknown as RemoteSchedule[]) if (!known.has(s.id)) remoteSchedules.push(s);
     } catch { /* server without the column: the usual days only */ }
 
+    // Departures shown re-opened on this device: read again by id. When the admin closes one again,
+    // the server clears its re-opening date, so the query above no longer returns it (nor the
+    // usual days, for a departure of an earlier day): it stayed « Rouvert (admin) » at the guichet
+    // for good. Read by id, it gets its closing back.
+    try {
+      const known = new Set(remoteSchedules.map(s => s.id));
+      const shownReopened = ((await db.departs.toArray()) as DepartRecord[])
+        .filter(d => d.reopened_at && !d.cloture && !d.cancelled && !known.has(d.id) && (!stationId || d.station_id === stationId))
+        .map(d => d.id);
+      for (let i = 0; i < shownReopened.length; i += SCHEDULE_ID_CHUNK) {
+        const { data, error } = await supabase
+          .from('schedules')
+          .select(SCHEDULE_COLUMNS)
+          .in('id', shownReopened.slice(i, i + SCHEDULE_ID_CHUNK));
+        if (error) break;
+        remoteSchedules.push(...((data ?? []) as unknown as RemoteSchedule[]));
+      }
+    } catch { /* read again at the next sync */ }
+
     if (remoteSchedules && remoteSchedules.length > 0) {
       const scheduleIds = remoteSchedules.map(s => s.id);
 
