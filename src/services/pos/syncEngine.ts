@@ -506,21 +506,26 @@ export async function enqueueDelete(
 
 // ── Execute individual operations against Supabase ──
 
-async function executeInsert(store: StoreName, record: Record<string, unknown>): Promise<void> {
+async function executeInsert(
+  store: StoreName,
+  record: Record<string, unknown>,
+  /** Account of the server session, already read by the sending (undefined: read here) */
+  knownUserId?: string | null,
+): Promise<void> {
   const table = TABLE_MAP[store];
   let payload: Record<string, unknown>;
 
   if (store === 'departs') {
     payload = mapDepartInsert(record);
-    const userId = await getCurrentUserId();
+    const userId = knownUserId !== undefined ? knownUserId : await getCurrentUserId();
     if (userId) payload.created_by = userId;
   } else if (store === 'tickets') {
     payload = mapTicketInsert(record);
-    const userId = await getCurrentUserId();
+    const userId = knownUserId !== undefined ? knownUserId : await getCurrentUserId();
     if (userId) payload.booked_by = userId;
   } else if (store === 'bagages') {
     payload = mapBagageInsert(record);
-    const userId = await getCurrentUserId();
+    const userId = knownUserId !== undefined ? knownUserId : await getCurrentUserId();
     if (userId) payload.sold_by = userId;
   } else if (store === 'depenses') {
     await sendDepense(record);
@@ -693,6 +698,51 @@ async function markSyncedIfNothingLeft(entity: StoreName, id: string): Promise<v
   if (left === 0) await (db as any)[entity].update(id, { synced: true });
 }
 
+// ── Long queues (many sales made offline) ──
+// The queue was sent one operation at a time, and after each one the device read the whole queue
+// again to know whether the record had another operation waiting: 1 000 sales took 2 min 30 s on
+// a good connection (20 s of it for the network), longer and longer as the queue grew. Now:
+// - updates made of fields kept on the device only (a sale's cash totals on its departure) are
+//   taken out of the queue at once: nothing is sent for them;
+// - consecutive ticket sales are inserted TICKET_BATCH at a time, in one request; a batch refused
+//   as a whole (a ticket already on the server, one ticket refused…) is sent again one by one, so
+//   that the others still go;
+// - the records sent are marked synced once, at the end of the sending.
+
+const TICKET_BATCH = 100;
+
+/** An update of fields kept on the device only: nothing to send for it. */
+function sendsNothing(item: SyncQueueItem): boolean {
+  if (item.op !== 'update') return false;
+  if (item.entity === 'departs') return mapDepartUpdate(item.payload) === null;
+  if (item.entity === 'tickets') return mapTicketUpdate(item.payload) === null;
+  if (item.entity === 'bagages') return mapBagageUpdate(item.payload) === null;
+  return false;
+}
+
+/** Tickets inserted in one request. False when the server refused the batch. */
+async function insertTicketBatch(records: Record<string, unknown>[], userId: string | null): Promise<boolean> {
+  const rows = records.map(r => ({ ...mapTicketInsert(r), ...(userId ? { booked_by: userId } : {}) }));
+  const { error } = await supabase.from('reservations').insert(rows);
+  return !error;
+}
+
+/** The records sent are marked synced when no operation of theirs is left in the queue (one read). */
+async function markSentRecordsSynced(sent: Array<[StoreName, string]>): Promise<void> {
+  const candidates = sent.filter(([entity, id]) => id && !RAW_ROW_STORES.has(entity));
+  if (candidates.length === 0) return;
+  const left = new Set((await db.sync_queue.toArray()).map(i => `${i.entity}:${String(i.payload?.id ?? '')}`));
+  const byStore = new Map<StoreName, Set<string>>();
+  for (const [entity, id] of candidates) {
+    if (left.has(`${entity}:${id}`)) continue;
+    if (!byStore.has(entity)) byStore.set(entity, new Set());
+    byStore.get(entity)!.add(id);
+  }
+  for (const [entity, ids] of byStore) {
+    await (db as any)[entity].where(':id').anyOf([...ids]).modify({ synced: true });
+  }
+}
+
 let flushing = false;
 
 /**
@@ -749,16 +799,63 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     // Sort by created_at to preserve operation order
     pending.sort(byQueueOrder);
 
-    for (const item of pending) {
-      if (!item.id) continue;
-      processed++;
+    const sent: Array<[StoreName, string]> = [];
 
+    // Nothing to send for these: out of the queue at once
+    const nothingToSend = pending.filter(sendsNothing);
+    if (nothingToSend.length > 0) {
+      await db.sync_queue.bulkDelete(nothingToSend.map(i => i.id!).filter(Boolean));
+      for (const i of nothingToSend) sent.push([i.entity as StoreName, String(i.payload.id ?? '')]);
+      processed += nothingToSend.length;
+      succeeded += nothingToSend.length;
+    }
+    const skipped = new Set(nothingToSend);
+    const toSend = pending.filter(i => !skipped.has(i));
+    const userId = serverUserId ?? null;
+    // After a refused batch, its operations go one by one up to this position
+    let oneByOneUntil = 0;
+
+    for (let index = 0; index < toSend.length;) {
+      const item = toSend[index];
+      if (!item.id) { index++; continue; }
+
+      // Consecutive ticket sales: one request for up to TICKET_BATCH of them
+      if (index >= oneByOneUntil && item.entity === 'tickets' && item.op === 'insert') {
+        const batch = [item];
+        while (batch.length < TICKET_BATCH) {
+          const next = toSend[index + batch.length];
+          if (!next?.id || next.entity !== 'tickets' || next.op !== 'insert') break;
+          batch.push(next);
+        }
+        if (batch.length > 1) {
+          const ids = batch.map(b => b.id!);
+          await db.sync_queue.where(':id').anyOf(ids).modify(i => {
+            i.status = 'syncing';
+            i.tries = (i.tries ?? 0) + 1;
+            i.sending_since = nowIso();
+          });
+          const inserted = await insertTicketBatch(batch.map(b => b.payload), userId).catch(() => false);
+          if (inserted) {
+            await db.sync_queue.bulkDelete(ids);
+            for (const b of batch) sent.push(['tickets', String(b.payload.id ?? '')]);
+            processed += batch.length;
+            succeeded += batch.length;
+            index += batch.length;
+            continue;
+          }
+          if (!isOnline()) break;
+          oneByOneUntil = index + batch.length;
+        }
+      }
+
+      index++;
+      processed++;
       try {
         // Mark as syncing
         await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1, sending_since: nowIso() });
 
         if (item.op === 'insert') {
-          await executeInsert(item.entity as StoreName, item.payload);
+          await executeInsert(item.entity as StoreName, item.payload, userId);
         } else if (item.op === 'update') {
           const id = item.payload.id as string;
           const { id: _removed, ...patch } = item.payload;
@@ -770,7 +867,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         }
 
         await db.sync_queue.delete(item.id);
-        if (item.op !== 'delete') await markSyncedIfNothingLeft(item.entity as StoreName, String(item.payload.id ?? ''));
+        if (item.op !== 'delete') sent.push([item.entity as StoreName, String(item.payload.id ?? '')]);
         succeeded++;
       } catch (err: any) {
         // Refused by the server: kept, no longer sent by itself (it would be refused again)
@@ -780,6 +877,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         if (!isOnline()) break;
       }
     }
+
+    await markSentRecordsSynced(sent);
   } finally {
     flushing = false;
   }
