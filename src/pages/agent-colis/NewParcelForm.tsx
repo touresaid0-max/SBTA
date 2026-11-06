@@ -11,6 +11,7 @@ import { getReferentiel } from '@/services/courrier/referentiels'
 import { generateOfflineParcelCodes } from '@/services/courrier/parcelCodeGenerator'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
+import { CourrierSyncQueueModal } from '@/components/parcel/CourrierSyncQueueModal'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
 import { buildReceiptData, printParcelTicket } from '@/utils/printParcelTicket'
 import type { ParcelNature, ParcelPriority, Parcel, ParcelReceiptData } from '@/types/parcel.types'
@@ -121,6 +122,8 @@ export default function NewParcelForm() {
   const total = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
   const conn = useConnection()
+
+  const [showSyncQueue, setShowSyncQueue] = useState(false)
 
   const [printModal, setPrintModal] = useState<{
     data: ParcelReceiptData
@@ -531,8 +534,13 @@ export default function NewParcelForm() {
         syncing={conn.syncing}
         pendingCount={conn.pendingCount}
         lastSyncError={conn.lastSyncError}
-        onShowQueue={() => {}}
-        onSyncNow={() => {}}
+        lastSyncedAt={conn.lastSyncedAt}
+        onShowQueue={() => setShowSyncQueue(true)}
+      />
+      <CourrierSyncQueueModal
+        open={showSyncQueue}
+        onClose={() => setShowSyncQueue(false)}
+        onSyncNow={async () => { await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); }}
       />
       {/* Header */}
       <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">

@@ -13,6 +13,8 @@ export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBorderea
 const TICKET_LOGO_SRC = '/logosbta001.JPG';
 const BAGAGE_LOGO_SRC = '/logosbta001.JPG';
 
+const LOGO_WAIT_MS = 3_000;
+
 async function loadLogoRaster(src: string, widthDots: number): Promise<RasterImage | null> {
   try {
     const img = new Image();
@@ -25,7 +27,9 @@ async function loadLogoRaster(src: string, widthDots: number): Promise<RasterIma
     if (img.complete && img.naturalWidth > 0) {
       await img.decode().catch(() => undefined);
     } else {
-      await loaded;
+      // A logo not kept on the device, on a line cut without the network knowing it, never
+      // finished loading: the ticket waited for it. Printed without the logo after this delay.
+      await withTimeout(loaded, LOGO_WAIT_MS, undefined);
       await img.decode().catch(() => undefined);
     }
     if (!img.naturalWidth || !img.naturalHeight) return null;

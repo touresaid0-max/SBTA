@@ -45,3 +45,37 @@ export const supabase = createClient(
     },
   }
 );
+
+// Without network, any request through the client first reads the login session: once the access
+// token has expired (after an hour offline), the client tries to renew it, retrying for up to
+// 30 s on a network error while it holds the session lock. Every other request waited in line
+// behind it — the connection checks every 15 s, the lists, the ticket printing (which reads the
+// print settings): printing a ticket offline took up to 15 minutes at a station.
+
+/**
+ * Whether the server answers, without going through the login session (no lock, no renewal).
+ * The stations are readable without login.
+ */
+export async function pingServer(timeoutMs = 10_000): Promise<boolean> {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${url}/rest/v1/stations?select=id&limit=1`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Background renewal of the login session: stopped without network, started again when the server answers. */
+export function setSessionRenewal(serverReachable: boolean): void {
+  void (serverReachable ? supabase.auth.startAutoRefresh() : supabase.auth.stopAutoRefresh()).catch(() => { /* next check */ });
+}

@@ -1,5 +1,6 @@
 import { db, type ReferentielRecord } from './db';
 import { supabase } from '@/services/supabase';
+import { isOnline } from './syncEngine';
 
 type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops';
 
@@ -83,6 +84,11 @@ export async function getReferentiel<T = unknown>(type: RefType): Promise<T[]> {
   // An empty list is a copy too: many stations have no fares or stops of their own. A list emptied
   // by an earlier version is replaced by the server's within the 3 s on a normal connection.
   const copy = cached && Array.isArray(cached.data) ? cached.data as T[] : null;
+
+  // Without network, the device's copy at once: asking the server first made every read (fare of
+  // a destination, opening of the sale screen…) wait the 3 s below when the line was cut but the
+  // station's network still up (requests left without answer)
+  if (!isOnline()) return copy ?? [];
 
   const fromServer = refreshOnce(type) as Promise<T[]>;
   // No copy on the device (first use): the server is needed
