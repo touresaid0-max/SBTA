@@ -130,6 +130,10 @@ export default function Buses() {
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [restoreModalBus, setRestoreModalBus] = useState<BusData | null>(null);
   const [restoreSaving, setRestoreSaving] = useState(false);
+  const [archivedSearch, setArchivedSearch] = useState('');
+  const [deleteModalBus, setDeleteModalBus] = useState<BusData | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteSaving, setDeleteSaving] = useState(false);
   const user = useAuthStore((s) => s.user);
 
   const [filters, setFilters] = useState({
@@ -264,6 +268,37 @@ export default function Buses() {
       setRestoreSaving(false);
     }
   };
+
+  // Permanent deletion of an archived bus: only one without any history (departures, fuel,
+  // expenses, repairs…); the server refuses the others and names their history, so that it is
+  // kept. Reason required, written to the audit log with the bus's full record.
+  const handleDeletePermanent = async () => {
+    if (!deleteModalBus) return;
+    setDeleteSaving(true);
+    try {
+      const { error } = await supabase.rpc('admin_delete_archived_bus', {
+        p_bus_id: deleteModalBus.id,
+        p_reason: deleteReason.trim(),
+      });
+      if (error) throw error;
+      toast.success(`Bus ${deleteModalBus.registration_number} supprimé définitivement`);
+      setArchivedBuses(prev => prev.filter(b => b.id !== deleteModalBus.id));
+      setDeleteModalBus(null);
+      setDeleteReason('');
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de la suppression', { duration: 8000 });
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
+
+  // Search in the archives: registration, make, model, company, reason, who archived it
+  const filteredArchivedBuses = archivedBuses.filter(bus => {
+    const q = archivedSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [bus.registration_number, bus.brand, bus.model, bus.companies?.name, bus.archive_reason, bus.archiver_email]
+      .some(v => String(v ?? '').toLowerCase().includes(q));
+  });
 
   const handleNew = () => {
     setEditingId(null);
@@ -1128,6 +1163,26 @@ export default function Buses() {
                 <p style={{ color: 'var(--text-secondary)' }}>Aucun bus archivé</p>
               </div>
             ) : (
+              <>
+              <div className="flex items-center gap-3 p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    value={archivedSearch}
+                    onChange={(e) => setArchivedSearch(e.target.value)}
+                    placeholder="Rechercher : immatriculation, marque, société, motif…"
+                    className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    style={{ borderColor: 'var(--border)' }}
+                  />
+                </div>
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {filteredArchivedBuses.length} sur {archivedBuses.length}
+                </span>
+              </div>
+              {filteredArchivedBuses.length === 0 ? (
+                <p className="text-center py-10 text-sm" style={{ color: 'var(--text-secondary)' }}>Aucun bus archivé ne correspond à « {archivedSearch.trim()} »</p>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1000px] table-auto">
                   <thead style={{ backgroundColor: 'var(--neutral-100)' }}>
@@ -1143,7 +1198,7 @@ export default function Buses() {
                     </tr>
                   </thead>
                   <tbody>
-                    {archivedBuses.map((bus) => (
+                    {filteredArchivedBuses.map((bus) => (
                       <tr key={bus.id} className="border-t hover:bg-gray-50">
                         <td className="p-4 whitespace-nowrap">
                           <span className="font-bold" style={{ color: 'var(--text-secondary)' }}>{bus.registration_number}</span>
@@ -1167,19 +1222,32 @@ export default function Buses() {
                           )}
                         </td>
                         <td className="p-4">
-                          <button
-                            onClick={() => setRestoreModalBus(bus)}
-                            className="p-2 hover:bg-green-50 rounded-lg"
-                            title="Restaurer le bus"
-                          >
-                            <ArchiveRestore className="w-4 h-4" style={{ color: '#0B7439' }} />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setRestoreModalBus(bus)}
+                              className="p-2 hover:bg-green-50 rounded-lg"
+                              title="Restaurer le bus"
+                            >
+                              <ArchiveRestore className="w-4 h-4" style={{ color: '#0B7439' }} />
+                            </button>
+                            {user?.role === 'admin' && (
+                              <button
+                                onClick={() => { setDeleteModalBus(bus); setDeleteReason(''); }}
+                                className="p-2 hover:bg-red-50 rounded-lg"
+                                title="Supprimer définitivement"
+                              >
+                                <Trash2 className="w-4 h-4" style={{ color: '#DC2626' }} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              )}
+              </>
             )}
           </div>
         )}
@@ -1247,6 +1315,79 @@ export default function Buses() {
                 {archiveSaving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                 <Archive className="w-4 h-4" />
                 Archiver définitivement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent deletion of an archived bus */}
+      {deleteModalBus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Trash2 className="w-5 h-5" style={{ color: '#DC2626' }} />
+                Supprimer définitivement
+              </h3>
+              <button onClick={() => setDeleteModalBus(null)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-secondary)' }}>
+                <Bus className="w-8 h-8" style={{ color: 'var(--primary)' }} />
+                <div>
+                  <p className="font-semibold">{deleteModalBus.registration_number}</p>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {deleteModalBus.brand} {deleteModalBus.model} — {deleteModalBus.capacity} places
+                  </p>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-red-50 border border-red-200 space-y-2">
+                <p className="text-sm" style={{ color: '#991B1B' }}>
+                  Le bus sera <strong>supprimé définitivement</strong> : il ne pourra plus être restauré.
+                </p>
+                <p className="text-sm" style={{ color: '#991B1B' }}>
+                  Seul un bus <strong>sans historique</strong> peut être supprimé (doublon, saisie par erreur).
+                  Un bus qui a des départs, du carburant, des dépenses ou des réparations reste archivé pour les conserver.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Motif de la suppression <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  rows={2}
+                  placeholder="Ex : doublon de AA-546-KV-01, saisi par erreur"
+                  className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  style={{ borderColor: 'var(--border)' }}
+                  autoFocus
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  10 caractères au moins — inscrit au journal d'audit avec la fiche du bus.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-5 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button
+                onClick={() => setDeleteModalBus(null)}
+                className="px-4 py-2 text-sm font-medium rounded-lg border hover:bg-gray-50"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDeletePermanent}
+                disabled={deleteSaving || deleteReason.trim().length < 10}
+                className="px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 flex items-center gap-2"
+                style={{ backgroundColor: '#DC2626' }}
+              >
+                {deleteSaving && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                <Trash2 className="w-4 h-4" />
+                Supprimer définitivement
               </button>
             </div>
           </div>
