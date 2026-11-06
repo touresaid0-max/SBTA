@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase, pingServer, setSessionRenewal } from '@/services/supabase';
+import { syncBannerLabel } from '@/components/shared/SyncStatusBanner';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
 import { requestPersistentStorage } from './persistentStorage';
 import { applyDataRetention } from '@/services/offline/dataRetention';
@@ -16,6 +17,8 @@ export interface ConnectionState {
   lastSyncedAt: string | null;
   lastSyncError: string | null;
   bannerLabel: string;
+  /** The app is kept on the device for working offline (false while it downloads) */
+  offlineReady: boolean;
   setSyncing: (v: boolean) => void;
   setPendingCount: (n: number) => void;
   setLastSyncedAt: (iso: string) => void;
@@ -34,6 +37,7 @@ const ConnectionContext = createContext<ConnectionState>({
   lastSyncedAt: null,
   lastSyncError: null,
   bannerLabel: '',
+  offlineReady: true,
   setSyncing: () => {},
   setPendingCount: () => {},
   setLastSyncedAt: () => {},
@@ -131,25 +135,7 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
     };
   }, [doCheck]);
 
-  const bannerLabel = (() => {
-    if (status === 'checking') return 'Vérification de la connexion…';
-    // Shown before « Synchronisation en cours » : nothing can be sent until the guichetier logs in again
-    if (status === 'online' && sessionExpired) {
-      return pendingCount > 0
-        ? `En ligne — session expirée : ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente, déconnectez-vous puis reconnectez-vous`
-        : 'En ligne — session expirée : déconnectez-vous puis reconnectez-vous';
-    }
-    if (syncing) return 'Synchronisation en cours…';
-    if (status === 'offline') {
-      if (pendingCount > 0) return `Hors ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente de synchronisation`;
-      return 'Hors ligne — fonctionnement local';
-    }
-    if (lastSyncError) return `En ligne — synchronisation à reprendre : ${lastSyncError}`;
-    if (pendingCount > 0) return `En ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente`;
-    if (!offlineReady) return 'En ligne — préparation du mode hors ligne, gardez la connexion';
-    if (lastSyncedAt) return 'En ligne — Synchronisé';
-    return 'En ligne';
-  })();
+  const bannerLabel = syncBannerLabel({ status, sessionExpired, syncing, pendingCount, lastSyncError, lastSyncedAt, offlineReady });
 
   return (
     <ConnectionContext.Provider value={{
@@ -160,6 +146,7 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
       lastSyncedAt,
       lastSyncError,
       bannerLabel,
+      offlineReady,
       setSyncing,
       setPendingCount,
       setLastSyncedAt,

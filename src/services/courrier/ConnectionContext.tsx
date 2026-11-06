@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { pingServer, setSessionRenewal } from '@/services/supabase';
+import { syncBannerLabel } from '@/components/shared/SyncStatusBanner';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
 import { applyDataRetention } from '@/services/offline/dataRetention';
 
@@ -81,18 +82,7 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
     };
   }, [doCheck]);
 
-  const bannerLabel = (() => {
-    if (status === 'checking') return 'Vérification de la connexion…';
-    if (syncing) return 'Synchronisation en cours…';
-    if (status === 'offline') {
-      if (pendingCount > 0) return `Hors ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente de synchronisation`;
-      return 'Hors ligne — fonctionnement local';
-    }
-    if (lastSyncError) return `En ligne — synchronisation à reprendre : ${lastSyncError}`;
-    if (pendingCount > 0) return `En ligne — ${pendingCount} opération${pendingCount > 1 ? 's' : ''} en attente`;
-    if (lastSyncedAt) return 'En ligne — Synchronisé';
-    return 'En ligne';
-  })();
+  const bannerLabel = syncBannerLabel({ status, syncing, pendingCount, lastSyncError, lastSyncedAt });
 
   return (
     <ConnectionContext.Provider value={{

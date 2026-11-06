@@ -716,8 +716,8 @@ export default function AgentColisDashboard() {
         syncing={conn.syncing}
         pendingCount={conn.pendingCount}
         lastSyncError={conn.lastSyncError}
+        lastSyncedAt={conn.lastSyncedAt}
         onShowQueue={() => setShowSyncQueue(true)}
-        onSyncNow={async () => { const r = await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); if (r.failed === 0 && r.processed > 0) conn.setLastSyncedAt(trustedNowIso()); void syncParcelsFromServer(stationId ?? undefined); loadParcels(); }}
       />
 
       {/* Sync queue modal */}

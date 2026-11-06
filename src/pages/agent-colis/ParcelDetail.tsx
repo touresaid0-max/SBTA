@@ -10,10 +10,11 @@ import { phoneCIError, toStoredPhoneCI } from '@/utils/phoneCI'
 import { cleanText, TEXT_LIMITS } from '@/utils/textInput'
 import { supabase } from '@/services/supabase'
 import { fetchTrackingEvents, updateParcelStatus, updateParcelNames } from '@/services/parcel.service'
-import { isOnline as courrierIsOnline, getPendingCount } from '@/services/courrier/syncEngine'
+import { isOnline as courrierIsOnline, getPendingCount, flushSyncQueue } from '@/services/courrier/syncEngine'
 import { getLocalParcel, getLocalTrackingEvents, localUpdateParcel, localAdvanceParcel, parcelRecordToParcel } from '@/services/courrier/offlineStore'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
+import { CourrierSyncQueueModal } from '@/components/parcel/CourrierSyncQueueModal'
 import { fetchSmsLogs, resendSms } from '@/services/emisSms.service'
 import type { SmsLog } from '@/services/emisSms.service'
 import ParcelStatusStepper from '@/components/parcel/ParcelStatusStepper'
@@ -40,6 +41,7 @@ export default function ParcelDetail() {
   // Account and station of the counter's session: also known after an offline login
   const user = useCourrierUser()
   const conn = useConnection()
+  const [showSyncQueue, setShowSyncQueue] = useState(false)
 
   const [parcel, setParcel] = useState<Parcel | null>(null)
   const [scheduleInfo, setScheduleInfo] = useState<{
@@ -385,8 +387,13 @@ export default function ParcelDetail() {
         syncing={conn.syncing}
         pendingCount={conn.pendingCount}
         lastSyncError={conn.lastSyncError}
-        onShowQueue={() => {}}
-        onSyncNow={() => {}}
+        lastSyncedAt={conn.lastSyncedAt}
+        onShowQueue={() => setShowSyncQueue(true)}
+      />
+      <CourrierSyncQueueModal
+        open={showSyncQueue}
+        onClose={() => setShowSyncQueue(false)}
+        onSyncNow={async () => { await flushSyncQueue(); conn.setPendingCount(await getPendingCount()); }}
       />
 
       {/* Header */}
