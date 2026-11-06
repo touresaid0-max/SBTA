@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import { supabase } from '@/services/supabase';
+import { pingServer, setSessionRenewal } from '@/services/supabase';
 import { setOnline as setSyncEngineOnline } from './syncEngine';
 import { applyDataRetention } from '@/services/offline/dataRetention';
 
@@ -35,17 +35,9 @@ const ConnectionContext = createContext<ConnectionState>({
 
 const PING_INTERVAL_MS = 15_000;
 
+/** Without the login session: offline, a check through the client waited for its renewal (see pingServer). */
 async function pingSupabase(): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('stations')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-    return !error;
-  } catch {
-    return false;
-  }
+  return pingServer();
 }
 
 export function ConnectionProvider({ children }: { children?: ReactNode }) {
@@ -59,6 +51,7 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
   const doCheck = useCallback(async () => {
     const reachable = await pingSupabase();
     setSyncEngineOnline(reachable);
+    setSessionRenewal(reachable);
     setStatus(reachable ? 'online' : 'offline');
     return reachable;
   }, []);
@@ -75,6 +68,7 @@ export function ConnectionProvider({ children }: { children?: ReactNode }) {
     const onOnline = () => { void doCheck(); };
     const onOffline = () => {
       setSyncEngineOnline(false);
+      setSessionRenewal(false);
       setStatus('offline');
     };
     window.addEventListener('online', onOnline);

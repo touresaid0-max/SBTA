@@ -28,6 +28,7 @@ import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import TpePosPendingBaggage from '@/components/pos/TpePosPendingBaggage';
 import { fetchScheduleSeatMap } from '@/services/seatMap.service';
 import { fetchPendingReprints, consumeReprint, type TicketReprintAuthorization } from '@/services/ticketReprint.service';
+import { isOnline } from '@/services/pos/syncEngine';
 import { useConnection } from '@/services/pos/ConnectionContext';
 import type { ScheduleSeatMap, EnrichedSeat as StructSeat } from '@/types/seatMap.types';
 import { trustedNowIso } from '@/services/offline/deviceClock';
@@ -190,9 +191,10 @@ export default function POSVente() {
     }
   }, [session?.counter_id]);
 
-  // Poll reprint authorizations granted by the admin (online only — empty list otherwise)
+  // Poll reprint authorizations granted by the admin (online only — empty list otherwise).
+  // Offline, not even asked: the request waited for the login session, ahead of the printing.
   const loadReprintAuths = useCallback(async () => {
-    if (!departId) return;
+    if (!departId || !isOnline()) return;
     setReprintAuths(await fetchPendingReprints(departId));
   }, [departId]);
 

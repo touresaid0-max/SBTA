@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { isOnline } from './pos/syncEngine'
 
 export interface PrintCustomization {
   id: number
@@ -37,22 +38,46 @@ let cached: PrintCustomization | null = null
 let cacheTime = 0
 const CACHE_TTL = 30_000 // 30 seconds
 
+// Every ticket printed asked the server for these settings once the 30 s copy had expired, even
+// without network: the print waited behind the session's renewal attempts, for minutes at a
+// station. The last settings read are kept on the device; without network they are used at once,
+// and online the server gets PRINT_SERVER_WAIT_MS before the kept copy is printed.
+const STORAGE_KEY = 'sbta_print_customization'
+const PRINT_SERVER_WAIT_MS = 3_000
+
+function keptCopy(): PrintCustomization {
+  if (cached) return cached
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) } as PrintCustomization
+  } catch { /* no copy on this device */ }
+  return { ...DEFAULTS }
+}
+
 export async function getPrintCustomization(): Promise<PrintCustomization> {
   if (cached && Date.now() - cacheTime < CACHE_TTL) return cached
+  if (!isOnline()) return keptCopy()
 
-  const { data, error } = await supabase
-    .from('print_customization')
-    .select('*')
-    .eq('id', 1)
-    .maybeSingle()
+  const fromServer = (async () => {
+    const { data, error } = await supabase
+      .from('print_customization')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle()
+    if (error || !data) return null
+    cached = { ...DEFAULTS, ...data } as PrintCustomization
+    cacheTime = Date.now()
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cached)) } catch { /* kept for this page only */ }
+    return cached
+  })().catch(() => null)
 
-  if (error || !data) {
-    return { ...DEFAULTS }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), PRINT_SERVER_WAIT_MS) })
+  try {
+    return (await Promise.race([fromServer, late])) ?? keptCopy()
+  } finally {
+    clearTimeout(timer)
   }
-
-  cached = { ...DEFAULTS, ...data } as PrintCustomization
-  cacheTime = Date.now()
-  return cached
 }
 
 export async function savePrintCustomization(
@@ -73,6 +98,7 @@ export async function savePrintCustomization(
 
   cached = data as PrintCustomization
   cacheTime = Date.now()
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cached)) } catch { /* kept for this page only */ }
   return cached
 }
 
