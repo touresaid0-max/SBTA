@@ -280,7 +280,7 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
   </div>
   <div class="section">
     <div class="line">
-      <span class="lbl">SIEGE&nbsp;&nbsp;<b class="val-strong">${escapeHtml(seatStr)}</b></span>
+      <span class="lbl">SIEGE&nbsp;&nbsp;<b class="seat-num">${escapeHtml(seatStr)}</b></span>
       <span class="val">TARIF&nbsp;&nbsp;<b class="val-strong">${escapeHtml(tarifStr)}</b></span>
     </div>
   </div>
@@ -354,6 +354,8 @@ async function buildHTMLTickets(list: PrintTicketData[], settings: PrintSettings
   .line .lbl { flex: 0 0 auto; white-space: normal; word-break: break-word; }
   .line .val { flex: 1 1 auto; text-align: right; font-weight: bold; white-space: normal; word-break: break-word; }
   .val-strong { font-weight: 900; font-size: 11px; }
+  /* The seat number, read by the passenger: the largest figure of the ticket (it was 11 px) */
+  .seat-num { font-weight: 900; font-size: 28px; line-height: 1; }
 
   .notes { padding: 3px 4px; overflow: visible; }
   .note { text-align: center; font-family: Arial, Helvetica, sans-serif; font-size: 8.5px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; word-break: normal; }

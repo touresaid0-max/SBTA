@@ -77,6 +77,12 @@ function setNormal(): Uint8Array {
   return cmd(ESC, 0x21, 0x00);
 }
 
+/** Characters `factor` times wider and taller (GS !, 1 to 8); 1 goes back to the normal size. */
+function setCharSize(factor: number): Uint8Array {
+  const n = Math.min(8, Math.max(1, Math.round(factor))) - 1;
+  return cmd(GS, 0x21, (n << 4) | n);
+}
+
 function setLineSpacing(spacing: number): Uint8Array {
   return cmd(ESC, 0x33, spacing);
 }
@@ -184,11 +190,10 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   const tarifPart = `${ticket.price} F`;
   const seatLine = `${padRight('Siege:', 8)}${seatStr}`;
   const seatPad = Math.max(innerW - tarifPart.length, seatLine.length + 2);
-  if (seatLine.length <= seatPad) {
-    parts.push(setDouble(true), text(vLine(padRight(seatLine, innerW - tarifPart.length) + tarifPart)), lineFeed(), setNormal());
-  } else {
-    parts.push(setDouble(true), text(vLine(padRight(seatLine, innerW))), lineFeed(), text(vLine(padRight(tarifPart, innerW))), lineFeed(), setNormal());
-  }
+  // The passenger's copy: the seat on its own line, three times larger (customers could not read
+  // it), then the fare
+  parts.push(setAlign('center'), setBold(true), setCharSize(3), text(`SIEGE ${seatStr}`), lineFeed(), setCharSize(1), setBold(false), setAlign('left'));
+  parts.push(setDouble(true), text(vLine(padRight(`${padRight('Tarif:', 8)}${tarifPart}`, innerW))), lineFeed(), setNormal());
 
   const carStr = (depart.bus_plate ?? '-').slice(0, 14);
   const ticketStr = ticket.ticket_number;
