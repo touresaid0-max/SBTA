@@ -1,7 +1,7 @@
 import { db, type TransferLogRecord, type PendingTransferRecord, type TicketRecord, type DepartRecord } from './db';
 import { getAll, localUpdate } from './offlineStore';
 import { supabase } from '@/services/supabase';
-import { transferTicketsToDepart, getDepartById, updateDepart } from './departService';
+import { transferTicketsToDepart, getDepartById, updateDepart, seatsCommercialisables } from './departService';
 import { trustedNowIso } from '@/services/offline/deviceClock';
 import { uuidV4 } from '@/utils/uuid';
 
@@ -204,7 +204,8 @@ export async function checkAndApplyPendingTransfers(
     const targetSoldTickets = allTickets.filter(
       t => t.depart_id === newDepart.id && t.status !== 'cancelled',
     );
-    const availableSeats = newDepart.seats_total - targetSoldTickets.length;
+    // Number of seats (seats_total is the last seat number)
+    const availableSeats = seatsCommercialisables(newDepart) - targetSoldTickets.length;
 
     if (availableSeats < ticketsToTransfer.length) {
       // Not enough space on this depart — skip, try next time

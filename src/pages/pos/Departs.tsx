@@ -7,6 +7,7 @@ import {
   type VehiculeRef, type ChauffeurRef,
   seatsLibres,
   seatsCommercialisables,
+  lastSeatNumber,
   getSeatRangeForStation,
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
   getVehicules, getChauffeurs, getGares,
@@ -1101,12 +1102,20 @@ export default function POSDeparts() {
           soldTickets={editSoldTickets}
           nextDepart={editNextDepart}
           onSave={async (newBusId, newBusPlate, newDriverId, newDriverName, newCapacity) => {
+            // Another bus: its capacity and its numbering (« vendu à partir de »). The capacity
+            // is the number of seats; the last seat number follows from the first one.
+            const newBus = newBusId !== selectedRow.bus_id ? editVehicules.find(v => v.id === newBusId) : undefined;
+            const seatsFrom = Math.max(1, newBus?.seats_sold_from ?? selectedRow.seats_from ?? 1);
             await updateDepart(selectedRow.id, {
               bus_id: newBusId,
               bus_plate: newBusPlate,
               driver_id: newDriverId,
               driver_name: newDriverName,
-              seats_total: newCapacity,
+              ...(newBus ? {
+                seats_from: seatsFrom,
+                seats_total: lastSeatNumber(seatsFrom, newCapacity),
+                seats_capacity: newCapacity,
+              } : {}),
             });
           }}
           onTransfer={async (surplusTickets, nextDepart) => {

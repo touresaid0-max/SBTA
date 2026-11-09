@@ -9,6 +9,7 @@ import {
   nextDepartureNumber,
   nextRouteNumber,
   validateSeatAllocations,
+  lastSeatNumber,
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
   type SeatAllocation,
   type DepartRecord,
@@ -109,6 +110,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   }, [session?.station_id, session?.counter_id, ligneId, departureDate]);
 
   const selectedBus = vehicules.find(v => v.id === busId);
+  // seatsTotal is the bus capacity (number of seats); the seats are numbered from seatsFrom:
+  // 63 seats sold from n°2 → 2 to 64
+  const lastSeat = lastSeatNumber(seatsFrom, seatsTotal);
 
   const handleBusChange = (id: string) => {
     setBusId(id);
@@ -202,8 +206,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         status: isRamassage ? 'ramassage' : 'planned',
         is_ramassage: isRamassage,
         is_ac: false,
-        seats_total: seatsTotal,
+        seats_total: lastSeat,
         seats_from: seatsFrom,
+        seats_capacity: seatsTotal,
         seat_allocations: allAllocations.length > 0 ? allAllocations : undefined,
         station_id: stationId,
         station_name: session?.station_name ?? '',
@@ -543,14 +548,14 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                   <input
                     type="number"
                     min={seatsFrom}
-                    max={seatsTotal}
+                    max={lastSeat}
                     value={newAllocSeatFrom}
                     onChange={e => {
                       setNewAllocSeatFrom(e.target.value);
                       const from = parseInt(e.target.value) || 0;
                       const count = parseInt(newAllocSeatCount) || 0;
                       if (from > 0 && count > 0) {
-                        setNewAllocSeatTo(String(Math.min(from + count - 1, seatsTotal)));
+                        setNewAllocSeatTo(String(Math.min(from + count - 1, lastSeat)));
                       }
                     }}
                     className={fieldInput}
@@ -563,7 +568,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                   <input
                     type="number"
                     min={seatsFrom}
-                    max={seatsTotal}
+                    max={lastSeat}
                     value={newAllocSeatTo}
                     onChange={e => setNewAllocSeatTo(e.target.value)}
                     className={fieldInput}
@@ -579,8 +584,8 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                   if (!newAllocStationId) { setAllocError('Veuillez sélectionner une gare secondaire'); return; }
                   const from = parseInt(newAllocSeatFrom);
                   const to = parseInt(newAllocSeatTo);
-                  if (isNaN(from) || isNaN(to) || from < 1 || to > seatsTotal || from > to) {
-                    setAllocError(`Plage invalide — les sièges doivent être entre 1 et ${seatsTotal}`); return;
+                  if (isNaN(from) || isNaN(to) || from < seatsFrom || to > lastSeat || from > to) {
+                    setAllocError(`Plage invalide — les sièges doivent être entre ${seatsFrom} et ${lastSeat}`); return;
                   }
                   const gare = gares.find(g => g.id === newAllocStationId);
                   const newAlloc: SeatAllocation = {
@@ -590,7 +595,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                     seat_to: to,
                   };
                   const updated = [...seatAllocations, newAlloc];
-                  const err = validateSeatAllocations(updated, seatsTotal);
+                  const err = validateSeatAllocations(updated, lastSeat, seatsFrom);
                   if (err) { setAllocError(err); return; }
                   setSeatAllocations(updated);
                   setNewAllocStationId(''); setNewAllocSeatCount(''); setNewAllocSeatFrom(''); setNewAllocSeatTo('');

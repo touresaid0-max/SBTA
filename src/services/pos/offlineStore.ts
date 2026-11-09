@@ -146,6 +146,10 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
   const depIso = s.departure_datetime as string;
   const depDate = depIso ? depIso.slice(0, 10) : trustedNowIso().slice(0, 10);
   const depTime = depIso ? depIso.slice(11, 16) : '00:00';
+  // The server holds the NUMBER of seats; on the device seats_total is the LAST seat number. A
+  // bus sold from n°2 keeps its capacity, only its numbering moves: 63 seats → 2 to 64 (it was
+  // taken as the last number: 2 to 63, one seat lost). Same rule as lastSeatNumber (departService).
+  const seatsCount = Math.max(0, Number(s.seats_total ?? (Number(s.seats_available ?? 0) + Number(s.seats_reserved ?? 0))) || 0);
   return {
     id: s.id,
     route_id: s.route_id ?? null,
@@ -156,8 +160,9 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     departure_date: depDate,
     departure_time: depTime,
     status: s.status ?? 'planifie',
-    seats_total: s.seats_total ?? ((s.seats_available ?? 0) + (s.seats_reserved ?? 0)) ?? 0,
+    seats_total: seatsCount > 0 ? seatsSoldFrom + seatsCount - 1 : 0,
     seats_from: seatsSoldFrom,
+    seats_capacity: seatsCount,
     seats_sold: s.seats_reserved ?? 0,
     station_id: s.departure_station_id ?? null,
     station_name: s.station_name ?? null,
@@ -559,8 +564,13 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             solde: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
             caisse: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
             seat_allocations: existing.seat_allocations,
-            seats_from: localRecord.seats_from,
-            seats_total: existing.seats_total,
+            // Numbering and capacity from the server (bus « vendu à partir de », number of
+            // seats): this also gives back the seat lost by the departures created before (2 to
+            // 63 for 63 seats). Kept as on the device while a change made here is not sent yet
+            // (a bus changed offline), or if the server gives no number of seats.
+            ...(pendingDeparts.has(s.id) || !(Number(localRecord.seats_capacity) > 0)
+              ? { seats_from: existing.seats_from ?? localRecord.seats_from, seats_total: existing.seats_total, seats_capacity: existing.seats_capacity }
+              : { seats_from: localRecord.seats_from, seats_total: localRecord.seats_total, seats_capacity: localRecord.seats_capacity }),
             bus_plate: plate ?? existing.bus_plate,
             bus_name: plate ?? existing.bus_name,
             driver_name: driverName ?? existing.driver_name,
