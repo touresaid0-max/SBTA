@@ -73,22 +73,31 @@ export default function ChatInbox() {
 
   const loadMessages = async () => {
     if (!user) return;
-    const { data } = await supabase
+    // The 50 MOST RECENT messages, shown oldest first. They were read oldest first and cut at
+    // 50: past 50 messages, the inbox showed the first 50 of its history and never a new one
+    // (« Nouvel employé créé par l'Admin… » did not appear).
+    const { data: latest } = await supabase
       .from('admin_chat_messages')
       .select('*')
       .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(50);
+    const data: ChatMessage[] = ((latest ?? []) as ChatMessage[]).slice().reverse();
 
-    if (data && data.length > 0) {
+    if (data.length > 0) {
       setMessages(data);
-      const firstAdminMsg = data.find(m => m.sender_id !== user.id);
-      if (firstAdminMsg) {
-        setAdminId(firstAdminMsg.sender_id);
-        loadAdminName(firstAdminMsg.sender_id);
+      // Replies go to the admin of the latest message received
+      const lastAdminMsg = [...data].reverse().find(m => m.sender_id !== user.id);
+      if (lastAdminMsg) {
+        setAdminId(lastAdminMsg.sender_id);
+        loadAdminName(lastAdminMsg.sender_id);
       }
-      const unread = data.filter(m => m.receiver_id === user.id && !m.is_read);
-      unread.forEach(m => markAsRead(m.id));
+      // Everything received is now read, older messages included (one request)
+      await supabase
+        .from('admin_chat_messages')
+        .update({ is_read: true })
+        .eq('receiver_id', user.id)
+        .eq('is_read', false);
       setUnreadCount(0);
     }
   };
