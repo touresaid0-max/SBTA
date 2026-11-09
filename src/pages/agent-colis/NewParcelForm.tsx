@@ -219,8 +219,8 @@ export default function NewParcelForm() {
     const now = trustedNowIso()
     const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
-    // Code: agency code of the station + the next number reserved on this device (530001, 530002…),
-    // the same form as online
+    // Code of the offline form (agency code + H + 5 characters), final: the numbers of the
+    // sequence (020001, 020002…) are given by the server to the parcels saved online
     const { parcel_code, reference, daily_sequence, tracking_url } =
       await generateOfflineParcelCodes(myStation.id, agencyCode)
 

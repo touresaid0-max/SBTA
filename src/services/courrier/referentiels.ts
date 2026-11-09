@@ -1,7 +1,7 @@
 import { db } from './db';
 import { supabase } from '@/services/supabase';
 import { isOnline } from './syncEngine';
-import { stationAgencyCode, topUpParcelCodePool } from './parcelCodeGenerator';
+import { removeReservedParcelCodes } from './parcelCodeGenerator';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -103,16 +103,8 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
         });
       }
 
-      // Parcel codes reserved in advance (6 digits: agency code of the station + number, 530001…): a parcel
-      // created without network gets the next one, final on its receipt. Topped up here, while
-      // online; a failure keeps the codes already on the device.
-      try {
-        await topUpParcelCodePool(stationId, await stationAgencyCode(stationId), async count => {
-          const { data, error } = await supabase.rpc('reserve_parcel_codes', { p_station_id: stationId, p_count: count });
-          if (error) throw error;
-          return (data ?? []) as string[];
-        });
-      } catch { /* topped up at the next refresh */ }
+      // Parcel codes reserved in advance by an earlier version: no longer used, removed
+      try { await removeReservedParcelCodes(); } catch { /* removed at the next refresh */ }
     }
   } catch (err) {
     console.warn('[courrier-sync] Failed to refresh referentiels:', err);

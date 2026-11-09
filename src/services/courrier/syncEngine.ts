@@ -453,18 +453,11 @@ async function newCodeFor(record: Record<string, unknown>): Promise<Record<strin
     if (error) throw error;
     return Boolean(data);
   };
-  // The next number of the sending station (530001, 530002…), asked of the server: online here.
-  // Otherwise (station without agency code, older server) a code of the offline form.
-  let code: string | null = null;
+  // Another code of the offline form, with the agency code of the sending station: the numbers
+  // of the sequence (020001, 020002…) are only given by the server when a parcel is saved online
   const stationId = String(record.origin_station_id ?? '');
-  if (stationId) {
-    const { data } = await supabase.rpc('reserve_parcel_codes', { p_station_id: stationId, p_count: 1 });
-    code = (Array.isArray(data) && typeof data[0] === 'string') ? data[0] : null;
-  }
-  if (!code) {
-    const agency = (stationId && await stationAgencyCode(stationId)) || agencyCodeOf(printed);
-    code = await generateOfflineParcelCode(agency || null, isTaken);
-  }
+  const agency = (stationId && await stationAgencyCode(stationId)) || agencyCodeOf(printed);
+  const code = await generateOfflineParcelCode(agency || null, isTaken);
   const registeredAt = new Date(String(record.registered_at ?? record.created_at ?? trustedNowIso()));
   return {
     parcel_code: code,

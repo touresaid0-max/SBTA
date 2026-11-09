@@ -58,25 +58,17 @@ export async function generateOfflineParcelCode(
   throw new Error('Impossible de créer un code courrier unique')
 }
 
-// ── Codes reserved for parcels created without network ──
-// A parcel code is the agency code of the sending station followed by a number that follows on:
-// 6 digits in all: 530001, 530002… (server counter, migration 20261109120000). Without network the device cannot
-// ask for the next number: while online it reserves some in advance for its station
-// (reserve_parcel_codes), and uses them offline. The code printed on the receipt is final.
+// ── Parcel codes: strict sequence online, distinct code offline ──
+// Online, the server gives the next number of the sending station when the parcel is saved:
+// 6 digits in all, 020001, 020002, 020003… (migrations 20261109120000 and 20261110120000), with
+// no number lost. Offline, the parcel gets a code of its own form (agency code + H + 5
+// characters, above), final, that takes no number of the sequence. Numbers are no longer
+// reserved in advance: every browser opened on the courrier took 40 of them, and the next parcel
+// online got 020122 instead of 020003.
 
-const POOL_TARGET = 40
-const POOL_MIN = 20
-const poolKey = (stationId: string) => `parcel_codes_${stationId}`
-
-interface CodePool { agency_code: string; codes: string[] }
-
-async function readPool(stationId: string): Promise<CodePool | null> {
-  const record = await db.referentiels.get(poolKey(stationId))
-  return (record?.data as CodePool[] | undefined)?.[0] ?? null
-}
-
-async function writePool(stationId: string, pool: CodePool): Promise<void> {
-  await db.referentiels.put({ key: poolKey(stationId), type: 'stations', data: [pool], updated_at: trustedNowIso() })
+/** Codes reserved in advance by an earlier version, still kept on this device: removed. */
+export async function removeReservedParcelCodes(): Promise<void> {
+  await db.referentiels.where('key').startsWith('parcel_codes_').delete()
 }
 
 /** Agency code of a station, from the stations kept on the device ('' when it has none). */
@@ -84,48 +76,6 @@ export async function stationAgencyCode(stationId: string): Promise<string> {
   const record = await db.referentiels.get('stations_all')
   const station = (record?.data as { id: string; agency_code?: string | null }[] | undefined)?.find(s => s.id === stationId)
   return (station?.agency_code ?? '').trim()
-}
-
-/** Codes kept on the device for a station (tests, display). */
-export async function reservedParcelCodes(stationId: string): Promise<string[]> {
-  return (await readPool(stationId))?.codes ?? []
-}
-
-/**
- * Keeps POOL_MIN to POOL_TARGET reserved codes for the station (`reserve` asks the server for
- * new ones). Codes of another agency code (changed by the admin) are dropped; a station without
- * agency code keeps none.
- */
-export async function topUpParcelCodePool(
-  stationId: string,
-  agencyCode: string,
-  reserve: (count: number) => Promise<string[]>,
-): Promise<void> {
-  const current = await readPool(stationId)
-  if (!agencyCode) {
-    if (current) await db.referentiels.delete(poolKey(stationId))
-    return
-  }
-  const kept = current?.agency_code === agencyCode ? current.codes : []
-  if (kept.length >= POOL_MIN) return
-  const fresh = await reserve(POOL_TARGET - kept.length)
-  await db.transaction('rw', db.referentiels, async () => {
-    // Read again: codes may have been used meanwhile
-    const now = await readPool(stationId)
-    const left = now?.agency_code === agencyCode ? now.codes : []
-    await writePool(stationId, { agency_code: agencyCode, codes: Array.from(new Set([...left, ...fresh])) })
-  })
-}
-
-/** Next reserved code of the station (null when none is left). Never given twice, even across tabs. */
-export async function takeReservedParcelCode(stationId: string, agencyCode: string): Promise<string | null> {
-  return db.transaction('rw', db.referentiels, async () => {
-    const pool = await readPool(stationId)
-    if (!pool || pool.agency_code !== agencyCode || pool.codes.length === 0) return null
-    const [code, ...rest] = pool.codes
-    await writePool(stationId, { agency_code: agencyCode, codes: rest })
-    return code
-  })
 }
 
 /**
@@ -149,8 +99,7 @@ async function getNextDailySequence(stationId: string): Promise<number> {
 }
 
 /**
- * Generate all parcel codes locally: a code reserved for the station (530001, 530002…), or the
- * offline form (agency code + H + 5 characters, see above) when none is left.
+ * Generate all parcel codes locally (offline form: agency code + H + 5 characters, see above).
  * Returns parcel_code, reference, daily_sequence, and tracking_url.
  */
 export async function generateOfflineParcelCodes(
@@ -163,7 +112,7 @@ export async function generateOfflineParcelCodes(
   tracking_url: string
 }> {
   if (!agencyCode) throw new Error('Code agence non défini pour cette gare : demandez à l\'administrateur de le saisir (Gares), puis enregistrez le courrier.')
-  const code = await takeReservedParcelCode(stationId, agencyCode) ?? await generateOfflineParcelCode(agencyCode)
+  const code = await generateOfflineParcelCode(agencyCode)
   const now = trustedNow()
   const reference = formatReference(now, code)
   const daily_sequence = await getNextDailySequence(stationId)
