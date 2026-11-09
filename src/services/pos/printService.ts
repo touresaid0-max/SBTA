@@ -262,7 +262,7 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
   <div class="header">
     <div class="brand">
       <div class="brand-logo"><img src="${TICKET_LOGO_SRC}" alt="SBTA"/></div>
-      <div class="brand-sub">Société Bonkoungou Transport de l&apos;Angély</div>
+      <div class="brand-sub">Société Bonkoungou Transport de L&apos;Agneby</div>
       <div class="brand-sub phone">${escapeHtml(phoneLine)}</div>
     </div>
   </div>
