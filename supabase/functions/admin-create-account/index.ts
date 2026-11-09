@@ -59,6 +59,79 @@ Deno.serve(async (req: Request) => {
     const accountEmail = email || employee.professional_email || employee.personal_email;
     if (!accountEmail) throw new Error("Email requis pour créer le compte");
 
+    // 3b. Chauffeur qui a un profil sans connexion (migration 20261110100000) : le vrai compte
+    // reprend ce profil (même identifiant) au lieu d'en créer un second — pas de chauffeur en
+    // double, les départs déjà affectés restent à ce chauffeur.
+    if (employee.auth_user_id) {
+      const { data: existing } = await supabaseAdmin.auth.admin.getUserById(employee.auth_user_id);
+      if (existing?.user?.app_metadata?.driver_profile === true) {
+        const profileId = employee.auth_user_id as string;
+        const { error: upgradeError } = await supabaseAdmin.auth.admin.updateUserById(profileId, {
+          email: accountEmail,
+          password,
+          email_confirm: true,
+          ban_duration: "none",
+          app_metadata: {
+            role: employee.role,
+            provider: "email",
+            providers: ["email"],
+            driver_profile: false,
+          },
+          user_metadata: {
+            employee_id: employee.id,
+            first_name: employee.first_name,
+            last_name: employee.last_name,
+            role: employee.role,
+          },
+        });
+        if (upgradeError) throw new Error(upgradeError.message);
+
+        const now = new Date().toISOString();
+        const { error: profileError } = await supabaseAdmin
+          .from("users")
+          .update({
+            email:         accountEmail,
+            status:        "active",
+            is_active:     true,
+            assistance_gp: assistance_gp === true,
+            updated_at:    now,
+          })
+          .eq("id", profileId);
+        if (profileError) throw new Error(profileError.message);
+
+        const { error: employeeError } = await supabaseAdmin
+          .from("employees")
+          .update({
+            account_status:     "active",
+            account_created_at: now,
+            account_created_by: caller.id,
+            professional_email: accountEmail,
+            updated_at:         now,
+            ...(assigned_route_ids !== undefined ? { assigned_route_ids: Array.isArray(assigned_route_ids) && assigned_route_ids.length > 0 ? assigned_route_ids : [] } : {}),
+          })
+          .eq("id", employee_id);
+        if (employeeError) throw employeeError;
+
+        await supabaseAdmin.from("activity_logs").insert({
+          user_id:     caller.id,
+          target_id:   employee_id,
+          target_type: "employee",
+          action:      "account_created_by_admin",
+          description: `Compte créé pour ${employee.first_name} ${employee.last_name} (${employee.role}) — Email : ${accountEmail} (profil chauffeur repris)`,
+          new_values:  { email: accountEmail, auth_user_id: profileId },
+        });
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Compte créé pour ${employee.first_name} ${employee.last_name}`,
+            auth_uid: profileId,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // 4. Créer le compte Auth Supabase — ou adopter un compte orphelin existant
     let authUid: string;
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
