@@ -103,7 +103,7 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
         });
       }
 
-      // Parcel codes reserved in advance (agency code of the station + 001, 002…): a parcel
+      // Parcel codes reserved in advance (6 digits: agency code of the station + number, 530001…): a parcel
       // created without network gets the next one, final on its receipt. Topped up here, while
       // online; a failure keeps the codes already on the device.
       try {

@@ -1,11 +1,13 @@
 /*
-# Codes courrier : code agence de la gare qui expédie, suivi de 001, 002, 003…
+# Codes courrier : 6 chiffres, code agence de la gare qui expédie + numéro qui se suit
 
 ## Besoin
 Le code d'un courrier était le code agence suivi de 4 chiffres tirés au hasard (6 chiffres au
 hasard pour une gare sans code agence), et hors ligne une forme « H » + 5 caractères. Il doit
-être le code agence de la gare qui expédie suivi d'un numéro qui se suit : 53001, 53002, 53003…
-(après 53999 : 531000, 531001…).
+faire 6 chiffres : le code agence de la gare qui expédie suivi d'un numéro qui se suit,
+complété par des zéros jusqu'à 6 chiffres : 530001, 530002, 530003… pour le code agence 53
+(un code agence de 3 chiffres : 221001, 221002…). Au-delà (539999), le numéro s'allonge :
+5310000.
 
 ## Règles
 1. Préfixe : le code agence de la gare de départ (stations.agency_code), celui de la liste
@@ -15,14 +17,15 @@ hasard pour une gare sans code agence), et hors ligne une forme « H » + 5 cara
    à l'administrateur de saisir le code.
 3. Numéro : un compteur par code agence (parcel_code_counters), incrémenté en une seule
    instruction : deux courriers enregistrés au même instant ne reçoivent jamais le même numéro.
-   Un code déjà pris (ancien code au hasard de la même forme) est sauté.
+   Un code déjà pris (ancien code au hasard : code agence + 4 chiffres, la même forme) est
+   sauté : la suite passe au numéro suivant libre.
 4. Hors ligne : le poste réserve à l'avance des numéros pour sa gare (reserve_parcel_codes) et
    les utilise sans réseau ; le code imprimé sur le reçu est définitif. Un numéro réservé et
    jamais utilisé laisse un trou dans la suite.
 5. Code déjà fourni (courrier créé hors ligne) : conservé, comme avant.
 6. Courriers existants : leurs codes ne changent pas (reçus déjà remis aux clients).
 7. Référence (unique) : « MM/JJ-HHMI- » suivi du code COMPLET, au lieu de ses 4 derniers
-   caractères. Avec des numéros qui se suivent, 53001, 23001 et 63001 finissent tous par 3001 :
+   caractères. Avec des numéros qui se suivent, 530001, 230001 et 630001 finissent tous par 0001 :
    deux gares enregistrant leur n°001 dans la même minute auraient eu la même référence, et le
    second courrier aurait été refusé. Le code étant unique, la référence l'est aussi. Les
    références existantes ne changent pas.
@@ -42,14 +45,19 @@ CREATE TABLE IF NOT EXISTS public.parcel_code_counters (
 ALTER TABLE public.parcel_code_counters ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.parcel_code_counters FROM anon, authenticated;
 
--- 2. Code formé : préfixe + numéro sur 3 chiffres au moins (1 → 001, 1000 → 1000)
---    (lpad seul tronquerait 1000 en « 100 »)
+-- 2. Code formé : préfixe + numéro complété par des zéros jusqu'à 6 chiffres en tout
+--    (53 + 1 → 530001 ; 221 + 1 → 221001). Un numéro trop long pour 6 chiffres est gardé
+--    entier (53 + 10000 → 5310000) : lpad seul le tronquerait.
 CREATE OR REPLACE FUNCTION public.format_parcel_code(p_agency_code text, p_number integer)
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
 AS $$
-  SELECT p_agency_code || CASE WHEN p_number < 1000 THEN lpad(p_number::text, 3, '0') ELSE p_number::text END;
+  SELECT p_agency_code || CASE
+    WHEN length(p_number::text) < 6 - length(p_agency_code)
+      THEN lpad(p_number::text, 6 - length(p_agency_code), '0')
+    ELSE p_number::text
+  END;
 $$;
 
 -- 3. Prochain code libre pour un code agence (numéro suivant, codes déjà pris sautés)

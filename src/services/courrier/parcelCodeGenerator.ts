@@ -13,7 +13,7 @@ export function formatReference(date: Date, code: string): string {
   const hh = pad(date.getHours(), 2)
   const mi = pad(date.getMinutes(), 2)
   // The whole code, as on the server: the reference is unique, and with numbers that follow on
-  // the last 4 characters repeat between agencies (53001, 23001, 63001 → 3001)
+  // the last 4 characters repeat between agencies (530001, 230001, 630001 → 0001)
   return `${mm}/${dd}-${hh}${mi}-${code}`
 }
 
@@ -60,7 +60,7 @@ export async function generateOfflineParcelCode(
 
 // ── Codes reserved for parcels created without network ──
 // A parcel code is the agency code of the sending station followed by a number that follows on:
-// 53001, 53002… (server counter, migration 20261109120000). Without network the device cannot
+// 6 digits in all: 530001, 530002… (server counter, migration 20261109120000). Without network the device cannot
 // ask for the next number: while online it reserves some in advance for its station
 // (reserve_parcel_codes), and uses them offline. The code printed on the receipt is final.
 
@@ -149,7 +149,7 @@ async function getNextDailySequence(stationId: string): Promise<number> {
 }
 
 /**
- * Generate all parcel codes locally: a code reserved for the station (53001, 53002…), or the
+ * Generate all parcel codes locally: a code reserved for the station (530001, 530002…), or the
  * offline form (agency code + H + 5 characters, see above) when none is left.
  * Returns parcel_code, reference, daily_sequence, and tracking_url.
  */

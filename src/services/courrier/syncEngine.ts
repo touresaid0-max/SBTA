@@ -453,7 +453,7 @@ async function newCodeFor(record: Record<string, unknown>): Promise<Record<strin
     if (error) throw error;
     return Boolean(data);
   };
-  // The next number of the sending station (53001, 53002…), asked of the server: online here.
+  // The next number of the sending station (530001, 530002…), asked of the server: online here.
   // Otherwise (station without agency code, older server) a code of the offline form.
   let code: string | null = null;
   const stationId = String(record.origin_station_id ?? '');
