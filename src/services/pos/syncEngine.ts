@@ -106,7 +106,9 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     departure_datetime: depIso,
     arrival_datetime: computeArrivalDatetime(depIso),
     status,
-    seats_total: p.seats_total ?? 0,
+    // Number of seats: seats_capacity; a departure queued by an earlier version has only
+    // seats_total, which then held the bus capacity
+    seats_total: p.seats_capacity ?? p.seats_total ?? 0,
     // seats_reserved / seats_available: counted by the server from the reservations (see below)
     route_name: p.route_name ?? null,
     source: 'guichet',
@@ -126,7 +128,9 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   // The seats sold and left are counted by the server from the reservations (and mobile
   // bookings) of the departure. The device sent its own count, which knows only its own sales:
   // a late or replayed send could put back an outdated number. It no longer sends them.
-  if (p.seats_total !== undefined) result.seats_total = p.seats_total;
+  // Number of seats (seats_total is the last seat number on the device); see mapDepartInsert
+  if (p.seats_capacity !== undefined) result.seats_total = p.seats_capacity;
+  else if (p.seats_total !== undefined) result.seats_total = p.seats_total;
   if (p.cancelled === true) result.status = 'annule';
   if (p.cloture === true) result.status = 'termine';
   if (p.confirmed === true) result.status = 'en_cours';

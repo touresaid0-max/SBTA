@@ -7,9 +7,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // A new version activates as soon as it is downloaded: with 'prompt' and no update button,
-      // a guichet tab left open all day kept running the old version indefinitely.
-      registerType: 'autoUpdate',
+      // A new version waits until the user loads it from the « Nouvelle version » banner
+      // (AppUpdateBanner, src/utils/appUpdate.ts): activated on its own, it reloaded the page in
+      // the middle of a sale.
+      registerType: 'prompt',
       // Images kept for offline use: the logos the app and the printed tickets use
       includeAssets: ['logosbta.png', 'logosbta001.JPG', 'logosbta00-1.JPG', 'logo_sbta02.JPG', 'LOGO_SBTA_-1.png'],
       manifest: {
@@ -37,8 +38,11 @@ export default defineConfig({
         // to start (non-precached-url) and the guichet pages cannot open offline.
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/auth/, /^\/realtime/, /^\/login/],
-        // Activate the new version right away and take over the open tabs
-        skipWaiting: true,
+        // The new version waits: it activates on the SKIP_WAITING message sent by the banner,
+        // then takes over the open tabs
+        skipWaiting: false,
+        // Except once, on the devices still running a version without the banner (see the file)
+        importScripts: ['/sw-transition.js'],
         clientsClaim: true,
         cleanupOutdatedCaches: true,
       },

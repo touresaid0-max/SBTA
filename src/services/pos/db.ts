@@ -46,8 +46,12 @@ export interface DepartRecord {
   reopened_at?: string | null;
   company_id?: string;
   status: string;
+  /** LAST seat number (not the number of seats): seats are sold from seats_from to seats_total */
   seats_total: number;
+  /** First seat number (bus setting « vendu à partir de ») */
   seats_from: number;
+  /** Number of seats (the server's schedules.seats_total). Set by the code that writes seats_total */
+  seats_capacity?: number;
   seats_sold: number;
   seat_allocations?: SeatAllocation[];
   seat_transfers?: SeatTransfer[];

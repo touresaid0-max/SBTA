@@ -199,6 +199,16 @@ export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d:
   return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && inSeatPool(t.seat_number)).length;
 }
 
+/**
+ * Last seat number of a bus of `capacity` seats numbered from `seatsFrom` (bus setting « vendu à
+ * partir de »). The number of seats stays the capacity: only the numbering moves (63 seats from
+ * n°2 → 2 to 64). It used to be the capacity itself: a bus sold from n°2 lost a seat (2 to 63).
+ */
+export function lastSeatNumber(seatsFrom: number | undefined, capacity: number): number {
+  return Math.max(1, seatsFrom || 1) + Math.max(0, capacity) - 1;
+}
+
+/** Number of seats of a departure (its seat numbers from seats_from to seats_total) */
 export function seatsCommercialisables(d: DepartRecord): number {
   const sellableFrom = Math.max(1, d.seats_from || 1);
   return Math.max(0, d.seats_total - sellableFrom + 1);
@@ -426,12 +436,13 @@ export function getStationNameForSeat(
 
 export function validateSeatAllocations(
   allocations: SeatAllocation[],
-  busCapacity: number,
+  lastSeat: number,
+  firstSeat = 1,
 ): string | null {
   if (allocations.length === 0) return null;
   for (const a of allocations) {
-    if (a.seat_from < 1 || a.seat_to > busCapacity) {
-      return `Les sièges doivent être entre 1 et ${busCapacity}`;
+    if (a.seat_from < firstSeat || a.seat_to > lastSeat) {
+      return `Les sièges doivent être entre ${firstSeat} et ${lastSeat}`;
     }
     if (a.seat_from > a.seat_to) {
       return `La plage ${a.seat_from}-${a.seat_to} pour ${a.station_name} est invalide`;

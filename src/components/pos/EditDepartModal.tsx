@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { X, Loader2, AlertTriangle, ArrowRightLeft, Printer, CheckCircle, Clock, Info } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import type { DepartRecord, TicketRecord } from '@/services/pos/db';
-import type { VehiculeRef, ChauffeurRef } from '@/services/pos/departService';
+import { seatsCommercialisables, type VehiculeRef, type ChauffeurRef } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 
 export interface TransferResult {
@@ -48,8 +48,9 @@ export default function EditDepartModal({
 
   const selectedBus = vehicules.find(v => v.id === busId) ?? null;
   const selectedDriver = chauffeurs.find(c => c.id === driverId) ?? null;
-  const oldCapacity = depart.seats_total;
-  const newCapacity = selectedBus?.capacity ?? depart.seats_total;
+  // Numbers of seats (seats_total is the last seat number: 2 to 64 is 63 seats)
+  const oldCapacity = seatsCommercialisables(depart);
+  const newCapacity = selectedBus?.capacity ?? oldCapacity;
   const soldCount = soldTickets.length;
   const surplus = Math.max(0, soldCount - newCapacity);
   const capacityReduced = newCapacity < oldCapacity;
