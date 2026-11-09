@@ -473,8 +473,13 @@ export default function Users() {
         .select('assigned_route_ids')
         .or(`id.eq.${user.id},auth_user_id.eq.${user.id}`)
         .maybeSingle();
-      if (emp?.assigned_route_ids) {
-        setFormData(prev => ({ ...prev, assigned_route_ids: emp.assigned_route_ids as string[] }));
+      const savedIds = (emp?.assigned_route_ids as string[] | null) ?? [];
+      if (savedIds.length > 0) {
+        // Routes deleted since assignment would make counter_routes reject the save.
+        const { data: existing } = await supabase.from('routes').select('id').in('id', savedIds);
+        const existingIds = existing ? new Set(existing.map(r => r.id as string)) : null;
+        const validIds = existingIds ? savedIds.filter(id => existingIds.has(id)) : savedIds;
+        setFormData(prev => ({ ...prev, assigned_route_ids: validIds }));
       }
     }
     // Load comptable company assignments if role is comptable
