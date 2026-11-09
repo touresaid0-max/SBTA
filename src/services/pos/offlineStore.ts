@@ -120,6 +120,31 @@ export async function getAll<T>(store: StoreName): Promise<T[]> {
   return await (db[store] as any).toArray();
 }
 
+/**
+ * Tickets, baggage or expenses of these departures only, read by the depart_id index. The tables
+ * keep every day of the station (pulled from the server and sold here) and grow all day long
+ * offline: reading them whole before each sale took 0,5 s per read with 30 000 tickets, several
+ * times per sale, more and more as the day went on.
+ */
+export async function getByDeparts<T>(store: 'tickets' | 'bagages' | 'depenses', departIds: string[]): Promise<T[]> {
+  const ids = [...new Set(departIds.filter(Boolean))];
+  if (ids.length === 0) return [];
+  // One indexed read per departure, in parallel: anyOf() was 8 times slower (580 ms against 76 ms
+  // for 30 departures out of 30 000 tickets)
+  const parts = await Promise.all(ids.map(id => (db[store] as any).where('depart_id').equals(id).toArray() as Promise<T[]>));
+  return parts.flat();
+}
+
+/** Records grouped by their departure (one pass). */
+export function groupByDepart<T extends { depart_id: string }>(rows: T[]): Map<string, T[]> {
+  const byDepart = new Map<string, T[]>();
+  for (const row of rows) {
+    const list = byDepart.get(row.depart_id);
+    if (list) list.push(row); else byDepart.set(row.depart_id, [row]);
+  }
+  return byDepart;
+}
+
 export async function getById<T extends { id: string }>(
   store: StoreName,
   id: string,
