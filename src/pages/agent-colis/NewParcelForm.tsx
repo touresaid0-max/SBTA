@@ -8,7 +8,7 @@ import { createParcel, fetchParcelAgentInfo, fetchPosOriginPhones, markTicketPri
 import { isOnline as courrierIsOnline, getPendingCount, enqueueSms, keepAndQueuePhotos, plannedPhotoPaths, flushSyncQueue } from '@/services/courrier/syncEngine'
 import { localInsertParcel, localInsertTrackingEvent, localUpdateParcel } from '@/services/courrier/offlineStore'
 import { getReferentiel } from '@/services/courrier/referentiels'
-import { generateOfflineParcelCodes } from '@/services/courrier/parcelCodeGenerator'
+import { generateOfflineParcelCodes, stationAgencyCode } from '@/services/courrier/parcelCodeGenerator'
 import { useConnection } from '@/services/courrier/ConnectionContext'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { CourrierSyncQueueModal } from '@/components/parcel/CourrierSyncQueueModal'
@@ -202,25 +202,25 @@ export default function NewParcelForm() {
     }
   }
 
-  async function saveOffline(fullRecipientPhone: string, parcelId: string, photoPaths: string[]) {
+  // Agency code of the sending station (list Gares): read on the server when online (the admin
+  // may just have set it), otherwise the one kept on the device. '' when the station has none.
+  async function sendingAgencyCode(stationId: string): Promise<string> {
+    if (courrierIsOnline()) {
+      try {
+        const { data, error } = await supabase.from('stations').select('agency_code').eq('id', stationId).maybeSingle()
+        if (!error && data) return String(data.agency_code ?? '').trim()
+      } catch { /* the one kept on the device */ }
+    }
+    return stationAgencyCode(stationId)
+  }
+
+  async function saveOffline(fullRecipientPhone: string, parcelId: string, photoPaths: string[], agencyCode: string) {
     if (!myStation) return
     const now = trustedNowIso()
     const totalAmount = Number(form.delivery_fee) + Number(form.sms_tracking_fee)
 
-    // Same prefix as online (audit M11): the agency code of the destination for this station,
-    // otherwise the station's general agency code, both kept on the device
-    let agencyCode: string | null = null
-    const destCodes = await getReferentiel<{ destination_station_id: string; agency_code?: string | null }>(`destination_agency_codes_${myStation.id}`)
-    const destCode = destCodes?.find(c => c.destination_station_id === form.destination_station_id)?.agency_code
-    if (destCode) {
-      agencyCode = destCode
-    } else {
-      const cachedStations = await getReferentiel<{ id: string; agency_code?: string | null }>('stations_all')
-      const myStationData = cachedStations?.find(s => s.id === myStation.id)
-      agencyCode = myStationData?.agency_code ?? null
-    }
-
-    // Generate proper parcel codes matching the online DB trigger format
+    // Code: agency code of the station + the next number reserved on this device (53001, 53002…),
+    // the same form as online
     const { parcel_code, reference, daily_sequence, tracking_url } =
       await generateOfflineParcelCodes(myStation.id, agencyCode)
 
@@ -348,6 +348,13 @@ export default function NewParcelForm() {
     ])
     if (!amountCheck.ok) { if (amountCheck.error) toast.error(amountCheck.error); return }
 
+    // The parcel code starts with the agency code of the sending station: none, no parcel
+    const agencyCode = await sendingAgencyCode(myStation.id)
+    if (!agencyCode) {
+      toast.error(`Code agence non défini pour la gare ${myStation.name} : demandez à l'administrateur de le saisir (Gares), puis enregistrez le courrier.`, { duration: 8000 })
+      return
+    }
+
     const fullRecipientPhone = toStoredPhoneCI(form.recipient_phone)
     const fullSenderPhone = toStoredPhoneCI(form.sender_phone)
 
@@ -359,22 +366,11 @@ export default function NewParcelForm() {
     try {
       // Offline path: save locally, queue for sync, skip server-only features
       if (!courrierIsOnline()) {
-        await saveOffline(fullRecipientPhone, parcelId, photoPaths)
+        await saveOffline(fullRecipientPhone, parcelId, photoPaths, agencyCode)
         return
       }
 
-      // Online path: original flow
-      // Vérifier qu'un code agence est configuré pour cette destination
-      const { data: destCode, error: destCodeError } = await supabase
-        .from('station_destination_agency_codes')
-        .select('agency_code')
-        .eq('origin_station_id', myStation.id)
-        .eq('destination_station_id', form.destination_station_id)
-        .maybeSingle()
-
-      if (!destCodeError && !destCode?.agency_code) {
-        toast('Aucun code agence configuré pour cette destination — le code agence général de la gare sera utilisé.', { icon: '⚠️' })
-      }
+      // Online path: the server gives the code (agency code of the station + next number)
 
       let parcel: Awaited<ReturnType<typeof createParcel>>
       try {
@@ -406,7 +402,7 @@ export default function NewParcelForm() {
       } catch (err) {
         // The connection dropped: the parcel is not on the server, save it on the device instead
         if (!isNetworkError(err)) throw err
-        await saveOffline(fullRecipientPhone, parcelId, photoPaths)
+        await saveOffline(fullRecipientPhone, parcelId, photoPaths, agencyCode)
         return
       }
 

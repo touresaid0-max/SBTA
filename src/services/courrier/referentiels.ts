@@ -1,6 +1,7 @@
 import { db } from './db';
 import { supabase } from '@/services/supabase';
 import { isOnline } from './syncEngine';
+import { stationAgencyCode, topUpParcelCodePool } from './parcelCodeGenerator';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -102,23 +103,16 @@ export async function refreshAllReferentiels(stationId?: string): Promise<void> 
         });
       }
 
-      // Agency code of each destination for this station (audit M11): a parcel created without
-      // network gets the same prefix as online. Kept as answered, even empty (no code configured);
-      // a failed request keeps the list already on the device.
+      // Parcel codes reserved in advance (agency code of the station + 001, 002…): a parcel
+      // created without network gets the next one, final on its receipt. Topped up here, while
+      // online; a failure keeps the codes already on the device.
       try {
-        const { data: destCodes, error: destCodesError } = await supabase
-          .from('station_destination_agency_codes')
-          .select('destination_station_id, agency_code')
-          .eq('origin_station_id', stationId);
-        if (!destCodesError && destCodes) {
-          await db.referentiels.put({
-            key: `destination_agency_codes_${stationId}`,
-            type: 'stations',
-            data: destCodes,
-            updated_at: nowIso(),
-          });
-        }
-      } catch { /* the station's general code is used meanwhile */ }
+        await topUpParcelCodePool(stationId, await stationAgencyCode(stationId), async count => {
+          const { data, error } = await supabase.rpc('reserve_parcel_codes', { p_station_id: stationId, p_count: count });
+          if (error) throw error;
+          return (data ?? []) as string[];
+        });
+      } catch { /* topped up at the next refresh */ }
     }
   } catch (err) {
     console.warn('[courrier-sync] Failed to refresh referentiels:', err);

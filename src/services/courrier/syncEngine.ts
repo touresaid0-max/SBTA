@@ -1,6 +1,6 @@
 import type { Table } from 'dexie';
 import { db, type SyncQueueItem, type ParcelRecord } from './db';
-import { APP_TRACKING_URL, agencyCodeOf, formatReference, generateOfflineParcelCode } from './parcelCodeGenerator';
+import { APP_TRACKING_URL, agencyCodeOf, formatReference, generateOfflineParcelCode, stationAgencyCode } from './parcelCodeGenerator';
 import { supabase } from '@/services/supabase';
 import { db as posDb } from '@/services/pos/db';
 import { useAuthStore } from '@/store/authStore';
@@ -453,7 +453,18 @@ async function newCodeFor(record: Record<string, unknown>): Promise<Record<strin
     if (error) throw error;
     return Boolean(data);
   };
-  const code = await generateOfflineParcelCode(agencyCodeOf(printed) || null, isTaken);
+  // The next number of the sending station (53001, 53002…), asked of the server: online here.
+  // Otherwise (station without agency code, older server) a code of the offline form.
+  let code: string | null = null;
+  const stationId = String(record.origin_station_id ?? '');
+  if (stationId) {
+    const { data } = await supabase.rpc('reserve_parcel_codes', { p_station_id: stationId, p_count: 1 });
+    code = (Array.isArray(data) && typeof data[0] === 'string') ? data[0] : null;
+  }
+  if (!code) {
+    const agency = (stationId && await stationAgencyCode(stationId)) || agencyCodeOf(printed);
+    code = await generateOfflineParcelCode(agency || null, isTaken);
+  }
   const registeredAt = new Date(String(record.registered_at ?? record.created_at ?? trustedNowIso()));
   return {
     parcel_code: code,
