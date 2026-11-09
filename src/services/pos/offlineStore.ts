@@ -303,6 +303,24 @@ async function getPendingIds(entity: StoreName): Promise<Set<string>> {
 }
 
 /**
+ * Departures and tickets on the device with no operation left to send, at this moment. Every
+ * sale is written with its queue entry in one transaction, and leaves the queue only once the
+ * server has it: a ticket in this list is on the server (or was deleted there).
+ */
+async function sentIdsBeforeRead(): Promise<{ departs: Set<string>; tickets: Set<string> }> {
+  const [departIds, ticketIds, pendingDeparts, pendingTickets] = await Promise.all([
+    db.departs.toCollection().primaryKeys(),
+    db.tickets.toCollection().primaryKeys(),
+    getPendingIds('departs'),
+    getPendingIds('tickets'),
+  ]);
+  return {
+    departs: new Set((departIds as string[]).filter(id => !pendingDeparts.has(id))),
+    tickets: new Set((ticketIds as string[]).filter(id => !pendingTickets.has(id))),
+  };
+}
+
+/**
  * A departure deleted on the server: removed from the device, with its tickets, baggage and
  * expenses already sent (one still waiting to be sent is kept, so that nothing unsent is lost).
  */
@@ -440,6 +458,13 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
     const defaultFrom = fromDate.toISOString().slice(0, 10);
     const fromStr = sinceDate && sinceDate < defaultFrom ? sinceDate : defaultFrom;
 
+    // Departures and tickets this device had already sent BEFORE reading the server: only these
+    // can be "deleted on the server" below. A sale made while the server is being read is sent at
+    // once and marked synced, but the server answered before receiving it: it was taken for a
+    // deleted ticket and removed from the device, its seat looked free and was sold again
+    // (seat 27 sold twice by the same guichet, 31 s apart). Keys only: no record is read.
+    const sentBeforeRead = await sentIdsBeforeRead();
+
     // Page by page: a long period chosen in the filter can hold more than 1 000 departures,
     // and a truncated list would drop the most recent ones
     const remoteSchedules: RemoteSchedule[] = [];
@@ -572,6 +597,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         const onServer = new Set(scheduleIds);
         const fromMs = Date.parse(`${fromStr}T00:00:00Z`);
         const gone = ((await db.departs.toArray()) as DepartRecord[]).filter(d =>
+          sentBeforeRead.departs.has(d.id) &&
           d.station_id === stationId &&
           d.synced !== false &&
           !pendingDeparts.has(d.id) &&
@@ -601,6 +627,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         const remoteTicketIds = new Set(remoteReservations.map(r => String(r.id)));
         const pulledDeparts = new Set(scheduleIds);
         const goneTickets = ((await db.tickets.toArray()) as TicketRecord[]).filter(t =>
+          sentBeforeRead.tickets.has(t.id) &&
           pulledDeparts.has(t.depart_id) &&
           t.synced !== false &&
           !pendingTickets.has(t.id) &&
