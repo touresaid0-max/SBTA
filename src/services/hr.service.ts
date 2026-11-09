@@ -362,13 +362,13 @@ export async function requestEmployeeDeletion(
 }
 
 // ── Supprimer définitivement un employé (admin uniquement) ────────
-export async function deleteEmployeePermanently(
-  employeeId: string,
-  sourceTable: 'employees' | 'users'
-): Promise<void> {
-  const table = sourceTable === 'employees' ? 'employees' : 'users'
-  const { error } = await supabase.from(table).delete().eq('id', employeeId)
-  if (error) throw error
+// Fait par le serveur (admin_delete_employee_permanently) : fiche RH, compte et compte de
+// connexion ensemble, refusé s'il a un historique. La suppression faite depuis l'écran visait
+// parfois la mauvaise table et ne supprimait rien, sans erreur.
+export async function deleteEmployeePermanently(id: string): Promise<string> {
+  const { data, error } = await supabase.rpc('admin_delete_employee_permanently', { p_id: id })
+  if (error) throw new Error(error.message)
+  return String(data ?? '')
 }
 
 // ── Taux journaliers par itinéraire ──────────────────────────────

@@ -1,5 +1,5 @@
 import { type DepartRecord, type SeatAllocation, type SeatTransfer, type TicketRecord } from './db';
-import { localInsert, localUpdate, getAll } from './offlineStore';
+import { localInsert, localUpdate, getAll, getById, getByDeparts } from './offlineStore';
 import { enqueueInsert, isOnline } from './syncEngine';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
@@ -180,8 +180,8 @@ export async function getAllDeparts(stationId?: string, counterId?: string): Pro
 }
 
 export async function getDepartById(id: string): Promise<DepartRecord | undefined> {
-  const all = await getAll<DepartRecord>('departs');
-  return all.find(d => d.id === id);
+  // By its key: called several times per sale, it read every departure kept on the device
+  return id ? getById<DepartRecord>('departs', id) : undefined;
 }
 
 export function seatsAllocatedForStation(d: DepartRecord, stationId: string): number {
@@ -499,9 +499,8 @@ export async function transferTicketsToDepart(
       seat_numbers: [String(nextSeat)],
     });
   }
-  const allTargetTickets = await getAll<TicketRecord>('tickets');
-  const targetActive = allTargetTickets.filter(
-    t => t.depart_id === targetDepart.id && t.status !== 'cancelled'
+  const targetActive = (await getByDeparts<TicketRecord>('tickets', [targetDepart.id])).filter(
+    t => t.status !== 'cancelled'
   );
   const newSoldCount = targetActive.length;
   const newMtTicket = targetActive.reduce((sum, t) => sum + t.price, 0);
@@ -514,9 +513,8 @@ export async function transferTicketsToDepart(
 }
 
 export async function getSoldSeatNumbers(departId: string): Promise<number[]> {
-  const all = await getAll<TicketRecord>('tickets');
-  return all
-    .filter(t => t.depart_id === departId && t.status !== 'cancelled')
+  return (await getByDeparts<TicketRecord>('tickets', [departId]))
+    .filter(t => t.status !== 'cancelled')
     .map(t => t.seat_number);
 }
 
@@ -604,8 +602,8 @@ export async function transferSeatsBetweenStations(params: {
     throw new Error('Aucune répartition de sièges pour ce départ');
   }
 
-  const allTickets = await getAll<TicketRecord>('tickets');
-  const available = getAvailableSeatsForTransfer(depart, allTickets, params.fromStationId);
+  const departTickets = await getByDeparts<TicketRecord>('tickets', [depart.id]);
+  const available = getAvailableSeatsForTransfer(depart, departTickets, params.fromStationId);
 
   if (available.length === 0) {
     throw new Error('Aucun siège libre disponible au transfert dans cette gare');

@@ -1,5 +1,5 @@
 import { type TicketRecord, type DepartRecord } from './db';
-import { localInsert, getAll, getById, localUpdate } from './offlineStore';
+import { localInsert, getAll, getById, localUpdate, getByDeparts } from './offlineStore';
 import { getDepartById, updateDepart } from './departService';
 import { getReferentiel } from './referentiels';
 import { supabase } from '@/services/supabase';
@@ -47,8 +47,9 @@ export async function getRouteCityStops(): Promise<RouteCityStopRef[]> {
 }
 
 export async function getTicketsForDepart(departId: string): Promise<TicketRecord[]> {
-  const all = await getAll<TicketRecord>('tickets');
-  return all.filter(t => t.depart_id === departId && t.status !== 'cancelled');
+  // By the depart_id index: the whole table was read before each sale (see getByDeparts)
+  const tickets = await getByDeparts<TicketRecord>('tickets', [departId]);
+  return tickets.filter(t => t.status !== 'cancelled');
 }
 
 export interface TicketSearchResult {

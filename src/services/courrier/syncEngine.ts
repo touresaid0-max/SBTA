@@ -1,6 +1,6 @@
 import type { Table } from 'dexie';
 import { db, type SyncQueueItem, type ParcelRecord } from './db';
-import { APP_TRACKING_URL, agencyCodeOf, formatReference, generateOfflineParcelCode } from './parcelCodeGenerator';
+import { APP_TRACKING_URL, agencyCodeOf, formatReference, generateOfflineParcelCode, stationAgencyCode } from './parcelCodeGenerator';
 import { supabase } from '@/services/supabase';
 import { db as posDb } from '@/services/pos/db';
 import { useAuthStore } from '@/store/authStore';
@@ -453,7 +453,11 @@ async function newCodeFor(record: Record<string, unknown>): Promise<Record<strin
     if (error) throw error;
     return Boolean(data);
   };
-  const code = await generateOfflineParcelCode(agencyCodeOf(printed) || null, isTaken);
+  // Another code of the offline form, with the agency code of the sending station: the numbers
+  // of the sequence (020001, 020002…) are only given by the server when a parcel is saved online
+  const stationId = String(record.origin_station_id ?? '');
+  const agency = (stationId && await stationAgencyCode(stationId)) || agencyCodeOf(printed);
+  const code = await generateOfflineParcelCode(agency || null, isTaken);
   const registeredAt = new Date(String(record.registered_at ?? record.created_at ?? trustedNowIso()));
   return {
     parcel_code: code,

@@ -1349,6 +1349,11 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   .dsep { border-top: 2px solid #000; margin: 3px 0; }
   .sep { border-top: 1px solid #000; margin: 2px 0; }
   .info { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; padding: 2px 0; }
+  /* Departure number, bus and driver read from afar (like the seat number of the ticket): a long
+     value goes to the next line instead of being cut */
+  .info-big { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; padding: 2px 0; }
+  .info-big .v { margin-left: auto; text-align: right; font-size: 18px; font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; }
+  .info-big .v.xl { font-size: 28px; line-height: 1; }
   .convoy-badge { text-align: center; font-size: 12px; font-weight: 900; padding: 3px 0; }
   table { width: 100%; border-collapse: collapse; }
   th { font-size: 9px; font-weight: 900; padding: 2px 0; border-bottom: 1px solid #000; }
@@ -1374,13 +1379,13 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   <div class="title">BORDEREAU DE DEPART</div>
   <div class="dsep"></div>
   <div class="info"><span>GUICHET:</span><span>${escapeHtml(bord.station_name)}</span></div>
-  <div class="info"><span>DEP N°:</span><span>${escapeHtml(String(bord.departure_number))}</span></div>
+  <div class="info-big"><span>DEP N°:</span><span class="v xl">${escapeHtml(String(bord.departure_number))}</span></div>
   <div class="info"><span>LIGNE:</span><span>${escapeHtml(bord.route_name)}</span></div>
   <div class="info"><span>DATE:</span><span>${escapeHtml(bord.departure_date)}</span></div>
   <div class="info"><span>HEURE:</span><span>${escapeHtml(bord.departure_time)}</span></div>
   <div class="sep"></div>
-  <div class="info"><span>CAR:</span><span>${escapeHtml(bord.registration_number)}</span></div>
-  <div class="info"><span>CHAUFFEUR:</span><span>${escapeHtml(bord.driver_name)}</span></div>
+  <div class="info-big"><span>CAR:</span><span class="v">${escapeHtml(bord.registration_number)}</span></div>
+  <div class="info-big"><span>CHAUFFEUR:</span><span class="v">${escapeHtml(bord.driver_name)}</span></div>
   <div class="sep"></div>
   ${convoySection}
   <div class="info"><span>NBRE PLACE:</span><span>${fmtNum(bord.total_seats)}</span></div>

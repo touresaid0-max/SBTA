@@ -637,16 +637,22 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
     parts.push(...line(`${padR(label, w - v.length > 0 ? w - v.length : label.length)}${v}`));
     if (bold) parts.push(setBold(false));
   };
+  // Departure number, bus and driver read from afar (like the seat number of the ticket): the
+  // label on its line, the value centred below, enlarged (x3 for the number, x2 for the others)
+  const big = (label: string, value: string, factor: number) => {
+    parts.push(...line(label));
+    parts.push(setAlign('center'), setBold(true), setCharSize(factor), text(value || '-'), lineFeed(), setCharSize(1), setBold(false), setAlign('left'));
+  };
   pair('GUICHET:', bord.station_name);
-  pair('DEP N°:', String(bord.departure_number));
+  big('DEP N°:', String(bord.departure_number), 3);
   pair('LIGNE:', bord.route_name);
   pair('DATE:', bord.departure_date);
   pair('HEURE:', bord.departure_time);
   parts.push(...separator());
 
   // ── BUS & CHAUFFEUR ──────────────────────────────────────────────
-  pair('CAR:', bord.registration_number);
-  pair('CHAUFFEUR:', bord.driver_name);
+  big('CAR:', bord.registration_number, 2);
+  big('CHAUFFEUR:', bord.driver_name, 2);
   parts.push(...separator());
 
   // ── CONVOI ──────────────────────────────────────────────────────

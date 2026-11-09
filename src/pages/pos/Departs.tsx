@@ -15,7 +15,7 @@ import {
   renumberDepartsAfterCancellation,
   computeStationScopedTotals,
 } from '@/services/pos/departService';
-import { getAll as getAllTickets, getAll as getAllRecords, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
+import { getByDeparts, groupByDepart, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
 import { isOnline } from '@/services/pos/syncEngine';
 import { getDepensesForDepart } from '@/services/pos/depenseService';
@@ -96,7 +96,7 @@ function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
 
 async function printBordereauForDepart(depart: DepartRow, stationId?: string): Promise<void> {
   const [tickets, bagages, depenses] = await Promise.all([
-    getAllTickets<TicketRecord>('tickets'),
+    getByDeparts<TicketRecord>('tickets', [depart.id]),
     getBagagesForDepart(depart.id),
     getDepensesForDepart(depart.id),
   ]);
@@ -319,15 +319,35 @@ export default function POSDeparts() {
   const [editNextDepart, setEditNextDepart] = useState<DepartRecord | null>(null);
   const [pendingTransfers, setPendingTransfers] = useState(0);
 
+  // Period shown, read when the list is built (only its departures are computed, see below)
+  const periodRef = useRef({ period, customFrom, customTo });
+  periodRef.current = { period, customFrom, customTo };
+
   const showLocalDeparts = useCallback(async () => {
-    const [all, tickets, allBagages, allDepenses] = await Promise.all([
-      getAllDeparts(session?.station_id, session?.counter_id),
-      getAllRecords<TicketRecord>('tickets'),
-      getAllRecords<BagageRecord>('bagages'),
-      getAllRecords<DepenseRecord>('depenses'),
+    const all = await getAllDeparts(session?.station_id, session?.counter_id);
+    // Tickets, baggage and expenses of the departures SHOWN only (the period chosen, and the
+    // departures re-opened by the admin, always shown), read by index and grouped once by
+    // departure. Every departure kept on the device (several days) filtered the whole tables:
+    // the list got slower and slower as sales piled up offline. The others keep their totals.
+    const { period: p, customFrom: cf, customTo: ct } = periodRef.current;
+    const shown = periodRange(p, cf, ct);
+    const ids = all
+      .filter(d =>
+        (d.reopened_at && !d.cloture) ||
+        ((!shown.from || d.departure_date >= shown.from) && (!shown.to || d.departure_date <= shown.to)))
+      .map(d => d.id);
+    const [tickets, allBagages, allDepenses] = await Promise.all([
+      getByDeparts<TicketRecord>('tickets', ids),
+      getByDeparts<BagageRecord>('bagages', ids),
+      getByDeparts<DepenseRecord>('depenses', ids),
     ]);
+    const ticketsBy = groupByDepart(tickets);
+    const bagagesBy = groupByDepart(allBagages);
+    const depensesBy = groupByDepart(allDepenses);
+    const computed = new Set(ids);
     const hydrated = all.map(d => {
-      const totals = computeStationScopedTotals(d, tickets, allBagages, allDepenses, session?.station_id);
+      if (!computed.has(d.id)) return d;
+      const totals = computeStationScopedTotals(d, ticketsBy.get(d.id) ?? [], bagagesBy.get(d.id) ?? [], depensesBy.get(d.id) ?? [], session?.station_id);
       return {
         ...d,
         mt_ticket: totals.mt_ticket,
@@ -338,7 +358,7 @@ export default function POSDeparts() {
       };
     });
     setAllTickets(tickets);
-    setDeparts(hydrated.map(d => toRow(d, tickets, session?.station_id)));
+    setDeparts(hydrated.map(d => toRow(d, ticketsBy.get(d.id) ?? [], session?.station_id)));
     setLoading(false);
 
     // Check for pending transfers needing a next depart
@@ -364,6 +384,14 @@ export default function POSDeparts() {
 
   const range = useMemo(() => periodRange(period, customFrom, customTo), [period, customFrom, customTo]);
   const periodText = periodDescription(period, range);
+
+  // Another period: its departures are computed (from the device only; the first build at
+  // opening is done by loadDeparts)
+  const periodShownRef = useRef(false);
+  useEffect(() => {
+    if (!periodShownRef.current) { periodShownRef.current = true; return; }
+    void showLocalDeparts();
+  }, [range.from, range.to, showLocalDeparts]);
   const exportSuffix = range.from && range.to && range.from !== range.to
     ? `${range.from}_${range.to}`
     : range.from ?? range.to ?? 'toutes-dates';
@@ -485,7 +513,7 @@ export default function POSDeparts() {
       const stationCode = (gares.find(g => g.id === session?.station_id)?.agency_code) ?? '';
       const rows = await Promise.all(targets.map(async d => {
         const [dTickets, dBagages, dDepenses] = await Promise.all([
-          getAllTickets<TicketRecord>('tickets'),
+          getByDeparts<TicketRecord>('tickets', [d.id]),
           getBagagesForDepart(d.id),
           getDepensesForDepart(d.id),
         ]);

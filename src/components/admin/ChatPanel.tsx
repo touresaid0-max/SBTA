@@ -64,12 +64,15 @@ export default function ChatPanel({ targetUser, onClose }: ChatPanelProps) {
 
   const loadMessages = async () => {
     if (!user) return;
-    const { data } = await supabase
+    // The 100 MOST RECENT messages of the conversation, shown oldest first (they were the 100
+    // oldest: past 100 messages, the new ones never appeared)
+    const { data: latest } = await supabase
       .from('admin_chat_messages')
       .select('*')
       .or(`and(sender_id.eq.${user.id},receiver_id.eq.${targetUser.id}),and(sender_id.eq.${targetUser.id},receiver_id.eq.${user.id})`)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(100);
+    const data = latest ? latest.slice().reverse() : null;
 
     if (data) {
       setMessages(data);

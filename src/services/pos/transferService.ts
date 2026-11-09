@@ -1,5 +1,5 @@
 import { db, type TransferLogRecord, type PendingTransferRecord, type TicketRecord, type DepartRecord } from './db';
-import { getAll, localUpdate } from './offlineStore';
+import { getByDeparts, localUpdate } from './offlineStore';
 import { supabase } from '@/services/supabase';
 import { transferTicketsToDepart, getDepartById, updateDepart, seatsCommercialisables } from './departService';
 import { trustedNowIso } from '@/services/offline/deviceClock';
@@ -191,8 +191,8 @@ export async function checkAndApplyPendingTransfers(
 
   for (const p of pending) {
     // Re-fetch ticket records from local DB to ensure they're current
-    const allTickets = await getAll<TicketRecord>('tickets');
-    const ticketsToTransfer = allTickets.filter(t => p.ticket_ids.includes(t.id) && t.status !== 'cancelled');
+    const ticketsToTransfer = ((await db.tickets.bulkGet(p.ticket_ids)) as (TicketRecord | undefined)[])
+      .filter((t): t is TicketRecord => !!t && t.status !== 'cancelled');
 
     if (ticketsToTransfer.length === 0) {
       // Tickets no longer exist or all cancelled — mark as applied (nothing to do)
@@ -201,8 +201,8 @@ export async function checkAndApplyPendingTransfers(
     }
 
     // Check capacity on new depart
-    const targetSoldTickets = allTickets.filter(
-      t => t.depart_id === newDepart.id && t.status !== 'cancelled',
+    const targetSoldTickets = (await getByDeparts<TicketRecord>('tickets', [newDepart.id])).filter(
+      t => t.status !== 'cancelled',
     );
     // Number of seats (seats_total is the last seat number)
     const availableSeats = seatsCommercialisables(newDepart) - targetSoldTickets.length;
@@ -215,9 +215,8 @@ export async function checkAndApplyPendingTransfers(
     await transferTicketsToDepart(ticketsToTransfer, newDepart);
 
     // Recalculate new depart totals
-    const updatedAllTickets = await getAll<TicketRecord>('tickets');
-    const newDepartActive = updatedAllTickets.filter(
-      t => t.depart_id === newDepart.id && t.status !== 'cancelled',
+    const newDepartActive = (await getByDeparts<TicketRecord>('tickets', [newDepart.id])).filter(
+      t => t.status !== 'cancelled',
     );
     const newMtTicket = newDepartActive.reduce((sum, t) => sum + t.price, 0);
     await updateDepart(newDepart.id, {
@@ -228,8 +227,8 @@ export async function checkAndApplyPendingTransfers(
     });
 
     // Recalculate source depart totals
-    const sourceActive = updatedAllTickets.filter(
-      t => t.depart_id === p.source_depart_id && t.status !== 'cancelled',
+    const sourceActive = (await getByDeparts<TicketRecord>('tickets', [p.source_depart_id])).filter(
+      t => t.status !== 'cancelled',
     );
     const sourceMtTicket = sourceActive.reduce((sum, t) => sum + t.price, 0);
     const sourceDepart = await getDepartById(p.source_depart_id);
@@ -324,8 +323,8 @@ export async function executeFullTransfer(params: {
     // Direct transfer
     await transferTicketsToDepart(surplusTickets, nextDepart);
 
-    // Recalculate source depart (old bus revenue reduced)
-    const allTickets = await getAll<TicketRecord>('tickets');
+    // Recalculate source depart (old bus revenue reduced): the tickets of the two departures only
+    const allTickets = await getByDeparts<TicketRecord>('tickets', [depart.id, nextDepart.id]);
     const sourceActive = allTickets.filter(
       t => t.depart_id === depart.id && t.status !== 'cancelled',
     );

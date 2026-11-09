@@ -510,15 +510,15 @@ export default function Users() {
     if (deleteConfirmText !== 'SUPPRIMER') return;
     setDeleting(true);
     try {
-      const isEmployee = !(deleteTarget as any).organizations && !!(deleteTarget as any).companies;
-      const source = isEmployee ? 'employees' : 'users';
-      await deleteEmployeePermanently(deleteTarget.id, source);
-      toast.success('Employé supprimé définitivement');
+      // The server finds the HR record and the account from either id
+      const name = await deleteEmployeePermanently(deleteTarget.id);
+      toast.success(`${name || 'Employé'} supprimé définitivement`);
       setDeleteTarget(null);
       setDeleteConfirmText('');
       loadUsers();
-    } catch {
-      toast.error('Erreur lors de la suppression définitive');
+    } catch (err) {
+      // The reason given by the server (history kept, deletion not requested…)
+      toast.error(err instanceof Error && err.message ? err.message : 'Erreur lors de la suppression définitive', { duration: 9000 });
     } finally {
       setDeleting(false);
     }
