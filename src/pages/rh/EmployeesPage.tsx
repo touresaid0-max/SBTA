@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,6 +8,8 @@ import { useAuthStore } from '@/store/authStore'
 import { resolveCompanyIds } from '@/utils/companyGroups'
 import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { Employee, EmployeeFilters, ContractType, ContractNature } from '@/types/hr.types'
+import Pagination from '@/components/pos/Pagination'
+import { usePagination } from '@/hooks/usePagination'
 
 const ROLE_LABELS: Record<string, string> = {
   chauffeur: 'Chauffeur', guichetier: 'Guichetier', agent_reservation: 'Agent Réservation', mecanicien: 'Mécanicien',
@@ -32,6 +34,26 @@ const TABS = [
   { key: 'chef_gare',   label: 'Chefs Gare' },
   { key: 'bagagiste',   label: 'Bagagistes' },
 ]
+
+/** Text compared without case or accents: « KEÏTA » is found by « keita », « Koné » by « KONE » */
+function normalized(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+/**
+ * Employees matching every word typed, in any order and any field: name and first name (in
+ * either order), e-mails, matricule, phone. The search used to be made by the server field by
+ * field: a full name (« kone vakaramoko ») or a name typed without its accent was not found.
+ */
+function matchesSearch(emp: Employee, search: string): boolean {
+  const words = normalized(search).split(/\s+/).filter(Boolean)
+  if (words.length === 0) return true
+  const text = normalized([
+    emp.first_name, emp.last_name, emp.full_name, emp.email, emp.professional_email,
+    emp.personal_email, emp.employee_id, emp.phone,
+  ].filter(Boolean).join(' '))
+  return words.every(w => text.includes(w))
+}
 
 interface Company { id: string; name: string; code: string; parent_id?: string | null; is_group?: boolean }
 interface Station { id: string; name: string }
@@ -73,6 +95,8 @@ export default function EmployeesPage() {
     setLoading(true)
     const effectiveFilters: EmployeeFilters = {
       ...filters,
+      // Searched on the device (matchesSearch): without case or accents, words in any order
+      search: '',
       company_ids: filters.company_id ? resolveCompanyIds(filters.company_id, companies) : null,
       role: activeTab === 'all' ? null : activeTab,
     }
@@ -80,7 +104,9 @@ export default function EmployeesPage() {
       .then(data => setEmployees(data.filter(e => e.status !== 'inactive')))
       .catch(() => toast.error('Erreur lors du chargement des employés'))
       .finally(() => setLoading(false))
-  }, [filters, activeTab, companies])
+    // The search is not a dependency: typing does not reload the list
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.company_id, filters.station_id, filters.contract_type, filters.contract_nature, filters.status, activeTab, companies])
 
   useEffect(() => { loadEmployees() }, [loadEmployees])
 
@@ -124,6 +150,18 @@ export default function EmployeesPage() {
 
   const isDriverTab = activeTab === 'chauffeur'
 
+  const visibleEmployees = useMemo(
+    () => employees.filter(e => matchesSearch(e, filters.search ?? '')),
+    [employees, filters.search],
+  )
+
+  // Same pagination as the bus list: back to page 1 when a filter, the tab or the search changes
+  const pagination = usePagination(
+    visibleEmployees,
+    'sbta_rh_employees_page_size',
+    `${activeTab}|${filters.company_id}|${filters.station_id}|${filters.contract_type}|${filters.contract_nature}|${filters.status}|${filters.search}`,
+  )
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -131,7 +169,7 @@ export default function EmployeesPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#1A2E22]">Employés</h1>
           <p className="text-sm text-[#6B7280] mt-1">
-            {loading ? 'Chargement...' : `${employees.length} employé${employees.length > 1 ? 's' : ''} trouvé${employees.length > 1 ? 's' : ''}`}
+            {loading ? 'Chargement...' : `${visibleEmployees.length} employé${visibleEmployees.length > 1 ? 's' : ''} trouvé${visibleEmployees.length > 1 ? 's' : ''}`}
           </p>
         </div>
         <div className="flex gap-3">
@@ -241,7 +279,7 @@ export default function EmployeesPage() {
       {/* Tabs */}
       <div className="flex gap-2 flex-wrap">
         {TABS.map(tab => {
-          const count = tab.key === 'all' ? employees.length : employees.filter(e => e.role === tab.key).length
+          const count = tab.key === 'all' ? visibleEmployees.length : visibleEmployees.filter(e => e.role === tab.key).length
           return (
             <button
               key={tab.key}
@@ -269,7 +307,7 @@ export default function EmployeesPage() {
           <div className="flex items-center justify-center h-40">
             <div className="w-8 h-8 border-4 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : employees.length === 0 ? (
+        ) : visibleEmployees.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-[#6B7280]">
             <FileText className="w-10 h-10 mb-2 opacity-30" />
             <p className="text-sm">Aucun employé trouvé</p>
@@ -297,7 +335,7 @@ export default function EmployeesPage() {
                 </tr>
               </thead>
               <tbody>
-                {employees.map(emp => (
+                {pagination.pageItems.map(emp => (
                   <tr key={emp.id} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8] transition-colors">
                     <td className="px-4 py-3">
                       {emp.avatar_url ? (
@@ -402,6 +440,20 @@ export default function EmployeesPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {!loading && visibleEmployees.length > 0 && (
+          <div className="border-t border-[#E2EAE5] px-4 py-2">
+            <Pagination
+              page={pagination.page}
+              pageCount={pagination.pageCount}
+              pageSize={pagination.pageSize}
+              total={pagination.total}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              itemLabel="employés"
+            />
           </div>
         )}
       </div>

@@ -7,6 +7,31 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+// The RH users see in their messaging that the admin created a login account (as for a user
+// created by the admin, function create-user). Best effort: never makes the creation fail.
+// deno-lint-ignore no-explicit-any
+async function notifyRh(supabaseAdmin: any, senderId: string, content: string): Promise<void> {
+  try {
+    const { data: rhUsers } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("role", "rh")
+      .eq("status", "active");
+    if (rhUsers && rhUsers.length > 0) {
+      await supabaseAdmin.from("admin_chat_messages").insert(
+        rhUsers.map((rh: { id: string }) => ({
+          sender_id: senderId,
+          receiver_id: rh.id,
+          content,
+          is_read: false,
+        })),
+      );
+    }
+  } catch (_notifErr) {
+    // Notification is best-effort
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -120,6 +145,12 @@ Deno.serve(async (req: Request) => {
           description: `Compte créé pour ${employee.first_name} ${employee.last_name} (${employee.role}) — Email : ${accountEmail} (profil chauffeur repris)`,
           new_values:  { email: accountEmail, auth_user_id: profileId },
         });
+
+        await notifyRh(
+          supabaseAdmin,
+          caller.id,
+          `Compte de connexion créé par l'Admin : ${employee.first_name ?? ""} ${employee.last_name ?? ""} (${employee.role}) — ${accountEmail}`,
+        );
 
         return new Response(
           JSON.stringify({
@@ -273,6 +304,12 @@ Deno.serve(async (req: Request) => {
       description: `Compte créé pour ${employee.first_name} ${employee.last_name} (${employee.role}) — Email : ${accountEmail}`,
       new_values:  { email: accountEmail, auth_user_id: authUid },
     });
+
+    await notifyRh(
+      supabaseAdmin,
+      caller.id,
+      `Compte de connexion créé par l'Admin : ${employee.first_name ?? ""} ${employee.last_name ?? ""} (${employee.role}) — ${accountEmail}`,
+    );
 
     return new Response(
       JSON.stringify({
