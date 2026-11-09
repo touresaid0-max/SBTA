@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { AppUpdateBanner } from './components/shared/AppUpdateBanner';
 import { useAuthStore } from './store/authStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import Layout from './components/layout/Layout';
@@ -681,6 +682,7 @@ function App() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
+      <AppUpdateBanner />
       <Toaster
         position="top-right"
         toastOptions={{
