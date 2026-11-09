@@ -259,7 +259,7 @@ Deno.serve(async (req: Request) => {
       const { error: routeError } = await supabaseAdmin
         .from("employees")
         .update({ assigned_route_ids, updated_at: new Date().toISOString() })
-        .or(`id.eq.${employee_id},auth_user_id.eq.${authUserId}`);
+        .eq("auth_user_id", authUserId);
       if (routeError) throw new Error(routeError.message);
     }
 

@@ -3,7 +3,7 @@
   "functions": {
     "admin-create-account": {
       "hasChanged": false,
-      "hash": "d1db040c47f8c76bc99e1aad2af182e6a9a94e631b5fed6e8d4669fe9659c948"
+      "hash": "2724cce87ecbf2742636f5cc988e4f5f6a86511047407737a256f717e8cd0232"
     },
     "calculate-route-distance": {
       "hasChanged": false,
@@ -11,7 +11,7 @@
     },
     "create-user": {
       "hasChanged": false,
-      "hash": "85b9787d2235d9824ebcd270df9646c77aa561e416d1c4f040beafea7585104e"
+      "hash": "4c19562180481fde090d3be866dda81e332c8770b33abf57518de171c24b6d93"
     },
     "create-user-with-password": {
       "hasChanged": false,

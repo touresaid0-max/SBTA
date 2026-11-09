@@ -435,7 +435,8 @@ export default function Users() {
       setShowModal(false); setEditingUser(null); setFormData(emptyForm());
       await loadUsers();
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : 'Erreur');
+      const message = error instanceof Error ? error.message : (error as { message?: string } | null)?.message;
+      toast.error(message || 'Erreur');
     }
   };
 
