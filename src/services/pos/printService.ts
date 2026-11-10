@@ -1615,7 +1615,7 @@ export async function printBordereauDepartThermal(data: PrintBordereauDepartData
 //  Same layout as the model rapport_ventes_ramassage_thermique.pdf (80 mm roll, one block per
 //  ramassage). The A4 table, the PDF and the Excel export of the report are not changed.
 // ═══════════════════════════════════════════════════════════════════
-function buildHTMLRamassageReport(data: PrintRamassageReportData, settings: PrintSettings): string {
+function buildHTMLRamassageReport(data: PrintRamassageReportData): string {
   const e = escapeHtml;
   const row = (label: string, value: string, bold = false) =>
     `<div class="f${bold ? ' b' : ''}">${e(label)} : ${e(value)}</div>`;
@@ -1638,15 +1638,19 @@ function buildHTMLRamassageReport(data: PrintRamassageReportData, settings: Prin
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><title>Rapport des ventes de ramassage</title>
 <style>
-  @page { size: ${settings.width_mm}mm auto; margin: 0; }
+  /* The page takes the width of the paper set in the printer (the roll), not the width of the
+     guichet's print settings: set to 58 mm on an 80 mm roll, the report came out 58 mm wide,
+     against the left edge, its first letters cut. The printer cannot print the first and last
+     millimetres of the roll (about 4 mm on an 80 mm roll): the text keeps clear of both edges. */
+  @page { margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: ${settings.width_mm}mm; background: #fff; color: #000; }
+  html, body { width: 100%; background: #fff; color: #000; }
   /* Larger and darker than the model on the roll (asked by the guichet): every line in bold, the
-     key lines darker still, and the text runs to 1 mm from the right edge. */
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 8.6pt; font-weight: bold; line-height: 1.45; padding: 0.5mm 1mm 6mm 3mm; }
+     key lines darker still. */
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 8.6pt; font-weight: bold; line-height: 1.45; padding: 0.5mm 4mm 6mm 5.5mm; }
   .logo { text-align: center; font-size: 19pt; font-weight: 900; line-height: 1.15; -webkit-text-stroke: 0.4px #000; }
   .co { text-align: center; font-size: 7.6pt; margin-top: 1.2mm; }
-  .title { text-align: center; font-size: 10.4pt; line-height: 1.2; margin-bottom: 3mm; -webkit-text-stroke: 0.25px #000; }
+  .title { text-align: center; font-size: 9.9pt; line-height: 1.2; margin-bottom: 3mm; -webkit-text-stroke: 0.25px #000; }
   .sep { border-top: 1.5px dashed #000; margin: 1.4mm 0 0.4mm; }
   .h { text-align: center; font-size: 9.6pt; -webkit-text-stroke: 0.25px #000; }
   .f { overflow-wrap: anywhere; }
@@ -1683,5 +1687,5 @@ export async function printRamassageReportThermal(data: PrintRamassageReportData
   if (await withTimeout(sendWebSerial(escposData), 1500, false)) return true;
   if (await withTimeout(sendWebUSB(escposData), 1500, false)) return true;
   if (await withTimeout(sendQzTray(escposData, settings), 3000, false)) return true;
-  return printHTMLDocument(buildHTMLRamassageReport(data, settings));
+  return printHTMLDocument(buildHTMLRamassageReport(data));
 }
