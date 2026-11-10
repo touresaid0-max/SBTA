@@ -1,5 +1,24 @@
 import { supabase } from './supabase'
 
+// The server answers at most 1 000 rows per request, without any error: a month of Agboville
+// tickets (17 555 in November 2026) came back cut, and most departures showed 0 F of revenue.
+// Rows are read page by page, in a stable order, until a page comes back empty: the server may
+// cut a page below PAGE_SIZE, so a short page does not prove the end.
+const PAGE_SIZE = 1000
+
+async function readAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: unknown }>,
+): Promise<T[]> {
+  const all: T[] = []
+  for (;;) {
+    const { data, error } = await page(all.length, all.length + PAGE_SIZE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as T[]
+    if (rows.length === 0) return all
+    all.push(...rows)
+  }
+}
+
 export interface Bordereau {
   id: string
   bordereau_date: string
@@ -476,27 +495,34 @@ export async function fetchPosSchedules(filters?: {
     return candidates.find(c => c.arrivalStationIds.includes(s.arrival_station_id!)) ?? null
   }
 
-  let q = supabase
-    .from('schedules')
-    .select(`
-      id, route_id, route_name, bus_id, departure_station_id, arrival_station_id, counter_id, departure_number,
-      departure_datetime, status, seats_reserved, seats_available, price
-    `)
-    .order('departure_datetime', { ascending: false })
-
-  if (filters?.dateFrom) q = q.gte('departure_datetime', filters.dateFrom)
-  if (filters?.dateTo) q = q.lte('departure_datetime', filters.dateTo + 'T23:59:59')
-  if (filters?.stationIds && filters.stationIds.length > 0) {
-    q = q.in('departure_station_id', filters.stationIds)
-  } else {
-    const queryStationIds = [...new Set([...allDepStationIds, ...allArrivalStationIds])]
-    q = q.in('departure_station_id', queryStationIds)
+  type ScheduleSelect = {
+    id: string; route_id: string | null; route_name: string | null; bus_id: string | null
+    departure_station_id: string | null; arrival_station_id: string | null; counter_id: string | null
+    departure_number: number | null; departure_datetime: string; status: string
+    seats_reserved: number | null; seats_available: number | null; price: number | null
   }
-  if (filters?.counterIds && filters.counterIds.length > 0) q = q.in('counter_id', filters.counterIds)
+  const schedules = await readAllPages<ScheduleSelect>((rangeFrom, rangeTo) => {
+    let q = supabase
+      .from('schedules')
+      .select(`
+        id, route_id, route_name, bus_id, departure_station_id, arrival_station_id, counter_id, departure_number,
+        departure_datetime, status, seats_reserved, seats_available, price
+      `)
+      .order('departure_datetime', { ascending: false })
+      .order('id')
 
-  const { data: schedules, error } = await q
-  if (error) throw error
-  if (!schedules || schedules.length === 0) return []
+    if (filters?.dateFrom) q = q.gte('departure_datetime', filters.dateFrom)
+    if (filters?.dateTo) q = q.lte('departure_datetime', filters.dateTo + 'T23:59:59')
+    if (filters?.stationIds && filters.stationIds.length > 0) {
+      q = q.in('departure_station_id', filters.stationIds)
+    } else {
+      const queryStationIds = [...new Set([...allDepStationIds, ...allArrivalStationIds])]
+      q = q.in('departure_station_id', queryStationIds)
+    }
+    if (filters?.counterIds && filters.counterIds.length > 0) q = q.in('counter_id', filters.counterIds)
+    return q.range(rangeFrom, rangeTo)
+  })
+  if (schedules.length === 0) return []
 
   const filteredSchedules = schedules.filter(s => matchSegment(s) !== null)
   if (filteredSchedules.length === 0) return []
@@ -581,12 +607,12 @@ export async function fetchPosReservations(scheduleIds: string[]): Promise<PosRe
   const all: PosReservationRow[] = []
   for (let i = 0; i < scheduleIds.length; i += 200) {
     const batch = scheduleIds.slice(i, i + 200)
-    const { data, error } = await supabase
+    all.push(...await readAllPages<PosReservationRow>((rangeFrom, rangeTo) => supabase
       .from('reservations')
       .select('id, schedule_id, total_seats, total_price, baggage_fee, status, payment_status, created_at')
       .in('schedule_id', batch)
-    if (error) throw error
-    if (data) all.push(...(data as PosReservationRow[]))
+      .order('id')
+      .range(rangeFrom, rangeTo)))
   }
   return all
 }
@@ -605,12 +631,12 @@ export async function fetchPosCharges(scheduleIds: string[]): Promise<PosChargeR
   const all: PosChargeRow[] = []
   for (let i = 0; i < scheduleIds.length; i += 200) {
     const batch = scheduleIds.slice(i, i + 200)
-    const { data, error } = await supabase
+    all.push(...await readAllPages<PosChargeRow>((rangeFrom, rangeTo) => supabase
       .from('counter_charges')
       .select('id, schedule_id, charge_type, description, amount, status')
       .in('schedule_id', batch)
-    if (error) throw error
-    if (data) all.push(...(data as PosChargeRow[]))
+      .order('id')
+      .range(rangeFrom, rangeTo)))
   }
   return all
 }
