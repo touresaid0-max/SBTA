@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { flushSync } from 'react-dom'
+import { usePagination } from '@/hooks/usePagination'
+import Pagination from '@/components/pos/Pagination'
 import {
   fetchDepenses, fetchDepenseCategories, createDepense, deleteDepense,
   createDepenseCategory, fetchBusesForAbg, fetchSocietes,
@@ -150,6 +153,13 @@ export default function Depenses() {
   const subHAO = filteredDepenses.filter(d => d.type_depense === 'HAO').reduce((a, d) => a + Number(d.montant), 0)
   const total = subAO + subHAO
 
+  // Same pagination as the bus list: back to page 1 when the period or a filter changes.
+  // The sub-totals and the total stay those of every expense, not of the page shown.
+  const pagination = usePagination(filteredDepenses, 'sbta_abg_depenses_page_size', `${periodPreset}|${JSON.stringify(filters)}`)
+  // The PDF is a picture of the table: while it is taken, every expense is shown, not only the page.
+  const [showAllRows, setShowAllRows] = useState(false)
+  const shownDepenses = showAllRows ? filteredDepenses : pagination.pageItems
+
   const exportExcel = () => {
     const rows = filteredDepenses.map(d => ({
       Date: new Date(d.date_depense).toLocaleDateString('fr-FR'),
@@ -175,7 +185,13 @@ export default function Depenses() {
 
   const exportPdf = async () => {
     if (!reportRef.current) return
-    const canvas = await html2canvas(reportRef.current, { scale: 1.5, useCORS: true, backgroundColor: '#ffffff' })
+    flushSync(() => setShowAllRows(true))
+    let canvas: HTMLCanvasElement
+    try {
+      canvas = await html2canvas(reportRef.current, { scale: 1.5, useCORS: true, backgroundColor: '#ffffff' })
+    } finally {
+      setShowAllRows(false)
+    }
     const imgData = canvas.toDataURL('image/png')
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
     const w = pdf.internal.pageSize.getWidth()
@@ -287,7 +303,7 @@ export default function Depenses() {
                 </tr>
               </thead>
               <tbody>
-                {filteredDepenses.map(d => (
+                {shownDepenses.map(d => (
                   <tr key={d.id} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8] transition-colors">
                     <td className="px-4 py-3 text-[#374151] whitespace-nowrap">{new Date(d.date_depense).toLocaleDateString('fr-FR')}</td>
                     <td className="px-4 py-3 text-[#6B7280]">{d.categorie ?? '—'}</td>
@@ -331,6 +347,20 @@ export default function Depenses() {
           </div>
         )}
       </div>
+
+      {!loading && filteredDepenses.length > 0 && (
+        <div className="bg-white rounded-2xl border border-[#E2EAE5] px-4 py-2">
+          <Pagination
+            page={pagination.page}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            itemLabel="dépenses"
+          />
+        </div>
+      )}
 
       {/* Form modal */}
       {showForm && (

@@ -335,21 +335,22 @@ export async function fetchDepenses(filters?: {
   dateFrom?: string
   dateTo?: string
 }): Promise<AbgDepense[]> {
-  let q = supabase
-    .from('abg_depenses')
-    .select('*')
-    .order('date_depense', { ascending: false })
-    .order('created_at', { ascending: false })
+  // Read page by page: past 1 000 expenses the list and its totals were cut without warning.
+  return readAllPages<AbgDepense>((rangeFrom, rangeTo) => {
+    let q = supabase
+      .from('abg_depenses')
+      .select('*')
+      .order('date_depense', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id')
 
-  if (filters?.type) q = q.eq('type_depense', filters.type)
-  if (filters?.categorie) q = q.eq('categorie', filters.categorie)
-  if (filters?.source) q = q.eq('source_libelle', filters.source)
-  if (filters?.dateFrom) q = q.gte('date_depense', filters.dateFrom)
-  if (filters?.dateTo) q = q.lte('date_depense', filters.dateTo)
-
-  const { data, error } = await q
-  if (error) throw error
-  return data ?? []
+    if (filters?.type) q = q.eq('type_depense', filters.type)
+    if (filters?.categorie) q = q.eq('categorie', filters.categorie)
+    if (filters?.source) q = q.eq('source_libelle', filters.source)
+    if (filters?.dateFrom) q = q.gte('date_depense', filters.dateFrom)
+    if (filters?.dateTo) q = q.lte('date_depense', filters.dateTo)
+    return q.range(rangeFrom, rangeTo)
+  })
 }
 
 export async function fetchDepenseCategories(): Promise<AbgDepenseCategory[]> {
