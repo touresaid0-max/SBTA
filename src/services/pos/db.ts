@@ -99,6 +99,9 @@ export interface TicketRecord {
   status: string;
   printed?: boolean;
   printed_at?: string;
+  /** Sold on this device (kept on the device only): with print_ticket and not printed yet, the
+   *  guichetier can still print it, without the admin's authorization (see neverPrinted) */
+  sold_here?: boolean;
   loyalty_card_number?: string;
   loyalty_name?: string;
   created_at: string;

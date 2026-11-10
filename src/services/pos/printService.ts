@@ -577,7 +577,20 @@ function makeQRText(data: string): string {
   return svg;
 }
 
-async function printHTMLDocument(html: string): Promise<boolean> {
+// ── Print pages reused ──
+// Each ticket was printed in a new hidden page (iframe), removed afterwards. After thousands of
+// tickets the browser was weighed down by all the pages created (measured: 19 ms per ticket on a
+// fresh page, 217 ms after 1 920 tickets, with the same data; only a reload brought it back).
+// A few print pages are now reused. A page is taken again only after PRINT_PAGE_REST_MS since its
+// last ticket (the printer may still be taking that job, as when the page was removed after 1,5 s).
+const PRINT_PAGE_REST_MS = 1500;
+const MAX_IDLE_PRINT_PAGES = 120;
+const idlePrintPages: { iframe: HTMLIFrameElement; freeAt: number }[] = [];
+
+function takePrintPage(): HTMLIFrameElement {
+  const now = Date.now();
+  const i = idlePrintPages.findIndex(p => p.freeAt <= now && p.iframe.isConnected && p.iframe.contentWindow);
+  if (i >= 0) return idlePrintPages.splice(i, 1)[0].iframe;
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';
@@ -586,11 +599,25 @@ async function printHTMLDocument(html: string): Promise<boolean> {
   iframe.style.height = '0';
   iframe.style.border = '0';
   document.body.appendChild(iframe);
+  return iframe;
+}
+
+function releasePrintPage(iframe: HTMLIFrameElement): void {
+  if (idlePrintPages.length >= MAX_IDLE_PRINT_PAGES) {
+    setTimeout(() => iframe.remove(), PRINT_PAGE_REST_MS);
+    return;
+  }
+  idlePrintPages.push({ iframe, freeAt: Date.now() + PRINT_PAGE_REST_MS });
+}
+
+async function printHTMLDocument(html: string): Promise<boolean> {
+  const iframe = takePrintPage();
 
   return new Promise((resolve) => {
     const cw = iframe.contentWindow;
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
+    // A reused page: open() replaces its previous ticket (and the listeners of that ticket)
     doc.open();
     doc.write(withPrintLogos(html));
     doc.close();
@@ -599,22 +626,34 @@ async function printHTMLDocument(html: string): Promise<boolean> {
     const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
-      setTimeout(() => iframe.remove(), 1500);
+      releasePrintPage(iframe);
       resolve(ok);
     };
     if (cw) cw.addEventListener('afterprint', () => finish(true), { once: true });
-    setTimeout(async () => {
+
+    // Printed as soon as the page is ready: loaded, and every image (the logo) loaded and decoded.
+    // A fixed 300 ms wait came before each ticket: a series of 1 000 tickets waited 5 minutes for
+    // nothing (measured 317 ms per ticket with an instant printer, 300 of them waiting). 3 s at most.
+    const pageLoaded = new Promise<void>(resolve => {
+      if (doc.readyState === 'complete') { resolve(); return; }
+      cw?.addEventListener('load', () => resolve(), { once: true });
+      setTimeout(resolve, 3000);
+    });
+    const imageReady = (image: HTMLImageElement) => new Promise<void>(resolve => {
+      const decoded = () => {
+        if (typeof image.decode !== 'function') { resolve(); return; }
+        image.decode().then(() => resolve(), () => resolve());
+      };
+      if (image.complete) { decoded(); return; }
+      image.addEventListener('load', decoded, { once: true });
+      image.addEventListener('error', () => resolve(), { once: true });
+    });
+    const withinLimit = <T,>(p: Promise<T>) => Promise.race([p, new Promise<void>(resolve => setTimeout(resolve, 3000))]);
+
+    (async () => {
       try {
-        const images = Array.from(doc.images);
-        await Promise.all(images.map(image => {
-          if (image.complete && image.naturalWidth > 0) return Promise.resolve();
-          return new Promise<void>(resolve => {
-            const done = () => resolve();
-            image.addEventListener('load', done, { once: true });
-            image.addEventListener('error', done, { once: true });
-            setTimeout(done, 3000);
-          });
-        }));
+        await withinLimit(pageLoaded);
+        await withinLimit(Promise.all(Array.from(doc.images).map(imageReady)));
         cw?.focus();
         cw?.print();
       } catch {
@@ -622,7 +661,7 @@ async function printHTMLDocument(html: string): Promise<boolean> {
         return;
       }
       setTimeout(() => finish(true), 2000);
-    }, 300);
+    })();
   });
 }
 
@@ -677,15 +716,27 @@ export const PrintService = {
    * each followed by a paper cut. Returns the tickets actually printed, so a failure
    * part-way leaves only the remaining tickets to resume (no ticket printed twice).
    */
-  async printTicketsSequence(data: Omit<PrintTicketData, 'ticket'> & { tickets: TicketRecord[] }): Promise<TicketRecord[]> {
+  async printTicketsSequence(data: Omit<PrintTicketData, 'ticket'> & {
+    tickets: TicketRecord[];
+    /** Called as soon as each ticket is printed, before the next one: a series cut part-way
+     *  (page reloaded, screen left) keeps the tickets already printed marked as printed. */
+    onPrinted?: (ticket: TicketRecord) => Promise<void> | void;
+  }): Promise<TicketRecord[]> {
+    const markPrinted = async (ticket: TicketRecord) => {
+      try { await data.onPrinted?.(ticket); } catch { /* marked again at the end of the series */ }
+    };
     const ordered = [...data.tickets].sort((a, b) => a.seat_number - b.seat_number);
     if (ordered.length === 0) return [];
     const settings = await getPrintSettings();
 
-    let send: ((bytes: Uint8Array) => Promise<boolean>) | null = null;
-    if (settings.backend === 'webserial') send = bytes => withTimeout(sendWebSerial(bytes), 1500, false);
-    if (settings.backend === 'webusb') send = bytes => withTimeout(sendWebUSB(bytes), 1500, false);
-    if (settings.backend === 'qztray') send = bytes => withTimeout(sendQzTray(bytes, settings), 3000, false);
+    // The first ticket finds out quickly whether the thermal printer is there (1,5 s, 3 s for QZ
+    // Tray). The next ones may wait: the printer is still printing the previous tickets and takes
+    // the new ones as its buffer empties. With 1,5 s a long series stopped part-way, the rest unprinted.
+    const NEXT_TICKET_WAIT_MS = 15_000;
+    let send: ((bytes: Uint8Array, waitMs?: number) => Promise<boolean>) | null = null;
+    if (settings.backend === 'webserial') send = (bytes, waitMs = 1500) => withTimeout(sendWebSerial(bytes), waitMs, false);
+    if (settings.backend === 'webusb') send = (bytes, waitMs = 1500) => withTimeout(sendWebUSB(bytes), waitMs, false);
+    if (settings.backend === 'qztray') send = (bytes, waitMs = 3000) => withTimeout(sendQzTray(bytes, settings), waitMs, false);
 
     if (send) {
       const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
@@ -693,8 +744,9 @@ export const PrintService = {
       const printed: TicketRecord[] = [];
       for (const ticket of ordered) {
         const bytes = buildTicketESCPOS({ ticket, depart: data.depart, stationName: data.stationName, phoneLine: data.phoneLine }, cutSettings, logo);
-        if (!(await send(bytes))) break;
+        if (!(await send(bytes, printed.length > 0 ? NEXT_TICKET_WAIT_MS : undefined))) break;
         printed.push(ticket);
+        await markPrinted(ticket);
       }
       // The thermal printer took some tickets: the rest is resumed, never sent to the browser too
       if (printed.length > 0) return printed;
@@ -714,6 +766,7 @@ export const PrintService = {
       }, settings);
       if (!ok) break;
       printed.push(ticket);
+      await markPrinted(ticket);
     }
     return printed;
   },

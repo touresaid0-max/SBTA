@@ -94,7 +94,7 @@ function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
   }
 }
 
-async function printBordereauForDepart(depart: DepartRow, stationId?: string): Promise<void> {
+async function printBordereauForDepart(depart: DepartRow, stationId?: string, stationName?: string): Promise<void> {
   const [tickets, bagages, depenses] = await Promise.all([
     getByDeparts<TicketRecord>('tickets', [depart.id]),
     getBagagesForDepart(depart.id),
@@ -187,7 +187,9 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string): P
 
   const totalSeats = seatRange ? seatRange.to - seatRange.from + 1 : seatsCommercialisables(depart);
   const data: BordereauDepartData = {
-    station_name: depart.station_name ?? '',
+    // « GUICHET : » the station of the counter printing it. A departure pulled from the server has no
+    // station name (schedules has no such column): the line was printed empty.
+    station_name: depart.station_name || stationName || '',
     departure_number: depart.route_number ?? depart.departure_number,
     route_name: depart.route_name ?? '',
     departure_date: depDate,
@@ -553,7 +555,7 @@ export default function POSDeparts() {
           if (!isNaN(dt.getTime())) depDate = `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`;
         } catch { /* keep default */ }
         return {
-          station_name: d.station_name ?? session?.station_name ?? '',
+          station_name: d.station_name || session?.station_name || '',
           route_name: d.route_name ?? '',
           departure_date: depDate,
           registration_number: d.bus_plate ?? '',
@@ -641,7 +643,7 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'bordereau') {
-        await printBordereauForDepart(depart, session?.station_id);
+        await printBordereauForDepart(depart, session?.station_id, session?.station_name);
         return;
       }
       await loadDeparts();
