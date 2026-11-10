@@ -9,10 +9,10 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 import {
-  fetchPosSchedules, fetchPosReservations, fetchPosCharges,
+  fetchPosSchedules, fetchPosRevenue, fetchPosCharges,
   fetchCompaniesHierarchy, fetchBusesForAbg, fetchAgbovilleStations,
   fetchCountersByStations, ABG_SEGMENTS, classifyCharge,
-  type PosScheduleRow, type PosReservationRow, type PosChargeRow,
+  type PosScheduleRow, type PosScheduleRevenue, type PosChargeRow,
 } from '@/services/abg.service'
 
 type PeriodId = 'jour' | 'hebdo' | 'mensuel' | 'annuel' | 'custom'
@@ -78,7 +78,7 @@ export default function SuiviRecettes() {
   const [showFilters, setShowFilters] = useState(true)
 
   const [schedules, setSchedules] = useState<PosScheduleRow[]>([])
-  const [reservations, setReservations] = useState<PosReservationRow[]>([])
+  const [reservations, setReservations] = useState<PosScheduleRevenue[]>([])
   const [charges, setCharges] = useState<PosChargeRow[]>([])
   const [companies, setCompanies] = useState<{ id: string; code: string; name: string; parent_id: string | null; is_group: boolean }[]>([])
   const [groups, setGroups] = useState<{ code: string; name: string }[]>([])
@@ -136,7 +136,7 @@ export default function SuiviRecettes() {
 
       const sIds = scheds.map(s => s.id)
       if (sIds.length > 0) {
-        const [res, chg] = await Promise.all([fetchPosReservations(sIds), fetchPosCharges(sIds)])
+        const [res, chg] = await Promise.all([fetchPosRevenue(sIds), fetchPosCharges(sIds)])
         setReservations(res)
         setCharges(chg)
       } else {
@@ -159,11 +159,10 @@ export default function SuiviRecettes() {
   const rows: RecetteRow[] = useMemo(() => {
     const resMap = new Map<string, { amount: number; baggage: number; seats: number }>()
     for (const r of reservations) {
-      if (r.status !== 'confirmed' && r.status !== 'paid' && r.status !== 'confirmee' && r.payment_status !== 'paid' && r.payment_status !== 'payee') continue
       const prev = resMap.get(r.schedule_id) ?? { amount: 0, baggage: 0, seats: 0 }
-      prev.amount += safe(r.total_price)
-      prev.baggage += safe(r.baggage_fee)
-      prev.seats += 1
+      prev.amount += safe(r.amount)
+      prev.baggage += safe(r.baggage)
+      prev.seats += safe(r.tickets)
       resMap.set(r.schedule_id, prev)
     }
 

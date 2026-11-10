@@ -9,9 +9,9 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 import {
-  fetchPosSchedules, fetchPosReservations, fetchPosCharges,
+  fetchPosSchedules, fetchPosRevenue, fetchPosCharges,
   fetchDepenses, fetchCompaniesHierarchy, fetchAgbovilleStations, fetchBusesForAbg, classifyCharge,
-  type PosScheduleRow, type PosReservationRow, type PosChargeRow,
+  type PosScheduleRow, type PosScheduleRevenue, type PosChargeRow,
   type AbgDepense,
 } from '@/services/abg.service'
 
@@ -56,7 +56,7 @@ export default function RapportConsolide() {
   const [showFilters, setShowFilters] = useState(true)
 
   const [schedules, setSchedules] = useState<PosScheduleRow[]>([])
-  const [reservations, setReservations] = useState<PosReservationRow[]>([])
+  const [reservations, setReservations] = useState<PosScheduleRevenue[]>([])
   const [charges, setCharges] = useState<PosChargeRow[]>([])
   const [depenses, setDepenses] = useState<AbgDepense[]>([])
   const [companies, setCompanies] = useState<{ id: string; code: string; name: string; parent_id: string | null; is_group: boolean }[]>([])
@@ -99,7 +99,7 @@ export default function RapportConsolide() {
 
       const sIds = scheds.map(s => s.id)
       if (sIds.length > 0) {
-        const [res, chg] = await Promise.all([fetchPosReservations(sIds), fetchPosCharges(sIds)])
+        const [res, chg] = await Promise.all([fetchPosRevenue(sIds), fetchPosCharges(sIds)])
         setReservations(res)
         setCharges(chg)
       } else {
@@ -131,8 +131,7 @@ export default function RapportConsolide() {
     let totalRecettes = 0
     for (const r of reservations) {
       if (!validScheduleIds.has(r.schedule_id)) continue
-      if (r.status !== 'confirmed' && r.status !== 'paid' && r.status !== 'confirmee' && r.payment_status !== 'paid' && r.payment_status !== 'payee') continue
-      totalRecettes += safe(r.total_price) + safe(r.baggage_fee)
+      totalRecettes += safe(r.amount) + safe(r.baggage)
     }
 
     let rations = 0, carburant = 0, peages = 0, autres = 0

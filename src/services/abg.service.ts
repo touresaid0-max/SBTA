@@ -591,30 +591,85 @@ export async function fetchPosSchedules(filters?: {
   })
 }
 
-export interface PosReservationRow {
-  id: string
-  schedule_id: string
-  total_seats: number
-  total_price: number
-  baggage_fee: number
-  status: string
-  payment_status: string | null
-  created_at: string
+// Splits the ids into batches and runs `read` on a few batches at a time, keeping the batch order.
+async function inBatches<T>(ids: string[], size: number, read: (batch: string[]) => Promise<T[]>): Promise<T[]> {
+  const batches: string[][] = []
+  for (let i = 0; i < ids.length; i += size) batches.push(ids.slice(i, i + size))
+  const results: T[][] = new Array(batches.length)
+  let next = 0
+  const worker = async () => {
+    while (next < batches.length) {
+      const i = next++
+      results[i] = await read(batches[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, batches.length) }, worker))
+  return results.flat()
 }
 
-export async function fetchPosReservations(scheduleIds: string[]): Promise<PosReservationRow[]> {
-  if (scheduleIds.length === 0) return []
-  const all: PosReservationRow[] = []
-  for (let i = 0; i < scheduleIds.length; i += 200) {
-    const batch = scheduleIds.slice(i, i + 200)
-    all.push(...await readAllPages<PosReservationRow>((rangeFrom, rangeTo) => supabase
-      .from('reservations')
-      .select('id, schedule_id, total_seats, total_price, baggage_fee, status, payment_status, created_at')
-      .in('schedule_id', batch)
-      .order('id')
-      .range(rangeFrom, rangeTo)))
+/** Ticket totals of one departure: confirmed or paid tickets only. */
+export interface PosScheduleRevenue {
+  schedule_id: string
+  /** Number of tickets (reservations). */
+  tickets: number
+  /** Sum of the seats of these tickets. */
+  seats: number
+  amount: number
+  baggage: number
+}
+
+const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) ? n : 0 }
+
+// Until migration 20261110160000 is run on a database, the totals are made on the device from
+// the tickets themselves, as before (slow over long periods, but right).
+let revenueFunctionMissing = false
+
+async function revenueFromTickets(batch: string[]): Promise<PosScheduleRevenue[]> {
+  type Ticket = { schedule_id: string; total_seats: number | null; total_price: number | null; baggage_fee: number | null; status: string | null; payment_status: string | null }
+  const tickets = await readAllPages<Ticket>((rangeFrom, rangeTo) => supabase
+    .from('reservations')
+    .select('schedule_id, total_seats, total_price, baggage_fee, status, payment_status')
+    .in('schedule_id', batch)
+    .order('id')
+    .range(rangeFrom, rangeTo))
+  const bySchedule = new Map<string, PosScheduleRevenue>()
+  for (const t of tickets) {
+    const counted = t.status === 'confirmed' || t.status === 'paid' || t.status === 'confirmee'
+      || t.payment_status === 'paid' || t.payment_status === 'payee'
+    if (!counted) continue
+    const r = bySchedule.get(t.schedule_id) ?? { schedule_id: t.schedule_id, tickets: 0, seats: 0, amount: 0, baggage: 0 }
+    r.tickets += 1
+    r.seats += num(t.total_seats)
+    r.amount += num(t.total_price)
+    r.baggage += num(t.baggage_fee)
+    bySchedule.set(t.schedule_id, r)
   }
-  return all
+  return [...bySchedule.values()]
+}
+
+// One row per departure, added up by the database: a year of tickets is tens of thousands of
+// rows, and downloading them kept the pages loading for minutes.
+export async function fetchPosRevenue(scheduleIds: string[]): Promise<PosScheduleRevenue[]> {
+  if (scheduleIds.length === 0) return []
+  // 500 departures give at most 500 rows: under the server's 1 000-row limit.
+  return inBatches(scheduleIds, 500, async batch => {
+    if (!revenueFunctionMissing) {
+      const { data, error } = await supabase.rpc('abg_schedule_revenue', { p_schedule_ids: batch })
+      if (!error) {
+        return ((data ?? []) as Record<string, unknown>[]).map(r => ({
+          schedule_id: String(r.schedule_id),
+          tickets: num(r.tickets),
+          seats: num(r.seats),
+          amount: num(r.amount),
+          baggage: num(r.baggage),
+        }))
+      }
+      const code = (error as { code?: string }).code
+      if (code !== 'PGRST202' && code !== '42883') throw error
+      revenueFunctionMissing = true
+    }
+    return revenueFromTickets(batch)
+  })
 }
 
 export interface PosChargeRow {
@@ -628,17 +683,12 @@ export interface PosChargeRow {
 
 export async function fetchPosCharges(scheduleIds: string[]): Promise<PosChargeRow[]> {
   if (scheduleIds.length === 0) return []
-  const all: PosChargeRow[] = []
-  for (let i = 0; i < scheduleIds.length; i += 200) {
-    const batch = scheduleIds.slice(i, i + 200)
-    all.push(...await readAllPages<PosChargeRow>((rangeFrom, rangeTo) => supabase
-      .from('counter_charges')
-      .select('id, schedule_id, charge_type, description, amount, status')
-      .in('schedule_id', batch)
-      .order('id')
-      .range(rangeFrom, rangeTo)))
-  }
-  return all
+  return inBatches(scheduleIds, 200, batch => readAllPages<PosChargeRow>((rangeFrom, rangeTo) => supabase
+    .from('counter_charges')
+    .select('id, schedule_id, charge_type, description, amount, status')
+    .in('schedule_id', batch)
+    .order('id')
+    .range(rangeFrom, rangeTo)))
 }
 
 export function classifyCharge(chargeType: string, description: string | null): 'rations' | 'carburant' | 'peages' | 'autres' {

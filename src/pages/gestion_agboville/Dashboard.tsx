@@ -15,9 +15,9 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 import {
-  fetchPosSchedules, fetchPosReservations, fetchPosCharges,
+  fetchPosSchedules, fetchPosRevenue, fetchPosCharges,
   fetchDepenses, fetchSocietes, classifyCharge,
-  type PosScheduleRow, type PosReservationRow, type PosChargeRow,
+  type PosScheduleRow, type PosScheduleRevenue, type PosChargeRow,
   type AbgDepense, type AbgSociete,
 } from '@/services/abg.service'
 import { formatCFA } from '@/utils/formatCurrency'
@@ -74,7 +74,7 @@ export default function GestionAgbovilleDashboard() {
   const [customTo, setCustomTo] = useState(format(new Date(), 'yyyy-MM-dd'))
 
   const [schedules, setSchedules] = useState<PosScheduleRow[]>([])
-  const [reservations, setReservations] = useState<PosReservationRow[]>([])
+  const [reservations, setReservations] = useState<PosScheduleRevenue[]>([])
   const [charges, setCharges] = useState<PosChargeRow[]>([])
   const [depenses, setDepenses] = useState<AbgDepense[]>([])
   const [societes, setSocietes] = useState<AbgSociete[]>([])
@@ -97,7 +97,7 @@ export default function GestionAgbovilleDashboard() {
       const sIds = scheds.map(s => s.id)
       if (sIds.length > 0) {
         const [res, chg] = await Promise.all([
-          fetchPosReservations(sIds),
+          fetchPosRevenue(sIds),
           fetchPosCharges(sIds),
         ])
         setReservations(res)
@@ -116,11 +116,10 @@ export default function GestionAgbovilleDashboard() {
   const aggBySchedule = useMemo<ScheduleAgg[]>(() => {
     const resMap = new Map<string, { recettes: number; tickets: number; sieges: number }>()
     for (const r of reservations) {
-      if (r.status !== 'confirmed' && r.status !== 'paid' && r.status !== 'confirmee' && r.payment_status !== 'paid' && r.payment_status !== 'payee') continue
       const prev = resMap.get(r.schedule_id) ?? { recettes: 0, tickets: 0, sieges: 0 }
-      prev.recettes += safe(r.total_price) + safe(r.baggage_fee)
-      prev.tickets += 1
-      prev.sieges += safe(r.total_seats)
+      prev.recettes += safe(r.amount) + safe(r.baggage)
+      prev.tickets += safe(r.tickets)
+      prev.sieges += safe(r.seats)
       resMap.set(r.schedule_id, prev)
     }
 
