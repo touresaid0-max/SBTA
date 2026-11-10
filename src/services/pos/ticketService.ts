@@ -46,6 +46,17 @@ export async function getRouteCityStops(): Promise<RouteCityStopRef[]> {
   return getReferentiel<RouteCityStopRef>('route_city_stops');
 }
 
+/**
+ * Tickets sold on this device, to print, never printed: printing was cut (page reloaded, printer too
+ * slow, dialog closed). They stay printable by the guichetier, from the device's records, without the
+ * admin's authorization (that is for a duplicate of a ticket already printed).
+ */
+export function neverPrinted(tickets: TicketRecord[]): TicketRecord[] {
+  return tickets
+    .filter(t => t.sold_here === true && t.print_ticket !== false && !t.printed && t.status !== 'cancelled')
+    .sort((a, b) => a.seat_number - b.seat_number);
+}
+
 export async function getTicketsForDepart(departId: string): Promise<TicketRecord[]> {
   // By the depart_id index: the whole table was read before each sale (see getByDeparts)
   const tickets = await getByDeparts<TicketRecord>('tickets', [departId]);
@@ -251,6 +262,8 @@ export async function sellTicket(params: SellTicketParams): Promise<TicketRecord
     is_reported: params.isReported,
     is_ac: params.isAc,
     print_ticket: params.printTicket,
+    // Kept on the device only (not sent): a ticket of this device never printed stays printable
+    sold_here: true,
     payment_method: 'cash',
     status: 'sold',
     loyalty_card_number: params.loyaltyCardNumber,

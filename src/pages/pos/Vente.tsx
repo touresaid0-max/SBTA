@@ -5,7 +5,7 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getDepartById } from '@/services/pos/departService';
 import { syncDepartsAndTicketsFromServer, localUpdate } from '@/services/pos/offlineStore';
 import {
-  sellTicket, sellTickets, PartialSaleError, getTicketsForDepart, getSoldSeats,
+  sellTicket, sellTickets, PartialSaleError, getTicketsForDepart, getSoldSeats, neverPrinted,
   calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
   type TicketRecord, type StationRef, type TarifRef, type RouteCityStopRef,
 } from '@/services/pos/ticketService';
@@ -73,7 +73,6 @@ export default function POSVente() {
   const [selling, setSelling] = useState(false);
   const [ticketPreview, setTicketPreview] = useState('');
   const [printError, setPrintError] = useState('');
-  const [pendingReprint, setPendingReprint] = useState<TicketRecord[]>([]);
   const [printing, setPrinting] = useState(false);
   const [ticketPhoneLine, setTicketPhoneLine] = useState<string | undefined>(undefined);
   // Reprints authorized by the admin from "Gestion des sièges"
@@ -630,23 +629,35 @@ export default function POSVente() {
       setTickets(t);
     }
     setPrinting(false);
-    // Tickets of this job leave the resume list once printed; only the unprinted ones stay
-    const jobIds = new Set(ticketsToPrint.map(t => t.id));
-    setPendingReprint(prev => [...prev.filter(t => !jobIds.has(t.id)), ...failed]);
+    // The tickets left unprinted stay in unprintedTickets (device's records), even after a reload
     if (failed.length > 0) {
       setPrintError(`${failed.length} ticket(s) non imprimé(s) — cliquez sur « Reprendre l'impression » pour réessayer.`);
     }
   };
 
-  const handleReprintResume = async () => {
-    if (pendingReprint.length === 0 || !depart) return;
-    setPrintError('');
-    // Only retry tickets that haven't been successfully printed yet
-    const unprinted = pendingReprint.filter(t => !t.printed && !tickets.find(x => x.id === t.id)?.printed);
-    if (unprinted.length === 0) {
-      setPendingReprint([]);
-      return;
+  /** Seat numbers as short ranges: 12, 13, 14, 20 → « 12 à 14, 20 » */
+  const seatRanges = (seats: number[]): string => {
+    const sorted = [...new Set(seats)].sort((a, b) => a - b);
+    const parts: string[] = [];
+    for (let i = 0; i < sorted.length;) {
+      let j = i;
+      while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+      parts.push(j > i ? `${sorted[i]} à ${sorted[j]}` : String(sorted[i]));
+      i = j + 1;
     }
+    return parts.join(', ');
+  };
+
+  // Tickets sold here and never printed (printing cut, page reloaded): read from the device's
+  // records, so they stay printable after a reload, without the admin's authorization
+  const unprintedTickets = useMemo(() => neverPrinted(tickets), [tickets]);
+
+  const handleReprintResume = async () => {
+    if (!depart || !departId) return;
+    setPrintError('');
+    // Read again: only the tickets still never printed
+    const unprinted = neverPrinted(await getTicketsForDepart(departId));
+    if (unprinted.length === 0) return;
     await printTicketsBatch(unprinted, depart, session?.station_name);
   };
 
@@ -1077,20 +1088,26 @@ export default function POSVente() {
             <CheckCircle className="w-4 h-4" /> {success}
           </div>
         )}
-        {printError && (
+        {(printError || (!printing && unprintedTickets.length > 0)) && (
           <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center justify-between gap-3 text-sm" style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}>
             <div className="flex items-start gap-2 flex-1">
               <Printer className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{printError}</span>
+              <span>
+                {printError || (
+                  `${unprintedTickets.length} ticket${unprintedTickets.length > 1 ? 's' : ''} pas encore imprimé${unprintedTickets.length > 1 ? 's' : ''}`
+                  + ` (siège${unprintedTickets.length > 1 ? 's' : ''} ${seatRanges(unprintedTickets.map(t => t.seat_number))})`
+                  + ' — vous pouvez les imprimer sans autorisation.'
+                )}
+              </span>
             </div>
             <button
               onClick={handleReprintResume}
-              disabled={printing || pendingReprint.length === 0}
+              disabled={printing || unprintedTickets.length === 0}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap disabled:opacity-50"
               style={{ backgroundColor: 'var(--warning)', color: 'white' }}
             >
               {printing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
-              Reprendre l'impression
+              {printError ? "Reprendre l'impression" : `Imprimer (${unprintedTickets.length})`}
             </button>
           </div>
         )}

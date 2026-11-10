@@ -682,10 +682,14 @@ export const PrintService = {
     if (ordered.length === 0) return [];
     const settings = await getPrintSettings();
 
-    let send: ((bytes: Uint8Array) => Promise<boolean>) | null = null;
-    if (settings.backend === 'webserial') send = bytes => withTimeout(sendWebSerial(bytes), 1500, false);
-    if (settings.backend === 'webusb') send = bytes => withTimeout(sendWebUSB(bytes), 1500, false);
-    if (settings.backend === 'qztray') send = bytes => withTimeout(sendQzTray(bytes, settings), 3000, false);
+    // The first ticket finds out quickly whether the thermal printer is there (1,5 s, 3 s for QZ
+    // Tray). The next ones may wait: the printer is still printing the previous tickets and takes
+    // the new ones as its buffer empties. With 1,5 s a long series stopped part-way, the rest unprinted.
+    const NEXT_TICKET_WAIT_MS = 15_000;
+    let send: ((bytes: Uint8Array, waitMs?: number) => Promise<boolean>) | null = null;
+    if (settings.backend === 'webserial') send = (bytes, waitMs = 1500) => withTimeout(sendWebSerial(bytes), waitMs, false);
+    if (settings.backend === 'webusb') send = (bytes, waitMs = 1500) => withTimeout(sendWebUSB(bytes), waitMs, false);
+    if (settings.backend === 'qztray') send = (bytes, waitMs = 3000) => withTimeout(sendQzTray(bytes, settings), waitMs, false);
 
     if (send) {
       const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
@@ -693,7 +697,7 @@ export const PrintService = {
       const printed: TicketRecord[] = [];
       for (const ticket of ordered) {
         const bytes = buildTicketESCPOS({ ticket, depart: data.depart, stationName: data.stationName, phoneLine: data.phoneLine }, cutSettings, logo);
-        if (!(await send(bytes))) break;
+        if (!(await send(bytes, printed.length > 0 ? NEXT_TICKET_WAIT_MS : undefined))) break;
         printed.push(ticket);
       }
       // The thermal printer took some tickets: the rest is resumed, never sent to the browser too
