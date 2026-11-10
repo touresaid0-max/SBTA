@@ -54,9 +54,16 @@ function keptCopy(): PrintCustomization {
   return { ...DEFAULTS }
 }
 
+// The server did not answer: the kept copy is used for a minute, without asking again. The
+// network often drops before the device notices: each ticket of a long series asked the server,
+// and waited up to PRINT_SERVER_WAIT_MS for nothing.
+const RETRY_AFTER_FAILURE_MS = 60_000
+let lastFailure = 0
+
 export async function getPrintCustomization(): Promise<PrintCustomization> {
   if (cached && Date.now() - cacheTime < CACHE_TTL) return cached
   if (!isOnline()) return keptCopy()
+  if (Date.now() - lastFailure < RETRY_AFTER_FAILURE_MS) return keptCopy()
 
   const fromServer = (async () => {
     const { data, error } = await supabase
@@ -74,7 +81,9 @@ export async function getPrintCustomization(): Promise<PrintCustomization> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), PRINT_SERVER_WAIT_MS) })
   try {
-    return (await Promise.race([fromServer, late])) ?? keptCopy()
+    const answer = await Promise.race([fromServer, late])
+    if (!answer) lastFailure = Date.now()
+    return answer ?? keptCopy()
   } finally {
     clearTimeout(timer)
   }

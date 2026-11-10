@@ -599,22 +599,41 @@ async function printHTMLDocument(html: string): Promise<boolean> {
     const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
-      setTimeout(() => iframe.remove(), 1500);
+      // Kept 1,5 s (the printer may still be taking the job), then emptied before being removed:
+      // a removed print page still held its content in memory, and a series of thousands of
+      // tickets slowed down as they piled up
+      setTimeout(() => {
+        try { doc.open(); doc.close(); } catch { /* already gone */ }
+        iframe.src = 'about:blank';
+        iframe.remove();
+      }, 1500);
       resolve(ok);
     };
     if (cw) cw.addEventListener('afterprint', () => finish(true), { once: true });
-    setTimeout(async () => {
+
+    // Printed as soon as the page is ready: loaded, and every image (the logo) loaded and decoded.
+    // A fixed 300 ms wait came before each ticket: a series of 1 000 tickets waited 5 minutes for
+    // nothing (measured 317 ms per ticket with an instant printer, 300 of them waiting). 3 s at most.
+    const pageLoaded = new Promise<void>(resolve => {
+      if (doc.readyState === 'complete') { resolve(); return; }
+      cw?.addEventListener('load', () => resolve(), { once: true });
+      setTimeout(resolve, 3000);
+    });
+    const imageReady = (image: HTMLImageElement) => new Promise<void>(resolve => {
+      const decoded = () => {
+        if (typeof image.decode !== 'function') { resolve(); return; }
+        image.decode().then(() => resolve(), () => resolve());
+      };
+      if (image.complete) { decoded(); return; }
+      image.addEventListener('load', decoded, { once: true });
+      image.addEventListener('error', () => resolve(), { once: true });
+    });
+    const withinLimit = <T,>(p: Promise<T>) => Promise.race([p, new Promise<void>(resolve => setTimeout(resolve, 3000))]);
+
+    (async () => {
       try {
-        const images = Array.from(doc.images);
-        await Promise.all(images.map(image => {
-          if (image.complete && image.naturalWidth > 0) return Promise.resolve();
-          return new Promise<void>(resolve => {
-            const done = () => resolve();
-            image.addEventListener('load', done, { once: true });
-            image.addEventListener('error', done, { once: true });
-            setTimeout(done, 3000);
-          });
-        }));
+        await withinLimit(pageLoaded);
+        await withinLimit(Promise.all(Array.from(doc.images).map(imageReady)));
         cw?.focus();
         cw?.print();
       } catch {
@@ -622,7 +641,7 @@ async function printHTMLDocument(html: string): Promise<boolean> {
         return;
       }
       setTimeout(() => finish(true), 2000);
-    }, 300);
+    })();
   });
 }
 
