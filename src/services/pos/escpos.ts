@@ -842,3 +842,120 @@ export function buildBordereauCourrierESCPOS(data: BordereauCourrierData, settin
   if (settings.auto_cut) parts.push(cutPaper());
   return concat(...parts);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  RAPPORT DES VENTES DE RAMASSAGE  (ESC/POS, guichet)
+// ═══════════════════════════════════════════════════════════════════
+
+/** One ramassage of the report, every value already written as it is printed. */
+export interface PrintRamassageReportRow {
+  date: string;
+  heure: string;
+  type: string;
+  departure_number: string;
+  bus: string;
+  driver: string;
+  gare: string;
+  guichet: string;
+  destination: string;
+  seats: string;
+  amount: string;
+  validated_by: string;
+}
+
+export interface PrintRamassageReportData {
+  station_name: string;
+  period_from: string;
+  period_to: string;
+  count: number;
+  total_seats: string;
+  total_amount: string;
+  rows: PrintRamassageReportRow[];
+}
+
+// The printer's character table has no accents: letters are printed without them (Touré → Toure)
+// and the typographic signs are replaced, rather than printed as unreadable signs.
+function plainText(s: string): string {
+  return s
+    .replace(/[  ]/g, ' ')
+    .replace(/[–—]/g, '-')
+    .replace(/°/g, 'o')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x20-\x7e]/g, '?');
+}
+
+/** Same layout as the model (rapport_ventes_ramassage_thermique.pdf): one block per ramassage. */
+export function buildRamassageReportESCPOS(data: PrintRamassageReportData, settings: PrintSettings): Uint8Array {
+  const w = settings.width_mm === 80 ? 48 : 32;
+  const parts: Uint8Array[] = [init(), setLineSpacing(30), setNormal()];
+
+  // A long value goes on to the next lines, never cut
+  const wrap = (s: string): string[] => {
+    const out: string[] = [];
+    let rest = plainText(s);
+    while (rest.length > w) {
+      const cut = rest.lastIndexOf(' ', w);
+      const at = cut > w / 3 ? cut : w;
+      out.push(rest.slice(0, at));
+      rest = rest.slice(at).trimStart();
+    }
+    out.push(rest);
+    return out;
+  };
+  const lines = (s: string, bold = false) => {
+    if (bold) parts.push(setBold(true));
+    for (const l of wrap(s)) parts.push(text(l), lineFeed());
+    if (bold) parts.push(setBold(false));
+  };
+  const field = (label: string, value: string, bold = false) => lines(`${label} : ${value}`, bold);
+  const dashes = () => { parts.push(setAlign('left'), text('-'.repeat(w)), lineFeed()); };
+  const heading = (s: string) => { parts.push(setAlign('center')); lines(s, true); parts.push(setAlign('left')); };
+
+  // ── EN-TÊTE ──────────────────────────────────────────────────────
+  parts.push(setAlign('center'), setBold(true), setCharSize(2), text('SBTA'), lineFeed(), setCharSize(1));
+  lines("SOCIETE BONKOUNGOU TRANSPORT DE L'AGNEBY", true);
+  lines('RAPPORT DES VENTES DE RAMASSAGE', true);
+  parts.push(setAlign('left'), lineFeed());
+
+  // ── RÉSUMÉ ───────────────────────────────────────────────────────
+  dashes();
+  field('GARE', data.station_name, true);
+  field('PERIODE', `${data.period_from} au ${data.period_to}`);
+  field('NOMBRE DE RAMASSAGES', String(data.count));
+  field('TOTAL SIEGES', data.total_seats);
+  field('MONTANT TOTAL', data.total_amount, true);
+
+  // ── UN BLOC PAR RAMASSAGE ────────────────────────────────────────
+  data.rows.forEach((r, i) => {
+    dashes();
+    heading(`RAMASSAGE No ${i + 1}`);
+    field('DATE', r.date);
+    field('HEURE', r.heure);
+    field('TYPE', r.type);
+    field('No DEPART', r.departure_number);
+    field('IMMATRICULATION', r.bus, true);
+    field('CHAUFFEUR', r.driver);
+    field('GARE', r.gare);
+    field('GUICHET', r.guichet);
+    field('VILLE / DESTINATION', r.destination, true);
+    field('SIEGES', r.seats);
+    field('MONTANT', r.amount, true);
+    field('VALIDE PAR', r.validated_by);
+  });
+
+  // ── RÉCAPITULATIF ────────────────────────────────────────────────
+  dashes();
+  heading('RECAPITULATIF');
+  field('RAMASSAGES', String(data.count));
+  field('TOTAL SIEGES', data.total_seats);
+  field('TOTAL ENCAISSE', data.total_amount, true);
+
+  dashes();
+  heading('Fin du rapport');
+  parts.push(setAlign('center'));
+  lines('Document genere par SBTA');
+  parts.push(setAlign('left'), lineFeed(4));
+  if (settings.auto_cut) parts.push(cutPaper());
+  return concat(...parts);
+}

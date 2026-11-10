@@ -261,6 +261,7 @@ export default function POSRamassage() {
           stationName={session?.station_name}
           title="Rapport des ventes de ramassage"
           withDevice
+          thermalPrint
         />
       ) : (
       <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-4">

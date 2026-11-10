@@ -5,6 +5,8 @@ import { isOnline } from '@/services/pos/syncEngine';
 import { getLignes } from '@/services/pos/departService';
 import { cachedReportRows, keepReportRows, withDeviceChanges, type ReportRamassage } from '@/services/pos/ramassageReport';
 import { format, subDays, startOfWeek, startOfYear } from 'date-fns';
+import toast from 'react-hot-toast';
+import { printRamassageReportThermal } from '@/services/pos/printService';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 
@@ -60,9 +62,14 @@ interface Props {
    * (ramassage direct, collection validated). Without network, the report is made from them.
    */
   withDevice?: boolean;
+  /**
+   * Guichet: « Imprimer » prints the report on the thermal roll, one block per ramassage
+   * (model rapport_ventes_ramassage_thermique.pdf). Elsewhere it stays the A4 table.
+   */
+  thermalPrint?: boolean;
 }
 
-export default function RamassageReportView({ stationId, stationName, title = 'Rapport des ventes de ramassage', layout, withDevice = false }: Props) {
+export default function RamassageReportView({ stationId, stationName, title = 'Rapport des ventes de ramassage', layout, withDevice = false, thermalPrint = false }: Props) {
   const [periodId, setPeriodId] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -214,6 +221,39 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
     pdf.save(`rapport_ramassage_${dateFrom}_${dateTo}.pdf`);
   };
 
+  const [printingThermal, setPrintingThermal] = useState(false);
+  const printThermal = async () => {
+    const day = (iso: string) => format(new Date(`${iso}T00:00:00`), 'dd/MM/yyyy');
+    setPrintingThermal(true);
+    try {
+      const ok = await printRamassageReportThermal({
+        station_name: stationName ?? '—',
+        period_from: day(dateFrom),
+        period_to: day(dateTo),
+        count: rows.length,
+        total_seats: fmtN(totals.places),
+        total_amount: fmtFCFA(totals.amount),
+        rows: rows.map(r => ({
+          date: format(new Date(r.collected_at ?? r.created_at), 'dd/MM/yyyy'),
+          heure: r.departure_datetime ? format(new Date(r.departure_datetime), 'HH:mm') : '—',
+          type: r.is_direct ? 'Direct' : 'Ligne',
+          departure_number: r.departure_number != null ? String(r.departure_number) : '—',
+          bus: r.bus_registration ?? '—',
+          driver: r.driver_name ?? '—',
+          gare: r.origin_station_name ?? r.destination_station_name ?? '—',
+          guichet: r.counter_number ?? '—',
+          destination: getDestinationLabel(r),
+          seats: String(r.collected_places ?? 0),
+          amount: fmtFCFA(Number(r.collected_amount ?? 0)),
+          validated_by: r.collected_by_name ?? '—',
+        })),
+      });
+      if (!ok) toast.error("L'impression du rapport n'a pas pu être lancée");
+    } finally {
+      setPrintingThermal(false);
+    }
+  };
+
   const printTable = () => {
     const win = window.open('', '_blank');
     if (!win) return;
@@ -246,8 +286,8 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
             className="p-2 rounded-xl border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} style={{ color: 'var(--text-secondary)' }} />
           </button>
-          <button onClick={printTable}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border"
+          <button onClick={thermalPrint ? printThermal : printTable} disabled={printingThermal}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border disabled:opacity-60"
             style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}>
             <Printer className="w-4 h-4" /> Imprimer
           </button>

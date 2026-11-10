@@ -1,5 +1,5 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, concat, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, buildRamassageReportESCPOS, concat, type PrintRamassageReportData, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization, type PrintCustomization } from '../printCustomization';
 import { setPrintingGuard } from '@/store/authStore';
 import { formatPhoneCI } from '@/utils/phoneCI';
@@ -8,7 +8,7 @@ import type { BordereauCourrierData } from '@/utils/printBordereau';
 import { printLogoSrc, withPrintLogos } from './printLogos';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 
-export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData };
+export type { PrintTicketData, PrintBagageData, PrintRecettesData, PrintBordereauDepartData, PrintRamassageReportData };
 
 const TICKET_LOGO_SRC = '/logosbta001.JPG';
 const BAGAGE_LOGO_SRC = '/logosbta001.JPG';
@@ -1608,4 +1608,78 @@ export async function printBordereauDepartThermal(data: PrintBordereauDepartData
       setTimeout(() => finish(true), 2000);
     }, 300);
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RAPPORT DES VENTES DE RAMASSAGE — impression thermique du guichet
+//  Same layout as the model rapport_ventes_ramassage_thermique.pdf (80 mm roll, one block per
+//  ramassage). The A4 table, the PDF and the Excel export of the report are not changed.
+// ═══════════════════════════════════════════════════════════════════
+function buildHTMLRamassageReport(data: PrintRamassageReportData, settings: PrintSettings): string {
+  const e = escapeHtml;
+  const row = (label: string, value: string, bold = false) =>
+    `<div class="f${bold ? ' b' : ''}">${e(label)} : ${e(value)}</div>`;
+  const blocks = data.rows.map((r, i) => `
+  <div class="sep"></div>
+  <div class="h">RAMASSAGE N° ${i + 1}</div>
+  ${row('DATE', r.date)}
+  ${row('HEURE', r.heure)}
+  ${row('TYPE', r.type)}
+  ${row('N° DÉPART', r.departure_number)}
+  ${row('IMMATRICULATION', r.bus, true)}
+  ${row('CHAUFFEUR', r.driver)}
+  ${row('GARE', r.gare)}
+  ${row('GUICHET', r.guichet)}
+  ${row('VILLE / DESTINATION', r.destination, true)}
+  ${row('SIÈGES', r.seats)}
+  ${row('MONTANT', r.amount, true)}
+  ${row('VALIDÉ PAR', r.validated_by)}`).join('');
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><title>Rapport des ventes de ramassage</title>
+<style>
+  @page { size: ${settings.width_mm}mm auto; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: ${settings.width_mm}mm; background: #fff; color: #000; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 7.2pt; line-height: 1.5; padding: 0.5mm 4mm 6mm; }
+  .logo { text-align: center; font-size: 15.5pt; font-weight: bold; line-height: 1.15; }
+  .co { text-align: center; font-size: 6pt; font-weight: bold; margin-top: 1.2mm; }
+  .title { text-align: center; font-size: 8.7pt; font-weight: bold; line-height: 1.2; margin-bottom: 3.2mm; }
+  .sep { border-top: 1px dashed #000; margin: 1.4mm 0 0.4mm; }
+  .h { text-align: center; font-size: 7.8pt; font-weight: bold; }
+  .f { overflow-wrap: anywhere; }
+  .b { font-weight: bold; }
+  .end { text-align: center; font-weight: bold; }
+  .gen { text-align: center; font-size: 6.2pt; }
+</style></head>
+<body>
+  <div class="logo">SBTA</div>
+  <div class="co">SOCIÉTÉ BONKOUNGOU TRANSPORT DE L'AGNEBY</div>
+  <div class="title">RAPPORT DES VENTES DE RAMASSAGE</div>
+  <div class="sep"></div>
+  ${row('GARE', data.station_name, true)}
+  ${row('PÉRIODE', `${data.period_from} au ${data.period_to}`)}
+  ${row('NOMBRE DE RAMASSAGES', String(data.count))}
+  ${row('TOTAL SIÈGES', data.total_seats)}
+  ${row('MONTANT TOTAL', data.total_amount, true)}
+  ${blocks}
+  <div class="sep"></div>
+  <div class="h">RÉCAPITULATIF</div>
+  ${row('RAMASSAGES', String(data.count))}
+  ${row('TOTAL SIÈGES', data.total_seats)}
+  ${row('TOTAL ENCAISSÉ', data.total_amount, true)}
+  <div class="sep"></div>
+  <div class="end">Fin du rapport</div>
+  <div class="gen">Document généré par SBTA</div>
+</body></html>`;
+}
+
+/** Thermal print of the ramassage report: the printer directly if one is set up, else the browser at the roll width. */
+export async function printRamassageReportThermal(data: PrintRamassageReportData): Promise<boolean> {
+  const settings = await getPrintSettings();
+  const escposData = buildRamassageReportESCPOS(data, settings);
+  if (await withTimeout(sendWebSerial(escposData), 1500, false)) return true;
+  if (await withTimeout(sendWebUSB(escposData), 1500, false)) return true;
+  if (await withTimeout(sendQzTray(escposData, settings), 3000, false)) return true;
+  return printHTMLDocument(buildHTMLRamassageReport(data, settings));
 }
