@@ -125,8 +125,16 @@ export default function AdminDashboard() {
           .limit(8),
         supabase.rpc('get_admin_dashboard_stats', { p_start: startISO, p_end: endISO }),
       ]);
-      if (statsRes.error) throw statsRes.error;
-      const stats = statsRes.data as AdminDashboardStats;
+      // The totals failing (database too slow, timeout) must not hide the counts read above:
+      // they are shown, the totals stay at 0 and the admin is told which part is missing.
+      if (statsRes.error) {
+        console.error(statsRes.error);
+        toast.error('Les totaux de la période (ventes, paiements, dépenses) n\'ont pas pu être chargés');
+      }
+      const stats = (statsRes.data ?? {
+        reservations: 0, tickets_sold: 0, revenue: 0, schedules: 0, payments: 0, expenses: 0,
+        fuel_liters: 0, buses_active: 0, bus_status: {}, revenue_by_day: [], revenue_by_company: [], revenue_by_route: [],
+      }) as AdminDashboardStats;
 
       // Database statuses use underscores (en_service), the cards use hyphens (en-service)
       const statusCounts: BusStatusData = {
