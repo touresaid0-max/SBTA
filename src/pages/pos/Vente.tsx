@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getDepartById } from '@/services/pos/departService';
-import { syncDepartsAndTicketsFromServer, localUpdate } from '@/services/pos/offlineStore';
+import { syncDepartsAndTicketsFromServer, localUpdate, getById } from '@/services/pos/offlineStore';
 import {
   sellTicket, sellTickets, PartialSaleError, getTicketsForDepart, getSoldSeats, neverPrinted,
   calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
@@ -608,20 +608,27 @@ export default function POSVente() {
     setPrinting(true);
     setPrintError('');
     let succeeded: TicketRecord[] = [];
+    // Each ticket is marked printed as soon as it is printed, not at the end of the series: a
+    // series cut part-way (page reloaded, screen left) offered again the tickets already printed
+    const markPrinted = (ticket: TicketRecord) =>
+      localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: trustedNowIso() }).then(() => undefined);
     try {
       if (ticketsToPrint.length > 1) {
-        succeeded = await PrintService.printTicketsSequence({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine });
+        succeeded = await PrintService.printTicketsSequence({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine, onPrinted: markPrinted });
       } else if (await PrintService.printTickets({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine })) {
         succeeded = ticketsToPrint;
+        await markPrinted(ticketsToPrint[0]);
       }
     } catch {
-      succeeded = [];
+      // The tickets printed before the error are already marked
     }
     const printedIds = new Set(succeeded.map(t => t.id));
     const failed = ticketsToPrint.filter(t => !printedIds.has(t.id)).sort((a, b) => a.seat_number - b.seat_number);
-    // Mark successfully printed tickets as printed
-    for (const ticket of succeeded) {
-      await localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: trustedNowIso() });
+    // Printed ones not marked yet (marking failed during the series): marked now
+    const stillUnmarked = succeeded.filter(t => !t.printed);
+    for (const ticket of stillUnmarked) {
+      const current = await getById<TicketRecord>('tickets', ticket.id);
+      if (!current?.printed) await markPrinted(ticket);
     }
     // Reload tickets to reflect printed status
     if (departId) {

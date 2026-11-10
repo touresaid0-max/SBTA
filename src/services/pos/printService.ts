@@ -696,7 +696,15 @@ export const PrintService = {
    * each followed by a paper cut. Returns the tickets actually printed, so a failure
    * part-way leaves only the remaining tickets to resume (no ticket printed twice).
    */
-  async printTicketsSequence(data: Omit<PrintTicketData, 'ticket'> & { tickets: TicketRecord[] }): Promise<TicketRecord[]> {
+  async printTicketsSequence(data: Omit<PrintTicketData, 'ticket'> & {
+    tickets: TicketRecord[];
+    /** Called as soon as each ticket is printed, before the next one: a series cut part-way
+     *  (page reloaded, screen left) keeps the tickets already printed marked as printed. */
+    onPrinted?: (ticket: TicketRecord) => Promise<void> | void;
+  }): Promise<TicketRecord[]> {
+    const markPrinted = async (ticket: TicketRecord) => {
+      try { await data.onPrinted?.(ticket); } catch { /* marked again at the end of the series */ }
+    };
     const ordered = [...data.tickets].sort((a, b) => a.seat_number - b.seat_number);
     if (ordered.length === 0) return [];
     const settings = await getPrintSettings();
@@ -718,6 +726,7 @@ export const PrintService = {
         const bytes = buildTicketESCPOS({ ticket, depart: data.depart, stationName: data.stationName, phoneLine: data.phoneLine }, cutSettings, logo);
         if (!(await send(bytes, printed.length > 0 ? NEXT_TICKET_WAIT_MS : undefined))) break;
         printed.push(ticket);
+        await markPrinted(ticket);
       }
       // The thermal printer took some tickets: the rest is resumed, never sent to the browser too
       if (printed.length > 0) return printed;
@@ -737,6 +746,7 @@ export const PrintService = {
       }, settings);
       if (!ok) break;
       printed.push(ticket);
+      await markPrinted(ticket);
     }
     return printed;
   },
