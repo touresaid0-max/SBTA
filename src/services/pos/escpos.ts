@@ -888,7 +888,8 @@ function plainText(s: string): string {
 /** Same layout as the model (rapport_ventes_ramassage_thermique.pdf): one block per ramassage. */
 export function buildRamassageReportESCPOS(data: PrintRamassageReportData, settings: PrintSettings): Uint8Array {
   const w = settings.width_mm === 80 ? 48 : 32;
-  const parts: Uint8Array[] = [init(), setLineSpacing(30), setNormal()];
+  // ESC G 1: double strike
+  const parts: Uint8Array[] = [init(), setLineSpacing(30), setNormal(), setBold(true), cmd(ESC, 0x47, 1)];
 
   // A long value goes on to the next lines, never cut
   const wrap = (s: string): string[] => {
@@ -903,28 +904,27 @@ export function buildRamassageReportESCPOS(data: PrintRamassageReportData, setti
     out.push(rest);
     return out;
   };
-  const lines = (s: string, bold = false) => {
-    if (bold) parts.push(setBold(true));
+  // Every line in bold and double strike: darker on the roll, as asked by the guichet
+  const lines = (s: string) => {
     for (const l of wrap(s)) parts.push(text(l), lineFeed());
-    if (bold) parts.push(setBold(false));
   };
-  const field = (label: string, value: string, bold = false) => lines(`${label} : ${value}`, bold);
+  const field = (label: string, value: string) => lines(`${label} : ${value}`);
   const dashes = () => { parts.push(setAlign('left'), text('-'.repeat(w)), lineFeed()); };
-  const heading = (s: string) => { parts.push(setAlign('center')); lines(s, true); parts.push(setAlign('left')); };
+  const heading = (s: string) => { parts.push(setAlign('center')); lines(s); parts.push(setAlign('left')); };
 
   // ── EN-TÊTE ──────────────────────────────────────────────────────
-  parts.push(setAlign('center'), setBold(true), setCharSize(2), text('SBTA'), lineFeed(), setCharSize(1));
-  lines("SOCIETE BONKOUNGOU TRANSPORT DE L'AGNEBY", true);
-  lines('RAPPORT DES VENTES DE RAMASSAGE', true);
+  parts.push(setAlign('center'), setCharSize(2), text('SBTA'), lineFeed(), setCharSize(1));
+  lines("SOCIETE BONKOUNGOU TRANSPORT DE L'AGNEBY");
+  lines('RAPPORT DES VENTES DE RAMASSAGE');
   parts.push(setAlign('left'), lineFeed());
 
   // ── RÉSUMÉ ───────────────────────────────────────────────────────
   dashes();
-  field('GARE', data.station_name, true);
+  field('GARE', data.station_name);
   field('PERIODE', `${data.period_from} au ${data.period_to}`);
   field('NOMBRE DE RAMASSAGES', String(data.count));
   field('TOTAL SIEGES', data.total_seats);
-  field('MONTANT TOTAL', data.total_amount, true);
+  field('MONTANT TOTAL', data.total_amount);
 
   // ── UN BLOC PAR RAMASSAGE ────────────────────────────────────────
   data.rows.forEach((r, i) => {
@@ -934,13 +934,13 @@ export function buildRamassageReportESCPOS(data: PrintRamassageReportData, setti
     field('HEURE', r.heure);
     field('TYPE', r.type);
     field('No DEPART', r.departure_number);
-    field('IMMATRICULATION', r.bus, true);
+    field('IMMATRICULATION', r.bus);
     field('CHAUFFEUR', r.driver);
     field('GARE', r.gare);
     field('GUICHET', r.guichet);
-    field('VILLE / DESTINATION', r.destination, true);
+    field('VILLE / DESTINATION', r.destination);
     field('SIEGES', r.seats);
-    field('MONTANT', r.amount, true);
+    field('MONTANT', r.amount);
     field('VALIDE PAR', r.validated_by);
   });
 
@@ -949,7 +949,7 @@ export function buildRamassageReportESCPOS(data: PrintRamassageReportData, setti
   heading('RECAPITULATIF');
   field('RAMASSAGES', String(data.count));
   field('TOTAL SIEGES', data.total_seats);
-  field('TOTAL ENCAISSE', data.total_amount, true);
+  field('TOTAL ENCAISSE', data.total_amount);
 
   dashes();
   heading('Fin du rapport');

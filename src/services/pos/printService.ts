@@ -1641,16 +1641,18 @@ function buildHTMLRamassageReport(data: PrintRamassageReportData, settings: Prin
   @page { size: ${settings.width_mm}mm auto; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: ${settings.width_mm}mm; background: #fff; color: #000; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 7.2pt; line-height: 1.5; padding: 0.5mm 4mm 6mm; }
-  .logo { text-align: center; font-size: 15.5pt; font-weight: bold; line-height: 1.15; }
-  .co { text-align: center; font-size: 6pt; font-weight: bold; margin-top: 1.2mm; }
-  .title { text-align: center; font-size: 8.7pt; font-weight: bold; line-height: 1.2; margin-bottom: 3.2mm; }
-  .sep { border-top: 1px dashed #000; margin: 1.4mm 0 0.4mm; }
-  .h { text-align: center; font-size: 7.8pt; font-weight: bold; }
+  /* Larger and darker than the model on the roll (asked by the guichet): every line in bold, the
+     key lines darker still, and the text runs to 1 mm from the right edge. */
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 8.6pt; font-weight: bold; line-height: 1.45; padding: 0.5mm 1mm 6mm 3mm; }
+  .logo { text-align: center; font-size: 19pt; font-weight: 900; line-height: 1.15; -webkit-text-stroke: 0.4px #000; }
+  .co { text-align: center; font-size: 7.6pt; margin-top: 1.2mm; }
+  .title { text-align: center; font-size: 10.4pt; line-height: 1.2; margin-bottom: 3mm; -webkit-text-stroke: 0.25px #000; }
+  .sep { border-top: 1.5px dashed #000; margin: 1.4mm 0 0.4mm; }
+  .h { text-align: center; font-size: 9.6pt; -webkit-text-stroke: 0.25px #000; }
   .f { overflow-wrap: anywhere; }
-  .b { font-weight: bold; }
-  .end { text-align: center; font-weight: bold; }
-  .gen { text-align: center; font-size: 6.2pt; }
+  .b { -webkit-text-stroke: 0.3px #000; }
+  .end { text-align: center; -webkit-text-stroke: 0.25px #000; }
+  .gen { text-align: center; font-size: 7.4pt; }
 </style></head>
 <body>
   <div class="logo">SBTA</div>
