@@ -577,7 +577,20 @@ function makeQRText(data: string): string {
   return svg;
 }
 
-async function printHTMLDocument(html: string): Promise<boolean> {
+// ── Print pages reused ──
+// Each ticket was printed in a new hidden page (iframe), removed afterwards. After thousands of
+// tickets the browser was weighed down by all the pages created (measured: 19 ms per ticket on a
+// fresh page, 217 ms after 1 920 tickets, with the same data; only a reload brought it back).
+// A few print pages are now reused. A page is taken again only after PRINT_PAGE_REST_MS since its
+// last ticket (the printer may still be taking that job, as when the page was removed after 1,5 s).
+const PRINT_PAGE_REST_MS = 1500;
+const MAX_IDLE_PRINT_PAGES = 120;
+const idlePrintPages: { iframe: HTMLIFrameElement; freeAt: number }[] = [];
+
+function takePrintPage(): HTMLIFrameElement {
+  const now = Date.now();
+  const i = idlePrintPages.findIndex(p => p.freeAt <= now && p.iframe.isConnected && p.iframe.contentWindow);
+  if (i >= 0) return idlePrintPages.splice(i, 1)[0].iframe;
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';
@@ -586,11 +599,25 @@ async function printHTMLDocument(html: string): Promise<boolean> {
   iframe.style.height = '0';
   iframe.style.border = '0';
   document.body.appendChild(iframe);
+  return iframe;
+}
+
+function releasePrintPage(iframe: HTMLIFrameElement): void {
+  if (idlePrintPages.length >= MAX_IDLE_PRINT_PAGES) {
+    setTimeout(() => iframe.remove(), PRINT_PAGE_REST_MS);
+    return;
+  }
+  idlePrintPages.push({ iframe, freeAt: Date.now() + PRINT_PAGE_REST_MS });
+}
+
+async function printHTMLDocument(html: string): Promise<boolean> {
+  const iframe = takePrintPage();
 
   return new Promise((resolve) => {
     const cw = iframe.contentWindow;
     const doc = cw?.document;
     if (!doc) { iframe.remove(); resolve(false); return; }
+    // A reused page: open() replaces its previous ticket (and the listeners of that ticket)
     doc.open();
     doc.write(withPrintLogos(html));
     doc.close();
@@ -599,14 +626,7 @@ async function printHTMLDocument(html: string): Promise<boolean> {
     const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
-      // Kept 1,5 s (the printer may still be taking the job), then emptied before being removed:
-      // a removed print page still held its content in memory, and a series of thousands of
-      // tickets slowed down as they piled up
-      setTimeout(() => {
-        try { doc.open(); doc.close(); } catch { /* already gone */ }
-        iframe.src = 'about:blank';
-        iframe.remove();
-      }, 1500);
+      releasePrintPage(iframe);
       resolve(ok);
     };
     if (cw) cw.addEventListener('afterprint', () => finish(true), { once: true });
