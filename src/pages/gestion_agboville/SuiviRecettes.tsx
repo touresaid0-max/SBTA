@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { flushSync } from 'react-dom'
 import {
   Download, Printer, Loader2, Filter, Bus, X,
 } from 'lucide-react'
@@ -14,6 +15,8 @@ import {
   fetchCountersByStations, ABG_SEGMENTS, classifyCharge,
   type PosScheduleRow, type PosScheduleRevenue, type PosChargeRow,
 } from '@/services/abg.service'
+import { usePagination } from '@/hooks/usePagination'
+import Pagination from '@/components/pos/Pagination'
 
 type PeriodId = 'jour' | 'hebdo' | 'mensuel' | 'annuel' | 'custom'
 
@@ -225,6 +228,13 @@ export default function SuiviRecettes() {
     resultat: rows.reduce((s, r) => s + r.resultat, 0),
   }), [rows])
 
+  // Same pagination as the bus list: back to page 1 when the period or a filter changes.
+  // The total line stays the total of every row, not of the page shown.
+  const pagination = usePagination(rows, 'sbta_abg_suivi_recettes_page_size', `${from}|${to}|${JSON.stringify(filters)}`)
+  // The PDF is a picture of the table: while it is taken, every row is shown, not only the page.
+  const [showAllRows, setShowAllRows] = useState(false)
+  const shownRows = showAllRows ? rows : pagination.pageItems
+
   const exportExcel = () => {
     const wb = XLSX.utils.book_new()
     const data = rows.map(r => ({
@@ -248,7 +258,13 @@ export default function SuiviRecettes() {
 
   const exportPdf = async () => {
     if (!reportRef.current) return
-    const canvas = await html2canvas(reportRef.current, { scale: 1.5, useCORS: true, backgroundColor: '#ffffff' })
+    flushSync(() => setShowAllRows(true))
+    let canvas: HTMLCanvasElement
+    try {
+      canvas = await html2canvas(reportRef.current, { scale: 1.5, useCORS: true, backgroundColor: '#ffffff' })
+    } finally {
+      setShowAllRows(false)
+    }
     const imgData = canvas.toDataURL('image/png')
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
     const w = pdf.internal.pageSize.getWidth()
@@ -431,7 +447,7 @@ export default function SuiviRecettes() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
+                {shownRows.map((r, i) => (
                   <tr key={i} className="border-t border-[#E2EAE5] hover:bg-[#F8FAF8] transition-colors">
                     <td className="px-2 py-2 font-medium text-[#1a2a22] truncate">{r.carMat}</td>
                     <td className="px-2 py-2 text-[#374151]">{r.depNum}</td>
@@ -470,6 +486,20 @@ export default function SuiviRecettes() {
           </div>
         )}
       </div>
+
+      {!loading && rows.length > 0 && (
+        <div className="mt-3 bg-white rounded-xl border border-[#E2EAE5] px-4 py-2">
+          <Pagination
+            page={pagination.page}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            itemLabel="départs"
+          />
+        </div>
+      )}
     </div>
   )
 }
