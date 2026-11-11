@@ -174,7 +174,11 @@ export async function getAllDeparts(stationId?: string, counterId?: string): Pro
     );
   }
   if (counterId) {
-    result = result.filter(d => d.counter_id === counterId);
+    // A counter sees its own departures, and those of another station shared with its station
+    // (« Charger dans une autre gare »): they belong to a counter of the main station
+    result = result.filter(d =>
+      d.counter_id === counterId ||
+      (!!stationId && d.station_id !== stationId && (d.seat_allocations?.some(a => a.station_id === stationId) ?? false)));
   }
   return result;
 }
@@ -383,19 +387,17 @@ export async function cloturerDepart(
   return updated;
 }
 
-export async function getDepartsForOtherStations(currentStationId: string, counterId?: string): Promise<DepartRecord[]> {
+// Departures of other stations loaded in this one. They belong to a counter of the other station:
+// keeping only this counter's departures (as before) left the list empty on every other device.
+export async function getDepartsForOtherStations(currentStationId: string, _counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
-  let result = all.filter(d => {
+  return all.filter(d => {
     if (d.cancelled) return false;
     if (d.station_id === currentStationId) return false;
     if (d.seat_allocations && d.seat_allocations.some(a => a.station_id === currentStationId)) return true;
     if (d.other_station_id === currentStationId) return true;
     return false;
   });
-  if (counterId) {
-    result = result.filter(d => d.counter_id === counterId);
-  }
-  return result;
 }
 
 export function getSeatRangeForStation(

@@ -1,4 +1,4 @@
-import { db, type BagageRecord, type DepenseRecord, type DepartRecord, type TicketRecord } from './db';
+import { db, type BagageRecord, type DepenseRecord, type DepartRecord, type TicketRecord, type SeatAllocation } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType } from './syncEngine';
@@ -21,7 +21,7 @@ const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'cloture_at', 'cloture_by', 'departure_number',
   'bus_plate', 'bus_name', 'driver_name', 'convoyeur_id', 'convoyeur_name',
   'apprenti_id', 'apprenti_name', 'departure_date', 'departure_time',
-  'is_ac', 'seats_from', 'seat_allocations', 'station_name',
+  'is_ac', 'seats_from', 'station_name',
   'counter_id', 'other_station_id', 'other_station_name',
   'synced', 'updated_at', 'id',
   'printed', 'printed_at', 'reopened_at',
@@ -531,6 +531,28 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       for (const s of (reopened ?? []) as unknown as RemoteSchedule[]) if (!known.has(s.id)) remoteSchedules.push(s);
     } catch { /* server without the column: the usual days only */ }
 
+    // Departures of another station shared with this one (« Charger dans une autre gare »): the
+    // main station's guichet gave this station a range of seats. Without them, the other station
+    // never saw the departure. Ignored on a server without the column (migration not run).
+    const sharedIds = new Set<string>();
+    if (stationId) {
+      try {
+        const known = new Set(remoteSchedules.map(s => s.id));
+        const { data: shared, error: sharedError } = await supabase
+          .from('schedules')
+          .select(SCHEDULE_COLUMNS)
+          .contains('shared_station_ids', [stationId])
+          .gte('departure_datetime', `${fromStr}T00:00:00`)
+          .limit(RESERVATION_PAGE_SIZE);
+        if (!sharedError) {
+          for (const s of (shared ?? []) as unknown as RemoteSchedule[]) {
+            sharedIds.add(s.id);
+            if (!known.has(s.id)) remoteSchedules.push(s);
+          }
+        }
+      } catch { /* read again at the next sync */ }
+    }
+
     // Departures shown re-opened on this device: read again by id. When the admin closes one again,
     // the server clears its re-opening date, so the query above no longer returns it (nor the
     // usual days, for a departure of an earlier day): it stayed « Rouvert (admin) » at the guichet
@@ -564,6 +586,24 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       // Departures with a change made here and not sent yet (a closing, for instance)
       const pendingDeparts = await getPendingIds('departs');
 
+      // Seat allocations kept on the server (shared buses), read apart: a server without the
+      // column still gives the departures themselves
+      const serverAllocations = new Map<string, SeatAllocation[]>();
+      try {
+        for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
+          const { data, error } = await supabase
+            .from('schedules')
+            .select('id, seat_allocations')
+            .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK));
+          if (error) break;
+          for (const row of (data ?? []) as { id: string; seat_allocations: SeatAllocation[] | null }[]) {
+            if (Array.isArray(row.seat_allocations) && row.seat_allocations.length > 0) {
+              serverAllocations.set(row.id, row.seat_allocations);
+            }
+          }
+        }
+      } catch { /* allocations kept on the device */ }
+
       for (const s of remoteSchedules) {
         const localRecord = mapRemoteScheduleToLocal(s as unknown as Record<string, unknown>);
         const plate = s.bus_id ? plates.get(s.bus_id) : undefined;
@@ -588,7 +628,10 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             tot_depense: existing.tot_depense,
             solde: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
             caisse: existing.mt_ticket + existing.mt_bagage - existing.tot_depense,
-            seat_allocations: existing.seat_allocations,
+            // The device's allocations while a change made here is not sent yet; else the server's
+            seat_allocations: pendingDeparts.has(s.id)
+              ? existing.seat_allocations
+              : (serverAllocations.get(s.id) ?? existing.seat_allocations),
             // Numbering and capacity from the server (bus « vendu à partir de », number of
             // seats): this also gives back the seat lost by the departures created before (2 to
             // 63 for 63 seats). Kept as on the device while a change made here is not sent yet
@@ -612,8 +655,13 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             breakdown_transfer: existing.breakdown_transfer ?? 0,
           });
         } else {
+          const allocations = serverAllocations.get(s.id);
+          // A departure of another station shared with this one: named after its main station
+          const mainAlloc = allocations?.find(a => a.station_id === s.departure_station_id);
           await (db.departs as any).put({
             ...localRecord,
+            ...(allocations ? { seat_allocations: allocations } : {}),
+            ...(sharedIds.has(s.id) && mainAlloc ? { station_name: mainAlloc.station_name } : {}),
             bus_plate: plate ?? '',
             bus_name: plate ?? '',
             driver_name: driverName ?? '',

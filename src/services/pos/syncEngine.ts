@@ -92,6 +92,26 @@ function computeArrivalDatetime(departureIso: string): string {
   return dep.toISOString();
 }
 
+// Seat allocations of a bus shared with other stations (« Charger dans une autre gare »). They
+// stayed on the device of the main station: the other station never saw the departure. Sent to
+// the server (schedules.seat_allocations), where the other station's guichet reads them.
+function serverSeatAllocations(value: unknown): Record<string, unknown>[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  return (value as Record<string, unknown>[])
+    .filter(a => a && a.station_id)
+    .map(a => ({
+      station_id: a.station_id,
+      station_name: a.station_name ?? '',
+      seat_from: Number(a.seat_from),
+      seat_to: Number(a.seat_to),
+    }));
+}
+
+/** A server without the seat allocation columns (migration 20261111200000 not run yet) */
+function isMissingAllocationColumn(error: { code?: string; message?: string } | null): boolean {
+  return !!error && /seat_allocations/.test(String(error.message ?? '')) && (error.code === 'PGRST204' || /column/i.test(String(error.message ?? '')));
+}
+
 function mapDepartInsert(payload: Record<string, unknown>): Record<string, unknown> {
   const p = payload;
   const status = p.cancelled ? 'annule' : p.cloture ? 'termine' : (p.status as string === 'confirmed' ? 'en_cours' : 'planifie');
@@ -119,6 +139,7 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     updated_at: p.updated_at ?? trustedNowIso(),
     is_ramassage: p.is_ramassage ?? false,
     is_anticipated: false,
+    ...(serverSeatAllocations(p.seat_allocations) ? { seat_allocations: serverSeatAllocations(p.seat_allocations) } : {}),
   };
 }
 
@@ -143,6 +164,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.station_id !== undefined) result.departure_station_id = p.station_id;
   if (p.arrival_station_id !== undefined) result.arrival_station_id = p.arrival_station_id;
   if (p.is_ramassage !== undefined) result.is_ramassage = p.is_ramassage;
+  if (p.seat_allocations !== undefined) result.seat_allocations = serverSeatAllocations(p.seat_allocations);
   if (p.departure_datetime !== undefined) {
     result.departure_datetime = p.departure_datetime;
     result.arrival_datetime = computeArrivalDatetime(p.departure_datetime as string);
@@ -559,7 +581,12 @@ async function executeInsert(
   // the access rules refuse to a guichetier (« row-level security policy (USING expression) »):
   // hundreds of tickets already on the server showed as refused. A row already there (same id)
   // counts as sent, and the server's copy is left as it is.
-  const { error } = await supabase.from(table).insert(payload);
+  let { error } = await supabase.from(table).insert(payload);
+  if (store === 'departs' && isMissingAllocationColumn(error)) {
+    // Server not updated yet: the departure is sent without its allocations
+    delete payload.seat_allocations;
+    ({ error } = await supabase.from(table).insert(payload));
+  }
   if (error && !isAlreadyReceived(error)) {
     // Baggage number collision: another guichet generated the same number.
     // Regenerate a unique number and retry.
@@ -651,7 +678,12 @@ async function executeUpdate(store: StoreName, id: string, patch: Record<string,
   }
 
   if (!remotePayload) return;
-  const { data, error } = await supabase.from(table).update(remotePayload).eq('id', id).select('id');
+  let { data, error } = await supabase.from(table).update(remotePayload).eq('id', id).select('id');
+  if (store === 'departs' && isMissingAllocationColumn(error)) {
+    delete remotePayload.seat_allocations;
+    if (Object.keys(remotePayload).length <= 1) return;
+    ({ data, error } = await supabase.from(table).update(remotePayload).eq('id', id).select('id'));
+  }
   if (error && !error.message.includes('0 rows')) throw error;
   if (!error && (data ?? []).length === 0) await checkNothingChanged(store, table, id);
 }
