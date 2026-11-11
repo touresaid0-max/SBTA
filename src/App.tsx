@@ -86,6 +86,7 @@ const DAFBreakdownReport = lazyPage(() => import('./pages/daf/BreakdownReport'))
 const DAFBreakdowns = lazyPage(() => import('./pages/daf/Breakdowns'));
 const DAFCompteResultat = lazyPage(() => import('./pages/daf/CompteResultat'));
 const DAFGarageReports = lazyPage(() => import('./pages/daf/GarageReports'));
+const DAFVoyageReport = lazyPage(() => import('./pages/daf/VoyageReport'));
 const ComptableDashboard = lazyPage(() => import('./pages/comptable/Dashboard'));
 const GestionnaireDashboard = lazyPage(() => import('./pages/gestionnaire/Dashboard'));
 const GestionnaireReports = lazyPage(() => import('./pages/gestionnaire/Reports'));
@@ -404,6 +405,7 @@ function App() {
             <Route path="daf/financial-report" element={<ProtectedRoute roles={['daf','dg']}><DAFFinancialReport /></ProtectedRoute>} />
             <Route path="daf/consolidated-report" element={<ProtectedRoute roles={['daf','dg']}><DAFConsolidatedReport /></ProtectedRoute>} />
             <Route path="daf/bus-performance" element={<ProtectedRoute roles={['daf','dg']}><DAFBusPerformance /></ProtectedRoute>} />
+            <Route path="daf/voyage-report" element={<ProtectedRoute roles={['daf','dg']}><DAFVoyageReport /></ProtectedRoute>} />
             <Route path="daf/parcel-report" element={<ProtectedRoute roles={['daf']}><DAFParcelReport /></ProtectedRoute>} />
             <Route path="daf/breakdowns" element={<ProtectedRoute roles={['daf']}><DAFBreakdownReport /></ProtectedRoute>} />
             <Route path="daf/pannes" element={<ProtectedRoute roles={['daf']}><DAFBreakdowns /></ProtectedRoute>} />
