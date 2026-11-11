@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { callEdgeFunction, edgeErrorMessage } from './edgeFunction';
 
 export interface CreateEmployeePayload {
   first_name: string;
@@ -46,23 +47,9 @@ export interface PendingEmployee {
 
 // Créer un employé (appelé par le RH)
 export async function createEmployeeByHR(employeeData: CreateEmployeePayload) {
-  const { data: { session } } = await supabase.auth.getSession();
-
-  const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rh-create-employee`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session?.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(employeeData),
-    }
-  );
-
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error);
-  return result.employee;
+  const res = await callEdgeFunction('rh-create-employee', { body: employeeData });
+  if (!res.ok) throw new Error(edgeErrorMessage(res));
+  return res.data.employee;
 }
 
 // Créer le compte Auth (appelé par l'Admin)
@@ -76,23 +63,9 @@ export async function createAccountByAdmin(params: {
   tpe_pos_enabled?: boolean;
   tpe_mode?: 'sans_guichet' | 'avec_guichet';
 }) {
-  const { data: { session } } = await supabase.auth.getSession();
-
-  const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-account`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session?.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(params),
-    }
-  );
-
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error);
-  return result;
+  const res = await callEdgeFunction('admin-create-account', { body: params });
+  if (!res.ok) throw new Error(edgeErrorMessage(res));
+  return res.data;
 }
 
 // Charger les employés en attente de compte

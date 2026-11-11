@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Save, User, Building2, Car, Info, ChevronDown, Camera, X, Search, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
+import { callEdgeFunction, edgeErrorMessage } from '@/services/edgeFunction'
 import { uploadAvatar } from '@/services/hr.service'
 import type { ContractType, ContractNature, Gender, MaritalStatus } from '@/types/hr.types'
 import type { GarageTypeTechnicien } from '@/types/garage.types'
@@ -10,21 +11,10 @@ import { fetchTypesTechniciens } from '@/services/garageSbta.service'
 import type { SBTARole } from '@/store/authStore'
 import { computeAge, monthsUntilRetirement, RETIREMENT_AGE, RETIREMENT_ALERT_MONTHS } from '@/utils/retirement'
 
-const EDGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rh-create-employee`
-
 async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): Promise<string | undefined> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const res = await fetch(EDGE_URL, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session?.access_token ?? ''}`,
-    },
-    body: JSON.stringify(body),
-  })
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error ?? `Erreur ${res.status}`)
-  return json.employee?.id as string | undefined
+  const res = await callEdgeFunction('rh-create-employee', { method, body })
+  if (!res.ok) throw new Error(edgeErrorMessage(res))
+  return res.data?.employee?.id as string | undefined
 }
 
 async function syncCounterRoute(employeeId: string, routeIds: string[] | null): Promise<void> {

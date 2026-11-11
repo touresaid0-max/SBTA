@@ -1,4 +1,4 @@
-import { supabase } from '@/services/supabase'
+import { callEdgeFunction, edgeErrorMessage } from '@/services/edgeFunction'
 
 export interface LogistiqueDriver {
   id:                   string
@@ -49,26 +49,12 @@ export interface LogistiqueDriversResponse {
   unassignedDrivers: LogistiqueDriver[]
 }
 
-const EDGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/logistique-drivers`
-
 async function callEdge(method: string, body?: Record<string, unknown>, queryId?: string): Promise<any> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const url = queryId ? `${EDGE_URL}?id=${encodeURIComponent(queryId)}` : EDGE_URL
-  const res = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session?.access_token ?? ''}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
+  const res = await callEdgeFunction('logistique-drivers', {
+    method, body, query: queryId ? `?id=${encodeURIComponent(queryId)}` : undefined,
   })
-  const json = await res.json()
-  if (!res.ok) {
-    const errMsg = typeof json.error === 'string' ? json.error
-      : (json.error?.message ?? JSON.stringify(json.error ?? `Erreur ${res.status}`))
-    throw new Error(errMsg)
-  }
-  return json
+  if (!res.ok) throw new Error(edgeErrorMessage(res))
+  return res.data
 }
 
 export async function fetchBusesWithDrivers(): Promise<LogistiqueDriversResponse> {

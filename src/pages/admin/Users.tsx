@@ -5,6 +5,7 @@ import {
   Trash2, AlertTriangle, RotateCcw, Truck, MapPin,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
+import { callEdgeFunction, edgeErrorMessage } from '../../services/edgeFunction';
 import DataTable from '../../components/shared/DataTable';
 import StatusBadge from '../../components/shared/StatusBadge';
 import CreateAccountModal from '../../components/admin/CreateAccountModal';
@@ -295,9 +296,6 @@ export default function Users() {
           return;
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) { toast.error('Session expirée.'); return; }
-
         const payload: Record<string, unknown> = {
           email: formData.email,
           first_name: formData.first_name,
@@ -339,13 +337,8 @@ export default function Users() {
           }
         }
 
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-          body: JSON.stringify(payload),
-        });
-        const result = await response.json().catch(() => ({ error: `Erreur (${response.status})` }));
-        if (!response.ok) throw new Error(result.error || `Erreur ${response.status}`);
+        const created = await callEdgeFunction('create-user', { body: payload });
+        if (!created.ok) throw new Error(edgeErrorMessage(created));
 
         // Comptable company assignments are saved by the edge function (service role)
         toast.success(formData.send_invitation ? 'Invitation envoyée' : 'Utilisateur créé');
@@ -357,15 +350,8 @@ export default function Users() {
         const newEmail = formData.email.trim().toLowerCase();
         const currentEmail = (editingUser.email ?? '').trim().toLowerCase();
         if (newEmail && newEmail !== currentEmail) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) { toast.error('Session expirée.'); return; }
-          const emailRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-email`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-            body: JSON.stringify({ user_id: editingUser.id, new_email: newEmail }),
-          });
-          const emailResult = await emailRes.json().catch(() => ({ error: `Erreur (${emailRes.status})` }));
-          if (!emailRes.ok) throw new Error(emailResult.error || `Erreur ${emailRes.status}`);
+          const emailRes = await callEdgeFunction('update-user-email', { body: { user_id: editingUser.id, new_email: newEmail } });
+          if (!emailRes.ok) throw new Error(edgeErrorMessage(emailRes));
         }
 
         const updateData: Record<string, unknown> = {
@@ -549,15 +535,8 @@ export default function Users() {
     if (!newPassword) return;
     if (newPassword.length < 8) { toast.error('Minimum 8 caractères'); return; }
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error('Session expirée.'); return; }
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-user-password`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-        body: JSON.stringify({ userId: user.id, newPassword }),
-      });
-      const result = await response.json().catch(() => ({ error: `Erreur (${response.status})` }));
-      if (!response.ok) throw new Error(result.error || `Erreur ${response.status}`);
+      const reset = await callEdgeFunction('reset-user-password', { body: { userId: user.id, newPassword } });
+      if (!reset.ok) throw new Error(edgeErrorMessage(reset));
       toast.success('Mot de passe réinitialisé');
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : 'Erreur');
