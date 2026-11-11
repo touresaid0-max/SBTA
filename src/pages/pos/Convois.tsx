@@ -4,7 +4,7 @@ import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { supabase } from '@/services/supabase';
 import toast from 'react-hot-toast';
 import {
-  Truck, Plus, Search, X, AlertTriangle, User, Banknote,
+  Truck, Plus, Search, X, AlertTriangle, User, Banknote, Loader2,
   ChevronRight, RotateCcw, Receipt, Printer,
 } from 'lucide-react';
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
@@ -116,10 +116,14 @@ interface AutocompleteProps<T> {
   getSub?: (item: T) => string;
   placeholder: string;
   renderExtra?: (item: T) => React.ReactNode;
+  /** Shown when nothing matches what was typed: adds it (« Ajouter la ville … ») */
+  onCreate?: (text: string) => Promise<void>;
+  createLabel?: (text: string) => string;
 }
 function Autocomplete<T extends { id: string }>({
-  items, value, onChange, getLabel, getSub, placeholder, renderExtra,
+  items, value, onChange, getLabel, getSub, placeholder, renderExtra, onCreate, createLabel,
 }: AutocompleteProps<T>) {
+  const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -192,6 +196,27 @@ function Autocomplete<T extends { id: string }>({
           style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         >
           Aucun résultat
+          {onCreate && query.trim().length >= 2 && (
+            <button
+              type="button"
+              disabled={creating}
+              onClick={async () => {
+                setCreating(true);
+                try {
+                  await onCreate(query.trim());
+                  setOpen(false);
+                  setQuery('');
+                } finally {
+                  setCreating(false);
+                }
+              }}
+              className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60"
+              style={{ backgroundColor: 'var(--primary)' }}
+            >
+              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              {createLabel ? createLabel(query.trim()) : `Ajouter « ${query.trim()} »`}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -474,6 +499,43 @@ export default function POSConvois() {
     });
   }, [systemRoutes]);
   const selectedBus = buses.find(b => b.id === form.bus_id) || null;
+  // A destination city not in the list: added by the database (city, and the route from this
+  // station's city to it), then chosen at once. It appears in the admin's « Villes ».
+  const addConvoyCity = async (cityName: string) => {
+    if (!stationId) return;
+    if (!isOnline()) {
+      toast.error('Ajout de ville impossible sans connexion : reconnectez-vous à Internet.');
+      return;
+    }
+    const { data, error } = await supabase.rpc('pos_add_convoy_city', { p_city_name: cityName, p_station_id: stationId });
+    if (error || !data) {
+      toast.error(error?.message?.includes('pos_add_convoy_city')
+        ? "L'ajout de ville n'est pas encore activé sur le serveur : contactez l'administrateur."
+        : (error?.message || "La ville n'a pas pu être ajoutée"));
+      return;
+    }
+    const route = data as RouteOption;
+    const addTo = (list: RouteOption[]) => (list.some(r => r.id === route.id) ? list : [...list, route]);
+    setSystemRoutes(prev => addTo(prev));
+    setAllRoutes(prev => addTo(prev));
+    setRoutes(prev => addTo(prev));
+    // Kept on the device too, for the next convoys (also without network)
+    try {
+      const masterKey = `convois_master:${stationId}`;
+      const cached = await db.referentiels.get(masterKey);
+      const copy = cached?.data as ConvoyMasterData | undefined;
+      if (copy) {
+        await db.referentiels.put({
+          ...cached!,
+          data: { ...copy, systemRoutes: addTo(copy.systemRoutes), stationRoutes: addTo(copy.stationRoutes) },
+          updated_at: trustedNowIso(),
+        });
+      }
+    } catch { /* kept for this page only */ }
+    setForm(p => ({ ...p, route_id: route.id }));
+    toast.success(`Ville « ${route.destination_city?.name ?? cityName} » ajoutée`);
+  };
+
   const getMatchingReturnRouteId = (routeId: string) => {
     const destination = cityOptions.find(city => city.route_id === routeId)?.name;
     return returnCityOptions.find(city => city.name === destination)?.route_id || '';
@@ -988,6 +1050,8 @@ export default function POSConvois() {
                     }))}
                     getLabel={city => city.name}
                     placeholder="Rechercher une ville…"
+                    onCreate={addConvoyCity}
+                    createLabel={text => `Ajouter la ville « ${text} »`}
                   />
                 </div>
                 <div>
