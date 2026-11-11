@@ -209,7 +209,8 @@ export default function DAFVoyageReport() {
   const [fPlate, setFPlate] = useState('');
   const [tab, setTab] = useState<Tab>('lignes');
   const [departs, setDeparts] = useState<Depart[]>([]);
-  const [allRoutes, setAllRoutes] = useState<{ id: string; name: string }[]>([]);
+  const [allRoutes, setAllRoutes] = useState<{ id: string; name: string; origin_station_id?: string | null }[]>([]);
+  const [allCounters, setAllCounters] = useState<{ id: string; counter_number: string; station_id: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const { from, to } = getRange(periodId, customFrom, customTo);
@@ -228,27 +229,59 @@ export default function DAFVoyageReport() {
   }, [from, to]);
   useEffect(() => { load(); }, [load]);
 
-  // Every line, also those without a departure in the period
+  // Every line and every counter, also those without a departure in the period
   useEffect(() => {
-    supabase.from('routes').select('id, name').order('name').then(({ data }) => {
-      if (data) setAllRoutes(data as { id: string; name: string }[]);
+    supabase.from('routes').select('id, name, origin_station_id').order('name').then(({ data, error }) => {
+      if (!error && data) { setAllRoutes(data as typeof allRoutes); return; }
+      // A database without routes.origin_station_id: the lines without their station
+      supabase.from('routes').select('id, name').order('name').then(({ data: plain }) => {
+        if (plain) setAllRoutes(plain as typeof allRoutes);
+      });
+    });
+    supabase.from('counters').select('id, counter_number, station_id').order('counter_number').then(({ data }) => {
+      if (data) setAllCounters(data as typeof allCounters);
     });
   }, []);
 
-  // ── Filter options (from the departures of the period) ──
+  // ── Filter options ──
+  // A station chosen: only its counters, and only its lines (those leaving from it, or with a
+  // departure from it in the period)
   const options = useMemo(() => {
-    const uniq = (pairs: [string | null, string][]) =>
-      [...new Map(pairs.filter(([id]) => id).map(([id, l]) => [id as string, l])).entries()]
-        .map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
-    const routes = new Map(allRoutes.map(r => [r.id, r.name]));
-    for (const d of departs) if (d.routeId && !routes.has(d.routeId)) routes.set(d.routeId, d.route);
-    return {
-      stations: uniq(departs.map(d => [d.stationId, d.station])),
-      counters: uniq(departs.filter(d => !fStation || d.stationId === fStation).map(d => [d.counterId, `${d.counter} — ${d.station}`])),
-      routes: [...routes.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
-      companies: uniq(departs.map(d => [d.companyId, d.company])),
-    };
-  }, [departs, allRoutes, fStation]);
+    const sorted = (m: Map<string, string>) =>
+      [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+
+    const stations = new Map<string, string>();
+    for (const d of departs) if (d.stationId) stations.set(d.stationId, d.station);
+
+    const counters = new Map<string, string>();
+    for (const c of allCounters) {
+      if (fStation && c.station_id !== fStation) continue;
+      const st = c.station_id ? stations.get(c.station_id) : undefined;
+      counters.set(c.id, fStation || !st ? c.counter_number : `${c.counter_number} — ${st}`);
+    }
+    for (const d of departs) {
+      if (!d.counterId || counters.has(d.counterId) || (fStation && d.stationId !== fStation)) continue;
+      counters.set(d.counterId, fStation ? d.counter : `${d.counter} — ${d.station}`);
+    }
+
+    const routes = new Map<string, string>();
+    for (const r of allRoutes) if (!fStation || r.origin_station_id === fStation) routes.set(r.id, r.name);
+    for (const d of departs) {
+      if (!d.routeId || routes.has(d.routeId) || (fStation && d.stationId !== fStation)) continue;
+      routes.set(d.routeId, d.route);
+    }
+
+    const companies = new Map<string, string>();
+    for (const d of departs) if (d.companyId) companies.set(d.companyId, d.company);
+
+    return { stations: sorted(stations), counters: sorted(counters), routes: sorted(routes), companies: sorted(companies) };
+  }, [departs, allRoutes, allCounters, fStation]);
+
+  // Another station chosen: a counter or a line of the previous one is no longer offered
+  useEffect(() => {
+    if (fCounter && !options.counters.some(o => o.id === fCounter)) setFCounter('');
+    if (fRoute && !options.routes.some(o => o.id === fRoute)) setFRoute('');
+  }, [options, fCounter, fRoute]);
 
   const filtered = useMemo(() => {
     const plate = fPlate.trim().toLowerCase().replace(/[\s-]/g, '');
