@@ -181,7 +181,7 @@ export async function login(email: string, password: string): Promise<POSLoginRe
       return { success: true, session };
     } catch (err: any) {
       // No answer from the server: check the credentials saved on this device instead
-      if (isNetworkError(err)) return offlineLogin(email, password);
+      if (isNetworkError(err)) return offlineLogin(email, password, onlineFailure(err));
       // Password refused (changed or wrong): it must no longer open the offline session either
       if (isRejectedPassword(err)) forgetOfflineLogin(email);
       return { success: false, error: err?.message ?? 'Erreur de connexion' };
@@ -191,7 +191,17 @@ export async function login(email: string, password: string): Promise<POSLoginRe
   return offlineLogin(email, password);
 }
 
-async function offlineLogin(email: string, password: string): Promise<POSLoginResult> {
+// What the server answered, said plainly: the screen showed « Pas de connexion au serveur » while
+// online, for a new account whose sign-in the server had answered with an error (500…)
+function onlineFailure(err: any): string {
+  const status = Number(err?.status ?? 0);
+  const message = String(err?.message ?? '').trim();
+  if (message === 'timeout') return "le serveur n'a pas répondu dans les 15 secondes";
+  if (status >= 500) return `erreur du serveur ${status}${message ? ` : ${message}` : ''}`;
+  return message || 'pas de réponse du serveur';
+}
+
+async function offlineLogin(email: string, password: string, onlineError?: string): Promise<POSLoginResult> {
   const check = await checkOfflineLogin(email, password);
   if (check.status === 'ok') {
     const restored: SessionRecord = {
@@ -213,6 +223,9 @@ async function offlineLogin(email: string, password: string): Promise<POSLoginRe
 
   // A login saved by an earlier version (unsalted hash) is no longer accepted: one online login
   // saves it again in the protected format
+  if (onlineError) {
+    return { success: false, error: `La connexion au serveur a échoué (${onlineError}). Ce compte ne s'est jamais connecté sur ce poste : il ne peut pas ouvrir de session hors ligne. Réessayez dans un instant ; si le message revient, transmettez-le à l'administrateur.` };
+  }
   return { success: false, error: 'Pas de connexion au serveur, et ce compte ne s\'est pas encore connecté en ligne sur ce poste avec cette version. Connectez-vous une fois avec Internet.' };
 }
 
