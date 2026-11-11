@@ -163,6 +163,17 @@ export async function renumberDepartsAfterCancellation(
   }
 }
 
+/**
+ * Whether a counter works on this departure: its own departures, and those of another station
+ * shared with its station (« Charger dans une autre gare »), which belong to a counter of the
+ * main station. The list, the sale and the baggage screens use the same rule: the list showed a
+ * shared departure, but the sale refused it (« Ce départ n'est pas affecté à votre guichet »).
+ */
+export function isDepartForCounter(d: DepartRecord, stationId?: string | null, counterId?: string | null): boolean {
+  if (!counterId || !d.counter_id || d.counter_id === counterId) return true;
+  return !!stationId && d.station_id !== stationId && (d.seat_allocations?.some(a => a.station_id === stationId) ?? false);
+}
+
 export async function getAllDeparts(stationId?: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
   let result = all;
@@ -174,11 +185,7 @@ export async function getAllDeparts(stationId?: string, counterId?: string): Pro
     );
   }
   if (counterId) {
-    // A counter sees its own departures, and those of another station shared with its station
-    // (« Charger dans une autre gare »): they belong to a counter of the main station
-    result = result.filter(d =>
-      d.counter_id === counterId ||
-      (!!stationId && d.station_id !== stationId && (d.seat_allocations?.some(a => a.station_id === stationId) ?? false)));
+    result = result.filter(d => d.counter_id === counterId || isDepartForCounter(d, stationId, counterId));
   }
   return result;
 }

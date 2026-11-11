@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { getDepartById } from '@/services/pos/departService';
+import { getDepartById, isDepartForCounter } from '@/services/pos/departService';
 import { syncDepartsAndTicketsFromServer, localUpdate, getById } from '@/services/pos/offlineStore';
 import {
   sellTicket, sellTickets, PartialSaleError, getTicketsForDepart, getSoldSeats, neverPrinted,
@@ -128,7 +128,7 @@ export default function POSVente() {
       }
       return;
     }
-    if (session?.counter_id && d.counter_id && d.counter_id !== session.counter_id) {
+    if (!isDepartForCounter(d, session?.station_id, session?.counter_id)) {
       setError('Ce départ n\'est pas affecté à votre guichet.');
       setLoading(false);
       return;

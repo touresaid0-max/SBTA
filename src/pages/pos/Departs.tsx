@@ -768,9 +768,13 @@ export default function POSDeparts() {
           </button>
           {selectedRow && (
             <>
+              {/* A departure of another station shared with this one: only its main station changes,
+                  cancels or closes it (it would be changed, cancelled or closed for both stations) */}
+              {selectedRow.station_id === session?.station_id && (
               <button onClick={() => handleAction('modifier', selectedRow)} disabled={selectedRow.cloture} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2 disabled:opacity-50 disabled:cursor-not-allowed" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
                 <Pencil className="w-4 h-4" /> Modifier
               </button>
+              )}
               <button onClick={() => handleAction('imprimer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
                 <Printer className="w-4 h-4" /> Imprimer sélection
               </button>
@@ -802,7 +806,7 @@ export default function POSDeparts() {
                   <Receipt className="w-4 h-4" /> Par dépenses
                 </button>
               )}
-              {!selectedRow.cancelled && !selectedRow.cloture && (() => {
+              {selectedRow.station_id === session?.station_id && !selectedRow.cancelled && !selectedRow.cloture && (() => {
                 const soldCount = allTickets.filter(t => t.depart_id === selectedRow.id && t.status !== 'cancelled').length;
                 return soldCount === 0 ? (
                   <button onClick={() => handleAction('annuler', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--danger)' }}>
@@ -810,7 +814,7 @@ export default function POSDeparts() {
                   </button>
                 ) : null;
               })()}
-              {!selectedRow.cloture && !selectedRow.cancelled && (
+              {selectedRow.station_id === session?.station_id && !selectedRow.cloture && !selectedRow.cancelled && (
                 <button onClick={() => handleAction('fermer', selectedRow)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--text-secondary)' }}>
                   <Lock className="w-4 h-4" /> Clôturer
                 </button>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { getDepartById, getSeatRangeForStation, type DepartRecord } from '@/services/pos/departService';
+import { getDepartById, getSeatRangeForStation, isDepartForCounter, type DepartRecord } from '@/services/pos/departService';
 import { getStations, getTicketsForDepart, type StationRef, type TicketRecord } from '@/services/pos/ticketService';
 import {
   registerBagage, getBagagesForDepart, findTicketByNumber,
@@ -58,7 +58,7 @@ export default function POSBagages() {
         setLoading(false);
         return;
       }
-      if (session?.counter_id && d.counter_id && d.counter_id !== session.counter_id) {
+      if (!isDepartForCounter(d, session?.station_id, session?.counter_id)) {
         setError('Ce départ n\'est pas affecté à votre guichet.');
         setLoading(false);
         return;
