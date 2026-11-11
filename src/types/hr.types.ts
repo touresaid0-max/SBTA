@@ -1,7 +1,10 @@
 import type { SBTARole } from '@/store/authStore'
 
 export type ContractType    = 'titulaire' | 'contractuel' | 'stagiaire'
-export type ContractNature  = 'CDI' | 'CDD'
+/** STAGE: an intern (« Stagiaire »), a nature of contract like CDI and CDD */
+export type ContractNature  = 'CDI' | 'CDD' | 'STAGE'
+
+export const CONTRACT_NATURE_LABELS: Record<ContractNature, string> = { CDI: 'CDI', CDD: 'CDD', STAGE: 'Stagiaire' }
 export type Gender          = 'M' | 'F'
 export type MaritalStatus   = 'celibataire' | 'marie' | 'divorce' | 'veuf'
 export type SeniorityStatus = 'non_eligible' | 'eligible' | 'converti'

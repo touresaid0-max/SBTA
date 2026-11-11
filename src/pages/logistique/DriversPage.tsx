@@ -1025,7 +1025,7 @@ function DriverFormModal({ mode, driver, companies, stations, busOptions, routes
                     <option value="">— Sélectionner —</option>
                     <option value="titulaire">Titulaire</option>
                     <option value="contractuel">Contractuel</option>
-                    <option value="stagiaire">Stagiaire</option>
+                    {form.contract_type === 'stagiaire' && <option value="stagiaire">Stagiaire (à reclasser)</option>}
                   </select>
                 </SelectWrap>
               </FieldGroup>
@@ -1035,6 +1035,7 @@ function DriverFormModal({ mode, driver, companies, stations, busOptions, routes
                     <option value="">—</option>
                     <option value="CDI">CDI</option>
                     <option value="CDD">CDD</option>
+                    <option value="STAGE">Stagiaire</option>
                   </select>
                 </SelectWrap>
               </FieldGroup>

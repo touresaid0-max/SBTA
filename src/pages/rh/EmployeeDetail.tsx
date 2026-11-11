@@ -10,6 +10,7 @@ import { supabase } from '@/services/supabase'
 import { uploadContract, uploadAvatar, deactivateEmployee, reactivateEmployee, convertToSalaried, fetchEmployeeById } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
 import type { Employee } from '@/types/hr.types'
+import { CONTRACT_NATURE_LABELS } from '@/types/hr.types'
 import { computeAge, monthsUntilRetirement, isNearRetirement, isRetirementReached, RETIREMENT_AGE } from '@/utils/retirement'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -383,7 +384,7 @@ export default function EmployeeDetail() {
           <InfoRow label="Contrat"
             value={employee.contract_type === 'titulaire' ? 'Titulaire (embauché)' : employee.contract_type === 'contractuel' ? 'Contractuel' : employee.contract_type === 'stagiaire' ? 'Stagiaire' : null} />
           <InfoRow label="Nature"
-            value={employee.contract_nature ?? null} />
+            value={employee.contract_nature ? (CONTRACT_NATURE_LABELS[employee.contract_nature] ?? employee.contract_nature) : null} />
           <InfoRow label="Date entrée"
             value={employee.hire_date
               ? `${new Date(employee.hire_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${employee.years_of_service !== null ? ` — ${employee.years_of_service} an${employee.years_of_service > 1 ? 's' : ''}` : ''}`

@@ -68,12 +68,12 @@ const MONTHS = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 
 const CONTRACT_TYPES: { value: string; label: string }[] = [
   { value: 'titulaire', label: 'Titulaires' },
   { value: 'contractuel', label: 'Contractuels' },
-  { value: 'stagiaire', label: 'Stagiaires' },
 ]
 
 const CONTRACT_NATURES: { value: string; label: string }[] = [
   { value: 'CDI', label: 'CDI' },
   { value: 'CDD', label: 'CDD' },
+  { value: 'STAGE', label: 'Stagiaires' },
 ]
 
 const EMPLOYEE_STATUSES: { value: string; label: string }[] = [

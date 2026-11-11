@@ -718,7 +718,8 @@ export default function EmployeeForm() {
                 <option value="">— Sélectionner —</option>
                 <option value="titulaire">Titulaire (embauché permanent)</option>
                 <option value="contractuel">Contractuel</option>
-                <option value="stagiaire">Stagiaire</option>
+                {/* Stagiaire is a nature of contract now: only shown for an employee still filed under it */}
+                {form.contract_type === 'stagiaire' && <option value="stagiaire">Stagiaire (à reclasser)</option>}
               </select>
             </SelectWrap>
           </FieldGroup>
@@ -728,6 +729,7 @@ export default function EmployeeForm() {
                 <option value="">— Sélectionner —</option>
                 <option value="CDI">CDI</option>
                 <option value="CDD">CDD</option>
+                <option value="STAGE">Stagiaire</option>
               </select>
             </SelectWrap>
           </FieldGroup>

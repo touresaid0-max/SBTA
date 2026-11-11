@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import { resolveCompanyIds } from '@/utils/companyGroups'
 import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
 import type { Employee, EmployeeFilters, ContractType, ContractNature } from '@/types/hr.types'
+import { CONTRACT_NATURE_LABELS } from '@/types/hr.types'
 import Pagination from '@/components/pos/Pagination'
 import { usePagination } from '@/hooks/usePagination'
 
@@ -229,7 +230,6 @@ export default function EmployeesPage() {
               <option value="">Tous les contrats</option>
               <option value="titulaire">Titulaires</option>
               <option value="contractuel">Contractuels</option>
-              <option value="stagiaire">Stagiaires</option>
             </select>
             <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
           </div>
@@ -244,6 +244,7 @@ export default function EmployeesPage() {
               <option value="">Toutes les natures</option>
               <option value="CDI">CDI</option>
               <option value="CDD">CDD</option>
+              <option value="STAGE">Stagiaires</option>
             </select>
             <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-[#9CA3AF] pointer-events-none" />
           </div>
@@ -377,7 +378,7 @@ export default function EmployeesPage() {
                           </span>
                           {emp.contract_nature && (
                             <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#F3F4F6] text-[#6B7280] w-fit">
-                              {emp.contract_nature}
+                              {CONTRACT_NATURE_LABELS[emp.contract_nature] ?? emp.contract_nature}
                             </span>
                           )}
                         </div>
