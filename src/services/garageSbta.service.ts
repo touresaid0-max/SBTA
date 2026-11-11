@@ -349,8 +349,12 @@ export async function updateReparation(id: string, r: Partial<{
   car_id: string; bus_id: string | null; piece_id: string | null; date: string; statut: ReparationStatut;
   technicien_id: string | null; type_technicien_id: string | null; description: string;
 }>): Promise<GarageReparation> {
-  const { data, error } = await supabase.from('garage_reparations').update({ ...r, updated_at: new Date().toISOString() }).eq('id', id).select().single()
+  const { data, error } = await supabase.from('garage_reparations').update({ ...r, updated_at: new Date().toISOString() }).eq('id', id).select().maybeSingle()
   if (error) throw error
+  // No row changed: the account is not allowed to change this repair (the database's access
+  // rules), or the repair no longer exists. Said plainly instead of « Cannot coerce the result to
+  // a single JSON object ».
+  if (!data) throw new Error("Modification refusée : votre compte n'a pas le droit de modifier cette réparation, ou elle n'existe plus.")
   return data
 }
 
