@@ -29,13 +29,15 @@ export async function getTicketPhoneLine(counterId?: string | null): Promise<str
 
         // If no manager_id on counter, try station_managers junction
         if (!chefGareUserId && counter.station_id) {
+          // The column is manager_id (user_id does not exist: the read failed on every ticket)
           const { data: sm } = await supabase
             .from('station_managers')
-            .select('user_id')
+            .select('manager_id')
             .eq('station_id', counter.station_id)
+            .order('is_primary', { ascending: false })
             .limit(1)
             .maybeSingle()
-          if (sm?.user_id) chefGareUserId = sm.user_id
+          if (sm?.manager_id) chefGareUserId = sm.manager_id
         }
 
         // If still no chef de gare, try stations.station_manager_id
