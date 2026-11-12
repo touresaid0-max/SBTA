@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../services/supabase';
-import { Download, TrendingUp, TrendingDown } from 'lucide-react';
+import { Download, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
@@ -8,6 +8,7 @@ import {
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
+import RouteDeparturesDetail from '../../components/gestionnaire/RouteDeparturesDetail';
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-CI', { maximumFractionDigits: 0 }).format(n);
 const fmtCFA = (n: number) => fmt(n) + ' FCFA';
@@ -77,6 +78,20 @@ export default function FinancialReport() {
   const [dateFrom, setDateFrom] = useState(rangeFor('mois').from);
   const [dateTo, setDateTo] = useState(rangeFor('mois').to);
   const [activeTab, setActiveTab] = useState<'synthese' | 'bus' | 'lignes' | 'chauffeurs'>('synthese');
+  // Line whose voyages are shown in detail (gares, then departures)
+  const [openRouteId, setOpenRouteId] = useState<string | null>(null);
+  // The lines table scrolls sideways: the detail is kept to the visible width so nothing is cut off
+  const linesBoxRef = useRef<HTMLDivElement>(null);
+  const [linesBoxWidth, setLinesBoxWidth] = useState(0);
+  useEffect(() => {
+    const el = linesBoxRef.current;
+    if (!el || !openRouteId) return;
+    const update = () => setLinesBoxWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [openRouteId, activeTab]);
   const [kpis, setKpis] = useState<KPIs | null>(null);
   const [buses, setBuses] = useState<BusRow[]>([]);
   const [routes, setRoutes] = useState<RouteRow[]>([]);
@@ -430,7 +445,7 @@ export default function FinancialReport() {
             )}
 
             {activeTab === 'lignes' && (
-              <div className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+              <div ref={linesBoxRef} className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
@@ -442,10 +457,22 @@ export default function FinancialReport() {
                   <tbody>
                     {routes.map((r, i) => {
                       const mp = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
+                      const open = openRouteId != null && openRouteId === r.route_id;
                       return (
-                        <tr key={r.route_id || i} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                        <React.Fragment key={r.route_id || i}>
+                        <tr className="border-t" style={{ borderColor: 'var(--border)', backgroundColor: open ? 'var(--bg-subtle)' : undefined }}>
                           <td className="px-3 py-2.5 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{r.route_name}</td>
-                          <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>{r.trip_count}</td>
+                          <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            {r.route_id && Number(r.trip_count) > 0 ? (
+                              <button type="button" onClick={() => setOpenRouteId(open ? null : r.route_id)}
+                                aria-expanded={open} title={open ? 'Masquer le détail' : 'Voir les gares et les départs'}
+                                className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold"
+                                style={{ borderColor: open ? '#10B981' : 'var(--border)', color: open ? '#047857' : 'var(--text-primary)', backgroundColor: open ? 'rgba(16,185,129,0.12)' : 'var(--surface)' }}>
+                                {r.trip_count}
+                                {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                              </button>
+                            ) : r.trip_count}
+                          </td>
                           <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#10B981' }}>{fmtCFA(r.revenue)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#3B82F6' }}>{fmtCFA(r.cc_carburant ?? 0)}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: '#F59E0B' }}>{fmtCFA(r.cc_ration ?? 0)}</td>
@@ -457,6 +484,18 @@ export default function FinancialReport() {
                             <span className="text-xs font-semibold" style={{ color: mp >= 0 ? '#10B981' : '#EF4444' }}>{mp.toFixed(1)}%</span>
                           </td>
                         </tr>
+                        {open && (
+                          <tr className="border-t" style={{ borderColor: 'var(--border)' }}>
+                            <td colSpan={10} className="p-0">
+                              <div style={{ position: 'sticky', left: 0, width: linesBoxWidth || undefined }}>
+                              <RouteDeparturesDetail routeId={r.route_id} routeName={r.route_name} dateFrom={dateFrom} dateTo={dateTo}
+                                expectedTrips={Number(r.trip_count)} expectedRevenue={Number(r.revenue)} expectedExpenses={Number(r.total_expense ?? 0)}
+                                onClose={() => setOpenRouteId(null)} />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       );
                     })}
                     {routes.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}

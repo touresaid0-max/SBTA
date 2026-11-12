@@ -1,0 +1,385 @@
+import { useEffect, useMemo, useState } from 'react';
+import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
+import { AlertTriangle, CheckCircle2, Download, Loader2, Search, X } from 'lucide-react';
+import { supabase } from '../../services/supabase';
+import { usePagination } from '@/hooks/usePagination';
+import Pagination from '@/components/pos/Pagination';
+
+// Ordinary spaces (same format as the DAF report)
+const fmtN = (n: number) => {
+  const r = Math.round(n);
+  return (r < 0 ? '-' : '') + Math.abs(r).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+const fmtF = (n: number) => fmtN(n) + ' F';
+const num = (v: unknown) => { const n = Number(v ?? 0); return Number.isFinite(n) ? n : 0; };
+
+const STATUS_LABELS: Record<string, string> = {
+  planifie: 'Planifié', en_cours: 'En cours', termine: 'Terminé', annule: 'Annulé', convoi: 'Convoi', retard: 'Retard',
+  ramassage_direct: 'Ramassage direct',
+};
+
+interface Depart {
+  key: string;
+  scheduleId: string;
+  isDeparture: boolean;
+  datetime: string;
+  number: number | null;
+  status: string;
+  route: string;
+  stationId: string;
+  station: string;
+  counter: string;
+  bus: string;
+  company: string;
+  capacity: number;
+  seats: number;
+  tickets: number;
+  baggageCount: number;
+  baggage: number;
+  ramassage: number;
+  recette: number;
+  transferred: number;
+  expenses: number;
+  caisse: number;
+  solde: number;
+}
+
+function toDepart(r: Record<string, unknown>, i: number): Depart {
+  const tickets = num(r.tickets_amount);
+  const baggage = num(r.baggage_amount);
+  const ramassage = num(r.ramassage_amount);
+  const expenses = num(r.exp_ration) + num(r.exp_carburant) + num(r.exp_peage) + num(r.exp_autres);
+  const caisse = tickets + baggage + ramassage;
+  return {
+    key: `${String(r.schedule_id)}-${i}`,
+    scheduleId: String(r.schedule_id),
+    isDeparture: r.is_departure !== false,
+    datetime: String(r.departure_datetime ?? ''),
+    number: r.departure_number == null ? null : num(r.departure_number),
+    status: String(r.status ?? ''),
+    route: String(r.route_name ?? '') || 'Ligne inconnue',
+    stationId: String(r.station_id ?? 'none'),
+    station: String(r.station_name ?? '') || 'Gare inconnue',
+    counter: String(r.counter_number ?? '') || '—',
+    bus: String(r.bus_registration ?? '') || '—',
+    company: String(r.company_name ?? '') || '—',
+    capacity: num(r.capacity),
+    seats: num(r.seats_sold),
+    tickets,
+    baggageCount: num(r.baggage_count),
+    baggage,
+    ramassage,
+    recette: num(r.recette),
+    transferred: num(r.transferred_amount),
+    expenses,
+    caisse,
+    solde: caisse - expenses,
+  };
+}
+
+interface Totals {
+  voyages: number; seats: number; capacity: number; tickets: number; baggage: number; ramassage: number;
+  caisse: number; expenses: number; solde: number; recette: number; transferred: number;
+}
+function totalsOf(rows: Depart[]): Totals {
+  const t: Totals = { voyages: new Set(rows.map(r => r.scheduleId)).size, seats: 0, capacity: 0, tickets: 0, baggage: 0,
+    ramassage: 0, caisse: 0, expenses: 0, solde: 0, recette: 0, transferred: 0 };
+  for (const r of rows) {
+    t.seats += r.seats; t.capacity += r.capacity; t.tickets += r.tickets; t.baggage += r.baggage; t.ramassage += r.ramassage;
+    t.caisse += r.caisse; t.expenses += r.expenses; t.solde += r.solde; t.recette += r.recette; t.transferred += r.transferred;
+  }
+  return t;
+}
+// Plain ASCII: browsers drop a download name with accents (« Adjamé ») and save it as « download »
+const fileSafe = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
+const fill = (seats: number, capacity: number) => (capacity > 0 ? ((seats / capacity) * 100).toFixed(1) + ' %' : '—');
+
+const HEADERS = ['Date', 'Heure', 'N° dép.', 'Ligne', 'Gare', 'Guichet', 'Car', 'Société', 'Statut', 'Places', 'Vendus', 'Rempl.', 'Tickets', 'Bagages', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'];
+const FIRST_NUMERIC = 9;
+const cells = (d: Depart): string[] => {
+  const dt = d.datetime ? new Date(d.datetime) : null;
+  return [
+    dt ? format(dt, 'dd/MM/yyyy') : '—', dt ? format(dt, 'HH:mm') : '—', d.number != null ? String(d.number) : '—',
+    d.route, d.station, d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
+    d.isDeparture ? fmtN(d.capacity) : '—', fmtN(d.seats), d.isDeparture ? fill(d.seats, d.capacity) : '—',
+    fmtF(d.tickets), d.baggageCount > 0 ? `${fmtF(d.baggage)} (${d.baggageCount})` : fmtF(d.baggage),
+    fmtF(d.ramassage), fmtF(d.caisse), fmtF(d.expenses), fmtF(d.solde),
+  ];
+};
+
+interface Props {
+  routeId: string;
+  routeName: string;
+  dateFrom: string;
+  dateTo: string;
+  /** Figures of the report line, to show that the detail adds up to them */
+  expectedTrips: number;
+  expectedRevenue: number;
+  expectedExpenses: number;
+  onClose: () => void;
+}
+
+export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, dateTo, expectedTrips, expectedRevenue, expectedExpenses, onClose }: Props) {
+  const [rows, setRows] = useState<Depart[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [station, setStation] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null); setError(null); setStation(null); setSearch('');
+    supabase.rpc('get_gestionnaire_route_departures', { p_route_id: routeId, p_from: dateFrom, p_to: dateTo })
+      .then(({ data, error: err }) => {
+        if (cancelled) return;
+        if (err) {
+          const missing = err.code === 'PGRST202' || /could not find the function/i.test(err.message ?? '');
+          setError(missing ? 'Le détail des départs n’est pas encore disponible sur le serveur.' : 'Impossible de charger le détail des départs. Réessayez.');
+          return;
+        }
+        setRows(((data ?? []) as Record<string, unknown>[]).map(toDepart));
+      });
+    return () => { cancelled = true; };
+  }, [routeId, dateFrom, dateTo]);
+
+  const all = useMemo(() => rows ?? [], [rows]);
+
+  const stations = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; rows: Depart[] }>();
+    for (const r of all) {
+      const g = m.get(r.stationId) ?? { id: r.stationId, name: r.station, rows: [] };
+      g.rows.push(r);
+      m.set(r.stationId, g);
+    }
+    return [...m.values()]
+      .map(g => ({ ...g, t: totalsOf(g.rows) }))
+      .sort((a, b) => b.t.voyages - a.t.voyages || a.name.localeCompare(b.name, 'fr'));
+  }, [all]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return all.filter(r => (!station || r.stationId === station)
+      && (!q || [r.bus, r.counter, r.number != null ? String(r.number) : '', STATUS_LABELS[r.status] ?? r.status]
+        .some(v => v.toLowerCase().includes(q))));
+  }, [all, station, search]);
+
+  const total = useMemo(() => totalsOf(all), [all]);
+  const ft = useMemo(() => totalsOf(filtered), [filtered]);
+  const pager = usePagination(filtered, 'gestionnaire-route-departs-page-size', `${routeId}|${dateFrom}|${dateTo}|${station}|${search}`);
+
+  const matches = rows != null
+    && total.voyages === expectedTrips
+    && Math.round(total.recette) === Math.round(expectedRevenue)
+    && Math.round(total.expenses) === Math.round(expectedExpenses);
+
+  const stationName = station ? stations.find(s => s.id === station)?.name ?? '' : '';
+
+  const exportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stations.map(s => ({
+      'Gare': s.name, 'Voyages': s.t.voyages, 'Vendus': s.t.seats, 'Tickets': s.t.tickets, 'Bagages': s.t.baggage,
+      'Ramassage': s.t.ramassage, 'Caisse': s.t.caisse, 'Dépenses': s.t.expenses, 'Solde': s.t.solde, 'Recettes (rapport)': s.t.recette,
+    }))), 'Par gare');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filtered.map(d => {
+      const dt = d.datetime ? new Date(d.datetime) : null;
+      return {
+        'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° dép.': d.number ?? '',
+        'Ligne': d.route, 'Gare': d.station, 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
+        'Société': d.company, 'Statut': STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
+        'Vendus': d.seats, 'Rempl. %': d.isDeparture && d.capacity > 0 ? Number(((d.seats / d.capacity) * 100).toFixed(1)) : '',
+        'Tickets': d.tickets, 'Nb bagages': d.baggageCount, 'Bagages': d.baggage, 'Ramassage': d.ramassage, 'Caisse': d.caisse,
+        'Dépenses': d.expenses, 'Solde': d.solde, 'Recette (rapport)': d.recette, 'Part reversée (panne)': d.transferred,
+      };
+    })), 'Départs');
+    XLSX.writeFile(wb, `departs_${fileSafe(routeName)}${stationName ? '_' + fileSafe(stationName) : ''}_${dateFrom}_${dateTo}.xlsx`);
+  };
+
+  const chip = (active: boolean) => ({
+    borderColor: active ? '#10B981' : 'var(--border)',
+    backgroundColor: active ? 'rgba(16,185,129,0.12)' : 'var(--surface)',
+    color: active ? '#047857' : 'var(--text-secondary)',
+  });
+
+  return (
+    <div className="space-y-3 p-3 sm:p-4" style={{ backgroundColor: 'var(--bg-subtle)' }} data-testid="route-departures-detail">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Détail des {expectedTrips} voyages · {routeName}</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Du {format(new Date(dateFrom + 'T00:00'), 'dd/MM/yyyy')} au {format(new Date(dateTo + 'T00:00'), 'dd/MM/yyyy')} · votre société uniquement
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {rows && rows.length > 0 && (
+            <button type="button" onClick={exportExcel}
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}>
+              <Download className="h-3.5 w-3.5" /> Excel
+            </button>
+          )}
+          <button type="button" onClick={onClose} aria-label="Fermer le détail" title="Fermer le détail"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-secondary)' }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {rows == null && !error && (
+        <div className="flex items-center gap-2 py-6 text-xs" style={{ color: 'var(--text-muted)' }}>
+          <Loader2 className="h-4 w-4 animate-spin" /> Chargement des départs…
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: '#FCA5A5', color: '#B91C1C', backgroundColor: 'rgba(239,68,68,0.06)' }}>
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+        </div>
+      )}
+
+      {rows && rows.length === 0 && (
+        <p className="py-4 text-xs" style={{ color: 'var(--text-muted)' }}>Aucun départ trouvé pour cette ligne sur la période.</p>
+      )}
+
+      {rows && rows.length > 0 && (
+        <>
+          {/* Where the voyages come from */}
+          <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+            <span className="font-bold">{total.voyages} voyages</span>
+            {' = '}
+            {stations.map((s, i) => (
+              <span key={s.id}>
+                {i > 0 && ' + '}
+                <span className="font-bold">{s.t.voyages}</span> de {s.name}
+              </span>
+            ))}
+          </p>
+
+          <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${matches ? '' : 'font-semibold'}`}
+            style={matches
+              ? { borderColor: '#A7F3D0', color: '#047857', backgroundColor: 'rgba(16,185,129,0.06)' }
+              : { borderColor: '#FCD34D', color: '#92400E', backgroundColor: 'rgba(245,158,11,0.08)' }}>
+            {matches ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+            <span>
+              {matches
+                ? `${total.voyages} voyages · ${fmtF(total.recette)} de recettes · ${fmtF(total.expenses)} de charges : identique à la ligne du rapport.`
+                : `Le détail (${total.voyages} voyages, ${fmtF(total.recette)}, ${fmtF(total.expenses)} de charges) ne correspond pas à la ligne du rapport (${expectedTrips} voyages, ${fmtF(expectedRevenue)}, ${fmtF(expectedExpenses)}). Actualisez la page ; si l’écart reste, signalez-le.`}
+            </span>
+          </div>
+
+          {/* By gare */}
+          <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                  {['Gare', 'Voyages', 'Vendus', 'Rempl.', 'Tickets', 'Bagages', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'].map((h, i) => (
+                    <th key={h} className={`px-3 py-2 font-semibold whitespace-nowrap ${i > 0 ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-secondary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {stations.map(s => {
+                  const active = station === s.id;
+                  return (
+                    <tr key={s.id} className="cursor-pointer border-t" onClick={() => setStation(active ? null : s.id)}
+                      style={{ borderColor: 'var(--border)', backgroundColor: active ? 'rgba(16,185,129,0.08)' : undefined }}
+                      title={active ? 'Afficher toutes les gares' : `Afficher les départs de ${s.name}`}>
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap" style={{ color: active ? '#047857' : 'var(--text-primary)' }}>
+                        <span className="underline decoration-dotted underline-offset-2">{s.name}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-bold" style={{ color: 'var(--text-primary)' }}>{fmtN(s.t.voyages)}</td>
+                      <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{fmtN(s.t.seats)}</td>
+                      <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{fill(s.t.seats, s.t.capacity)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{fmtF(s.t.tickets)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{fmtF(s.t.baggage)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{fmtF(s.t.ramassage)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap font-semibold" style={{ color: 'var(--text-primary)' }}>{fmtF(s.t.caisse)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: '#DC2626' }}>{fmtF(s.t.expenses)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap font-bold" style={{ color: s.t.solde >= 0 ? '#15803D' : '#DC2626' }}>{fmtF(s.t.solde)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setStation(null)} className="rounded-full border px-3 py-1 text-xs font-semibold" style={chip(station == null)}>
+              Toutes les gares · {total.voyages}
+            </button>
+            {stations.map(s => (
+              <button key={s.id} type="button" onClick={() => setStation(station === s.id ? null : s.id)}
+                className="rounded-full border px-3 py-1 text-xs font-semibold" style={chip(station === s.id)}>
+                {s.name} · {s.t.voyages}
+              </button>
+            ))}
+            <label className="relative ml-auto">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Car, guichet, N°…" aria-label="Rechercher un départ"
+                className="w-44 rounded-lg border py-1.5 pl-8 pr-2 text-xs"
+                style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
+            </label>
+          </div>
+
+          {/* Departures */}
+          <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
+                    {HEADERS.map((h, i) => (
+                      <th key={h} className={`px-3 py-2 font-semibold whitespace-nowrap ${i >= FIRST_NUMERIC ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-secondary)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pager.pageItems.map(d => (
+                    <tr key={d.key} className="border-t" style={{ borderColor: 'var(--border)', opacity: d.status === 'annule' ? 0.55 : 1 }}>
+                      {cells(d).map((c, i) => (
+                        <td key={i} className={`px-3 py-2 whitespace-nowrap ${i >= FIRST_NUMERIC ? 'text-right' : ''}`}
+                          style={{
+                            color: i === 17 ? (d.solde >= 0 ? '#15803D' : '#DC2626') : i === 16 ? '#DC2626' : i === 6 || i === 15 ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            fontWeight: i === 6 || i === 15 || i === 17 ? 700 : 400,
+                          }}>
+                          {c}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={HEADERS.length} className="px-3 py-6 text-center" style={{ color: 'var(--text-muted)' }}>Aucun départ ne correspond à la recherche.</td></tr>
+                  )}
+                </tbody>
+                {filtered.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 font-bold" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-subtle)' }}>
+                      <td colSpan={FIRST_NUMERIC} className="px-3 py-2 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+                        Total {station ? stationName : 'toutes gares'} · {ft.voyages} voyage{ft.voyages > 1 ? 's' : ''}
+                      </td>
+                      {[fmtN(ft.capacity), fmtN(ft.seats), fill(ft.seats, ft.capacity), fmtF(ft.tickets), fmtF(ft.baggage), fmtF(ft.ramassage), fmtF(ft.caisse), fmtF(ft.expenses), fmtF(ft.solde)].map((c, i) => (
+                        <td key={i} className="px-3 py-2 text-right whitespace-nowrap"
+                          style={{ color: i === 8 ? (ft.solde >= 0 ? '#15803D' : '#DC2626') : i === 7 ? '#DC2626' : 'var(--text-primary)' }}>{c}</td>
+                      ))}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+            {filtered.length > 0 && (
+              <div className="border-t px-3 py-1" style={{ borderColor: 'var(--border)' }}>
+                <Pagination page={pager.page} pageCount={pager.pageCount} pageSize={pager.pageSize} total={pager.total}
+                  onPageChange={pager.setPage} onPageSizeChange={pager.setPageSize} itemLabel="départs" />
+              </div>
+            )}
+          </div>
+
+          <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            Caisse = Tickets + Bagages + Ramassage, comme au bordereau du guichet. Les recettes du rapport ne comptent pas les bagages
+            {total.transferred > 0 ? ` et déduisent la part reversée à une autre société après panne (${fmtF(total.transferred)})` : ''}.
+            Un ramassage direct (encaissé sans départ programmé) compte pour un voyage, comme dans le rapport.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
