@@ -41,6 +41,7 @@ import {
   FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange,
 } from 'lucide-react';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { getChefGarePhone, cachedChefGarePhone } from '@/services/ticketPhones.service';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
 type SortDir = 'asc' | 'desc';
@@ -293,6 +294,14 @@ function periodDescription(period: Period, range: { from?: string; to?: string }
 export default function POSDeparts() {
   const navigate = useNavigate();
   const { session } = usePOSSession();
+  // Chef de gare number printed on the bordereau des recettes (kept on the device for offline)
+  const [chefPhone, setChefPhone] = useState(() => cachedChefGarePhone(session?.counter_id, session?.station_id));
+  useEffect(() => {
+    if (!session?.counter_id && !session?.station_id) return;
+    let cancelled = false;
+    getChefGarePhone(session?.counter_id, session?.station_id).then(p => { if (!cancelled && p) setChefPhone(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [session?.counter_id, session?.station_id]);
   const [departs, setDeparts] = useState<DepartRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>('today');
@@ -588,7 +597,8 @@ export default function POSDeparts() {
       const data: BordereauRecettesData = {
         station_name: session?.station_name ?? '',
         station_code: stationCode,
-        route_name: targets.length > 0 ? `${targets.length} départ(s)` : '',
+        // LIGNE: the line(s) of the selected departures
+        route_name: [...new Set(rows.map(r => r.route_name.trim()).filter(Boolean))].join(' / '),
         date_from: rows[0]?.departure_date ?? '',
         date_to: rows[rows.length - 1]?.departure_date ?? '',
         print_date: `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`,
@@ -596,7 +606,7 @@ export default function POSDeparts() {
         rows,
         totals,
       };
-      printRecettesBordereau({ data, phoneLine: session?.station_name });
+      printRecettesBordereau({ data, phoneLine: chefPhone || cachedChefGarePhone(session?.counter_id, session?.station_id) || undefined });
     } catch {
       // non-critical
     } finally {

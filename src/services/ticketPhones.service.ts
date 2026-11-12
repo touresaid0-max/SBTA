@@ -1,5 +1,85 @@
 import { supabase } from './supabase'
 import { getPrintCustomization } from './printCustomization'
+import { formatPhoneCI, normalizePhoneCI, isValidPhoneCI } from '@/utils/phoneCI'
+
+interface CounterLinks {
+  manager_id: string | null
+  station_id: string | null
+}
+
+/**
+ * Chef de gare of a guichet: counters.manager_id (multi-chef), then the primary chef of the gare
+ * (station_managers), then stations.station_manager_id.
+ */
+async function resolveChefGareUserId(counter: CounterLinks | null, stationId?: string | null): Promise<string | null> {
+  if (counter?.manager_id) return counter.manager_id
+  const station = counter?.station_id ?? stationId ?? null
+  if (!station) return null
+  // The column is manager_id (user_id does not exist: the read failed on every ticket)
+  const { data: sm } = await supabase
+    .from('station_managers')
+    .select('manager_id')
+    .eq('station_id', station)
+    .order('is_primary', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (sm?.manager_id) return sm.manager_id
+  const { data: st } = await supabase
+    .from('stations')
+    .select('station_manager_id')
+    .eq('id', station)
+    .maybeSingle()
+  return st?.station_manager_id ?? null
+}
+
+/** « 07 59 84 84 56 » for a valid Ivorian number, otherwise the number as saved. */
+function displayPhone(phone: string): string {
+  return isValidPhoneCI(normalizePhoneCI(phone)) ? formatPhoneCI(phone) : phone.trim()
+}
+
+const CHEF_PHONE_KEY = 'sbta_chef_gare_phone:'
+const chefPhoneKey = (counterId?: string | null, stationId?: string | null) =>
+  CHEF_PHONE_KEY + (counterId || stationId || '')
+
+/** The chef de gare number last read for this guichet (kept on the device, for printing offline). */
+export function cachedChefGarePhone(counterId?: string | null, stationId?: string | null): string {
+  if (!counterId && !stationId) return ''
+  try { return localStorage.getItem(chefPhoneKey(counterId, stationId)) ?? '' } catch { return '' }
+}
+
+/**
+ * Phone number of the chef de gare of the guichet, for the bordereau des recettes
+ * (« Tel : 07 59 84 84 56 »). Offline or on error: the number last read on this device, or ''.
+ */
+export async function getChefGarePhone(counterId?: string | null, stationId?: string | null): Promise<string> {
+  if (!counterId && !stationId) return ''
+  try {
+    let counter: CounterLinks | null = null
+    if (counterId) {
+      const { data, error } = await supabase
+        .from('counters')
+        .select('manager_id, station_id')
+        .eq('id', counterId)
+        .maybeSingle()
+      if (error) throw error
+      counter = data
+    }
+    const chefId = await resolveChefGareUserId(counter, stationId)
+    let phone = ''
+    if (chefId) {
+      const { data: chef, error } = await supabase.from('users').select('phone').eq('id', chefId).maybeSingle()
+      if (error) throw error
+      phone = chef?.phone ? displayPhone(chef.phone) : ''
+    }
+    try {
+      if (phone) localStorage.setItem(chefPhoneKey(counterId, stationId), phone)
+      else localStorage.removeItem(chefPhoneKey(counterId, stationId))
+    } catch { /* not kept: read again next time */ }
+    return phone
+  } catch {
+    return cachedChefGarePhone(counterId, stationId)
+  }
+}
 
 /**
  * Fetches the phone numbers to display on printed bus tickets for a given counter.
@@ -24,31 +104,8 @@ export async function getTicketPhoneLine(counterId?: string | null): Promise<str
       if (counter) {
         const phones: string[] = []
 
-        // 1. Chef de gare phone — try counters.manager_id first
-        let chefGareUserId: string | null = counter.manager_id ?? null
-
-        // If no manager_id on counter, try station_managers junction
-        if (!chefGareUserId && counter.station_id) {
-          // The column is manager_id (user_id does not exist: the read failed on every ticket)
-          const { data: sm } = await supabase
-            .from('station_managers')
-            .select('manager_id')
-            .eq('station_id', counter.station_id)
-            .order('is_primary', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          if (sm?.manager_id) chefGareUserId = sm.manager_id
-        }
-
-        // If still no chef de gare, try stations.station_manager_id
-        if (!chefGareUserId && counter.station_id) {
-          const { data: st } = await supabase
-            .from('stations')
-            .select('station_manager_id')
-            .eq('id', counter.station_id)
-            .maybeSingle()
-          if (st?.station_manager_id) chefGareUserId = st.station_manager_id
-        }
+        // 1. Chef de gare phone (counter, then gare)
+        const chefGareUserId = await resolveChefGareUserId(counter)
 
         if (chefGareUserId) {
           const { data: chefUser } = await supabase
