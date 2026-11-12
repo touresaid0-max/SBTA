@@ -1203,7 +1203,7 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   <div class="hdr">
     <div class="brand-logo"><img src="${RECETTES_LOGO_SRC}" alt="SBTA"/></div>
     <div class="sub">Soc. Bonkoungou Transport de L'Agneby</div>
-    <div class="phone">Tel : ${escapeHtml(phoneLine || '07 69 94 88 03 / 07 99 68 60 03')}</div>
+    <div class="phone">Tel : ${escapeHtml(phoneLine || '')}</div>
   </div>
   <div class="dsep"></div>
   <div class="title">BORDEREAU DETAILLE DES RECETTES</div>

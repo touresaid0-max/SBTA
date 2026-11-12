@@ -484,7 +484,8 @@ export function buildRecettesESCPOS(data: PrintRecettesData, settings: PrintSett
     parts.push(setAlign('center'), setDoubleFontB(), setBold(true), ...line('SBTA'), setNormal(), setFontB(), setBold(false));
   }
   parts.push(setBold(true), ...center("Soc. Bonkoungou Transport de L'Agneby"), setBold(false));
-  parts.push(setBold(true), ...center(`Tel : ${phoneLine || '07 69 94 88 03 / 07 99 68 60 03'}`), setBold(false));
+  // The chef de gare's number; left empty when none is known (no default number)
+  parts.push(setBold(true), ...center(`Tel : ${phoneLine || ''}`), setBold(false));
   parts.push(...doubleSep());
   parts.push(setAlign('center'), setBold(true), ...line('BORDEREAU DETAILLE'), setBold(false));
   parts.push(setAlign('center'), setBold(true), ...line('DES RECETTES'), setBold(false));
