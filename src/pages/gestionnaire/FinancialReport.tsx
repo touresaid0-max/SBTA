@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
-import { Download, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { Download, TrendingUp, TrendingDown, ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   startOfYear, endOfYear,
 } from 'date-fns';
-import { fr } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 import RouteDeparturesDetail from '../../components/gestionnaire/RouteDeparturesDetail';
+import { usePagination } from '@/hooks/usePagination';
+import Pagination from '@/components/pos/Pagination';
 
 const fmt = (n: number) => new Intl.NumberFormat('fr-CI', { maximumFractionDigits: 0 }).format(n);
 const fmtCFA = (n: number) => fmt(n) + ' FCFA';
@@ -50,7 +50,12 @@ interface DriverRow {
   cc_carburant: number; cc_ration: number; cc_peage: number; cc_autres: number;
   expense_total: number; avg_rating: number;
 }
-interface DaySeries { day: string; revenue: number; expenses: number; trip_count: number; }
+
+// Detail tables: 10 rows per page by default
+const TABLE_PAGE_SIZES = [10, 20, 50] as const;
+const TABLE_PAGINATION = { sizes: TABLE_PAGE_SIZES, defaultSize: 10 };
+// Search ignores case and accents (« bouake » finds « Bouaké »)
+const norm = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 type PeriodType = 'jour' | 'semaine' | 'mois' | 'annee' | 'custom';
 
@@ -96,7 +101,8 @@ export default function FinancialReport() {
   const [buses, setBuses] = useState<BusRow[]>([]);
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
-  const [series, setSeries] = useState<DaySeries[]>([]);
+  // Search in the Bus / Lignes / Chauffeurs tables (cleared when the tab changes)
+  const [tableSearch, setTableSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
   const applyPreset = (type: Exclude<PeriodType, 'custom'>) => {
@@ -108,18 +114,16 @@ export default function FinancialReport() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [kpiRes, busRes, routeRes, drvRes, serRes] = await Promise.all([
+    const [kpiRes, busRes, routeRes, drvRes] = await Promise.all([
       supabase.rpc('get_gestionnaire_dashboard_kpis', { p_date_from: dateFrom, p_date_to: dateTo }),
       supabase.rpc('get_gestionnaire_revenue_by_bus', { p_date_from: dateFrom, p_date_to: dateTo }),
       supabase.rpc('get_gestionnaire_revenue_by_route', { p_date_from: dateFrom, p_date_to: dateTo }),
       supabase.rpc('get_gestionnaire_driver_report', { p_date_from: dateFrom, p_date_to: dateTo }),
-      supabase.rpc('get_gestionnaire_daily_series', { p_date_from: dateFrom, p_date_to: dateTo }),
     ]);
     if (kpiRes.data) setKpis(kpiRes.data as KPIs);
     if (busRes.data) setBuses(busRes.data as BusRow[]);
     if (routeRes.data) setRoutes(routeRes.data as RouteRow[]);
     if (drvRes.data) setDrivers(drvRes.data as DriverRow[]);
-    if (serRes.data) setSeries(serRes.data as DaySeries[]);
     setLoading(false);
   }, [dateFrom, dateTo]);
 
@@ -140,12 +144,43 @@ export default function FinancialReport() {
     : 0;
   const marginPct = kpis && kpis.total_revenue > 0 ? (brutResult / kpis.total_revenue * 100) : 0;
 
-  const chartData = series.map(d => ({
-    date: format(new Date(d.day + 'T00:00:00'), 'dd/MM', { locale: fr }),
-    Recettes: Number(d.revenue),
-    'Charges guichet': Number(d.expenses),
-    Résultat: Number(d.revenue) - Number(d.expenses),
-  }));
+  const q = norm(tableSearch.trim());
+  const busesShown = useMemo(() => (q ? buses.filter(b => norm(`${b.registration_number} ${b.model}`).includes(q)) : buses), [buses, q]);
+  const routesShown = useMemo(() => (q ? routes.filter(r => norm(r.route_name).includes(q)) : routes), [routes, q]);
+  const driversShown = useMemo(() => (q ? drivers.filter(d => norm(`${d.first_name} ${d.last_name} ${d.employee_id} ${d.bus_registration}`).includes(q)) : drivers), [drivers, q]);
+  const resetKey = `${q}|${dateFrom}|${dateTo}`;
+  const pBuses = usePagination(busesShown, 'gestionnaire-rapport-bus-page-size', resetKey, TABLE_PAGINATION);
+  const pRoutes = usePagination(routesShown, 'gestionnaire-rapport-lignes-page-size', resetKey, TABLE_PAGINATION);
+  const pDrivers = usePagination(driversShown, 'gestionnaire-rapport-chauffeurs-page-size', resetKey, TABLE_PAGINATION);
+
+  const searchBar = (placeholder: string, shown: number, total: number) => (
+    <div className="mb-3 flex flex-wrap items-center gap-3">
+      <label className="relative w-full sm:w-80">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+        <input value={tableSearch} onChange={e => setTableSearch(e.target.value)} placeholder={placeholder} aria-label={placeholder}
+          className="w-full rounded-lg border py-2 pl-9 pr-9 text-sm"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
+        {tableSearch && (
+          <button type="button" onClick={() => setTableSearch('')} aria-label="Effacer la recherche" title="Effacer la recherche"
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md" style={{ color: 'var(--text-muted)' }}>
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </label>
+      {q && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{shown} résultat{shown > 1 ? 's' : ''} sur {total}</span>}
+    </div>
+  );
+  const pager = (p: ReturnType<typeof usePagination<unknown>>, itemLabel: string) => p.total > 0 && (
+    <div className="mt-1">
+      <Pagination page={p.page} pageCount={p.pageCount} pageSize={p.pageSize} total={p.total} sizeOptions={p.sizes}
+        onPageChange={p.setPage} onPageSizeChange={p.setPageSize} itemLabel={itemLabel} />
+    </div>
+  );
+  const emptyRow = (cols: number, hasData: boolean) => (
+    <tr><td colSpan={cols} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>
+      {hasData ? `Aucun résultat pour « ${tableSearch.trim()} »` : 'Aucune donnée'}
+    </td></tr>
+  );
 
   const exportExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -311,36 +346,13 @@ export default function FinancialReport() {
             </div>
           </div>
 
-          {/* Chart */}
-          <div className="rounded-2xl border p-5" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-            <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Évolution journalière Recettes / Charges guichet / Résultat</h3>
-            {chartData.length === 0 ? (
-              <div className="flex items-center justify-center h-48 text-sm" style={{ color: 'var(--text-muted)' }}>
-                Aucune donnée sur la période sélectionnée
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} />
-                  <YAxis tick={{ fontSize: 9, fill: 'var(--text-muted)' }} tickFormatter={v => (v / 1000) + 'k'} width={45} />
-                  <Tooltip formatter={(v: number) => fmtCFA(v)} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Line type="monotone" dataKey="Recettes" stroke="#10B981" strokeWidth={2} dot={{ r: chartData.length <= 3 ? 4 : 2 }} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="Charges guichet" stroke="#EF4444" strokeWidth={2} dot={{ r: chartData.length <= 3 ? 4 : 2 }} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="Résultat" stroke="#3B82F6" strokeWidth={2} dot={{ r: chartData.length <= 3 ? 4 : 2 }} activeDot={{ r: 5 }} strokeDasharray="4 2" />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
           {/* Detail tabs */}
           <div>
             <div className="flex gap-1 border-b mb-4" style={{ borderColor: 'var(--border)' }}>
               {(['synthese', 'bus', 'lignes', 'chauffeurs'] as const).map(t => {
                 const labels = { synthese: 'Synthèse P&L', bus: 'Détail par bus', lignes: 'Détail par ligne', chauffeurs: 'Détail chauffeurs' };
                 return (
-                  <button key={t} onClick={() => setActiveTab(t)}
+                  <button key={t} onClick={() => { setActiveTab(t); setTableSearch(''); }}
                     className="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px"
                     style={{ borderBottomColor: activeTab === t ? 'var(--primary)' : 'transparent', color: activeTab === t ? 'var(--primary)' : 'var(--text-secondary)' }}>
                     {labels[t]}
@@ -400,6 +412,8 @@ export default function FinancialReport() {
             )}
 
             {activeTab === 'bus' && (
+              <>
+              {searchBar('Rechercher un bus ou un modèle…', busesShown.length, buses.length)}
               <div className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                 <table className="w-full text-sm">
                   <thead>
@@ -410,7 +424,7 @@ export default function FinancialReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {buses.map(b => {
+                    {pBuses.pageItems.map(b => {
                       const mp = b.revenue > 0 ? (b.margin / b.revenue * 100) : 0;
                       return (
                         <tr key={b.bus_id} className="border-t" style={{ borderColor: 'var(--border)' }}>
@@ -438,13 +452,17 @@ export default function FinancialReport() {
                         </tr>
                       );
                     })}
-                    {buses.length === 0 && <tr><td colSpan={15} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                    {busesShown.length === 0 && emptyRow(16, buses.length > 0)}
                   </tbody>
                 </table>
               </div>
+              {pager(pBuses, 'bus')}
+              </>
             )}
 
             {activeTab === 'lignes' && (
+              <>
+              {searchBar('Rechercher une ligne…', routesShown.length, routes.length)}
               <div ref={linesBoxRef} className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                 <table className="w-full text-sm">
                   <thead>
@@ -455,7 +473,7 @@ export default function FinancialReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {routes.map((r, i) => {
+                    {pRoutes.pageItems.map((r, i) => {
                       const mp = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
                       const open = openRouteId != null && openRouteId === r.route_id;
                       return (
@@ -498,13 +516,17 @@ export default function FinancialReport() {
                         </React.Fragment>
                       );
                     })}
-                    {routes.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                    {routesShown.length === 0 && emptyRow(10, routes.length > 0)}
                   </tbody>
                 </table>
               </div>
+              {pager(pRoutes, 'lignes')}
+              </>
             )}
 
             {activeTab === 'chauffeurs' && (
+              <>
+              {searchBar('Chauffeur, matricule ou bus…', driversShown.length, drivers.length)}
               <div className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                 <table className="w-full text-sm">
                   <thead>
@@ -515,7 +537,7 @@ export default function FinancialReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {drivers.map(d => {
+                    {pDrivers.pageItems.map(d => {
                       const marg = Number(d.revenue) - Number(d.expense_total);
                       return (
                         <tr key={d.driver_id} className="border-t" style={{ borderColor: 'var(--border)' }}>
@@ -532,10 +554,12 @@ export default function FinancialReport() {
                         </tr>
                       );
                     })}
-                    {drivers.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Aucune donnée</td></tr>}
+                    {driversShown.length === 0 && emptyRow(10, drivers.length > 0)}
                   </tbody>
                 </table>
               </div>
+              {pager(pDrivers, 'chauffeurs')}
+              </>
             )}
           </div>
         </>

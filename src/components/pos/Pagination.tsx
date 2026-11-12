@@ -11,9 +11,11 @@ interface Props {
   onPageSizeChange: (size: number) => void;
   /** Plural name of the rows, e.g. "départs" */
   itemLabel: string;
+  /** Choices of rows per page (default 20, 25, 40, 50) */
+  sizeOptions?: readonly number[];
 }
 
-export default function Pagination({ page, pageCount, pageSize, total, onPageChange, onPageSizeChange, itemLabel }: Props) {
+export default function Pagination({ page, pageCount, pageSize, total, onPageChange, onPageSizeChange, itemLabel, sizeOptions = PAGE_SIZE_OPTIONS }: Props) {
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const last = Math.min(page * pageSize, total);
 
@@ -41,7 +43,7 @@ export default function Pagination({ page, pageCount, pageSize, total, onPageCha
           className="rounded-lg border px-2 py-1 text-sm"
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
         >
-          {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+          {sizeOptions.map(size => <option key={size} value={size}>{size}</option>)}
         </select>
         par page
       </label>

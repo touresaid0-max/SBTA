@@ -3,12 +3,19 @@ import { useEffect, useMemo, useState } from 'react';
 export const PAGE_SIZE_OPTIONS = [20, 25, 40, 50] as const;
 const DEFAULT_PAGE_SIZE = 20;
 
-function readPageSize(storageKey: string): number {
+interface PaginationOptions {
+  /** Choices offered in « Afficher … par page » (default 20, 25, 40, 50) */
+  sizes?: readonly number[];
+  /** Rows per page until the user picks another number (default 20) */
+  defaultSize?: number;
+}
+
+function readPageSize(storageKey: string, sizes: readonly number[], fallback: number): number {
   try {
     const saved = Number(localStorage.getItem(storageKey));
-    return (PAGE_SIZE_OPTIONS as readonly number[]).includes(saved) ? saved : DEFAULT_PAGE_SIZE;
+    return sizes.includes(saved) ? saved : fallback;
   } catch {
-    return DEFAULT_PAGE_SIZE;
+    return fallback;
   }
 }
 
@@ -16,8 +23,9 @@ function readPageSize(storageKey: string): number {
  * Page of a list shown in a table. The number of rows per page is remembered on the device
  * (per screen); the page goes back to the first one whenever `resetKey` changes (filters, sort).
  */
-export function usePagination<T>(items: T[], storageKey: string, resetKey: unknown) {
-  const [pageSize, setPageSizeState] = useState<number>(() => readPageSize(storageKey));
+export function usePagination<T>(items: T[], storageKey: string, resetKey: unknown, options: PaginationOptions = {}) {
+  const sizes = options.sizes ?? PAGE_SIZE_OPTIONS;
+  const [pageSize, setPageSizeState] = useState<number>(() => readPageSize(storageKey, sizes, options.defaultSize ?? DEFAULT_PAGE_SIZE));
   const [page, setPage] = useState(1);
 
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
@@ -37,5 +45,5 @@ export function usePagination<T>(items: T[], storageKey: string, resetKey: unkno
     try { localStorage.setItem(storageKey, String(size)); } catch { /* not remembered */ }
   };
 
-  return { page, setPage, pageSize, setPageSize, pageCount, pageItems, total: items.length };
+  return { page, setPage, pageSize, setPageSize, pageCount, pageItems, total: items.length, sizes };
 }
