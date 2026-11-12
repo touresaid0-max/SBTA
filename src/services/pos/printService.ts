@@ -69,8 +69,9 @@ async function loadBagageLogoRaster(widthDots: number): Promise<RasterImage | nu
 
 const BORDEREAU_LOGO_SRC = '/logosbta001.JPG';
 const COURRIER_LOGO_SRC = '/logosbta00-1.JPG';
-// Bordereau des recettes: the colour logo turned black and white (readable on thermal paper)
-const RECETTES_LOGO_SRC = '/logo-sbta-bordereau.png';
+// Bordereau des recettes: SBTA logo drawn in black and white (sharp on thermal paper). A new file
+// name for each new drawing: images are kept 7 days by the browsers.
+const RECETTES_LOGO_SRC = '/logo-sbta-bordereau-v2.png';
 
 async function loadBordereauLogoRaster(widthDots: number): Promise<RasterImage | null> {
   return loadLogoRaster(BORDEREAU_LOGO_SRC, widthDots);
@@ -1139,8 +1140,10 @@ export async function printRamassageBordereau(data: PrintRamassageData): Promise
 function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSettings): string {
   const { data: bordereau, phoneLine } = data;
   const mm = settings.width_mm;
-  // The whole paper width, as on the former system's bordereau (no side margin)
-  const bodyWidthMm = mm;
+  // The width the printer really prints: an 80 mm roll is printed over its middle 72 mm (laid out
+  // over 80 mm, the first and last characters of each line were cut). 71 mm: half a millimetre of
+  // safety on each side for a slightly off-centre printer. 58 mm: as before.
+  const bodyWidthMm = mm === 80 ? 71 : mm - 2;
   // Non-breaking spaces: an amount never splits over two lines
   const fmtNum = (n: number): string =>
     Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
@@ -1165,11 +1168,11 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   @page { size: ${mm}mm auto; margin: 0; }
   * { font-family: 'Courier New', monospace; font-size: 10px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: ${bodyWidthMm}mm; margin: 0; padding: 2px 0.5mm; font-weight: 700; }
+  body { width: ${bodyWidthMm}mm; margin: 0 auto; padding: 2px 0; font-weight: 700; }
   .hdr { text-align: center; }
   .brand { font-size: 18px; font-weight: 900; }
   .brand-logo { display: flex; justify-content: center; }
-  .brand-logo img { width: 62%; height: auto; display: block; margin: 0 auto 2px; }
+  .brand-logo img { width: 42%; height: auto; display: block; margin: 0 auto 2px; }
   .sub { font-size: 10px; }
   .phone { font-size: 11px; font-weight: 800; }
   .title { text-align: center; font-size: 13px; font-weight: 900; margin: 2px 0; }
@@ -1195,7 +1198,7 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   .recap-row { display: flex; justify-content: space-between; padding: 1px 0; }
   .recap-bold { font-weight: 900; }
   .printed { text-align: center; font-size: 10px; font-weight: 800; padding: 2px 0; }
-  @media print { body { margin: 0; } }
+  @media print { body { margin: 0 auto; } }
 </style></head><body>
   <div class="hdr">
     <div class="brand-logo"><img src="${RECETTES_LOGO_SRC}" alt="SBTA"/></div>
@@ -1266,7 +1269,7 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
 
 export async function printRecettesBordereau(data: PrintRecettesData): Promise<boolean> {
   const settings = await getPrintSettings();
-  const logo = await loadRecettesLogoRaster(settings.width_mm === 80 ? 384 : 288);
+  const logo = await loadRecettesLogoRaster(settings.width_mm === 80 ? 288 : 224);
   const escposData = buildRecettesESCPOS(data, settings, logo);
 
   const okSerial = await sendWebSerial(escposData);

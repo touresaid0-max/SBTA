@@ -12,7 +12,7 @@ export default defineConfig({
       // the middle of a sale.
       registerType: 'prompt',
       // Images kept for offline use: the logos the app and the printed tickets use
-      includeAssets: ['logosbta.png', 'logosbta001.JPG', 'logosbta00-1.JPG', 'logo_sbta02.JPG', 'LOGO_SBTA_-1.png', 'logo-sbta-bordereau.png'],
+      includeAssets: ['logosbta.png', 'logosbta001.JPG', 'logosbta00-1.JPG', 'logo_sbta02.JPG', 'LOGO_SBTA_-1.png', 'logo-sbta-bordereau-v2.png'],
       manifest: {
         name: 'Guichet Eafribus',
         short_name: 'Guichet',

@@ -6,7 +6,7 @@
 // (offline cache or server), kept on the device (localStorage, about 12 KB) and written into the
 // print pages as data, so that nothing has to be fetched while printing.
 
-export const PRINT_LOGOS = ['/logosbta001.JPG', '/logosbta00-1.JPG', '/logo-sbta-bordereau.png'] as const;
+export const PRINT_LOGOS = ['/logosbta001.JPG', '/logosbta00-1.JPG', '/logo-sbta-bordereau-v2.png'] as const;
 
 const STORAGE_KEY = 'sbta_print_logos';
 
