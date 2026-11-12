@@ -2,98 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { AlertTriangle, CheckCircle2, Download, Loader2, Search, X } from 'lucide-react';
-import { supabase } from '../../services/supabase';
 import { usePagination } from '@/hooks/usePagination';
 import Pagination from '@/components/pos/Pagination';
-
-// Ordinary spaces (same format as the DAF report)
-const fmtN = (n: number) => {
-  const r = Math.round(n);
-  return (r < 0 ? '-' : '') + Math.abs(r).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-};
-const fmtF = (n: number) => fmtN(n) + ' F';
-const num = (v: unknown) => { const n = Number(v ?? 0); return Number.isFinite(n) ? n : 0; };
-
-const STATUS_LABELS: Record<string, string> = {
-  planifie: 'Planifié', en_cours: 'En cours', termine: 'Terminé', annule: 'Annulé', convoi: 'Convoi', retard: 'Retard',
-  ramassage_direct: 'Ramassage direct',
-};
-
-interface Depart {
-  key: string;
-  scheduleId: string;
-  isDeparture: boolean;
-  datetime: string;
-  number: number | null;
-  status: string;
-  route: string;
-  stationId: string;
-  station: string;
-  counter: string;
-  bus: string;
-  company: string;
-  capacity: number;
-  seats: number;
-  tickets: number;
-  baggageCount: number;
-  baggage: number;
-  ramassage: number;
-  recette: number;
-  transferred: number;
-  expenses: number;
-  caisse: number;
-  solde: number;
-}
-
-function toDepart(r: Record<string, unknown>, i: number): Depart {
-  const tickets = num(r.tickets_amount);
-  const baggage = num(r.baggage_amount);
-  const ramassage = num(r.ramassage_amount);
-  const expenses = num(r.exp_ration) + num(r.exp_carburant) + num(r.exp_peage) + num(r.exp_autres);
-  const caisse = tickets + baggage + ramassage;
-  return {
-    key: `${String(r.schedule_id)}-${i}`,
-    scheduleId: String(r.schedule_id),
-    isDeparture: r.is_departure !== false,
-    datetime: String(r.departure_datetime ?? ''),
-    number: r.departure_number == null ? null : num(r.departure_number),
-    status: String(r.status ?? ''),
-    route: String(r.route_name ?? '') || 'Ligne inconnue',
-    stationId: String(r.station_id ?? 'none'),
-    station: String(r.station_name ?? '') || 'Gare inconnue',
-    counter: String(r.counter_number ?? '') || '—',
-    bus: String(r.bus_registration ?? '') || '—',
-    company: String(r.company_name ?? '') || '—',
-    capacity: num(r.capacity),
-    seats: num(r.seats_sold),
-    tickets,
-    baggageCount: num(r.baggage_count),
-    baggage,
-    ramassage,
-    recette: num(r.recette),
-    transferred: num(r.transferred_amount),
-    expenses,
-    caisse,
-    solde: caisse - expenses,
-  };
-}
-
-interface Totals {
-  voyages: number; seats: number; capacity: number; tickets: number; baggage: number; ramassage: number;
-  caisse: number; expenses: number; solde: number; recette: number; transferred: number;
-}
-function totalsOf(rows: Depart[]): Totals {
-  const t: Totals = { voyages: new Set(rows.map(r => r.scheduleId)).size, seats: 0, capacity: 0, tickets: 0, baggage: 0,
-    ramassage: 0, caisse: 0, expenses: 0, solde: 0, recette: 0, transferred: 0 };
-  for (const r of rows) {
-    t.seats += r.seats; t.capacity += r.capacity; t.tickets += r.tickets; t.baggage += r.baggage; t.ramassage += r.ramassage;
-    t.caisse += r.caisse; t.expenses += r.expenses; t.solde += r.solde; t.recette += r.recette; t.transferred += r.transferred;
-  }
-  return t;
-}
-// Plain ASCII: browsers drop a download name with accents (« Adjamé ») and save it as « download »
-const fileSafe = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
-const fill = (seats: number, capacity: number) => (capacity > 0 ? ((seats / capacity) * 100).toFixed(1) + ' %' : '—');
+import { type Depart, DeparturesUnavailableError, STATUS_LABELS, departSheetRow, fetchDepartures, fileSafe, fill, fmtF, fmtN, totalsOf } from './departures';
 
 const HEADERS = ['Date', 'Heure', 'N° dép.', 'Ligne', 'Gare', 'Guichet', 'Car', 'Société', 'Statut', 'Places', 'Vendus', 'Rempl.', 'Tickets', 'Bagages', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'];
 const FIRST_NUMERIC = 9;
@@ -129,15 +40,13 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
   useEffect(() => {
     let cancelled = false;
     setRows(null); setError(null); setStation(null); setSearch('');
-    supabase.rpc('get_gestionnaire_route_departures', { p_route_id: routeId, p_from: dateFrom, p_to: dateTo })
-      .then(({ data, error: err }) => {
+    fetchDepartures(routeId, dateFrom, dateTo)
+      .then(list => { if (!cancelled) setRows(list); })
+      .catch(err => {
         if (cancelled) return;
-        if (err) {
-          const missing = err.code === 'PGRST202' || /could not find the function/i.test(err.message ?? '');
-          setError(missing ? 'Le détail des départs n’est pas encore disponible sur le serveur.' : 'Impossible de charger le détail des départs. Réessayez.');
-          return;
-        }
-        setRows(((data ?? []) as Record<string, unknown>[]).map(toDepart));
+        setError(err instanceof DeparturesUnavailableError
+          ? 'Le détail des départs n’est pas encore disponible sur le serveur.'
+          : 'Impossible de charger le détail des départs. Réessayez.');
       });
     return () => { cancelled = true; };
   }, [routeId, dateFrom, dateTo]);
@@ -180,17 +89,7 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
       'Gare': s.name, 'Voyages': s.t.voyages, 'Vendus': s.t.seats, 'Tickets': s.t.tickets, 'Bagages': s.t.baggage,
       'Ramassage': s.t.ramassage, 'Caisse': s.t.caisse, 'Dépenses': s.t.expenses, 'Solde': s.t.solde, 'Recettes (rapport)': s.t.recette,
     }))), 'Par gare');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filtered.map(d => {
-      const dt = d.datetime ? new Date(d.datetime) : null;
-      return {
-        'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° dép.': d.number ?? '',
-        'Ligne': d.route, 'Gare': d.station, 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
-        'Société': d.company, 'Statut': STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
-        'Vendus': d.seats, 'Rempl. %': d.isDeparture && d.capacity > 0 ? Number(((d.seats / d.capacity) * 100).toFixed(1)) : '',
-        'Tickets': d.tickets, 'Nb bagages': d.baggageCount, 'Bagages': d.baggage, 'Ramassage': d.ramassage, 'Caisse': d.caisse,
-        'Dépenses': d.expenses, 'Solde': d.solde, 'Recette (rapport)': d.recette, 'Part reversée (panne)': d.transferred,
-      };
-    })), 'Départs');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filtered.map(departSheetRow)), 'Départs');
     XLSX.writeFile(wb, `departs_${fileSafe(routeName)}${stationName ? '_' + fileSafe(stationName) : ''}_${dateFrom}_${dateTo}.xlsx`);
   };
 

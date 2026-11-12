@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
-import { Download, TrendingUp, TrendingDown, ChevronDown, ChevronRight, Search, X } from 'lucide-react';
+import { Download, TrendingUp, TrendingDown, ChevronDown, ChevronRight, Search, X, Loader2, FileSpreadsheet } from 'lucide-react';
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   startOfYear, endOfYear,
 } from 'date-fns';
 import * as XLSX from 'xlsx';
 import RouteDeparturesDetail from '../../components/gestionnaire/RouteDeparturesDetail';
+import { type Depart, DeparturesUnavailableError, departSheetRow, fetchDepartures, totalsOf } from '../../components/gestionnaire/departures';
 import { usePagination } from '@/hooks/usePagination';
 import Pagination from '@/components/pos/Pagination';
 
@@ -153,7 +154,7 @@ export default function FinancialReport() {
   const pRoutes = usePagination(routesShown, 'gestionnaire-rapport-lignes-page-size', resetKey, TABLE_PAGINATION);
   const pDrivers = usePagination(driversShown, 'gestionnaire-rapport-chauffeurs-page-size', resetKey, TABLE_PAGINATION);
 
-  const searchBar = (placeholder: string, shown: number, total: number) => (
+  const searchBar = (placeholder: string, shown: number, total: number, extra?: React.ReactNode) => (
     <div className="mb-3 flex flex-wrap items-center gap-3">
       <label className="relative w-full sm:w-80">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
@@ -168,8 +169,79 @@ export default function FinancialReport() {
         )}
       </label>
       {q && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{shown} résultat{shown > 1 ? 's' : ''} sur {total}</span>}
+      {extra}
     </div>
   );
+
+  // ── « Excel : tous les départs » : every departure of every line shown, in one file ──────────
+  const [exportingAll, setExportingAll] = useState(false);
+  const [exportAllMsg, setExportAllMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { setExportAllMsg(null); }, [dateFrom, dateTo, q]);
+  const exportAllDepartures = async () => {
+    setExportingAll(true);
+    setExportAllMsg(null);
+    try {
+      const list = await fetchDepartures(null, dateFrom, dateTo);
+      // The lines shown (all of them, or those found by the search)
+      const shownIds = new Set(routesShown.map(r => r.route_id));
+      const shownNames = new Set(routesShown.map(r => r.route_name));
+      const rows = list.filter(d => (d.routeId ? shownIds.has(d.routeId) : shownNames.has(d.route)));
+      if (rows.length === 0) {
+        const expected = routesShown.some(r => Number(r.trip_count) > 0);
+        setExportAllMsg({ ok: false, text: expected
+          ? 'Le serveur ne renvoie pas encore tous les départs : la mise à jour SQL de l’export n’est pas installée dans Supabase.'
+          : 'Aucun départ sur la période.' });
+        return;
+      }
+      rows.sort((a, b) => a.route.localeCompare(b.route, 'fr') || a.datetime.localeCompare(b.datetime)
+        || a.station.localeCompare(b.station, 'fr') || (a.number ?? 0) - (b.number ?? 0));
+
+      const groupBy = (keyOf: (d: Depart) => string) => {
+        const m = new Map<string, Depart[]>();
+        for (const d of rows) { const k = keyOf(d); m.set(k, [...(m.get(k) ?? []), d]); }
+        return m;
+      };
+      const pct = (seats: number, capacity: number) => (capacity > 0 ? Number(((seats / capacity) * 100).toFixed(1)) : '');
+      const amounts = (t: ReturnType<typeof totalsOf>) => ({
+        'Voyages': t.voyages, 'Vendus': t.seats, 'Rempl. %': pct(t.seats, t.capacity), 'Tickets': t.tickets, 'Bagages': t.baggage,
+        'Ramassage': t.ramassage, 'Caisse': t.caisse, 'Dépenses': t.expenses, 'Solde': t.solde,
+      });
+
+      // Par ligne: the detail added up, next to the line of the report
+      const byLine = [...groupBy(d => d.routeId ?? d.route).values()].map(list => {
+        const t = totalsOf(list);
+        const rep = routes.find(r => (list[0].routeId ? r.route_id === list[0].routeId : r.route_name === list[0].route));
+        const same = !!rep && Number(rep.trip_count) === t.voyages && Math.round(Number(rep.revenue)) === Math.round(t.recette)
+          && Math.round(Number(rep.total_expense ?? 0)) === Math.round(t.expenses);
+        return { 'Ligne': list[0].route, ...amounts(t), 'Recettes (détail)': t.recette,
+          'Voyages (rapport)': rep ? Number(rep.trip_count) : '', 'Recettes (rapport)': rep ? Number(rep.revenue) : '',
+          'Conforme au rapport': same ? 'Oui' : 'Non' };
+      });
+      const all = totalsOf(rows);
+      byLine.push({ 'Ligne': 'TOTAL', ...amounts(all), 'Recettes (détail)': all.recette,
+        'Voyages (rapport)': routesShown.reduce((n, r) => n + Number(r.trip_count), 0),
+        'Recettes (rapport)': routesShown.reduce((n, r) => n + Number(r.revenue), 0), 'Conforme au rapport': '' });
+
+      const byLineStation = [...groupBy(d => `${d.routeId ?? d.route}|${d.stationId}`).values()]
+        .map(list => ({ 'Ligne': list[0].route, 'Gare': list[0].station, ...amounts(totalsOf(list)) }));
+
+      const wb = XLSX.utils.book_new();
+      const departs = XLSX.utils.json_to_sheet(rows.map(departSheetRow));
+      departs['!cols'] = [10, 6, 7, 24, 24, 8, 14, 16, 12, 7, 7, 8, 10, 9, 10, 10, 10, 10, 10, 12, 12].map(wch => ({ wch }));
+      XLSX.utils.book_append_sheet(wb, departs, 'Départs');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(byLineStation), 'Par ligne et gare');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(byLine), 'Par ligne');
+      XLSX.writeFile(wb, `tous_les_departs${q ? '_recherche' : ''}_${dateFrom}_${dateTo}.xlsx`);
+      const lines = byLine.length - 1;
+      setExportAllMsg({ ok: true, text: `${rows.length} départ${rows.length > 1 ? 's' : ''} exporté${rows.length > 1 ? 's' : ''} (${lines} ligne${lines > 1 ? 's' : ''}).` });
+    } catch (err) {
+      setExportAllMsg({ ok: false, text: err instanceof DeparturesUnavailableError
+        ? 'Le détail des départs n’est pas encore disponible sur le serveur.'
+        : 'Export impossible pour le moment. Vérifiez la connexion et réessayez.' });
+    } finally {
+      setExportingAll(false);
+    }
+  };
   const pager = (p: ReturnType<typeof usePagination<unknown>>, itemLabel: string) => p.total > 0 && (
     <div className="mt-1">
       <Pagination page={p.page} pageCount={p.pageCount} pageSize={p.pageSize} total={p.total} sizeOptions={p.sizes}
@@ -462,7 +534,20 @@ export default function FinancialReport() {
 
             {activeTab === 'lignes' && (
               <>
-              {searchBar('Rechercher une ligne…', routesShown.length, routes.length)}
+              {searchBar('Rechercher une ligne…', routesShown.length, routes.length, (
+                <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                  {exportAllMsg && (
+                    <span className="text-xs font-medium" role="status" style={{ color: exportAllMsg.ok ? '#047857' : '#B45309' }}>{exportAllMsg.text}</span>
+                  )}
+                  <button type="button" onClick={exportAllDepartures} disabled={exportingAll || routesShown.length === 0}
+                    title={q ? 'Tous les départs des lignes trouvées par la recherche' : 'Tous les départs de toutes les lignes de la période'}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60"
+                    style={{ backgroundColor: '#16A34A', color: '#fff' }}>
+                    {exportingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                    {exportingAll ? 'Export en cours…' : q ? `Excel : départs des ${routesShown.length} ligne${routesShown.length > 1 ? 's' : ''}` : 'Excel : tous les départs'}
+                  </button>
+                </div>
+              ))}
               <div ref={linesBoxRef} className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                 <table className="w-full text-sm">
                   <thead>
