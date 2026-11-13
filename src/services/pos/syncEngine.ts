@@ -740,12 +740,29 @@ async function markSyncedIfNothingLeft(entity: StoreName, id: string): Promise<v
 // a good connection (20 s of it for the network), longer and longer as the queue grew. Now:
 // - updates made of fields kept on the device only (a sale's cash totals on its departure) are
 //   taken out of the queue at once: nothing is sent for them;
-// - consecutive ticket sales are inserted TICKET_BATCH at a time, in one request; a batch refused
+// - consecutive ticket sales are inserted in batches, in one request (size: see below); a batch refused
 //   as a whole (a ticket already on the server, one ticket refused…) is sent again one by one, so
 //   that the others still go;
 // - the records sent are marked synced once, at the end of the sending.
 
-const TICKET_BATCH = 100;
+// Size of a batch of tickets: it adapts to the server. A batch of 100 could take longer than the
+// time limits (the guichet stops waiting after 15 s, the database cancels a request after about
+// 8 s): the whole batch failed, then its 100 tickets were sent one request each, and the next
+// batch failed the same way — 600 to 1 000 operations took many minutes, the queue barely moved.
+// Now: start at 25; a quick answer doubles the batch (up to 100), a slow one halves it.
+const TICKET_BATCH_MAX = 100;
+const TICKET_BATCH_MIN = 5;
+const TICKET_BATCH_START = 25;
+const BATCH_QUICK_MS = 2_000;
+const BATCH_SLOW_MS = 5_000;
+let ticketBatchSize = TICKET_BATCH_START;
+
+/** Next batch size after a batch sent in `ms`. */
+function adaptBatchSize(size: number, ms: number): number {
+  if (ms > BATCH_SLOW_MS) return Math.max(TICKET_BATCH_MIN, Math.floor(size / 2));
+  if (ms < BATCH_QUICK_MS) return Math.min(TICKET_BATCH_MAX, size * 2);
+  return size;
+}
 
 /** An update of fields kept on the device only: nothing to send for it. */
 function sendsNothing(item: SyncQueueItem): boolean {
@@ -756,11 +773,29 @@ function sendsNothing(item: SyncQueueItem): boolean {
   return false;
 }
 
-/** Tickets inserted in one request. False when the server refused the batch. */
-async function insertTicketBatch(records: Record<string, unknown>[], userId: string | null): Promise<boolean> {
+/** Tickets inserted in one request: null when sent, otherwise the error (refusal, timeout, network). */
+async function insertTicketBatch(records: Record<string, unknown>[], userId: string | null): Promise<{ code?: string; message?: string } | null> {
   const rows = records.map(r => ({ ...mapTicketInsert(r), ...(userId ? { booked_by: userId } : {}) }));
-  const { error } = await supabase.from('reservations').insert(rows);
-  return !error;
+  try {
+    const { error } = await supabase.from('reservations').insert(rows);
+    return error ?? null;
+  } catch (err) {
+    return (err as { message?: string }) ?? { message: 'Erreur réseau' };
+  }
+}
+
+/**
+ * Tickets of a failed batch already on the server: a batch the guichet stopped waiting for may
+ * have been saved all the same. Null when the server could not be asked.
+ */
+async function ticketsAlreadyOnServer(ids: string[]): Promise<Set<string> | null> {
+  try {
+    const { data, error } = await supabase.from('reservations').select('id').in('id', ids);
+    if (error) return null;
+    return new Set((data ?? []).map((r: { id: string }) => r.id));
+  } catch {
+    return null;
+  }
 }
 
 /** The records sent are marked synced when no operation of theirs is left in the queue (one read). */
@@ -855,10 +890,10 @@ export async function flushSyncQueue(): Promise<FlushResult> {
       const item = toSend[index];
       if (!item.id) { index++; continue; }
 
-      // Consecutive ticket sales: one request for up to TICKET_BATCH of them
+      // Consecutive ticket sales: one request for a batch of them (size adapted to the server)
       if (index >= oneByOneUntil && item.entity === 'tickets' && item.op === 'insert') {
         const batch = [item];
-        while (batch.length < TICKET_BATCH) {
+        while (batch.length < ticketBatchSize) {
           const next = toSend[index + batch.length];
           if (!next?.id || next.entity !== 'tickets' || next.op !== 'insert') break;
           batch.push(next);
@@ -870,8 +905,10 @@ export async function flushSyncQueue(): Promise<FlushResult> {
             i.tries = (i.tries ?? 0) + 1;
             i.sending_since = nowIso();
           });
-          const inserted = await insertTicketBatch(batch.map(b => b.payload), userId).catch(() => false);
-          if (inserted) {
+          const started = Date.now();
+          const error = await insertTicketBatch(batch.map(b => b.payload), userId);
+          if (!error) {
+            ticketBatchSize = adaptBatchSize(batch.length, Date.now() - started);
             await db.sync_queue.bulkDelete(ids);
             for (const b of batch) sent.push(['tickets', String(b.payload.id ?? '')]);
             processed += batch.length;
@@ -879,8 +916,50 @@ export async function flushSyncQueue(): Promise<FlushResult> {
             index += batch.length;
             continue;
           }
-          if (!isOnline()) break;
-          oneByOneUntil = index + batch.length;
+          // Failed batch. The tickets the server has anyway are sent (a batch the guichet stopped
+          // waiting for may have been saved, and a ticket already there makes the whole batch fail)
+          const onServer = await ticketsAlreadyOnServer(batch.map(b => String(b.payload.id ?? '')));
+          if (onServer === null) {
+            // Server out of reach: the batch waits for the next sending
+            await db.sync_queue.where(':id').anyOf(ids).modify(i => {
+              i.status = 'error';
+              i.last_error = error.message ?? 'Erreur réseau';
+            });
+            failed += batch.length;
+            break;
+          }
+          const arrived = batch.filter(b => onServer.has(String(b.payload.id ?? '')));
+          if (arrived.length > 0) {
+            await db.sync_queue.bulkDelete(arrived.map(b => b.id!));
+            for (const b of arrived) sent.push(['tickets', String(b.payload.id ?? '')]);
+            processed += arrived.length;
+            succeeded += arrived.length;
+          }
+          const rest = batch.filter(b => !onServer.has(String(b.payload.id ?? '')));
+          if (rest.length > 0) {
+            await db.sync_queue.where(':id').anyOf(rest.map(b => b.id!)).modify(i => { i.status = 'pending'; i.sending_since = undefined; });
+          }
+          // The batch's place in the list now holds only the tickets still to send
+          toSend.splice(index, batch.length, ...rest);
+          if (rest.length === 0) continue;
+          if (isPermanentError(error) && !isAlreadyReceived(error)) {
+            // A ticket refused by the server: these go one by one, so that the others still go
+            oneByOneUntil = index + rest.length;
+          } else {
+            // Too slow or connection cut: smaller batches; at the smallest, wait for the next sending
+            if (!isOnline()) break;
+            if (ticketBatchSize <= TICKET_BATCH_MIN && rest.length <= TICKET_BATCH_MIN) {
+              await db.sync_queue.where(':id').anyOf(rest.map(b => b.id!)).modify(i => {
+                i.status = 'error';
+                i.sending_since = nowIso();
+                i.last_error = error.message ?? 'Le serveur ne répond pas';
+              });
+              failed += rest.length;
+              break;
+            }
+            ticketBatchSize = Math.max(TICKET_BATCH_MIN, Math.floor(Math.min(ticketBatchSize, rest.length) / 2));
+            continue;
+          }
         }
       }
 
