@@ -211,7 +211,8 @@ export default function DAFVoyageReport() {
   const [departs, setDeparts] = useState<Depart[]>([]);
   const [allRoutes, setAllRoutes] = useState<{ id: string; name: string; origin_station_id?: string | null }[]>([]);
   const [allCounters, setAllCounters] = useState<{ id: string; counter_number: string; station_id: string | null }[]>([]);
-  const [allStations, setAllStations] = useState<{ id: string; name: string }[]>([]);
+  // Stations where someone logged in during the period (even if no departure reached the server)
+  const [loggedStations, setLoggedStations] = useState<{ station_id: string; station_name: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const { from, to } = getRange(periodId, customFrom, customTo);
@@ -230,6 +231,16 @@ export default function DAFVoyageReport() {
   }, [from, to]);
   useEffect(() => { load(); }, [load]);
 
+  // A station that logged in but whose sales have not reached the server yet (counter offline)
+  // used to be missing from the list. Server not updated yet: only the stations with departures.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.rpc('get_daf_active_stations', { p_from: from, p_to: to }).then(({ data, error }) => {
+      if (!cancelled) setLoggedStations(error ? [] : ((data ?? []) as typeof loggedStations));
+    });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
   // Every line and every counter, also those without a departure in the period
   useEffect(() => {
     supabase.from('routes').select('id, name, origin_station_id').order('name').then(({ data, error }) => {
@@ -242,11 +253,6 @@ export default function DAFVoyageReport() {
     supabase.from('counters').select('id, counter_number, station_id').order('counter_number').then(({ data }) => {
       if (data) setAllCounters(data as typeof allCounters);
     });
-    // Every station too: a station with no departure on the period was missing from the list (a
-    // station that had not sent its sales of the day yet seemed not to exist)
-    supabase.from('stations').select('id, name').order('name').then(({ data }) => {
-      if (data) setAllStations(data as typeof allStations);
-    });
   }, []);
 
   // ── Filter options ──
@@ -256,9 +262,12 @@ export default function DAFVoyageReport() {
     const sorted = (m: Map<string, string>) =>
       [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
 
+    // Stations active on the period: a departure received, or a login (« connectée, aucun départ reçu »)
     const stations = new Map<string, string>();
-    for (const s of allStations) stations.set(s.id, s.name);
     for (const d of departs) if (d.stationId) stations.set(d.stationId, d.station);
+    const loggedOnly = new Map<string, string>();
+    for (const l of loggedStations) if (l.station_id && !stations.has(l.station_id)) loggedOnly.set(l.station_id, l.station_name);
+    for (const [id, name] of loggedOnly) stations.set(id, name);
 
     const counters = new Map<string, string>();
     for (const c of allCounters) {
@@ -281,8 +290,9 @@ export default function DAFVoyageReport() {
     const companies = new Map<string, string>();
     for (const d of departs) if (d.companyId) companies.set(d.companyId, d.company);
 
-    return { stations: sorted(stations), counters: sorted(counters), routes: sorted(routes), companies: sorted(companies) };
-  }, [departs, allRoutes, allCounters, allStations, fStation]);
+    const stationOptions = sorted(stations).map(o => (loggedOnly.has(o.id) ? { ...o, label: `${o.label} — connectée, aucun départ reçu` } : o));
+    return { stations: stationOptions, counters: sorted(counters), routes: sorted(routes), companies: sorted(companies) };
+  }, [departs, allRoutes, allCounters, loggedStations, fStation]);
 
   // Another station chosen: a counter or a line of the previous one is no longer offered
   useEffect(() => {
