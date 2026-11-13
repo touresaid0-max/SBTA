@@ -612,16 +612,23 @@ export default function POSVente() {
     setPrinting(true);
     setPrintError('');
     let succeeded: TicketRecord[] = [];
-    // Each ticket is marked printed as soon as it is printed, not at the end of the series: a
-    // series cut part-way (page reloaded, screen left) offered again the tickets already printed
+    // Each ticket is marked printed when it is SENT to the printer, before it comes out: a series
+    // cut part-way (screen left, page reloaded, update) offered again tickets already sent — they
+    // were printed twice (13/11/2026, Mirador: 46 tickets printed again). Unmarked if not sent.
     const markPrinted = (ticket: TicketRecord) =>
       localUpdate<TicketRecord>('tickets', ticket.id, { printed: true, printed_at: trustedNowIso() }).then(() => undefined);
+    const markNotPrinted = (ticket: TicketRecord) =>
+      localUpdate<TicketRecord>('tickets', ticket.id, { printed: false, printed_at: undefined }).then(() => undefined);
     try {
       if (ticketsToPrint.length > 1) {
-        succeeded = await PrintService.printTicketsSequence({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine, onPrinted: markPrinted });
-      } else if (await PrintService.printTickets({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine })) {
-        succeeded = ticketsToPrint;
+        succeeded = await PrintService.printTicketsSequence({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine, onPrinted: markPrinted, onNotPrinted: markNotPrinted });
+      } else {
         await markPrinted(ticketsToPrint[0]);
+        if (await PrintService.printTickets({ tickets: ticketsToPrint, depart: dep, stationName: stName, phoneLine: ticketPhoneLine })) {
+          succeeded = ticketsToPrint;
+        } else {
+          await markNotPrinted(ticketsToPrint[0]);
+        }
       }
     } catch {
       // The tickets printed before the error are already marked
@@ -669,6 +676,11 @@ export default function POSVente() {
     // Read again: only the tickets still never printed
     const unprinted = neverPrinted(await getTicketsForDepart(departId));
     if (unprinted.length === 0) return;
+    // Confirmed first: printed again by mistake, these tickets came out twice
+    const seats = seatRanges(unprinted.map(t => t.seat_number));
+    const message = `Imprimer ${unprinted.length} ticket${unprinted.length > 1 ? 's' : ''} (siège${unprinted.length > 1 ? 's' : ''} ${seats}) ?\n\n`
+      + 'Vérifiez d\'abord qu\'ils ne sont pas déjà sortis de l\'imprimante : sinon ils seraient imprimés deux fois.';
+    if (!window.confirm(message)) return;
     await printTicketsBatch(unprinted, depart, session?.station_name);
   };
 

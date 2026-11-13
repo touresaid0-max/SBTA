@@ -353,7 +353,7 @@ function buildPrintHTML(summaries: DepartSummary[], stationName?: string): strin
       </tr>
     </tfoot>
   </table>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
+  <script>window.onload=function(){setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
 }
 

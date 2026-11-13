@@ -136,7 +136,66 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: 
   }
 }
 
-async function sendWebSerial(data: Uint8Array): Promise<boolean> {
+// ── Thermal printer: never print the same document twice ──
+// The guichet waited 1,5 s for the printer (3 s for QZ Tray), then printed the document with the
+// browser. A ticket with its logo is 6 to 10 KB: at 9 600 bauds (serial link) it takes 7 to 11 s to
+// reach the printer, so the wait always ran out while the printer was still receiving it — and the
+// ticket came out twice (13/11/2026, Alépé: 31 tickets of one departure printed twice).
+// Now the browser takes over only when nothing was sent to the printer (none there, or no answer
+// within the connection time). Once the sending has started, the guichet waits for the time the
+// transfer really needs, and never prints the document again with the browser.
+
+/** sent: the printer took it · unavailable: nothing was sent · uncertain: sending started, not confirmed */
+type ThermalResult = 'sent' | 'unavailable' | 'uncertain';
+type ThermalSend = (data: Uint8Array, begin: () => boolean) => Promise<boolean>;
+
+/** Time needed to send `bytes` to the printer: 9 600 bauds ≈ 960 bytes a second, plus a margin. */
+function transferTimeMs(bytes: number, serial: boolean): number {
+  return serial ? Math.ceil((bytes / 960) * 1000 * 1.5) + 3_000 : 5_000 + Math.ceil(bytes / 100);
+}
+
+async function sendThermal(send: ThermalSend, data: Uint8Array, connectMs: number, serial = false): Promise<ThermalResult> {
+  // In an object: changed by begin(), called later by the sending
+  const sending: { state: 'waiting' | 'started' | 'given_up' } = { state: 'waiting' };
+  const begin = () => {
+    if (sending.state === 'given_up') return false;
+    sending.state = 'started';
+    return true;
+  };
+  const outcome = send(data, begin).then(
+    ok => (ok ? 'sent' : sending.state === 'started' ? 'uncertain' : 'unavailable') as ThermalResult,
+    () => (sending.state === 'started' ? 'uncertain' : 'unavailable') as ThermalResult,
+  );
+  const early = await withTimeout<ThermalResult | null>(outcome, connectMs, null);
+  if (early) return early;
+  if (sending.state !== 'started') {
+    // No printer answered in time: the sending is given up (it will not start later)
+    sending.state = 'given_up';
+    return 'unavailable';
+  }
+  return withTimeout<ThermalResult>(outcome, transferTimeMs(data.length, serial), 'uncertain');
+}
+
+const serialSend: ThermalSend = (data, begin) => sendWebSerial(data, begin);
+const usbSend: ThermalSend = (data, begin) => sendWebUSB(data, begin);
+const qzSend = (settings: PrintSettings): ThermalSend => (data, begin) => sendQzTray(data, settings, begin);
+
+/** The printer chosen in Paramètres, if it is a thermal one (null: the browser prints). */
+function chosenThermal(settings: PrintSettings): { send: ThermalSend; connectMs: number; serial: boolean } | null {
+  if (settings.backend === 'webserial') return { send: serialSend, connectMs: 1_500, serial: true };
+  if (settings.backend === 'webusb') return { send: usbSend, connectMs: 1_500, serial: false };
+  if (settings.backend === 'qztray') return { send: qzSend(settings), connectMs: 3_000, serial: false };
+  return null;
+}
+
+/** Any thermal printer within reach (serial, USB, QZ Tray): true when one took it, or may have. */
+async function sendToAnyThermal(data: Uint8Array, settings: PrintSettings): Promise<boolean> {
+  if (await sendThermal(serialSend, data, 1_500, true) !== 'unavailable') return true;
+  if (await sendThermal(usbSend, data, 1_500) !== 'unavailable') return true;
+  return (await sendThermal(qzSend(settings), data, 3_000)) !== 'unavailable';
+}
+
+async function sendWebSerial(data: Uint8Array, begin: () => boolean = () => true): Promise<boolean> {
   const nav = navigator as any;
   if (!nav.serial) return false;
 
@@ -150,6 +209,8 @@ async function sendWebSerial(data: Uint8Array): Promise<boolean> {
       return false;
     }
     try {
+      // Given up meanwhile (too long to connect): the browser prints it, not this printer too
+      if (!begin()) return false;
       await writer.write(data);
       return true;
     } finally {
@@ -177,7 +238,7 @@ async function sendWebSerial(data: Uint8Array): Promise<boolean> {
   }
 }
 
-async function sendWebUSB(data: Uint8Array): Promise<boolean> {
+async function sendWebUSB(data: Uint8Array, begin: () => boolean = () => true): Promise<boolean> {
   const nav = navigator as any;
   if (!nav.usb) return false;
 
@@ -185,6 +246,7 @@ async function sendWebUSB(data: Uint8Array): Promise<boolean> {
     if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
     await device.claimInterface(0);
+    if (!begin()) { await device.close(); return false; }
     await device.transferOut(1, data);
     await device.close();
     return true;
@@ -209,13 +271,14 @@ async function sendWebUSB(data: Uint8Array): Promise<boolean> {
   }
 }
 
-async function sendQzTray(data: Uint8Array, settings: PrintSettings): Promise<boolean> {
+async function sendQzTray(data: Uint8Array, settings: PrintSettings, begin: () => boolean = () => true): Promise<boolean> {
   return new Promise((resolve) => {
     try {
       const ws = new WebSocket(`ws://${settings.qz_host}:${settings.qz_port}`);
       const timeout = setTimeout(() => { ws.close(); resolve(false); }, 3000);
       ws.onopen = () => {
         clearTimeout(timeout);
+        if (!begin()) { ws.close(); resolve(false); return; }
         const b64 = btoa(String.fromCharCode(...data));
         ws.send(JSON.stringify({ type: 'print', data: b64, printer: settings.printer_name }));
         setTimeout(() => { ws.close(); resolve(true); }, 500);
@@ -546,7 +609,7 @@ function buildHTMLTpeBagage(data: PrintBagageData, notice?: string | null, provi
     .tear { display: flex; align-items: center; gap: 1mm; justify-content: center; height: 7mm; font-size: 7px; letter-spacing: 1px; break-inside: avoid; page-break-inside: avoid; }
     .tear::before, .tear::after { content: ''; flex: 1; border-top: 1px dashed #000; }
     @media print { html, body { width: 58mm !important; } body { margin: 0 auto !important; padding: 1mm 0 !important; } }
-  </style></head><body>${block(false)}<div class="tear">DECOUPER ICI</div>${block(true)}<script>window.onload=function(){window.print();window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},400);});}</script></body></html>`;
+  </style></head><body>${block(false)}<div class="tear">DECOUPER ICI</div>${block(true)}<script>window.onload=function(){window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},400);});}</script></body></html>`;
 }
 
 function escapeHtml(s: string): string {
@@ -723,32 +786,38 @@ export const PrintService = {
     /** Called as soon as each ticket is printed, before the next one: a series cut part-way
      *  (page reloaded, screen left) keeps the tickets already printed marked as printed. */
     onPrinted?: (ticket: TicketRecord) => Promise<void> | void;
+    /** Called when a ticket marked printed could not be sent after all */
+    onNotPrinted?: (ticket: TicketRecord) => Promise<void> | void;
   }): Promise<TicketRecord[]> {
     const markPrinted = async (ticket: TicketRecord) => {
       try { await data.onPrinted?.(ticket); } catch { /* marked again at the end of the series */ }
+    };
+    const markNotPrinted = async (ticket: TicketRecord) => {
+      try { await data.onNotPrinted?.(ticket); } catch { /* offered again by « Imprimer » */ }
     };
     const ordered = [...data.tickets].sort((a, b) => a.seat_number - b.seat_number);
     if (ordered.length === 0) return [];
     const settings = await getPrintSettings();
 
-    // The first ticket finds out quickly whether the thermal printer is there (1,5 s, 3 s for QZ
-    // Tray). The next ones may wait: the printer is still printing the previous tickets and takes
-    // the new ones as its buffer empties. With 1,5 s a long series stopped part-way, the rest unprinted.
+    // Each ticket is marked printed BEFORE it is sent: a series cut part-way (screen left, page
+    // reloaded, update) no longer offers again tickets already on their way to the printer — they
+    // came out twice. A ticket that could not be sent is unmarked.
+    // The first ticket finds out quickly whether the thermal printer is there; the next ones may
+    // wait (15 s): the printer is still printing the previous tickets.
     const NEXT_TICKET_WAIT_MS = 15_000;
-    let send: ((bytes: Uint8Array, waitMs?: number) => Promise<boolean>) | null = null;
-    if (settings.backend === 'webserial') send = (bytes, waitMs = 1500) => withTimeout(sendWebSerial(bytes), waitMs, false);
-    if (settings.backend === 'webusb') send = (bytes, waitMs = 1500) => withTimeout(sendWebUSB(bytes), waitMs, false);
-    if (settings.backend === 'qztray') send = (bytes, waitMs = 3000) => withTimeout(sendQzTray(bytes, settings), waitMs, false);
-
-    if (send) {
+    const thermal = chosenThermal(settings);
+    if (thermal) {
       const logo = await loadTicketLogoRaster(settings.width_mm === 80 ? 288 : 224);
       const cutSettings = { ...settings, auto_cut: true };
       const printed: TicketRecord[] = [];
       for (const ticket of ordered) {
         const bytes = buildTicketESCPOS({ ticket, depart: data.depart, stationName: data.stationName, phoneLine: data.phoneLine }, cutSettings, logo);
-        if (!(await send(bytes, printed.length > 0 ? NEXT_TICKET_WAIT_MS : undefined))) break;
-        printed.push(ticket);
         await markPrinted(ticket);
+        const result = await sendThermal(thermal.send, bytes, printed.length > 0 ? NEXT_TICKET_WAIT_MS : thermal.connectMs, thermal.serial);
+        if (result === 'unavailable') { await markNotPrinted(ticket); break; }
+        printed.push(ticket);
+        // Still on its way to the printer: the rest waits for « Imprimer », never printed twice
+        if (result === 'uncertain') break;
       }
       // The thermal printer took some tickets: the rest is resumed, never sent to the browser too
       if (printed.length > 0) return printed;
@@ -759,6 +828,7 @@ export const PrintService = {
     // one job are not cut, which left the tickets stuck together.
     const printed: TicketRecord[] = [];
     for (const ticket of ordered) {
+      await markPrinted(ticket);
       const ok = await printBrowser({
         type: 'ticket',
         ticket,
@@ -766,9 +836,8 @@ export const PrintService = {
         stationName: data.stationName,
         phoneLine: data.phoneLine,
       }, settings);
-      if (!ok) break;
+      if (!ok) { await markNotPrinted(ticket); break; }
       printed.push(ticket);
-      await markPrinted(ticket);
     }
     return printed;
   },
@@ -824,34 +893,13 @@ export const PrintService = {
 
     // For bagage, always try ESC/POS thermal printers first (regardless of backend setting)
     if (payload.type === 'bagage') {
-      const ok = await withTimeout(sendWebSerial(escposData), 1500, false);
-      if (ok) return true;
-      const okUsb = await withTimeout(sendWebUSB(escposData), 1500, false);
-      if (okUsb) return true;
-      const okQz = await withTimeout(sendQzTray(escposData, settings), 3000, false);
-      if (okQz) return true;
+      if (await sendToAnyThermal(escposData, settings)) return true;
       return printBrowser(payload, settings);
     }
 
-    // Try backends in order of preference.
-    // A grouped job is larger: scale the timeouts so a slow send does not fall back to
-    // the browser and print the tickets twice.
-    const jobSize = Math.max(1, ticketList.length);
-    if (settings.backend === 'webserial') {
-      const ok = await withTimeout(sendWebSerial(escposData), 1500 * jobSize, false);
-      if (ok) return true;
-      // fall through to browser
-    }
-
-    if (settings.backend === 'webusb') {
-      const ok = await withTimeout(sendWebUSB(escposData), 1500 * jobSize, false);
-      if (ok) return true;
-    }
-
-    if (settings.backend === 'qztray') {
-      const ok = await withTimeout(sendQzTray(escposData, settings), 3000 * jobSize, false);
-      if (ok) return true;
-    }
+    // The printer chosen in Paramètres; the browser only when nothing was sent to it (see sendThermal)
+    const thermal = chosenThermal(settings);
+    if (thermal && (await sendThermal(thermal.send, escposData, thermal.connectMs, thermal.serial)) !== 'unavailable') return true;
 
     // Always-available fallback
     return printBrowser(payload, settings);
@@ -940,7 +988,7 @@ function buildHTMLRamassageBordereau(data: PrintRamassageData, settings: PrintSe
     ${footerHtml}
     <div class="printed">Imprimé le ${escapeHtml(printedAt)}</div>
   </div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
+  <script>window.onload=function(){setTimeout(function(){window.close();},600);}</script>
 </body></html>`;
 }
 
@@ -1043,7 +1091,7 @@ function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings
     ${footerHtml}
     <div class="printed">Imprimé le ${escapeHtml(printedAt)}</div>
   </div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
+  <script>window.onload=function(){setTimeout(function(){window.close();},600);}</script>
 </body></html>`;
 }
 
@@ -1263,7 +1311,7 @@ function buildHTMLRecettesBordereau(data: PrintRecettesData, settings: PrintSett
   </div>
   <div class="dsep"></div>
   <div class="printed">Imprime le ${escapeHtml(bordereau.print_date)} a ${escapeHtml(bordereau.print_time)}</div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
+  <script>window.onload=function(){setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
 }
 
@@ -1458,7 +1506,7 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   <div class="dsep"></div>
   <div class="printed">Imprime le ${escapeHtml(bord.print_date)} a ${escapeHtml(bord.print_time)}</div>
   </div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}</script>
+  <script>window.onload=function(){setTimeout(function(){window.close();},500);}</script>
 </body></html>`;
 }
 
@@ -1518,7 +1566,7 @@ export async function printBordereauCourrierThermal(data: BordereauCourrierData)
   <div class="total">TOTAL COLIS : ${data.parcels.length}</div>
   <div class="sep"></div>
   <div class="footer">Imprime le ${escapeHtml(data.print_date)} a ${escapeHtml(data.print_time)}</div>
-  <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}</script>
+  <script>window.onload=function(){setTimeout(function(){window.close();},600);}</script>
 </body></html>`;
 
   const iframe = document.createElement('iframe');
@@ -1690,8 +1738,6 @@ function buildHTMLRamassageReport(data: PrintRamassageReportData): string {
 export async function printRamassageReportThermal(data: PrintRamassageReportData): Promise<boolean> {
   const settings = await getPrintSettings();
   const escposData = buildRamassageReportESCPOS(data, settings);
-  if (await withTimeout(sendWebSerial(escposData), 1500, false)) return true;
-  if (await withTimeout(sendWebUSB(escposData), 1500, false)) return true;
-  if (await withTimeout(sendQzTray(escposData, settings), 3000, false)) return true;
+  if (await sendToAnyThermal(escposData, settings)) return true;
   return printHTMLDocument(buildHTMLRamassageReport(data));
 }
