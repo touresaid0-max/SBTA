@@ -228,8 +228,12 @@ export default function POSVente() {
   }, [structureMode, departId]); // lastSyncedAt removed — prevents periodic re-fetch that resets bagage seat selection
 
   // Sync structure-selected seats → existing selectedSeats (number[])
+  // Never a new empty list when it is already empty: this effect depends on the list, so each new
+  // [] ran it again, without end, as soon as the screen was open (about 1 300 redraws a second).
+  // The sales waited behind these redraws: 64 tickets took 4 s, 7 s with 500 operations waiting
+  // to be sent, 40 s and more with 1 000.
   useEffect(() => {
-    if (!structureMode) { setStructSelectedSeats([]); return; }
+    if (!structureMode) { setStructSelectedSeats(prev => (prev.length === 0 ? prev : [])); return; }
     if (!depart) return;
     const range = session?.station_id ? getSeatRangeForStation(depart, session.station_id) : null;
     const valid = structSelectedSeats.filter(s => {
@@ -246,7 +250,7 @@ export default function POSVente() {
 
   // Clear structure selection when structure mode is turned off
   useEffect(() => {
-    if (!structureMode) setStructSelectedSeats([]);
+    if (!structureMode) setStructSelectedSeats(prev => (prev.length === 0 ? prev : []));
   }, [structureMode]);
 
   const toggleStructSeat = (seat: StructSeat) => {
