@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../../services/supabase';
-import { Download, FileText, Bus, Route as RouteIcon, MapPin, Building2, ListOrdered, RotateCcw, RefreshCw } from 'lucide-react';
+import { Download, FileText, Bus, Route as RouteIcon, MapPin, Building2, ListOrdered, RotateCcw, RefreshCw, AlertTriangle } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, startOfYear } from 'date-fns';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -211,6 +211,7 @@ export default function DAFVoyageReport() {
   const [departs, setDeparts] = useState<Depart[]>([]);
   const [allRoutes, setAllRoutes] = useState<{ id: string; name: string; origin_station_id?: string | null }[]>([]);
   const [allCounters, setAllCounters] = useState<{ id: string; counter_number: string; station_id: string | null }[]>([]);
+  const [allStations, setAllStations] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const { from, to } = getRange(periodId, customFrom, customTo);
@@ -241,6 +242,11 @@ export default function DAFVoyageReport() {
     supabase.from('counters').select('id, counter_number, station_id').order('counter_number').then(({ data }) => {
       if (data) setAllCounters(data as typeof allCounters);
     });
+    // Every station too: a station with no departure on the period was missing from the list (a
+    // station that had not sent its sales of the day yet seemed not to exist)
+    supabase.from('stations').select('id, name').order('name').then(({ data }) => {
+      if (data) setAllStations(data as typeof allStations);
+    });
   }, []);
 
   // ── Filter options ──
@@ -251,6 +257,7 @@ export default function DAFVoyageReport() {
       [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
 
     const stations = new Map<string, string>();
+    for (const s of allStations) stations.set(s.id, s.name);
     for (const d of departs) if (d.stationId) stations.set(d.stationId, d.station);
 
     const counters = new Map<string, string>();
@@ -275,7 +282,7 @@ export default function DAFVoyageReport() {
     for (const d of departs) if (d.companyId) companies.set(d.companyId, d.company);
 
     return { stations: sorted(stations), counters: sorted(counters), routes: sorted(routes), companies: sorted(companies) };
-  }, [departs, allRoutes, allCounters, fStation]);
+  }, [departs, allRoutes, allCounters, allStations, fStation]);
 
   // Another station chosen: a counter or a line of the previous one is no longer offered
   useEffect(() => {
@@ -613,6 +620,21 @@ export default function DAFVoyageReport() {
         </div>
       ) : (
         <>
+          {/* Filters that leave nothing: said plainly (a counter kept from another period showed
+              every figure at 0, as if no station had sold) */}
+          {filtered.length === 0 && filterSummary() !== 'Aucun filtre' && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border px-4 py-3 text-sm" role="status"
+              style={{ borderColor: '#FCD34D', backgroundColor: 'rgba(245,158,11,0.08)', color: '#92400E' }}>
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">
+                Aucun départ reçu par le serveur pour {periodLabel === frDate(from) ? `le ${periodLabel}` : `la période ${periodLabel}`} avec ces filtres ({filterSummary()}).
+                {departs.length > 0 && ` Sans filtre : ${departs.length} départ${departs.length > 1 ? 's' : ''} sur la période.`}
+              </span>
+              <button onClick={resetFilters} className="flex items-center gap-1.5 text-xs font-semibold underline">
+                <RotateCcw className="w-3.5 h-3.5" /> Réinitialiser les filtres
+              </button>
+            </div>
+          )}
           {/* KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {kpiCards.map(k => (
