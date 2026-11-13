@@ -5,6 +5,7 @@ import { differenceInMinutes } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import ChatPanel from '../../components/admin/ChatPanel';
+import SessionHistoryPanel from '../../components/admin/SessionHistoryPanel';
 
 interface ConnectedUser {
   id: string;
@@ -51,6 +52,8 @@ export default function Connexion() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [chatTarget, setChatTarget] = useState<ConnectedUser | null>(null);
+  // User whose connection history is shown (click on the session duration)
+  const [historyTarget, setHistoryTarget] = useState<ConnectedUser | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [unreadMap, setUnreadMap] = useState<Map<string, number>>(new Map());
 
@@ -198,6 +201,7 @@ export default function Connexion() {
   };
 
   const openChat = (u: ConnectedUser) => {
+    setHistoryTarget(null);
     setChatTarget(u);
     setUnreadMap(prev => {
       const next = new Map(prev);
@@ -424,14 +428,19 @@ export default function Connexion() {
                     </td>
                     <td className="px-5 py-4">
                       {u.session_start ? (
-                        <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setChatTarget(null); setHistoryTarget(u); }}
+                          title="Voir l'historique des connexions"
+                          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 -mx-1.5 hover:bg-emerald-50">
                           <Clock className={`w-3.5 h-3.5 ${u.is_online ? 'text-emerald-500' : 'text-gray-400'}`} />
-                          <span className="text-xs font-medium text-gray-700">
+                          <span className="text-xs font-medium text-gray-700 underline decoration-dotted underline-offset-2">
                             {getSessionDuration(u.session_start)}
                           </span>
-                        </div>
+                        </button>
                       ) : (
-                        <span className="text-xs text-gray-400">-</span>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setChatTarget(null); setHistoryTarget(u); }}
+                          title="Voir l'historique des connexions" className="text-xs text-gray-400 underline decoration-dotted underline-offset-2 hover:text-emerald-600">
+                          Historique
+                        </button>
                       )}
                     </td>
                     <td className="px-5 py-4">
@@ -459,6 +468,21 @@ export default function Connexion() {
           </table>
         </div>
       </div>
+
+      {/* Connection history (click on the session duration) */}
+      {historyTarget && (
+        <SessionHistoryPanel
+          user={{
+            id: historyTarget.id,
+            full_name: historyTarget.full_name,
+            role: historyTarget.role,
+            station_name: historyTarget.station_name,
+            counter_name: historyTarget.counter_name,
+            is_online: historyTarget.is_online,
+          }}
+          onClose={() => setHistoryTarget(null)}
+        />
+      )}
 
       {/* Chat Panel */}
       {chatTarget && (
