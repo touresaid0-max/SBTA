@@ -46,6 +46,9 @@ const ROLE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
 
 export default function Connexion() {
   const { user: currentUser } = useAuthStore();
+  // The chat is the administration's messaging: the RH (same page, from its own menu) follows the
+  // connections and their history, but does not write in the administration's name
+  const canChat = currentUser?.role === 'admin';
   const [users, setUsers] = useState<ConnectedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -166,7 +169,7 @@ export default function Connexion() {
   }, [autoRefresh, loadUsers]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !canChat) return;
     const channel = supabase
       .channel('admin-inbox-notify')
       .on('postgres_changes', {
@@ -184,10 +187,10 @@ export default function Connexion() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, canChat]);
 
   const loadUnreadCounts = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !canChat) return;
     const { data } = await supabase
       .from('admin_chat_messages')
       .select('sender_id')
@@ -281,7 +284,7 @@ export default function Connexion() {
             <p className="text-sm text-gray-500">Total utilisateurs</p>
           </div>
         </div>
-        <div className={`bg-white rounded-xl border p-5 flex items-center gap-4 ${totalUnread > 0 ? 'border-amber-300 ring-1 ring-amber-200' : 'border-gray-200'}`}>
+        {canChat && <div className={`bg-white rounded-xl border p-5 flex items-center gap-4 ${totalUnread > 0 ? 'border-amber-300 ring-1 ring-amber-200' : 'border-gray-200'}`}>
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${totalUnread > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
             <Mail className={`w-6 h-6 ${totalUnread > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
           </div>
@@ -289,7 +292,7 @@ export default function Connexion() {
             <p className={`text-2xl font-bold ${totalUnread > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{totalUnread}</p>
             <p className="text-sm text-gray-500">Messages non lus</p>
           </div>
-        </div>
+        </div>}
       </div>
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex flex-col md:flex-row gap-3">
@@ -351,20 +354,20 @@ export default function Connexion() {
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">R{'\u00F4'}le</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Point d'acc{'\u00E8'}s</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Dur{'\u00E9'}e session</th>
-                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
+                {canChat && <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center">
+                  <td colSpan={canChat ? 6 : 5} className="px-5 py-12 text-center">
                     <RefreshCw className="w-6 h-6 animate-spin text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-500">Chargement...</p>
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center">
+                  <td colSpan={canChat ? 6 : 5} className="px-5 py-12 text-center">
                     <WifiOff className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-sm text-gray-500">Aucun utilisateur trouv{'\u00E9'}</p>
                   </td>
@@ -374,7 +377,7 @@ export default function Connexion() {
                   <tr
                     key={u.id}
                     className="hover:bg-gray-50/80 transition-colors cursor-pointer group"
-                    onClick={() => openChat(u)}
+                    onClick={() => (canChat ? openChat(u) : setHistoryTarget(u))}
                   >
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-center">
@@ -443,6 +446,7 @@ export default function Connexion() {
                         </button>
                       )}
                     </td>
+                    {canChat && (
                     <td className="px-5 py-4">
                       <button
                         onClick={(e) => { e.stopPropagation(); openChat(u); }}
@@ -461,6 +465,7 @@ export default function Connexion() {
                         ) : 'Chat'}
                       </button>
                     </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -485,7 +490,7 @@ export default function Connexion() {
       )}
 
       {/* Chat Panel */}
-      {chatTarget && (
+      {canChat && chatTarget && (
         <ChatPanel
           targetUser={{
             id: chatTarget.id,

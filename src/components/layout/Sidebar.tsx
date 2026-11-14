@@ -222,6 +222,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
   ],
   rh: [
     { label: 'Dashboard', path: '/rh/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+    { label: 'Connexions', path: '/rh/connexion', icon: <Wifi className="w-5 h-5" /> },
     {
       label: 'Personnel',
       icon: <Users className="w-5 h-5" />,
