@@ -21,6 +21,7 @@ export interface StationRef {
   id: string;
   name: string;
   city: string;
+  city_id?: string;
   agency_code: string;
   is_active: boolean;
 }

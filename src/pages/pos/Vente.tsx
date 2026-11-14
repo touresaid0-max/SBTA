@@ -263,42 +263,39 @@ export default function POSVente() {
     );
   };
 
+  // Destination gares offered for this departure: the line's destination gare; a line without one
+  // (the « Itinéraires » form did not set it) offers the gares LOCATED in its destination city.
+  // They were looked for in the gare NAMES: « Yopougon - Divo » took « Gare SBTA Adjamé Divo »,
+  // a gare in Adjamé, and the ticket was printed « YOPOUGON => ADJAMÉ » (14/11/2026); « Abidjan -
+  // Bouaké » took « Gare SBTA Adjamé Bouaké » and printed « ABIDJAN => ABIDJAN » (12/11/2026).
+  const destinationChoices = useMemo(() => {
+    if (!depart) return [] as StationRef[];
+    const ligne = lignes.find(l => l.id === depart.route_id);
+    const own = ligne?.destination_station_id ? stations.find(s => s.id === ligne.destination_station_id) : undefined;
+    if (own) return [own];
+    const norm = (v: string | undefined) => (v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const others = stations.filter(s => s.id !== depart.station_id);
+    if (ligne?.destination_city_id) {
+      const inCity = others.filter(s => s.city_id === ligne.destination_city_id);
+      if (inCity.length > 0) return inCity;
+    }
+    // Last city of the line's name (« Yopougon - Divo » → Divo), compared with the gares' CITY only
+    const lastCity = norm((depart.route_name ?? '').split(/\s*[-–—]\s*/).filter(Boolean).pop());
+    return lastCity ? others.filter(s => norm(s.city) === lastCity) : [];
+  }, [depart, lignes, stations]);
+
+  // Auto-select destination only on initial load — never override a user-selected destination
   // Auto-select destination only on initial load — never override a user-selected destination
   const destAutoSelectedRef = useRef(false);
   useEffect(() => { destAutoSelectedRef.current = false; setDestination(''); }, [departId]);
   useEffect(() => {
     if (!depart || stations.length === 0) return;
     if (destAutoSelectedRef.current) return;
-    const ligne = lignes.find(l => l.id === depart.route_id);
-    let destStationId = '';
-    if (ligne?.destination_station_id) {
-      destStationId = ligne.destination_station_id;
-    } else if (ligne?.origin_station_id && depart.station_id) {
-      destStationId = ligne.origin_station_id === depart.station_id
-        ? ligne.destination_station_id
-        : ligne.origin_station_id;
-    }
-    if (!destStationId) {
-      const routeCities = (depart.route_name ?? '')
-        .split(/\s*[\-–——]\s*/)
-        .map(p => p.trim().toLowerCase())
-        .filter(Boolean);
-      const guichetStation = stations.find(s => s.id === depart.station_id);
-      const guichetCity = (guichetStation?.city ?? '').toLowerCase().trim();
-      const destCityName = [...routeCities].reverse().find(c => c !== guichetCity);
-      if (destCityName) {
-        const match = stations.find(s =>
-          (s.city ?? '').toLowerCase().trim() === destCityName ||
-          (s.name ?? '').toLowerCase().includes(destCityName)
-        );
-        if (match) destStationId = match.id;
-      }
-    }
-    if (destStationId && destStationId !== depart.station_id) {
-      setDestination(destStationId);
-    }
+    // Chosen for the guichetier only when there is no doubt: one destination gare. Several gares in
+    // the destination city (Abidjan…) or none: the guichetier chooses, in the list.
+    if (destinationChoices.length === 1) setDestination(destinationChoices[0].id);
     destAutoSelectedRef.current = true;
-  }, [depart, stations, lignes]);
+  }, [depart, stations, lignes, destinationChoices]);
 
   // Intermediate city stops for the current route
   const currentRouteStops = useMemo(
@@ -1434,13 +1431,11 @@ export default function POSVente() {
                         {stop.city_name}
                       </option>
                     ))}
-                    {(() => {
-                      const destStation = stations.find(s => s.id === lignes.find(l => l.id === depart.route_id)?.destination_station_id);
-                      if (destStation) {
-                        return <option value={destStation.id}>{destStation.city || destStation.name}</option>;
-                      }
-                      return null;
-                    })()}
+                    {destinationChoices.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {destinationChoices.length > 1 ? `${s.city || s.name} (${s.name})` : (s.city || s.name)}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
