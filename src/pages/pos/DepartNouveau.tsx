@@ -37,8 +37,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [isRamassage, setIsRamassage] = useState(false);
-  // Bus climatisé: yes by default, the guichetier unticks it (information only: the price is typed at the sale)
-  const [isAc, setIsAc] = useState(true);
   const [enableOtherStation, setEnableOtherStation] = useState(false);
   const [otherStationId, setOtherStationId] = useState('');
   const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
@@ -207,7 +205,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         departure_time: departureTime || '',
         status: isRamassage ? 'ramassage' : 'planned',
         is_ramassage: isRamassage,
-        is_ac: isLinked ? linkedParent?.is_ac !== false : isAc,
+        is_ac: false,
         seats_total: lastSeat,
         seats_from: seatsFrom,
         seats_capacity: seatsTotal,
@@ -410,33 +408,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
               </label>
               <input type="number" min={1} readOnly value={seatsFrom} className={fieldInput} style={{ ...fieldStyle, cursor: 'not-allowed', opacity: 0.7 }} />
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Valeur définie par l'Admin, non modifiable</p>
-            </div>
-
-            {/* Climatisé */}
-            <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                Bus climatisé {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
-              </label>
-              <label
-                className="flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-sm font-bold select-none transition-colors"
-                style={{
-                  borderColor: (isLinked ? linkedParent?.is_ac !== false : isAc) ? 'var(--primary)' : 'var(--border)',
-                  backgroundColor: (isLinked ? linkedParent?.is_ac !== false : isAc) ? 'var(--primary-light)' : 'var(--surface)',
-                  color: (isLinked ? linkedParent?.is_ac !== false : isAc) ? 'var(--primary)' : 'var(--text-secondary)',
-                  cursor: isLinked ? 'not-allowed' : 'pointer',
-                  opacity: isLinked ? 0.7 : 1,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  className="w-5 h-5"
-                  style={{ accentColor: 'var(--primary)' }}
-                  checked={isLinked ? linkedParent?.is_ac !== false : isAc}
-                  disabled={isLinked}
-                  onChange={e => setIsAc(e.target.checked)}
-                />
-                {(isLinked ? linkedParent?.is_ac !== false : isAc) ? 'Oui, climatisé' : 'Non climatisé'}
-              </label>
             </div>
           </div>
 
