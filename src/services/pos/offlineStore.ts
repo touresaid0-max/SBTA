@@ -303,10 +303,18 @@ async function fetchRowsForSchedules(
   const rows: Record<string, unknown>[] = [];
   for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
     const chunk = scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK);
-    for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
-      const { data, error } = await supabase
+    // A page shorter than asked did not mean « last page »: the server can answer fewer rows
+    // per request than RESERVATION_PAGE_SIZE. The reading stopped after its first page, the most
+    // recent sales were missing, the departures showed 0 seat sold and the tickets already sent
+    // were removed from the device as « deleted on the server » (Yopougon, Abidjan – Daloa,
+    // 14/11/2026: 457 tickets on the server, 0 on the counter). Pages are now read up to an empty
+    // one, and the total announced by the server is checked: a partial list is never used.
+    const seen = new Set<string>();
+    let expected: number | null = null;
+    for (let from = 0; ; ) {
+      const { data, error, count } = await supabase
         .from(table)
-        .select(columns)
+        .select(columns, from === 0 ? { count: 'exact' } : undefined)
         .in('schedule_id', chunk)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
@@ -315,8 +323,22 @@ async function fetchRowsForSchedules(
         console.warn(`[sync] Failed to read ${table}:`, error.message);
         return null;
       }
-      rows.push(...((data ?? []) as unknown as Record<string, unknown>[]));
-      if (!data || data.length < RESERVATION_PAGE_SIZE) break;
+      if (from === 0) expected = typeof count === 'number' ? count : null;
+      const page = (data ?? []) as unknown as Record<string, unknown>[];
+      if (page.length === 0) break;
+      for (const row of page) {
+        const id = String(row.id ?? '');
+        if (id && seen.has(id)) continue;
+        if (id) seen.add(id);
+        rows.push(row);
+      }
+      from += page.length;
+      // Everything announced received: no need to ask for one more (empty) page
+      if (expected !== null && seen.size >= expected) break;
+    }
+    if (expected !== null && seen.size < expected) {
+      console.warn(`[sync] Incomplete reading of ${table}: ${seen.size} of ${expected} rows`);
+      return null;
     }
   }
   return rows;
@@ -439,8 +461,34 @@ function mapRemoteChargeToLocal(c: Record<string, unknown>): Record<string, unkn
  * @param sinceDate Optional YYYY-MM-DD: also pull the departures from that day on, when the
  *   guichetier looks at a period older than what the device keeps (filter by period / range).
  */
-export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceDate?: string): Promise<void> {
-  if (!isOnline()) return;
+/** Outcome of a reading of the server: `ok` only when everything was read in full. */
+export interface ServerSyncResult {
+  ok: boolean;
+  reason?: 'offline' | 'incomplete' | 'error';
+}
+
+// Last time the departures, tickets, baggage and expenses were read in full from the server, per
+// station: the Départs screen says how old its figures are when a reading fails
+const LAST_SERVER_SYNC_KEY = 'sbta_last_server_sync';
+
+export function lastServerSyncAt(stationId?: string): string | null {
+  try {
+    return localStorage.getItem(`${LAST_SERVER_SYNC_KEY}:${stationId ?? 'all'}`);
+  } catch {
+    return null;
+  }
+}
+
+function markServerSyncDone(stationId: string | undefined): void {
+  try {
+    localStorage.setItem(`${LAST_SERVER_SYNC_KEY}:${stationId ?? 'all'}`, trustedNowIso());
+  } catch { /* storage unavailable: only the « last update » note is missing */ }
+}
+
+export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceDate?: string): Promise<ServerSyncResult> {
+  // A failure used to be swallowed: the Départs screen kept showing the figures of the last
+  // reading (0 seat sold) without saying that they were not up to date
+  if (!isOnline()) return { ok: false, reason: 'offline' };
   try {
     const todayStr = trustedNowIso().slice(0, 10);
 
@@ -498,7 +546,9 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
     // Page by page: a long period chosen in the filter can hold more than 1 000 departures,
     // and a truncated list would drop the most recent ones
     const remoteSchedules: RemoteSchedule[] = [];
-    for (let from = 0; ; from += RESERVATION_PAGE_SIZE) {
+    // Read up to an empty page (a page shorter than asked is not the last one, see
+    // fetchRowsForSchedules): a truncated list made departures look « deleted on the server »
+    for (let from = 0; ; ) {
       let scheduleQuery = supabase
         .from('schedules')
         .select(SCHEDULE_COLUMNS)
@@ -512,8 +562,9 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         .order('id', { ascending: true })
         .range(from, from + RESERVATION_PAGE_SIZE - 1);
       if (schedError) throw schedError;
-      remoteSchedules.push(...((data ?? []) as unknown as RemoteSchedule[]));
-      if (!data || data.length < RESERVATION_PAGE_SIZE) break;
+      if (!data || data.length === 0) break;
+      remoteSchedules.push(...(data as unknown as RemoteSchedule[]));
+      from += data.length;
     }
 
     // Departures of earlier days the admin re-opened: pulled too, so that the guichet sees them
@@ -783,14 +834,17 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       const baggageOk = await syncBaggageFromServer(scheduleIds);
       const chargesOk = await syncChargesFromServer(scheduleIds);
 
-      if (withHistory && remoteReservations && baggageOk && chargesOk) {
-        markHistorySyncDone(stationId, todayStr);
-      }
+      const complete = Boolean(remoteReservations && baggageOk && chargesOk);
+      if (!complete) return { ok: false, reason: 'incomplete' };
+      if (withHistory) markHistorySyncDone(stationId, todayStr);
     } else if (withHistory) {
       markHistorySyncDone(stationId, todayStr);
     }
+    markServerSyncDone(stationId);
+    return { ok: true };
   } catch (err) {
     console.warn('[sync] Failed to sync from server:', err);
+    return { ok: false, reason: 'error' };
   }
 }
 

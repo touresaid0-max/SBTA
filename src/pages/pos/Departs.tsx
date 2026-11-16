@@ -15,7 +15,7 @@ import {
   renumberDepartsAfterCancellation,
   computeStationScopedTotals,
 } from '@/services/pos/departService';
-import { getByDeparts, groupByDepart, syncDepartsAndTicketsFromServer } from '@/services/pos/offlineStore';
+import { getByDeparts, groupByDepart, syncDepartsAndTicketsFromServer, lastServerSyncAt, type ServerSyncResult } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
 import { isOnline } from '@/services/pos/syncEngine';
 import { getDepensesForDepart } from '@/services/pos/depenseService';
@@ -38,7 +38,7 @@ import { usePagination } from '@/hooks/usePagination';
 import {
   Plus, Pencil, Printer, Ticket, XCircle, Lock,
   ChevronUp, ChevronDown, Loader2, X, AlertCircle,
-  FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange,
+  FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange, RefreshCw,
 } from 'lucide-react';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 import { getTicketPhoneLine, cachedTicketPhoneLine } from '@/services/ticketPhones.service';
@@ -311,6 +311,10 @@ export default function POSDeparts() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [periodLoading, setPeriodLoading] = useState(false);
+  // Outcome of the last reading of the server: a failed one is said on screen (the figures shown
+  // are then those of the last full reading, and the sales of other devices may be missing)
+  const [serverSync, setServerSync] = useState<ServerSyncResult | null>(null);
+  const [reloading, setReloading] = useState(false);
   // Earliest day already pulled from the server during this visit
   const pulledSinceRef = useRef<string | null>(null);
   const [routeFilter, setRouteFilter] = useState('');
@@ -386,7 +390,7 @@ export default function POSDeparts() {
   // Waiting for the sync first left the list loading for minutes on a slow connection.
   const loadDeparts = useCallback(async () => {
     await showLocalDeparts();
-    await syncDepartsAndTicketsFromServer(session?.station_id);
+    setServerSync(await syncDepartsAndTicketsFromServer(session?.station_id));
     await showLocalDeparts();
   }, [session?.station_id, showLocalDeparts]);
 
@@ -406,6 +410,30 @@ export default function POSDeparts() {
     if (!periodShownRef.current) { periodShownRef.current = true; return; }
     void showLocalDeparts();
   }, [range.from, range.to, showLocalDeparts]);
+  // « Recharger depuis le serveur »: the period shown is read again in full, without waiting for the
+  // first opening of the next day (the days kept on the device are otherwise read once a day)
+  const reloadFromServer = async () => {
+    if (reloading) return;
+    setReloading(true);
+    try {
+      const res = await syncDepartsAndTicketsFromServer(session?.station_id, range.from);
+      setServerSync(res);
+      if (res.ok && range.from) pulledSinceRef.current = range.from;
+      await showLocalDeparts();
+    } finally {
+      setReloading(false);
+    }
+  };
+  const lastFullSync = (() => {
+    const at = serverSync ? lastServerSyncAt(session?.station_id) : null;
+    if (!at) return null;
+    const d = new Date(at);
+    if (isNaN(d.getTime())) return null;
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} à ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  })();
+  const serverSyncFailed = !!serverSync && !serverSync.ok && serverSync.reason !== 'offline';
+
   const exportSuffix = range.from && range.to && range.from !== range.to
     ? `${range.from}_${range.to}`
     : range.from ?? range.to ?? 'toutes-dates';
@@ -419,8 +447,9 @@ export default function POSDeparts() {
     let cancelled = false;
     setPeriodLoading(true);
     syncDepartsAndTicketsFromServer(session?.station_id, since)
-      .then(() => {
-        pulledSinceRef.current = since;
+      .then(res => {
+        // Pulled again at the next change of period if the reading failed
+        if (res.ok) pulledSinceRef.current = since;
         if (!cancelled) return loadDeparts();
       })
       .finally(() => { if (!cancelled) setPeriodLoading(false); });
@@ -780,6 +809,18 @@ export default function POSDeparts() {
           >
             {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ListChecks className="w-4 h-4" />} Bordereau des recettes{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
+          <button
+            onClick={() => void reloadFromServer()}
+            disabled={reloading || !isOnline()}
+            title={!isOnline() ? 'Disponible avec Internet' : 'Relit sur le serveur les ventes, bagages et dépenses de la période affichée, y compris celles des autres postes'}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold border-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+          >
+            {reloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Recharger depuis le serveur
+          </button>
+          {serverSync?.ok && lastFullSync && (
+            <span className="self-center text-xs font-bold" style={{ color: 'var(--success, #047857)' }}>À jour ({lastFullSync})</span>
+          )}
           {selectedRow && (
             <>
               {/* A departure of another station shared with this one: only its main station changes,
@@ -837,6 +878,32 @@ export default function POSDeparts() {
           )}
         </div>
       </div>
+
+      {/* The server could not be read in full: the figures are those of the device only */}
+      {serverSyncFailed && (
+        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3" style={{ borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }}>
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: '#B91C1C' }} />
+            <div>
+              <p className="text-sm font-bold" style={{ color: '#991B1B' }}>
+                Les chiffres de cet écran n'ont pas pu être mis à jour depuis le serveur
+              </p>
+              <p className="mt-0.5 text-xs" style={{ color: '#991B1B' }}>
+                {lastFullSync ? `Dernière mise à jour complète : ${lastFullSync}. ` : 'Aucune mise à jour complète sur ce poste. '}
+                Les ventes faites sur d'autres postes peuvent manquer : ne vous fiez pas aux montants ni aux bordereaux de cet écran avant la mise à jour.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => void reloadFromServer()}
+            disabled={reloading}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white disabled:opacity-60"
+            style={{ backgroundColor: '#B91C1C' }}
+          >
+            {reloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Réessayer
+          </button>
+        </div>
+      )}
 
       {/* Departures re-opened by the admin: shown whatever the period, to be corrected then closed */}
       {reopenedDeparts.length > 0 && (
