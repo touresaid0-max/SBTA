@@ -4,7 +4,7 @@ import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import {
   createDepart,
-  getLignes, getVehicules, getChauffeurs, getGares,
+  getLignes, getVehicules, getChauffeurs, getGares, getSecondaryStationsByRoute,
   getAssignedRouteIds,
   nextDepartureNumber,
   nextRouteNumber,
@@ -27,6 +27,8 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   const [vehicules, setVehicules] = useState<VehiculeRef[]>([]);
   const [chauffeurs, setChauffeurs] = useState<ChauffeurRef[]>([]);
   const [gares, setGares] = useState<GareRef[]>([]);
+  // Stations allowed as « Gare de vente secondaire » per route (null: not known, all offered)
+  const [secondaryByRoute, setSecondaryByRoute] = useState<Map<string, Set<string>> | null>(null);
   const [loadingRefs, setLoadingRefs] = useState(true);
   const [noLinesAssigned, setNoLinesAssigned] = useState(false);
 
@@ -72,7 +74,8 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
       const assigned = known.length > 0
         ? Promise.race([fromServer, new Promise<string[]>(resolve => setTimeout(() => resolve([]), 3_000))])
         : fromServer;
-      const [l, v, c, g, fresh] = await Promise.all([getLignes(), getVehicules(), getChauffeurs(), getGares(), assigned]);
+      const [l, v, c, g, fresh, secondary] = await Promise.all([getLignes(), getVehicules(), getChauffeurs(), getGares(), assigned, getSecondaryStationsByRoute()]);
+      setSecondaryByRoute(secondary);
 
       const routeIds = fresh.length > 0 ? fresh : known;
 
@@ -128,6 +131,21 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   };
 
   const isLinked = !!linkedParent;
+
+  // « Gare de vente secondaire »: only the stations of the line's secondary routes
+  const secondaryStationIds = secondaryByRoute ? (secondaryByRoute.get(ligneId) ?? new Set<string>()) : null;
+  const secondaryGares = gares.filter(g =>
+    g.id !== session?.station_id &&
+    (!secondaryStationIds || secondaryStationIds.has(g.id)) &&
+    !seatAllocations.some(a => a.station_id === g.id));
+
+  // Another line: the stations already chosen that it does not allow are taken off
+  useEffect(() => {
+    if (!secondaryByRoute) return;
+    const allowed = secondaryByRoute.get(ligneId) ?? new Set<string>();
+    setSeatAllocations(prev => (prev.every(a => allowed.has(a.station_id)) ? prev : prev.filter(a => allowed.has(a.station_id))));
+    setNewAllocStationId(prev => (prev && !allowed.has(prev) ? '' : prev));
+  }, [ligneId, secondaryByRoute]);
 
   const missingFields = [
     !departureDate && 'Date de départ',
@@ -541,7 +559,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                 <div className="col-span-2">
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Gare de vente secondaire</label>
                   <AutocompleteSelect
-                    options={gares.filter(g => g.id !== session?.station_id && !seatAllocations.some(a => a.station_id === g.id)).map(g => ({
+                    options={secondaryGares.map(g => ({
                       id: g.id,
                       label: g.name,
                       sublabel: [g.city, g.agency_code].filter(Boolean).join(' · '),
@@ -550,8 +568,13 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                     value={newAllocStationId}
                     onChange={setNewAllocStationId}
                     placeholder="Rechercher une gare..."
-                    emptyText="Aucune gare disponible"
+                    emptyText={!ligneId ? "Choisissez d'abord la ligne" : 'Aucune gare disponible'}
                   />
+                  {secondaryStationIds && ligneId && secondaryStationIds.size === 0 && (
+                    <p className="mt-1 text-xs" style={{ color: 'var(--warning)' }}>
+                      Aucune gare secondaire pour cette ligne : l'administrateur doit lui ajouter des itinéraires secondaires.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
