@@ -319,7 +319,7 @@ export default function POSVente() {
       basePrice = tarifRef?.price ?? ligne?.base_price ?? 0;
     }
 
-    setTarif(calculatePrice(basePrice, depart.is_ac, isReduced));
+    setTarif(calculatePrice(basePrice, isReduced));
   }, [destination, depart, tarifs, lignes, currentRouteStops, isReduced]);
 
   // Preview ticket number
@@ -1082,8 +1082,8 @@ export default function POSVente() {
               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>#{depart.route_number}</p>
             </div>
             <div>
-              <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tarif Climatisé</p>
-              <p className="text-sm font-bold" style={{ color: depart.is_ac ? 'var(--info)' : 'var(--text-muted)' }}>{depart.is_ac ? 'Oui (+10%)' : 'Non'}</p>
+              <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Climatisé</p>
+              <p className="text-sm font-bold" style={{ color: depart.is_ac !== false ? 'var(--info)' : 'var(--text-muted)' }}>{depart.is_ac !== false ? 'Oui' : 'Non'}</p>
             </div>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Ligne</p>
