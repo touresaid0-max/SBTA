@@ -290,6 +290,10 @@ type RemoteSchedule = { id: string; bus_id: string | null; driver_id: string | n
 
 // A long list of ids in one `in` filter makes the request URL too long
 const SCHEDULE_ID_CHUNK = 100;
+// Tickets, baggage and expenses: read for 25 departures at a time. Each request checks the access
+// rule of every row of its departures (for a guichetier, a lookup in schedules per ticket): with
+// 100 departures, Yopougon's reading ran over the server's time limit (16/11/2026).
+const ROW_SCHEDULE_CHUNK = 25;
 
 /**
  * Reads every row of `table` attached to the given departures, page by page.
@@ -301,21 +305,29 @@ async function fetchRowsForSchedules(
   scheduleIds: string[],
 ): Promise<Record<string, unknown>[] | null> {
   const rows: Record<string, unknown>[] = [];
-  for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
-    const chunk = scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK);
+  for (let i = 0; i < scheduleIds.length; i += ROW_SCHEDULE_CHUNK) {
+    const chunk = scheduleIds.slice(i, i + ROW_SCHEDULE_CHUNK);
     // A page shorter than asked did not mean « last page »: the server can answer fewer rows
     // per request than RESERVATION_PAGE_SIZE. The reading stopped after its first page, the most
     // recent sales were missing, the departures showed 0 seat sold and the tickets already sent
     // were removed from the device as « deleted on the server » (Yopougon, Abidjan – Daloa,
     // 14/11/2026: 457 tickets on the server, 0 on the counter). Pages are now read up to an empty
-    // one, and the total announced by the server is checked: a partial list is never used.
+    // one: a partial list is never used.
+    //
+    // Sorted by departure first. Sorted by creation date only, the server walked the whole
+    // reservations table in date order (its created_at index), checking the guichetier's access
+    // rule on every ticket of every station, until it found the ones of these departures: at
+    // Yopougon every reading ran over the time limit (« canceling statement due to statement
+    // timeout », 16/11/2026), no ticket was read and the departures showed 0 F. The exact total
+    // asked with the first page (a second count of all the rows, in the same request) is no
+    // longer asked: reading up to an empty page already proves that everything was read.
     const seen = new Set<string>();
-    let expected: number | null = null;
     for (let from = 0; ; ) {
-      const { data, error, count } = await supabase
+      const { data, error } = await supabase
         .from(table)
-        .select(columns, from === 0 ? { count: 'exact' } : undefined)
+        .select(columns)
         .in('schedule_id', chunk)
+        .order('schedule_id', { ascending: true })
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .range(from, from + RESERVATION_PAGE_SIZE - 1);
@@ -323,7 +335,6 @@ async function fetchRowsForSchedules(
         console.warn(`[sync] Failed to read ${table}:`, error.message);
         return null;
       }
-      if (from === 0) expected = typeof count === 'number' ? count : null;
       const page = (data ?? []) as unknown as Record<string, unknown>[];
       if (page.length === 0) break;
       for (const row of page) {
@@ -333,12 +344,6 @@ async function fetchRowsForSchedules(
         rows.push(row);
       }
       from += page.length;
-      // Everything announced received: no need to ask for one more (empty) page
-      if (expected !== null && seen.size >= expected) break;
-    }
-    if (expected !== null && seen.size < expected) {
-      console.warn(`[sync] Incomplete reading of ${table}: ${seen.size} of ${expected} rows`);
-      return null;
     }
   }
   return rows;
