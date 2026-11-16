@@ -41,7 +41,7 @@ import {
   FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange,
 } from 'lucide-react';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
-import { getChefGarePhone, cachedChefGarePhone } from '@/services/ticketPhones.service';
+import { getTicketPhoneLine, cachedTicketPhoneLine } from '@/services/ticketPhones.service';
 
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
 type SortDir = 'asc' | 'desc';
@@ -95,7 +95,7 @@ function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
   }
 }
 
-// phoneLine: the chef de gare's number (same as the bordereau des recettes); without it, the
+// phoneLine: the numbers printed on the tickets (chef de gare / guichetier); without it, the
 // bordereau de départ printed the company's two fixed numbers
 async function printBordereauForDepart(depart: DepartRow, stationId?: string, stationName?: string, phoneLine?: string): Promise<void> {
   const [tickets, bagages, depenses] = await Promise.all([
@@ -296,14 +296,15 @@ function periodDescription(period: Period, range: { from?: string; to?: string }
 export default function POSDeparts() {
   const navigate = useNavigate();
   const { session } = usePOSSession();
-  // Chef de gare number printed on the bordereau des recettes (kept on the device for offline)
-  const [chefPhone, setChefPhone] = useState(() => cachedChefGarePhone(session?.counter_id, session?.station_id));
+  // Numbers printed on the bordereaux de départ and des recettes: the same line as the tickets
+  // (chef de gare / guichetier), kept on the device for printing offline
+  const [phoneLine, setPhoneLine] = useState(() => cachedTicketPhoneLine(session?.counter_id));
   useEffect(() => {
-    if (!session?.counter_id && !session?.station_id) return;
+    if (!session?.counter_id) return;
     let cancelled = false;
-    getChefGarePhone(session?.counter_id, session?.station_id).then(p => { if (!cancelled && p) setChefPhone(p); }).catch(() => {});
+    getTicketPhoneLine(session.counter_id).then(p => { if (!cancelled && p) setPhoneLine(p); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [session?.counter_id, session?.station_id]);
+  }, [session?.counter_id]);
   const [departs, setDeparts] = useState<DepartRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>('today');
@@ -608,7 +609,7 @@ export default function POSDeparts() {
         rows,
         totals,
       };
-      printRecettesBordereau({ data, phoneLine: chefPhone || cachedChefGarePhone(session?.counter_id, session?.station_id) || undefined });
+      printRecettesBordereau({ data, phoneLine: phoneLine || cachedTicketPhoneLine(session?.counter_id) || undefined });
     } catch {
       // non-critical
     } finally {
@@ -656,7 +657,7 @@ export default function POSDeparts() {
       }
       if (action === 'bordereau') {
         await printBordereauForDepart(depart, session?.station_id, session?.station_name,
-          chefPhone || cachedChefGarePhone(session?.counter_id, session?.station_id));
+          phoneLine || cachedTicketPhoneLine(session?.counter_id));
         return;
       }
       await loadDeparts();

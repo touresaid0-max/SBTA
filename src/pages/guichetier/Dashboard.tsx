@@ -17,7 +17,7 @@ import { formatCurrency } from '@/utils/formatCurrency'
 import { fetchBorderauDepartData, fetchBorderauRecettesData } from '@/services/counter.service'
 import { printBorderauRecettes } from '@/utils/printBordereau'
 import { printBordereauDepartThermal } from '@/services/pos/printService'
-import { getChefGarePhone } from '@/services/ticketPhones.service'
+import { getTicketPhoneLine } from '@/services/ticketPhones.service'
 import type { ScheduleReceiptSummary } from '@/types/counter.types'
 import ChargesModal from '@/components/guichetier/ChargesModal'
 import { fetchAllPages } from '@/utils/fetchAllPages'
@@ -343,7 +343,7 @@ export default function GuichetierDashboard() {
     setPrintingId(scheduleId)
     try {
       const data = await fetchBorderauDepartData(scheduleId)
-      const phoneLine = await getChefGarePhone(myCounterId, myStationId)
+      const phoneLine = await getTicketPhoneLine(myCounterId)
       printBordereauDepartThermal({ data, phoneLine: phoneLine || undefined })
     } catch (err: any) {
       console.error(err)
@@ -359,7 +359,7 @@ export default function GuichetierDashboard() {
     try {
       const data = await fetchBorderauRecettesData(myCounterId, dateStr)
       if (!data) { toast.error('Aucune donnée pour cette journée'); return }
-      printBorderauRecettes(data, await getChefGarePhone(myCounterId, myStationId))
+      printBorderauRecettes(data, await getTicketPhoneLine(myCounterId))
     } catch (err: any) {
       console.error(err)
       toast.error('Erreur génération bordereau')

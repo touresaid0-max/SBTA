@@ -81,8 +81,18 @@ export async function getChefGarePhone(counterId?: string | null, stationId?: st
   }
 }
 
+const TICKET_PHONE_KEY = 'sbta_ticket_phone_line:'
+
+/** The tickets' phone line last read for this guichet (kept on the device, for printing offline). */
+export function cachedTicketPhoneLine(counterId?: string | null): string {
+  if (!counterId) return ''
+  try { return localStorage.getItem(TICKET_PHONE_KEY + counterId) ?? '' } catch { return '' }
+}
+
 /**
  * Fetches the phone numbers to display on printed bus tickets for a given counter.
+ * The bordereaux de départ and des recettes print the same line (asked by the guichets: the
+ * tickets had the right numbers, the bordereaux not).
  *
  * The phones are resolved as:
  *   1. The Chef de Gare phone — looked up via counters.manager_id (multi-chef), then
@@ -126,12 +136,20 @@ export async function getTicketPhoneLine(counterId?: string | null): Promise<str
           if (guichUser?.phone) phones.push(guichUser.phone)
         }
 
-        if (phones.length > 0) {
-          return phones.join(' / ')
-        }
+        const line = phones.join(' / ')
+        try {
+          if (line) localStorage.setItem(TICKET_PHONE_KEY + counterId, line)
+          else localStorage.removeItem(TICKET_PHONE_KEY + counterId)
+        } catch { /* not kept: read again next time */ }
+        if (line) return line
+      } else {
+        // No answer about the counter (offline): the line last read on this device
+        const kept = cachedTicketPhoneLine(counterId)
+        if (kept) return kept
       }
     } catch {
-      // fall through to default
+      const kept = cachedTicketPhoneLine(counterId)
+      if (kept) return kept
     }
   }
 

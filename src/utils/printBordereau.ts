@@ -211,7 +211,7 @@ export function printBorderauDepart(data: BordereauDepartData) {
 // ═══════════════════════════════════════════════════════════════════
 //  BORDEREAU DES RECETTES  (A4 portrait)
 // ═══════════════════════════════════════════════════════════════════
-/** phoneLine: the chef de gare's number; the company's two fixed numbers without it */
+/** phoneLine: the numbers printed on the tickets (chef de gare / guichetier) */
 export function printBorderauRecettes(data: BordereauRecettesData, phoneLine?: string) {
   const doc    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W      = 210
