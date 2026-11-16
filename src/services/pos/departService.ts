@@ -39,6 +39,29 @@ export async function getGares(): Promise<GareRef[]> {
   return getReferentiel<GareRef>('gares');
 }
 
+export interface RouteSecondaryStationRef { route_id: string; station_id: string; secondary_route_id?: string | null }
+
+/**
+ * The route a secondary station sells on, for a departure of `routeId` loaded there: its
+ * secondary route linked to that station (one assigned to the guichet first). null when there is
+ * none: the departure's own route is used.
+ */
+export async function getSaleRouteForStation(
+  routeId: string | undefined,
+  stationId: string | undefined,
+  preferredRouteIds: string[] = [],
+): Promise<string | null> {
+  if (!routeId || !stationId) return null;
+  const rows = await getReferentiel<RouteSecondaryStationRef>('route_secondary_stations').catch(() => []);
+  const candidates = rows
+    .filter(r => r.route_id === routeId && r.station_id === stationId && r.secondary_route_id)
+    .map(r => r.secondary_route_id as string)
+    .sort();
+  if (candidates.length === 0) return null;
+  const preferred = new Set(preferredRouteIds);
+  return candidates.find(id => preferred.has(id)) ?? candidates[0];
+}
+
 /**
  * Stations allowed as « Gare de vente secondaire », per route: the stations of the route's
  * secondary routes (admin › Itinéraires). null when this is not known (server without the

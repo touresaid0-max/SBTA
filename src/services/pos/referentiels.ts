@@ -52,7 +52,10 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
       throw error;
     }
     return [
-      ...((data ?? []) as { route_id: string; station_id: string }[]).map(r => ({ route_id: r.route_id, station_id: r.station_id })),
+      // secondary_route_id: the secondary route through which the station is linked (its name,
+      // destinations and fares are used for the sale at that station)
+      ...((data ?? []) as { route_id: string; station_id: string; secondary_route_id?: string | null }[])
+        .map(r => ({ route_id: r.route_id, station_id: r.station_id, secondary_route_id: r.secondary_route_id ?? null })),
       { route_id: SECONDARY_STATIONS_READY, station_id: '' },
     ];
   },
