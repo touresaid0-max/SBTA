@@ -9,7 +9,7 @@ import {
   calculatePrice, getStations, generateTicketNumber, getTarifs, getRouteCityStops,
   type TicketRecord, type StationRef, type TarifRef, type RouteCityStopRef,
 } from '@/services/pos/ticketService';
-import { getLignes } from '@/services/pos/departService';
+import { getLignes, getSaleRouteForStation } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
 import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibres, seatsLibresForStation, seatsCommercialisables, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
@@ -55,6 +55,8 @@ export default function POSVente() {
   const [stations, setStations] = useState<StationRef[]>([]);
   const [tarifs, setTarifs] = useState<TarifRef[]>([]);
   const [lignes, setLignes] = useState<LigneRef[]>([]);
+  // Departure loaded here from another station: the secondary route this station sells on
+  const [saleRouteId, setSaleRouteId] = useState<string | null>(null);
   const [routeCityStops, setRouteCityStops] = useState<RouteCityStopRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -136,7 +138,8 @@ export default function POSVente() {
     try {
       setDepart(d);
 
-      const [t, s, st, ta, li, bg, rcs, dp] = await Promise.all([
+      const secondaryStation = !!session?.station_id && !!d.station_id && d.station_id !== session.station_id;
+      const [t, s, st, ta, li, bg, rcs, dp, saleRoute] = await Promise.all([
         getTicketsForDepart(departId),
         getSoldSeats(departId),
         getStations(),
@@ -145,7 +148,11 @@ export default function POSVente() {
         getBagagesForDepart(departId),
         getRouteCityStops(),
         getDepensesForDepart(departId),
+        secondaryStation
+          ? getSaleRouteForStation(d.route_id, session?.station_id, session?.assigned_route_ids ?? [])
+          : Promise.resolve(null),
       ]);
+      setSaleRouteId(saleRoute);
       setTickets(t);
       setSoldSeats(s);
       setStations(st);
@@ -263,26 +270,35 @@ export default function POSVente() {
     );
   };
 
+  // The departure as sold at this station. At the secondary station of a departure loaded in
+  // another station: its secondary route (name printed on the ticket, destinations, fares)
+  // instead of the main station's route.
+  const saleDepart = useMemo(() => {
+    if (!depart || !saleRouteId || saleRouteId === depart.route_id) return depart;
+    const ligne = lignes.find(l => l.id === saleRouteId);
+    return ligne ? { ...depart, route_id: saleRouteId, route_name: ligne.name } : depart;
+  }, [depart, saleRouteId, lignes]);
+
   // Destination gares offered for this departure: the line's destination gare; a line without one
   // (the « Itinéraires » form did not set it) offers the gares LOCATED in its destination city.
   // They were looked for in the gare NAMES: « Yopougon - Divo » took « Gare SBTA Adjamé Divo »,
   // a gare in Adjamé, and the ticket was printed « YOPOUGON => ADJAMÉ » (14/11/2026); « Abidjan -
   // Bouaké » took « Gare SBTA Adjamé Bouaké » and printed « ABIDJAN => ABIDJAN » (12/11/2026).
   const destinationChoices = useMemo(() => {
-    if (!depart) return [] as StationRef[];
-    const ligne = lignes.find(l => l.id === depart.route_id);
+    if (!saleDepart) return [] as StationRef[];
+    const ligne = lignes.find(l => l.id === saleDepart.route_id);
     const own = ligne?.destination_station_id ? stations.find(s => s.id === ligne.destination_station_id) : undefined;
     if (own) return [own];
     const norm = (v: string | undefined) => (v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    const others = stations.filter(s => s.id !== depart.station_id);
+    const others = stations.filter(s => s.id !== saleDepart.station_id && s.id !== session?.station_id);
     if (ligne?.destination_city_id) {
       const inCity = others.filter(s => s.city_id === ligne.destination_city_id);
       if (inCity.length > 0) return inCity;
     }
     // Last city of the line's name (« Yopougon - Divo » → Divo), compared with the gares' CITY only
-    const lastCity = norm((depart.route_name ?? '').split(/\s*[-–—]\s*/).filter(Boolean).pop());
+    const lastCity = norm((saleDepart.route_name ?? '').split(/\s*[-–—]\s*/).filter(Boolean).pop());
     return lastCity ? others.filter(s => norm(s.city) === lastCity) : [];
-  }, [depart, lignes, stations]);
+  }, [saleDepart, lignes, stations, session?.station_id]);
 
   // Auto-select destination only on initial load — never override a user-selected destination
   // Auto-select destination only on initial load — never override a user-selected destination
@@ -299,15 +315,16 @@ export default function POSVente() {
 
   // Intermediate city stops for the current route
   const currentRouteStops = useMemo(
-    () => routeCityStops.filter(s => s.route_id === depart?.route_id).sort((a, b) => a.position - b.position),
-    [routeCityStops, depart?.route_id]
+    () => routeCityStops.filter(s => s.route_id === saleDepart?.route_id).sort((a, b) => a.position - b.position),
+    [routeCityStops, saleDepart?.route_id]
   );
 
   // Auto-calculate tarif when destination changes
   // Destination can be a station ID (final destination) or `city:{id}` (intermediate city)
   useEffect(() => {
-    if (!depart || !destination) { setTarif(0); return; }
-    const ligne = lignes.find(l => l.id === depart.route_id);
+    if (!saleDepart || !destination) { setTarif(0); return; }
+    // Fares of the route sold here (the secondary route at a secondary station)
+    const ligne = lignes.find(l => l.id === saleDepart.route_id);
 
     let basePrice = 0;
     if (destination.startsWith('city:')) {
@@ -315,12 +332,12 @@ export default function POSVente() {
       const stop = currentRouteStops.find(s => s.city_id === cityId);
       basePrice = stop?.price ?? 0;
     } else {
-      const tarifRef = tarifs.find(t => t.route_id === depart.route_id && t.station_id === destination);
+      const tarifRef = tarifs.find(t => t.route_id === saleDepart.route_id && t.station_id === destination);
       basePrice = tarifRef?.price ?? ligne?.base_price ?? 0;
     }
 
-    setTarif(calculatePrice(basePrice, depart.is_ac, isReduced));
-  }, [destination, depart, tarifs, lignes, currentRouteStops, isReduced]);
+    setTarif(calculatePrice(basePrice, saleDepart.is_ac, isReduced));
+  }, [destination, saleDepart, tarifs, lignes, currentRouteStops, isReduced]);
 
   // Preview ticket number
   useEffect(() => {
@@ -476,8 +493,8 @@ export default function POSVente() {
       return stop?.city_name ?? '';
     }
     const s = stations.find(st => st.id === destination);
-    return (s?.city || s?.name) ?? depart?.route_name ?? '';
-  }, [stations, destination, depart, currentRouteStops]);
+    return (s?.city || s?.name) ?? saleDepart?.route_name ?? '';
+  }, [stations, destination, saleDepart, currentRouteStops]);
 
   // Derived single seat string for baggage compatibility — falls back to bagSeatOverride
   const seatNumber = selectedSeats.length > 0
@@ -585,7 +602,7 @@ export default function POSVente() {
       setTimeout(() => setSuccess(''), 4000);
 
       if (printTicket) {
-        await printTicketsBatch(soldTickets, depart, session?.station_name);
+        await printTicketsBatch(soldTickets, saleDepart ?? depart, session?.station_name);
       }
     } catch (err: any) {
       setError(err?.message ?? 'Erreur lors de la vente');
@@ -596,7 +613,7 @@ export default function POSVente() {
         setTickets(t); setSoldSeats(s);
         const updatedDepart = await getDepartById(departId);
         if (updatedDepart) setDepart(updatedDepart);
-        if (printTicket) await printTicketsBatch(err.soldTickets, depart, session?.station_name);
+        if (printTicket) await printTicketsBatch(err.soldTickets, saleDepart ?? depart, session?.station_name);
       }
     } finally {
       setSelling(false);
@@ -678,7 +695,7 @@ export default function POSVente() {
     const message = `Imprimer ${unprinted.length} ticket${unprinted.length > 1 ? 's' : ''} (siège${unprinted.length > 1 ? 's' : ''} ${seats}) ?\n\n`
       + 'Vérifiez d\'abord qu\'ils ne sont pas déjà sortis de l\'imprimante : sinon ils seraient imprimés deux fois.';
     if (!window.confirm(message)) return;
-    await printTicketsBatch(unprinted, depart, session?.station_name);
+    await printTicketsBatch(unprinted, saleDepart ?? depart, session?.station_name);
   };
 
   // Reprint (DUPLICATA) tickets authorized by the admin — each authorization is single-use
@@ -691,7 +708,7 @@ export default function POSVente() {
     const authorized = ticketsToReprint.filter(t => reprintAuthByTicket.has(t.id));
     let ok = false;
     try {
-      ok = await PrintService.printTickets({ tickets: authorized, depart, stationName: session?.station_name, phoneLine: ticketPhoneLine, duplicate: true });
+      ok = await PrintService.printTickets({ tickets: authorized, depart: saleDepart ?? depart, stationName: session?.station_name, phoneLine: ticketPhoneLine, duplicate: true });
     } catch {
       ok = false;
     }
@@ -879,7 +896,7 @@ export default function POSVente() {
   }
 
   return (
-    <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${depart.route_name ?? ''})`} headerActions={headerActions}>
+    <POSLayout showBack backTo="/guichet/departs" stationName={session?.station_name} activeRoute={`Vente — Départ #${depart.route_number} (${saleDepart?.route_name ?? depart.route_name ?? ''})`} headerActions={headerActions}>
       <div className="max-w-5xl mx-auto">
         {/* Status warning banners */}
         {depart.cancelled && (
@@ -1087,7 +1104,7 @@ export default function POSVente() {
             </div>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Ligne</p>
-              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{depart.route_name}</p>
+              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{saleDepart?.route_name ?? depart.route_name}</p>
             </div>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Statut</p>

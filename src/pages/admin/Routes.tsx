@@ -15,9 +15,15 @@ interface IntermediateStop {
   price: number;
 }
 
+interface StationLite {
+  id: string;
+  name: string;
+}
+
 interface RouteData {
   id: string;
   name: string;
+  origin_station_id?: string | null;
   origin_city_id: string;
   destination_city_id: string;
   distance_km: number;
@@ -51,18 +57,55 @@ export default function Routes() {
   const [intermediateStops, setIntermediateStops] = useState<IntermediateStop[]>([]);
   const [calculating, setCalculating] = useState(false);
 
+  // Secondary routes: their stations are the only ones the guichet can pick as « Gare de vente
+  // secondaire » when a departure of this route is loaded in another station
+  const [secondaryRouteIds, setSecondaryRouteIds] = useState<string[]>([]);
+  const [stations, setStations] = useState<StationLite[]>([]);
+  // Station names linked to each secondary route (guichets with that route, origin station)
+  const [secondaryStations, setSecondaryStations] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    const missing = secondaryRouteIds.filter(id => !(id in secondaryStations));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('counter_routes')
+        .select('route_id, counters(station_id, is_active)')
+        .in('route_id', missing);
+      if (cancelled || error) return;
+      const next: Record<string, string[]> = {};
+      for (const id of missing) {
+        const ids = new Set<string>();
+        for (const row of (data ?? []) as any[]) {
+          const c = Array.isArray(row.counters) ? row.counters[0] : row.counters;
+          if (row.route_id === id && c?.station_id && c.is_active !== false) ids.add(c.station_id);
+        }
+        const origin = routes.find(r => r.id === id)?.origin_station_id;
+        if (origin) ids.add(origin);
+        next[id] = Array.from(ids)
+          .map(sid => stations.find(s => s.id === sid)?.name)
+          .filter((n): n is string => !!n)
+          .sort((a, b) => a.localeCompare(b));
+      }
+      setSecondaryStations(prev => ({ ...prev, ...next }));
+    })();
+    return () => { cancelled = true; };
+  }, [secondaryRouteIds, secondaryStations, routes, stations]);
+
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
     try {
-      const [routesRes, citiesRes] = await Promise.all([
+      const [routesRes, citiesRes, stationsRes] = await Promise.all([
         supabase
           .from('routes')
           .select('*, origin_city:cities!origin_city_id(name), destination_city:cities!destination_city_id(name)')
           .order('name'),
-        supabase.from('cities').select('id, name').order('name')
+        supabase.from('cities').select('id, name').order('name'),
+        supabase.from('stations').select('id, name').eq('is_active', true).order('name'),
       ]);
 
       if (routesRes.error) throw routesRes.error;
@@ -70,6 +113,8 @@ export default function Routes() {
 
       setRoutes(routesRes.data || []);
       setCities(citiesRes.data || []);
+      setStations(stationsRes.data || []);
+      setSecondaryStations({});
     } catch (error: any) {
       toast.error('Erreur de chargement');
     } finally {
@@ -181,9 +226,10 @@ export default function Routes() {
         toast.success('Itinéraire créé');
       }
 
-      // Sync intermediate stops
+      // Sync intermediate stops and secondary routes
       if (routeId) {
         await syncIntermediateStops(routeId, intermediateStops);
+        await syncSecondaryRoutes(routeId, secondaryRouteIds);
       }
 
       setShowForm(false);
@@ -245,6 +291,36 @@ export default function Routes() {
     }
   };
 
+  const syncSecondaryRoutes = async (routeId: string, ids: string[]) => {
+    const { data: current, error } = await supabase
+      .from('route_secondary_routes')
+      .select('id, secondary_route_id')
+      .eq('route_id', routeId);
+    if (error) throw new Error(`Itinéraires secondaires : ${error.message}`);
+    const wanted = new Set(ids.filter(id => id !== routeId));
+    const toDelete = (current ?? []).filter((c: any) => !wanted.has(c.secondary_route_id)).map((c: any) => c.id);
+    const have = new Set((current ?? []).map((c: any) => c.secondary_route_id));
+    const toInsert = Array.from(wanted).filter(id => !have.has(id))
+      .map(id => ({ route_id: routeId, secondary_route_id: id }));
+    if (toDelete.length > 0) {
+      const { error: delError } = await supabase.from('route_secondary_routes').delete().in('id', toDelete);
+      if (delError) throw new Error(`Itinéraires secondaires : ${delError.message}`);
+    }
+    if (toInsert.length > 0) {
+      const { error: insError } = await supabase.from('route_secondary_routes').insert(toInsert);
+      if (insError) throw new Error(`Itinéraires secondaires : ${insError.message}`);
+    }
+  };
+
+  const loadSecondaryRoutes = async (routeId: string): Promise<string[]> => {
+    const { data, error } = await supabase
+      .from('route_secondary_routes')
+      .select('secondary_route_id')
+      .eq('route_id', routeId);
+    if (error) throw error;
+    return (data ?? []).map((r: any) => r.secondary_route_id as string);
+  };
+
   const handleEdit = async (route: RouteData) => {
     setFormData({
       name: route.name,
@@ -262,6 +338,12 @@ export default function Routes() {
       setIntermediateStops(stops);
     } catch {
       setIntermediateStops([]);
+    }
+
+    try {
+      setSecondaryRouteIds(await loadSecondaryRoutes(route.id));
+    } catch {
+      setSecondaryRouteIds([]);
     }
 
     setShowForm(true);
@@ -295,6 +377,7 @@ export default function Routes() {
       is_active: true
     });
     setIntermediateStops([]);
+    setSecondaryRouteIds([]);
   };
 
   // --- Intermediate stops management ---
@@ -545,6 +628,70 @@ export default function Routes() {
                   />
                 </div>
 
+                {/* Secondary routes: stations allowed for « Charger dans une autre gare » */}
+                <div className="border-2 border-dashed rounded-lg p-4" style={{ borderColor: 'var(--neutral-300)' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <RouteIcon className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+                    <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Itinéraires secondaires
+                    </h3>
+                  </div>
+                  <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+                    Au guichet, « Charger dans une autre gare » ne propose que les gares liées à ces itinéraires
+                    (gares dont un guichet a l'itinéraire, ou gare d'origine de l'itinéraire).
+                  </p>
+
+                  {secondaryRouteIds.length > 0 ? (
+                    <div className="space-y-2 mb-3">
+                      {secondaryRouteIds.map(id => {
+                        const r = routes.find(x => x.id === id);
+                        const names = secondaryStations[id];
+                        return (
+                          <div
+                            key={id}
+                            className="flex items-start gap-2 bg-white rounded-lg border p-2"
+                            style={{ borderColor: 'var(--neutral-200)' }}
+                          >
+                            <RouteIcon className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                {r?.name ?? 'Itinéraire supprimé'}
+                              </p>
+                              <p className="text-xs" style={{ color: names && names.length === 0 ? 'var(--warning)' : 'var(--text-muted)' }}>
+                                {names === undefined
+                                  ? 'Gares : chargement…'
+                                  : names.length > 0
+                                    ? `Gares : ${names.join(', ')}`
+                                    : 'Aucune gare liée : attribuez cet itinéraire à un guichet'}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSecondaryRouteIds(secondaryRouteIds.filter(x => x !== id))}
+                              className="p-1.5 hover:bg-red-50 rounded-lg flex-shrink-0"
+                              title="Retirer"
+                            >
+                              <Trash2 className="w-4 h-4" style={{ color: 'var(--danger)' }} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 mb-2">
+                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Aucun itinéraire secondaire : au guichet, aucune gare ne sera proposée pour charger ce départ ailleurs.
+                      </p>
+                    </div>
+                  )}
+
+                  <RouteAutocomplete
+                    routes={routes}
+                    excludedIds={[...(editingId ? [editingId] : []), ...secondaryRouteIds]}
+                    onSelect={(id) => setSecondaryRouteIds([...secondaryRouteIds, id])}
+                  />
+                </div>
+
                 <div>
                   <button
                     type="button"
@@ -715,6 +862,83 @@ export default function Routes() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// RouteAutocomplete — search an existing route to add as secondary route
+// ============================================================
+
+interface RouteAutocompleteProps {
+  routes: RouteData[];
+  excludedIds: string[];
+  onSelect: (routeId: string) => void;
+}
+
+function RouteAutocomplete({ routes, excludedIds, onSelect }: RouteAutocompleteProps) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    const available = routes.filter(r => !excludedIds.includes(r.id));
+    const q = query.toLowerCase().trim();
+    const list = q
+      ? available.filter(r => `${r.name} ${r.origin_city?.name ?? ''} ${r.destination_city?.name ?? ''}`.toLowerCase().includes(q))
+      : available;
+    return list.slice(0, 50);
+  }, [routes, excludedIds, query]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Rechercher un itinéraire à ajouter..."
+          className="w-full pl-10 pr-3 py-2.5 border rounded-lg text-sm"
+        />
+      </div>
+
+      {open && (
+        <div
+          className="absolute z-50 mt-1 w-full rounded-lg border max-h-56 overflow-y-auto shadow-xl bg-white"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          {filtered.length > 0 ? (
+            <div className="py-1">
+              {filtered.map(r => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => { onSelect(r.id); setQuery(''); setOpen(false); }}
+                  className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                >
+                  <RouteIcon className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
+                  {!r.is_active && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>(inactif)</span>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-3 py-2 text-sm text-center" style={{ color: 'var(--text-muted)' }}>
+              Aucun itinéraire trouvé
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

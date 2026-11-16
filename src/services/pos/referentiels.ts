@@ -2,7 +2,12 @@ import { db, type ReferentielRecord } from './db';
 import { supabase } from '@/services/supabase';
 import { isOnline } from './syncEngine';
 
-type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops';
+type RefType = 'lignes' | 'vehicules' | 'chauffeurs' | 'tarifs' | 'gares' | 'route_city_stops' | 'route_secondary_stations';
+
+/** Last row of the route_secondary_stations list: the server knows the secondary routes */
+export const SECONDARY_STATIONS_READY = '__ready__';
+/** Only row of the list on a server without the secondary routes (migration not run): no filter */
+export const SECONDARY_STATIONS_UNAVAILABLE = '__unavailable__';
 
 const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   lignes: async () => {
@@ -34,6 +39,25 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
     const { data, error } = await supabase.from('route_city_stops').select('id, route_id, city_id, price, position, cities(name)').order('route_id, position');
     if (error) throw error;
     return (data ?? []).map((s: any) => ({ id: s.id, route_id: s.route_id, city_id: s.city_id, city_name: s.cities?.name ?? '', price: Number(s.price ?? 0), position: s.position }));
+  },
+  // Stations allowed as « Gare de vente secondaire » for each route (set by the admin through the
+  // route's secondary routes). A marker row ends the list, so that it is never empty (an empty
+  // answer would not replace the copy kept on the device).
+  route_secondary_stations: async () => {
+    const { data, error } = await supabase.rpc('get_route_secondary_stations');
+    if (error) {
+      if (error.code === 'PGRST202' || error.code === '42883') {
+        return [{ route_id: SECONDARY_STATIONS_UNAVAILABLE, station_id: '' }];
+      }
+      throw error;
+    }
+    return [
+      // secondary_route_id: the secondary route through which the station is linked (its name,
+      // destinations and fares are used for the sale at that station)
+      ...((data ?? []) as { route_id: string; station_id: string; secondary_route_id?: string | null }[])
+        .map(r => ({ route_id: r.route_id, station_id: r.station_id, secondary_route_id: r.secondary_route_id ?? null })),
+      { route_id: SECONDARY_STATIONS_READY, station_id: '' },
+    ];
   },
 };
 
@@ -105,7 +129,7 @@ export async function getReferentiel<T = unknown>(type: RefType): Promise<T[]> {
 }
 
 export async function refreshAllReferentiels(): Promise<void> {
-  const types: RefType[] = ['lignes', 'vehicules', 'chauffeurs', 'tarifs', 'gares', 'route_city_stops'];
+  const types: RefType[] = ['lignes', 'vehicules', 'chauffeurs', 'tarifs', 'gares', 'route_city_stops', 'route_secondary_stations'];
   await Promise.allSettled(types.map(t => refreshReferentiel(t)));
 }
 
