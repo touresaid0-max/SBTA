@@ -556,7 +556,7 @@ export default function POSVente() {
       }
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
-    if (tarif <= 0) { setError('Tarif invalide — vérifiez la destination'); return; }
+    if (tarif <= 0) { setError("Aucun tarif pour cette destination — contactez l'administrateur"); return; }
     // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
     const tarifCheck = checkAmounts([{ value: tarif, rule: AMOUNT_RULES.ticketPrice }]);
     if (!tarifCheck.ok) { if (tarifCheck.error) setError(tarifCheck.error); return; }
@@ -1546,15 +1546,19 @@ export default function POSVente() {
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
                     Tarif{selectedSeats.length > 1 ? ` × ${selectedSeats.length} = ${(tarif * selectedSeats.length).toLocaleString('fr-FR')} FCFA` : ''}
+                    {' '}<Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />
                   </label>
                   <div className="relative">
+                    {/* Fare of the line (admin › Itinéraires), not editable by the guichetier */}
                     <input
                       type="number"
                       value={tarif || ''}
-                      onChange={e => setTarif(parseInt(e.target.value) || 0)}
+                      readOnly
+                      tabIndex={-1}
                       className={fieldInput}
-                      style={fieldStyle}
+                      style={{ ...fieldStyle, cursor: 'not-allowed', opacity: 0.8 }}
                       placeholder="Auto"
+                      title="Tarif défini par l'administrateur, non modifiable"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--text-muted)' }}>FCFA</span>
                   </div>
