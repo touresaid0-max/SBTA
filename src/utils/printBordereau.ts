@@ -211,7 +211,8 @@ export function printBorderauDepart(data: BordereauDepartData) {
 // ═══════════════════════════════════════════════════════════════════
 //  BORDEREAU DES RECETTES  (A4 portrait)
 // ═══════════════════════════════════════════════════════════════════
-export function printBorderauRecettes(data: BordereauRecettesData) {
+/** phoneLine: the chef de gare's number; the company's two fixed numbers without it */
+export function printBorderauRecettes(data: BordereauRecettesData, phoneLine?: string) {
   const doc    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W      = 210
   const margin = 14
@@ -230,7 +231,7 @@ export function printBorderauRecettes(data: BordereauRecettesData) {
   doc.text('Soc. Bonkoungou Transport de l\'Agneby', ctr('Soc. Bonkoungou Transport de l\'Agneby'), y + 3)
 
   doc.setFontSize(8)
-  doc.text('Tél : 07 69 94 88 03 / 07 99 68 60 03', W - margin - 55, y - 3)
+  doc.text(`Tél : ${phoneLine || '07 69 94 88 03 / 07 99 68 60 03'}`, W - margin - 55, y - 3)
 
   y += 10
   doc.setFontSize(13)

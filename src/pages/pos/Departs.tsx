@@ -95,7 +95,9 @@ function getSortValue(row: DepartRow, key: SortKey): string | number | boolean {
   }
 }
 
-async function printBordereauForDepart(depart: DepartRow, stationId?: string, stationName?: string): Promise<void> {
+// phoneLine: the chef de gare's number (same as the bordereau des recettes); without it, the
+// bordereau de départ printed the company's two fixed numbers
+async function printBordereauForDepart(depart: DepartRow, stationId?: string, stationName?: string, phoneLine?: string): Promise<void> {
   const [tickets, bagages, depenses] = await Promise.all([
     getByDeparts<TicketRecord>('tickets', [depart.id]),
     getBagagesForDepart(depart.id),
@@ -218,7 +220,7 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string, st
     print_time: printTime,
   };
 
-  await printBordereauDepartThermal({ data });
+  await printBordereauDepartThermal({ data, phoneLine: phoneLine || undefined });
 }
 
 type Period = 'today' | 'yesterday' | 'last7' | 'week' | 'month' | 'last_month' | 'all' | 'custom';
@@ -653,7 +655,8 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'bordereau') {
-        await printBordereauForDepart(depart, session?.station_id, session?.station_name);
+        await printBordereauForDepart(depart, session?.station_id, session?.station_name,
+          chefPhone || cachedChefGarePhone(session?.counter_id, session?.station_id));
         return;
       }
       await loadDeparts();
