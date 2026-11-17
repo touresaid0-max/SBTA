@@ -198,10 +198,9 @@ export function generateTicketNumber(_stationAgencyCode?: string): string {
   return `${year}-${uuidV4().slice(0, 8).toUpperCase()}`;
 }
 
-// The bus being climatisé no longer changes the price (it added 10 %): the guichetier types the
-// ticket's price at the sale
-export function calculatePrice(basePrice: number, isReduced: boolean): number {
+export function calculatePrice(basePrice: number, isAc: boolean, isReduced: boolean): number {
   let price = basePrice;
+  if (isAc) price = Math.round(price * 1.1);
   if (isReduced) price = Math.round(price * 0.9);
   return price;
 }

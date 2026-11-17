@@ -21,7 +21,7 @@ const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'cloture_at', 'cloture_by', 'departure_number',
   'bus_plate', 'bus_name', 'driver_name', 'convoyeur_id', 'convoyeur_name',
   'apprenti_id', 'apprenti_name', 'departure_date', 'departure_time',
-  'seats_from', 'station_name',
+  'is_ac', 'seats_from', 'station_name',
   'counter_id', 'other_station_id', 'other_station_name',
   'synced', 'updated_at', 'id',
   'printed', 'printed_at', 'reopened_at',
@@ -642,31 +642,20 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       // Departures with a change made here and not sent yet (a closing, for instance)
       const pendingDeparts = await getPendingIds('departs');
 
-      // Seat allocations kept on the server (shared buses) and the « Climatisé » choice, read
-      // apart: a server without these columns still gives the departures themselves
+      // Seat allocations kept on the server (shared buses), read apart: a server without the
+      // column still gives the departures themselves
       const serverAllocations = new Map<string, SeatAllocation[]>();
-      const serverAc = new Map<string, boolean>();
       try {
-        let columns = 'id, seat_allocations, is_ac';
         for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
-          let { data, error } = await supabase
+          const { data, error } = await supabase
             .from('schedules')
-            .select(columns)
+            .select('id, seat_allocations')
             .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK));
-          if (error && columns.includes('is_ac')) {
-            // Server without the column (migration 20261116100000 not run yet)
-            columns = 'id, seat_allocations';
-            ({ data, error } = await supabase
-              .from('schedules')
-              .select(columns)
-              .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK)));
-          }
           if (error) break;
-          for (const row of (data ?? []) as unknown as { id: string; seat_allocations: SeatAllocation[] | null; is_ac?: boolean | null }[]) {
+          for (const row of (data ?? []) as { id: string; seat_allocations: SeatAllocation[] | null }[]) {
             if (Array.isArray(row.seat_allocations) && row.seat_allocations.length > 0) {
               serverAllocations.set(row.id, row.seat_allocations);
             }
-            if (typeof row.is_ac === 'boolean') serverAc.set(row.id, row.is_ac);
           }
         }
       } catch { /* allocations kept on the device */ }
@@ -699,10 +688,6 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             seat_allocations: pendingDeparts.has(s.id)
               ? existing.seat_allocations
               : (serverAllocations.get(s.id) ?? existing.seat_allocations),
-            // Climatisé: the device's choice while a change made here is not sent yet; else the server's
-            is_ac: pendingDeparts.has(s.id)
-              ? existing.is_ac !== false
-              : (serverAc.get(s.id) ?? existing.is_ac !== false),
             // Numbering and capacity from the server (bus « vendu à partir de », number of
             // seats): this also gives back the seat lost by the departures created before (2 to
             // 63 for 63 seats). Kept as on the device while a change made here is not sent yet
@@ -731,7 +716,6 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
           const mainAlloc = allocations?.find(a => a.station_id === s.departure_station_id);
           await (db.departs as any).put({
             ...localRecord,
-            is_ac: serverAc.get(s.id) ?? true,
             ...(allocations ? { seat_allocations: allocations } : {}),
             ...(sharedIds.has(s.id) && mainAlloc ? { station_name: mainAlloc.station_name } : {}),
             bus_plate: plate ?? '',
