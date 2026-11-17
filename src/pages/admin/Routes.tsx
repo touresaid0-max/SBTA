@@ -783,7 +783,7 @@ export default function Routes() {
                   </div>
 
                   <div>
-                    <label className="block mb-2 font-medium">Tarif climatisé (FCFA) *</label>
+                    <label className="block mb-2 font-medium">Tarif climatisé (FCFA)</label>
                     <input
                       type="number"
                       value={formData.base_price_ac ?? ''}
@@ -792,9 +792,9 @@ export default function Routes() {
                         setFormData({ ...formData, base_price_ac: Number.isFinite(v) && v > 0 ? v : null });
                       }}
                       className="w-full p-3 border rounded-lg"
-                      min="1"
+                      min="0"
                       step="100"
-                      required
+                      placeholder="Facultatif"
                     />
                   </div>
                 </div>
