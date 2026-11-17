@@ -12,7 +12,10 @@ interface IntermediateStop {
   id?: string;
   city_id: string;
   city_name?: string;
+  /** Tarif climatisé */
   price: number;
+  /** Tarif sans clim (optional: the climatisé fare otherwise) */
+  price_no_ac?: number | null;
 }
 
 interface StationLite {
@@ -29,6 +32,7 @@ interface RouteData {
   distance_km: number;
   estimated_duration_minutes: number;
   base_price: number;
+  base_price_no_ac?: number | null;
   is_active: boolean;
   origin_city?: { name: string };
   destination_city?: { name: string };
@@ -51,6 +55,8 @@ export default function Routes() {
     distance_km: 0,
     estimated_duration_minutes: 0,
     base_price: 0,
+    // Tarif sans clim: optional (the climatisé fare, base_price, applies otherwise)
+    base_price_no_ac: null as number | null,
     is_active: true
   });
 
@@ -178,17 +184,29 @@ export default function Routes() {
   const loadRouteStops = async (routeId: string): Promise<IntermediateStop[]> => {
     const { data, error } = await supabase
       .from('route_city_stops')
-      .select('id, city_id, price, cities!inner(name)')
+      .select('id, city_id, price, price_no_ac, cities!inner(name)')
       .eq('route_id', routeId)
       .order('position');
 
-    if (error) throw error;
+    // Server without the « sans clim » fares yet: the stops are read without them (an empty list
+    // here would delete them all at the next save)
+    let rows: any[] | null = data;
+    if (error) {
+      const retry = await supabase
+        .from('route_city_stops')
+        .select('id, city_id, price, cities!inner(name)')
+        .eq('route_id', routeId)
+        .order('position');
+      if (retry.error) throw retry.error;
+      rows = retry.data;
+    }
 
-    return (data || []).map((s: any) => ({
+    return (rows || []).map((s: any) => ({
       id: s.id,
       city_id: s.city_id,
       city_name: s.cities?.name,
       price: Number(s.price) || 0,
+      price_no_ac: s.price_no_ac != null && Number(s.price_no_ac) > 0 ? Number(s.price_no_ac) : null,
     }));
   };
 
@@ -271,6 +289,7 @@ export default function Routes() {
         city_id: stop.city_id,
         position: i + 1,
         price: stop.price,
+        price_no_ac: stop.price_no_ac && stop.price_no_ac > 0 ? stop.price_no_ac : null,
       };
 
       if (stop.id) {
@@ -329,6 +348,7 @@ export default function Routes() {
       distance_km: route.distance_km,
       estimated_duration_minutes: route.estimated_duration_minutes,
       base_price: route.base_price,
+      base_price_no_ac: route.base_price_no_ac != null && Number(route.base_price_no_ac) > 0 ? Number(route.base_price_no_ac) : null,
       is_active: route.is_active
     });
     setEditingId(route.id);
@@ -374,6 +394,7 @@ export default function Routes() {
       distance_km: 0,
       estimated_duration_minutes: 0,
       base_price: 0,
+      base_price_no_ac: null,
       is_active: true
     });
     setIntermediateStops([]);
@@ -400,6 +421,10 @@ export default function Routes() {
 
   const updateStopPrice = (index: number, price: number) => {
     setIntermediateStops(intermediateStops.map((s, i) => i === index ? { ...s, price } : s));
+  };
+
+  const updateStopPriceNoAc = (index: number, price: number | null) => {
+    setIntermediateStops(intermediateStops.map((s, i) => i === index ? { ...s, price_no_ac: price } : s));
   };
 
   const moveStop = (index: number, direction: 'up' | 'down') => {
@@ -560,16 +585,36 @@ export default function Routes() {
                           </div>
 
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            <input
-                              type="number"
-                              value={stop.price}
-                              onChange={(e) => updateStopPrice(index, parseFloat(e.target.value) || 0)}
-                              className="w-24 p-1.5 text-sm border rounded text-right"
-                              min="0"
-                              step="100"
-                              placeholder="Tarif"
-                            />
-                            <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>FCFA</span>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Clim</span>
+                              <input
+                                type="number"
+                                value={stop.price}
+                                onChange={(e) => updateStopPrice(index, parseFloat(e.target.value) || 0)}
+                                className="w-24 p-1.5 text-sm border rounded text-right"
+                                min="0"
+                                step="100"
+                                placeholder="Tarif"
+                                title="Tarif climatisé"
+                              />
+                            </div>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Sans clim</span>
+                              <input
+                                type="number"
+                                value={stop.price_no_ac ?? ''}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  updateStopPriceNoAc(index, Number.isFinite(v) && v > 0 ? v : null);
+                                }}
+                                className="w-24 p-1.5 text-sm border rounded text-right"
+                                min="0"
+                                step="100"
+                                placeholder="Facultatif"
+                                title="Tarif sans clim (facultatif)"
+                              />
+                            </div>
+                            <span className="text-xs font-medium self-end mb-2" style={{ color: 'var(--text-muted)' }}>FCFA</span>
                           </div>
 
                           <div className="flex flex-col flex-shrink-0">
@@ -734,7 +779,7 @@ export default function Routes() {
                   </div>
 
                   <div>
-                    <label className="block mb-2 font-medium">Prix de base (FCFA) *</label>
+                    <label className="block mb-2 font-medium">Tarif climatisé (FCFA) *</label>
                     <input
                       type="number"
                       value={formData.base_price}
@@ -745,6 +790,27 @@ export default function Routes() {
                       required
                     />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block mb-2 font-medium">Tarif sans clim (FCFA)</label>
+                    <input
+                      type="number"
+                      value={formData.base_price_no_ac ?? ''}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        setFormData({ ...formData, base_price_no_ac: Number.isFinite(v) && v > 0 ? v : null });
+                      }}
+                      className="w-full p-3 border rounded-lg"
+                      min="0"
+                      step="100"
+                      placeholder="Facultatif"
+                    />
+                  </div>
+                  <p className="col-span-2 self-end text-sm pb-3" style={{ color: 'var(--text-secondary)' }}>
+                    Au guichet, le bouton « Non climatisé » applique ce tarif. Sans tarif sans clim, le tarif climatisé s'applique aussi.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -791,7 +857,7 @@ export default function Routes() {
               <th className="text-left p-4 font-semibold">Destination</th>
               <th className="text-left p-4 font-semibold">Distance</th>
               <th className="text-left p-4 font-semibold">Durée</th>
-              <th className="text-left p-4 font-semibold">Prix de base</th>
+              <th className="text-left p-4 font-semibold">Tarif clim / sans clim</th>
               <th className="text-left p-4 font-semibold">Statut</th>
               <th className="text-left p-4 font-semibold">Actions</th>
             </tr>
@@ -817,7 +883,12 @@ export default function Routes() {
                   </td>
                   <td className="p-4">{route.distance_km} km</td>
                   <td className="p-4">{Math.floor(route.estimated_duration_minutes / 60)}h{route.estimated_duration_minutes % 60 > 0 ? ` ${route.estimated_duration_minutes % 60}min` : ''}</td>
-                  <td className="p-4">{route.base_price.toLocaleString()} FCFA</td>
+                  <td className="p-4">
+                    {route.base_price.toLocaleString()} FCFA
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Sans clim : {route.base_price_no_ac ? `${Number(route.base_price_no_ac).toLocaleString()} FCFA` : '—'}
+                    </div>
+                  </td>
                   <td className="p-4">
                     <span
                       className="px-3 py-1 rounded-full text-xs font-medium"

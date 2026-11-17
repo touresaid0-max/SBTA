@@ -39,7 +39,10 @@ export interface RouteCityStopRef {
   route_id: string;
   city_id: string;
   city_name: string;
+  /** Tarif climatisé */
   price: number;
+  /** Tarif sans clim (null: the climatisé fare applies) */
+  price_no_ac?: number | null;
   position: number;
 }
 
@@ -198,9 +201,10 @@ export function generateTicketNumber(_stationAgencyCode?: string): string {
   return `${year}-${uuidV4().slice(0, 8).toUpperCase()}`;
 }
 
-export function calculatePrice(basePrice: number, isAc: boolean, isReduced: boolean): number {
+// Climatisé or not no longer adds 10 %: the admin gives a tarif climatisé and a tarif sans clim per
+// route (Itinéraires), and the fare chosen at the sale is passed here
+export function calculatePrice(basePrice: number, isReduced: boolean): number {
   let price = basePrice;
-  if (isAc) price = Math.round(price * 1.1);
   if (isReduced) price = Math.round(price * 0.9);
   return price;
 }
