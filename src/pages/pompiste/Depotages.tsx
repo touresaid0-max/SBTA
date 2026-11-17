@@ -485,6 +485,8 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
   const [withdrawn, setWithdrawn] = useState(0);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  // Measurement taken before the rest time: confirmed in the screen, not in a browser dialog
+  const [confirmEarly, setConfirmEarly] = useState(false);
 
   // Fills made from this tank since the delivery was recorded (the fuel was settling)
   useEffect(() => {
@@ -507,17 +509,19 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
   const price = Number(d.unit_price ?? 0);
   const arrival = new Date(d.arrival_at || d.created_at);
   const at = new Date(measuredAt);
+  const minutesSinceArrival = isNaN(at.getTime()) ? 0 : Math.max(0, Math.floor((at.getTime() - arrival.getTime()) / 60_000));
   const tooEarly = !isNaN(at.getTime()) && at.getTime() - arrival.getTime() < REST_MINUTES * 60_000;
   const noteRequired = total !== null && Math.abs(total) > (announced * NOTE_THRESHOLD_PCT) / 100;
   const capacity = Number(d.tanks?.capacity_liters ?? 0);
 
-  const save = async () => {
+  const save = async (earlyConfirmed = false) => {
     if (!hasLevel || measured < 0) { toast.error('Saisissez le niveau mesuré à la règle'); return; }
     if (capacity > 0 && measured > capacity) { toast.error(`Le niveau mesuré dépasse la capacité de la cuve (${capacity.toLocaleString('fr-FR')} L)`); return; }
     if (received !== null && received < 0) { toast.error('Mesure inférieure au stock de départ : vérifiez la valeur'); return; }
     if (isNaN(at.getTime()) || at.getTime() < arrival.getTime() || at.getTime() > Date.now() + 5 * 60_000) { toast.error('Heure de mesure invalide'); return; }
     if (noteRequired && !note.trim()) { toast.error(`Écart de plus de ${NOTE_THRESHOLD_PCT} % : indiquez une observation`); return; }
-    if (tooEarly && !window.confirm(`La mesure est prise moins de ${REST_MINUTES} minutes après l'arrivée de la citerne. Le carburant n'est peut-être pas encore stabilisé. Enregistrer quand même ?`)) return;
+    if (tooEarly && !earlyConfirmed) { setConfirmEarly(true); return; }
+    setConfirmEarly(false);
     setSaving(true);
     try {
       const { error } = await supabase.rpc('record_depotage_measure', {
@@ -561,7 +565,7 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
               </div>
             </div>
           )}
-          {tooEarly && !done && (
+          {tooEarly && !done && !confirmEarly && (
             <p className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
               <AlertTriangle className="h-4 w-4" /> Moins de {REST_MINUTES} minutes depuis l'arrivée : attendez que le carburant se stabilise avant de mesurer.
             </p>
@@ -593,10 +597,25 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
                 <Printer className="h-4 w-4" /> Imprimer le bordereau
               </button>
             </>
+          ) : confirmEarly ? (
+            <div className="w-full rounded-xl border-2 p-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+              <p className="flex items-center gap-2 text-sm font-bold" style={{ color: '#92400E' }}>
+                <AlertTriangle className="h-5 w-5 flex-shrink-0" /> Mesure prise {minutesSinceArrival} min après l'arrivée de la citerne (repos conseillé : {REST_MINUTES} min)
+              </p>
+              <p className="mt-1 text-xs" style={{ color: '#92400E' }}>
+                Le carburant n'est peut-être pas encore stabilisé : la mesure et l'écart peuvent être faussés. Vous pouvez attendre et mesurer plus tard, ou confirmer cette mesure maintenant.
+              </p>
+              <div className="mt-3 flex gap-3">
+                <button onClick={() => setConfirmEarly(false)} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm bg-white" style={{ borderColor: '#F59E0B', color: '#92400E' }}>Attendre</button>
+                <button onClick={() => save(true)} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#D97706' }}>
+                  {saving ? 'Enregistrement…' : 'Confirmer quand même'}
+                </button>
+              </div>
+            </div>
           ) : (
             <>
               <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Plus tard</button>
-              <button onClick={save} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
+              <button onClick={() => save()} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
                 {saving ? 'Enregistrement…' : 'Valider la mesure et mettre la cuve à jour'}
               </button>
             </>
