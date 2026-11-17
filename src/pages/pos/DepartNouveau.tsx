@@ -39,6 +39,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [isRamassage, setIsRamassage] = useState(false);
+  // « Standard » ticked by default: the route's tarif standard applies; unticked, the departure is
+  // climatisé and the tarif climatisé applies at the sale
+  const [isStandard, setIsStandard] = useState(true);
   const [enableOtherStation, setEnableOtherStation] = useState(false);
   const [otherStationId, setOtherStationId] = useState('');
   const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
@@ -223,7 +226,8 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         departure_time: departureTime || '',
         status: isRamassage ? 'ramassage' : 'planned',
         is_ramassage: isRamassage,
-        is_ac: false,
+        // A departure linked to a main station's departure keeps its choice
+        is_ac: isLinked ? linkedParent?.is_ac === true : !isStandard,
         seats_total: lastSeat,
         seats_from: seatsFrom,
         seats_capacity: seatsTotal,
@@ -426,6 +430,39 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
               </label>
               <input type="number" min={1} readOnly value={seatsFrom} className={fieldInput} style={{ ...fieldStyle, cursor: 'not-allowed', opacity: 0.7 }} />
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Valeur définie par l'Admin, non modifiable</p>
+            </div>
+
+            {/* Standard (ticked) or climatisé (unticked): chooses the fare applied at the sale */}
+            <div>
+              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                Tarif {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+              </label>
+              {(() => {
+                const standard = isLinked ? linkedParent?.is_ac !== true : isStandard;
+                return (
+                  <label
+                    className="flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-sm font-bold select-none transition-colors"
+                    style={{
+                      borderColor: standard ? 'var(--border)' : 'var(--primary)',
+                      backgroundColor: standard ? 'var(--surface)' : 'var(--primary-light)',
+                      color: standard ? 'var(--text-secondary)' : 'var(--primary)',
+                      cursor: isLinked ? 'not-allowed' : 'pointer',
+                      opacity: isLinked ? 0.7 : 1,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5"
+                      style={{ accentColor: 'var(--primary)' }}
+                      checked={standard}
+                      disabled={isLinked}
+                      onChange={e => setIsStandard(e.target.checked)}
+                    />
+                    {standard ? 'Standard' : 'Climatisé'}
+                  </label>
+                );
+              })()}
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Décochez pour un bus climatisé (tarif climatisé)</p>
             </div>
           </div>
 

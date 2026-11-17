@@ -69,10 +69,12 @@ export default function POSVente() {
   const seatDropdownRef = useRef<HTMLDivElement>(null);
   const [tarif, setTarif] = useState(0);
   const [isReduced, setIsReduced] = useState(false);
-  // Climatisé (default) or not: chosen by the guichetier at the sale; the route's matching fare applies
-  const [isAc, setIsAc] = useState(true);
-  // The route has no fare of the chosen kind (climatisé / sans clim) for this destination: sale refused
+  // The route has no fare of the departure's kind (climatisé / standard) for this destination: sale refused
   const [fareMissing, setFareMissing] = useState(false);
+  // Climatisé or standard: the departure's choice (« Standard » unticked at its creation); a click on
+  // « Climatisé : Oui / Non » changes it
+  const isAc = depart?.is_ac === true;
+  const [savingAc, setSavingAc] = useState(false);
   const [isReported, setIsReported] = useState(false);
   const [sameDestination, setSameDestination] = useState(false);
   const [printTicket, setPrintTicket] = useState(true);
@@ -330,7 +332,7 @@ export default function POSVente() {
     // Fares of the route sold here (the secondary route at a secondary station)
     const ligne = lignes.find(l => l.id === saleDepart.route_id);
 
-    // Tarif sans clim (the prices as before) and tarif climatisé (admin › Itinéraires)
+    // Tarif standard (the prices as before) and tarif climatisé (admin › Itinéraires)
     let noAcPrice = 0;
     let acPrice = 0;
     if (destination.startsWith('city:')) {
@@ -349,6 +351,22 @@ export default function POSVente() {
     setFareMissing(!(basePrice > 0));
     setTarif(basePrice > 0 ? calculatePrice(basePrice, isReduced) : 0);
   }, [destination, saleDepart, tarifs, lignes, currentRouteStops, isReduced, isAc]);
+
+  // « Climatisé : Oui / Non » clicked: the departure's choice (made at its creation) is changed and
+  // sent to the server, so every guichet applies the same fare
+  const toggleAc = async () => {
+    if (!depart || savingAc) return;
+    setSavingAc(true);
+    try {
+      const updated = await localUpdate<DepartRecord>('departs', depart.id, { is_ac: !isAc });
+      if (updated) setDepart(updated);
+    } catch {
+      setError('Impossible de changer la climatisation du départ');
+    } finally {
+      setSavingAc(false);
+    }
+  };
+
 
   // Preview ticket number
   useEffect(() => {
@@ -568,7 +586,7 @@ export default function POSVente() {
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
     if (tarif <= 0) {
-      setError(`Aucun tarif ${isAc ? 'climatisé' : 'sans clim'} pour cette destination — contactez l'administrateur`);
+      setError(`Aucun tarif ${isAc ? 'climatisé' : 'standard'} pour cette destination — contactez l'administrateur`);
       return;
     }
     // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
@@ -1112,10 +1130,17 @@ export default function POSVente() {
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>N° Départ</p>
               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>#{depart.route_number}</p>
             </div>
-            <div>
+            <button
+              type="button"
+              onClick={toggleAc}
+              disabled={savingAc}
+              title="Cliquer pour changer : climatisé (tarif climatisé) ou non (tarif standard)"
+              className="text-left rounded-lg px-1 -mx-1 hover:bg-black/5 disabled:opacity-60"
+              style={{ cursor: 'pointer' }}
+            >
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Climatisé</p>
-              <p className="text-sm font-bold" style={{ color: isAc ? 'var(--info)' : 'var(--text-muted)' }}>{isAc ? 'Oui' : 'Non'}</p>
-            </div>
+              <p className="text-sm font-bold underline decoration-dotted" style={{ color: isAc ? 'var(--info)' : 'var(--text-muted)' }}>{isAc ? 'Oui' : 'Non'}</p>
+            </button>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Ligne</p>
               <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{saleDepart?.route_name ?? depart.route_name}</p>
@@ -1338,31 +1363,11 @@ export default function POSVente() {
                 </label>
               </div>
 
-              {/* Climatisé or not: the route's matching fare is applied (admin › Itinéraires) */}
-              <div className="mb-3">
-                <div className="flex gap-2">
-                  {[true, false].map(ac => (
-                    <button
-                      key={String(ac)}
-                      type="button"
-                      onClick={() => setIsAc(ac)}
-                      className="flex-1 py-2 rounded-xl border-2 text-sm font-bold transition-colors"
-                      style={{
-                        borderColor: isAc === ac ? 'var(--primary)' : 'var(--border)',
-                        color: isAc === ac ? 'var(--primary)' : 'var(--text-secondary)',
-                        backgroundColor: isAc === ac ? 'var(--primary-light)' : 'var(--surface)',
-                      }}
-                    >
-                      {ac ? 'Climatisé' : 'Non climatisé'}
-                    </button>
-                  ))}
-                </div>
-                {fareMissing && destination && (
-                  <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>
-                    Aucun tarif {isAc ? 'climatisé' : 'sans clim'} pour cette destination : vente impossible, contactez l'administrateur.
-                  </p>
-                )}
-              </div>
+              {fareMissing && destination && (
+                <p className="text-xs mb-3" style={{ color: 'var(--danger)' }}>
+                  Aucun tarif {isAc ? 'climatisé' : 'standard'} pour cette destination : vente impossible, contactez l'administrateur.
+                </p>
+              )}
 
               {/* ── Structure du bus (affichée si Vente avec structure est activé) ── */}
               {structureMode && (

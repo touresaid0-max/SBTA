@@ -12,9 +12,9 @@ interface IntermediateStop {
   id?: string;
   city_id: string;
   city_name?: string;
-  /** Tarif sans clim (the stop's price, as before) */
+  /** Tarif standard (the stop's price, as before) */
   price: number;
-  /** Tarif climatisé (without it, the sale « Climatisé » is refused at the guichet) */
+  /** Tarif climatisé (only when the route is « Climatisé »; applied to a departure not « Standard ») */
   price_ac?: number | null;
 }
 
@@ -31,7 +31,7 @@ interface RouteData {
   destination_city_id: string;
   distance_km: number;
   estimated_duration_minutes: number;
-  /** Tarif sans clim (the route's price, as before) */
+  /** Tarif standard (the route's price, as before) */
   base_price: number | null;
   /** Tarif climatisé */
   base_price_ac?: number | null;
@@ -56,7 +56,7 @@ export default function Routes() {
     destination_city_id: '',
     distance_km: 0,
     estimated_duration_minutes: 0,
-    // Tarif sans clim (the current prices) and tarif climatisé
+    // Tarif standard (the current prices) and tarif climatisé
     base_price: null as number | null,
     base_price_ac: null as number | null,
     is_active: true
@@ -68,6 +68,8 @@ export default function Routes() {
   // Secondary routes: their stations are the only ones the guichet can pick as « Gare de vente
   // secondaire » when a departure of this route is loaded in another station
   const [secondaryRouteIds, setSecondaryRouteIds] = useState<string[]>([]);
+  // « Climatisé » ticked: the tarif climatisé fields show; unticked, no tarif climatisé is saved
+  const [acEnabled, setAcEnabled] = useState(false);
   const [stations, setStations] = useState<StationLite[]>([]);
   // Station names linked to each secondary route (guichets with that route, origin station)
   const [secondaryStations, setSecondaryStations] = useState<Record<string, string[]>>({});
@@ -190,7 +192,7 @@ export default function Routes() {
       .eq('route_id', routeId)
       .order('position');
 
-    // Server without the « sans clim » fares yet: the stops are read without them (an empty list
+    // Server without the climatisé fares yet: the stops are read without them (an empty list
     // here would delete them all at the next save)
     let rows: any[] | null = data;
     if (error) {
@@ -225,8 +227,12 @@ export default function Routes() {
 
     try {
       let routeId = editingId;
-      // Without a tarif sans clim, 0 is saved (other screens show the price as a number)
-      const payload = { ...formData, base_price: formData.base_price ?? 0 };
+      // Without a tarif standard, 0 is saved (other screens show the price as a number)
+      const payload = {
+        ...formData,
+        base_price: formData.base_price ?? 0,
+        base_price_ac: acEnabled ? formData.base_price_ac : null,
+      };
 
       if (editingId) {
         const { error } = await supabase
@@ -293,7 +299,7 @@ export default function Routes() {
         city_id: stop.city_id,
         position: i + 1,
         price: stop.price,
-        price_ac: stop.price_ac && stop.price_ac > 0 ? stop.price_ac : null,
+        price_ac: acEnabled && stop.price_ac && stop.price_ac > 0 ? stop.price_ac : null,
       };
 
       if (stop.id) {
@@ -356,10 +362,12 @@ export default function Routes() {
       is_active: route.is_active
     });
     setEditingId(route.id);
+    setAcEnabled(Number(route.base_price_ac) > 0);
 
     try {
       const stops = await loadRouteStops(route.id);
       setIntermediateStops(stops);
+      if (stops.some(s => (s.price_ac ?? 0) > 0)) setAcEnabled(true);
     } catch {
       setIntermediateStops([]);
     }
@@ -403,6 +411,7 @@ export default function Routes() {
     });
     setIntermediateStops([]);
     setSecondaryRouteIds([]);
+    setAcEnabled(false);
   };
 
   // --- Intermediate stops management ---
@@ -590,23 +599,7 @@ export default function Routes() {
 
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <div className="flex flex-col items-end">
-                              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Clim</span>
-                              <input
-                                type="number"
-                                value={stop.price_ac ?? ''}
-                                onChange={(e) => {
-                                  const v = parseFloat(e.target.value);
-                                  updateStopPriceAc(index, Number.isFinite(v) && v > 0 ? v : null);
-                                }}
-                                className="w-24 p-1.5 text-sm border rounded text-right"
-                                min="0"
-                                step="100"
-                                placeholder="Clim"
-                                title="Tarif climatisé"
-                              />
-                            </div>
-                            <div className="flex flex-col items-end">
-                              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Sans clim</span>
+                              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Standard</span>
                               <input
                                 type="number"
                                 value={stop.price || ''}
@@ -614,10 +607,28 @@ export default function Routes() {
                                 className="w-24 p-1.5 text-sm border rounded text-right"
                                 min="0"
                                 step="100"
-                                placeholder="Facultatif"
-                                title="Tarif sans clim (facultatif)"
+                                placeholder="Standard"
+                                title="Tarif standard"
                               />
                             </div>
+                            {acEnabled && (
+                              <div className="flex flex-col items-end">
+                                <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Climatisé</span>
+                                <input
+                                  type="number"
+                                  value={stop.price_ac ?? ''}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value);
+                                    updateStopPriceAc(index, Number.isFinite(v) && v > 0 ? v : null);
+                                  }}
+                                  className="w-24 p-1.5 text-sm border rounded text-right"
+                                  min="0"
+                                  step="100"
+                                  placeholder="Climatisé"
+                                  title="Tarif climatisé"
+                                />
+                              </div>
+                            )}
                             <span className="text-xs font-medium self-end mb-2" style={{ color: 'var(--text-muted)' }}>FCFA</span>
                           </div>
 
@@ -783,25 +794,7 @@ export default function Routes() {
                   </div>
 
                   <div>
-                    <label className="block mb-2 font-medium">Tarif climatisé (FCFA)</label>
-                    <input
-                      type="number"
-                      value={formData.base_price_ac ?? ''}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        setFormData({ ...formData, base_price_ac: Number.isFinite(v) && v > 0 ? v : null });
-                      }}
-                      className="w-full p-3 border rounded-lg"
-                      min="0"
-                      step="100"
-                      placeholder="Facultatif"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block mb-2 font-medium">Tarif sans clim (FCFA)</label>
+                    <label className="block mb-2 font-medium">Tarif standard (FCFA)</label>
                     <input
                       type="number"
                       value={formData.base_price ?? ''}
@@ -812,11 +805,40 @@ export default function Routes() {
                       className="w-full p-3 border rounded-lg"
                       min="0"
                       step="100"
-                      placeholder="Facultatif"
                     />
                   </div>
-                  <p className="col-span-2 self-end text-sm pb-3" style={{ color: 'var(--text-secondary)' }}>
-                    Au guichet, « Climatisé » applique le tarif climatisé et « Non climatisé » ce tarif. Sans le tarif choisi, la vente est refusée.
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 items-end">
+                  <label className="flex items-center gap-2 pb-3 font-medium cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={acEnabled}
+                      onChange={(e) => setAcEnabled(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    Climatisé
+                  </label>
+                  {acEnabled && (
+                    <div>
+                      <label className="block mb-2 font-medium">Tarif climatisé (FCFA)</label>
+                      <input
+                        type="number"
+                        value={formData.base_price_ac ?? ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setFormData({ ...formData, base_price_ac: Number.isFinite(v) && v > 0 ? v : null });
+                        }}
+                        className="w-full p-3 border rounded-lg"
+                        min="0"
+                        step="100"
+                      />
+                    </div>
+                  )}
+                  <p className={`${acEnabled ? '' : 'col-span-2 '}text-sm pb-3`} style={{ color: 'var(--text-secondary)' }}>
+                    {acEnabled
+                      ? 'Au guichet, un départ « Standard » applique le tarif standard, un départ climatisé ce tarif.'
+                      : 'Cochez « Climatisé » pour saisir le tarif des départs climatisés.'}
                   </p>
                 </div>
 
@@ -864,7 +886,7 @@ export default function Routes() {
               <th className="text-left p-4 font-semibold">Destination</th>
               <th className="text-left p-4 font-semibold">Distance</th>
               <th className="text-left p-4 font-semibold">Durée</th>
-              <th className="text-left p-4 font-semibold">Tarif clim / sans clim</th>
+              <th className="text-left p-4 font-semibold">Tarif standard / climatisé</th>
               <th className="text-left p-4 font-semibold">Statut</th>
               <th className="text-left p-4 font-semibold">Actions</th>
             </tr>
@@ -891,10 +913,12 @@ export default function Routes() {
                   <td className="p-4">{route.distance_km} km</td>
                   <td className="p-4">{Math.floor(route.estimated_duration_minutes / 60)}h{route.estimated_duration_minutes % 60 > 0 ? ` ${route.estimated_duration_minutes % 60}min` : ''}</td>
                   <td className="p-4">
-                    Clim : {route.base_price_ac ? `${Number(route.base_price_ac).toLocaleString()} FCFA` : '—'}
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      Sans clim : {route.base_price ? `${Number(route.base_price).toLocaleString()} FCFA` : '—'}
-                    </div>
+                    {route.base_price ? `${Number(route.base_price).toLocaleString()} FCFA` : '—'}
+                    {Number(route.base_price_ac) > 0 && (
+                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Climatisé : {Number(route.base_price_ac).toLocaleString()} FCFA
+                      </div>
+                    )}
                   </td>
                   <td className="p-4">
                     <span
