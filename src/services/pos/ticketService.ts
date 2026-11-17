@@ -39,10 +39,10 @@ export interface RouteCityStopRef {
   route_id: string;
   city_id: string;
   city_name: string;
-  /** Tarif sans clim */
+  /** Tarif standard (climatisé) */
   price: number;
-  /** Tarif climatisé (null: no sale « Climatisé ») */
-  price_ac?: number | null;
+  /** Tarif non climatisé (null: no sale on a departure « Non climatisé ») */
+  price_no_ac?: number | null;
   position: number;
 }
 

@@ -69,11 +69,11 @@ export default function POSVente() {
   const seatDropdownRef = useRef<HTMLDivElement>(null);
   const [tarif, setTarif] = useState(0);
   const [isReduced, setIsReduced] = useState(false);
-  // The route has no fare of the departure's kind (climatisé / standard) for this destination: sale refused
+  // The route has no fare of the departure's kind (standard / non climatisé) for this destination: sale refused
   const [fareMissing, setFareMissing] = useState(false);
-  // Climatisé or standard: the departure's choice (« Standard » unticked at its creation); a click on
-  // « Climatisé : Oui / Non » changes it
-  const isAc = depart?.is_ac === true;
+  // Climatisé (tarif standard) unless « Non climatisé » was ticked at the departure's creation; a
+  // click on « Climatisé : Oui / Non » changes it
+  const isAc = depart?.is_no_ac !== true;
   const [savingAc, setSavingAc] = useState(false);
   const [isReported, setIsReported] = useState(false);
   const [sameDestination, setSameDestination] = useState(false);
@@ -332,18 +332,18 @@ export default function POSVente() {
     // Fares of the route sold here (the secondary route at a secondary station)
     const ligne = lignes.find(l => l.id === saleDepart.route_id);
 
-    // Tarif standard (the prices as before) and tarif climatisé (admin › Itinéraires)
-    let noAcPrice = 0;
+    // Tarif standard (climatisé, the prices as before) and tarif non climatisé (admin › Itinéraires)
     let acPrice = 0;
+    let noAcPrice = 0;
     if (destination.startsWith('city:')) {
       const cityId = destination.slice(5);
       const stop = currentRouteStops.find(s => s.city_id === cityId);
-      noAcPrice = stop?.price ?? 0;
-      acPrice = stop?.price_ac ?? 0;
+      acPrice = stop?.price ?? 0;
+      noAcPrice = stop?.price_no_ac ?? 0;
     } else {
       const tarifRef = tarifs.find(t => t.route_id === saleDepart.route_id && t.station_id === destination);
-      noAcPrice = tarifRef?.price ?? ligne?.base_price ?? 0;
-      acPrice = ligne?.base_price_ac ?? 0;
+      acPrice = tarifRef?.price ?? ligne?.base_price ?? 0;
+      noAcPrice = ligne?.base_price_no_ac ?? 0;
     }
 
     // No fare of the chosen kind: 0, the sale is refused (« contactez l'administrateur »)
@@ -358,7 +358,7 @@ export default function POSVente() {
     if (!depart || savingAc) return;
     setSavingAc(true);
     try {
-      const updated = await localUpdate<DepartRecord>('departs', depart.id, { is_ac: !isAc });
+      const updated = await localUpdate<DepartRecord>('departs', depart.id, { is_no_ac: isAc });
       if (updated) setDepart(updated);
     } catch {
       setError('Impossible de changer la climatisation du départ');
@@ -586,7 +586,7 @@ export default function POSVente() {
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
     if (tarif <= 0) {
-      setError(`Aucun tarif ${isAc ? 'climatisé' : 'standard'} pour cette destination — contactez l'administrateur`);
+      setError(`Aucun tarif ${isAc ? 'standard' : 'non climatisé'} pour cette destination — contactez l'administrateur`);
       return;
     }
     // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
@@ -1134,7 +1134,7 @@ export default function POSVente() {
               type="button"
               onClick={toggleAc}
               disabled={savingAc}
-              title="Cliquer pour changer : climatisé (tarif climatisé) ou non (tarif standard)"
+              title="Cliquer pour changer : climatisé (tarif standard) ou non (tarif non climatisé)"
               className="text-left rounded-lg px-1 -mx-1 hover:bg-black/5 disabled:opacity-60"
               style={{ cursor: 'pointer' }}
             >
@@ -1365,7 +1365,7 @@ export default function POSVente() {
 
               {fareMissing && destination && (
                 <p className="text-xs mb-3" style={{ color: 'var(--danger)' }}>
-                  Aucun tarif {isAc ? 'climatisé' : 'standard'} pour cette destination : vente impossible, contactez l'administrateur.
+                  Aucun tarif {isAc ? 'standard' : 'non climatisé'} pour cette destination : vente impossible, contactez l'administrateur.
                 </p>
               )}
 

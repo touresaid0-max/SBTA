@@ -39,9 +39,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   const [busId, setBusId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [isRamassage, setIsRamassage] = useState(false);
-  // « Standard » ticked by default: the route's tarif standard applies; unticked, the departure is
-  // climatisé and the tarif climatisé applies at the sale
-  const [isStandard, setIsStandard] = useState(true);
+  // « Non climatisé » unticked by default: the departure is climatisé and the route's tarif standard
+  // applies; ticked, the tarif non climatisé applies at the sale
+  const [isNoAc, setIsNoAc] = useState(false);
   const [enableOtherStation, setEnableOtherStation] = useState(false);
   const [otherStationId, setOtherStationId] = useState('');
   const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
@@ -226,8 +226,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         departure_time: departureTime || '',
         status: isRamassage ? 'ramassage' : 'planned',
         is_ramassage: isRamassage,
+        is_ac: false,
         // A departure linked to a main station's departure keeps its choice
-        is_ac: isLinked ? linkedParent?.is_ac === true : !isStandard,
+        is_no_ac: isLinked ? linkedParent?.is_no_ac === true : isNoAc,
         seats_total: lastSeat,
         seats_from: seatsFrom,
         seats_capacity: seatsTotal,
@@ -432,20 +433,20 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Valeur définie par l'Admin, non modifiable</p>
             </div>
 
-            {/* Standard (ticked) or climatisé (unticked): chooses the fare applied at the sale */}
+            {/* Non climatisé (ticked) or climatisé (unticked, tarif standard): the fare applied at the sale */}
             <div>
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                Tarif {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+                Climatisation {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
               </label>
               {(() => {
-                const standard = isLinked ? linkedParent?.is_ac !== true : isStandard;
+                const noAc = isLinked ? linkedParent?.is_no_ac === true : isNoAc;
                 return (
                   <label
                     className="flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-sm font-bold select-none transition-colors"
                     style={{
-                      borderColor: standard ? 'var(--border)' : 'var(--primary)',
-                      backgroundColor: standard ? 'var(--surface)' : 'var(--primary-light)',
-                      color: standard ? 'var(--text-secondary)' : 'var(--primary)',
+                      borderColor: noAc ? 'var(--primary)' : 'var(--border)',
+                      backgroundColor: noAc ? 'var(--primary-light)' : 'var(--surface)',
+                      color: noAc ? 'var(--primary)' : 'var(--text-secondary)',
                       cursor: isLinked ? 'not-allowed' : 'pointer',
                       opacity: isLinked ? 0.7 : 1,
                     }}
@@ -454,15 +455,15 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                       type="checkbox"
                       className="w-5 h-5"
                       style={{ accentColor: 'var(--primary)' }}
-                      checked={standard}
+                      checked={noAc}
                       disabled={isLinked}
-                      onChange={e => setIsStandard(e.target.checked)}
+                      onChange={e => setIsNoAc(e.target.checked)}
                     />
-                    {standard ? 'Standard' : 'Climatisé'}
+                    Non climatisé
                   </label>
                 );
               })()}
-              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Décochez pour un bus climatisé (tarif climatisé)</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Cochez pour un bus non climatisé (tarif non climatisé)</p>
             </div>
           </div>
 

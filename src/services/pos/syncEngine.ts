@@ -107,9 +107,9 @@ function serverSeatAllocations(value: unknown): Record<string, unknown>[] | null
     }));
 }
 
-/** Departure columns a server may not have yet (migrations 20261111200000, 20261117130000 not
+/** Departure columns a server may not have yet (migrations 20261111200000, 20261117150000 not
  *  run): the departure is then sent without them */
-const OPTIONAL_DEPART_COLUMNS = ['seat_allocations', 'is_ac'];
+const OPTIONAL_DEPART_COLUMNS = ['seat_allocations', 'is_no_ac'];
 function missingDepartColumn(error: { code?: string; message?: string } | null): string | undefined {
   if (!error) return undefined;
   const msg = String(error.message ?? '');
@@ -144,8 +144,8 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     updated_at: p.updated_at ?? trustedNowIso(),
     is_ramassage: p.is_ramassage ?? false,
     is_anticipated: false,
-    // Climatisé: the guichetier unticks « Standard » (standard by default)
-    is_ac: p.is_ac === true,
+    // « Non climatisé » ticked by the guichetier (climatisé, tarif standard, by default)
+    is_no_ac: p.is_no_ac === true,
     ...(serverSeatAllocations(p.seat_allocations) ? { seat_allocations: serverSeatAllocations(p.seat_allocations) } : {}),
   };
 }
@@ -171,7 +171,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.station_id !== undefined) result.departure_station_id = p.station_id;
   if (p.arrival_station_id !== undefined) result.arrival_station_id = p.arrival_station_id;
   if (p.is_ramassage !== undefined) result.is_ramassage = p.is_ramassage;
-  if (p.is_ac !== undefined) result.is_ac = p.is_ac === true;
+  if (p.is_no_ac !== undefined) result.is_no_ac = p.is_no_ac === true;
   if (p.seat_allocations !== undefined) result.seat_allocations = serverSeatAllocations(p.seat_allocations);
   if (p.departure_datetime !== undefined) {
     result.departure_datetime = p.departure_datetime;

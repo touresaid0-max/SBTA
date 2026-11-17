@@ -11,13 +11,14 @@ export const SECONDARY_STATIONS_UNAVAILABLE = '__unavailable__';
 
 const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   lignes: async () => {
-    // base_price: tarif sans clim (the price as before); base_price_ac: tarif climatisé. A server
-    // without the column (migration 20261117110000 not run) is read without it.
+    // base_price: tarif standard (climatisé, the price as before); base_price_no_ac: tarif non
+    // climatisé (optional). A server without the column (migration 20261117150000 not run) is read
+    // without it.
     const columns = 'id, name, origin_station_id, destination_station_id, destination_city_id, base_price, is_active';
-    let { data, error }: { data: any[] | null; error: unknown } = await supabase.from('routes').select(`${columns}, base_price_ac`).eq('is_active', true).order('name');
+    let { data, error }: { data: any[] | null; error: unknown } = await supabase.from('routes').select(`${columns}, base_price_no_ac`).eq('is_active', true).order('name');
     if (error) ({ data, error } = await supabase.from('routes').select(columns).eq('is_active', true).order('name'));
     if (error) throw error;
-    return (data ?? []).map((r: any) => ({ id: r.id, name: r.name, origin_station_id: r.origin_station_id, destination_station_id: r.destination_station_id, destination_city_id: r.destination_city_id, base_price: Number(r.base_price ?? 0), base_price_ac: Number(r.base_price_ac) > 0 ? Number(r.base_price_ac) : null, is_active: r.is_active }));
+    return (data ?? []).map((r: any) => ({ id: r.id, name: r.name, origin_station_id: r.origin_station_id, destination_station_id: r.destination_station_id, destination_city_id: r.destination_city_id, base_price: Number(r.base_price ?? 0), base_price_no_ac: Number(r.base_price_no_ac) > 0 ? Number(r.base_price_no_ac) : null, is_active: r.is_active }));
   },
   vehicules: async () => {
     const { data, error } = await supabase.from('buses').select('id, registration_number, capacity, company_id, status, brand, model, seats_sold_from').in('status', ['disponible', 'en_service']).is('archived_at', null).order('registration_number');
@@ -41,10 +42,10 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
   },
   route_city_stops: async () => {
     const columns = 'id, route_id, city_id, price, position, cities(name)';
-    let { data, error }: { data: any[] | null; error: unknown } = await supabase.from('route_city_stops').select(`${columns}, price_ac`).order('route_id, position');
+    let { data, error }: { data: any[] | null; error: unknown } = await supabase.from('route_city_stops').select(`${columns}, price_no_ac`).order('route_id, position');
     if (error) ({ data, error } = await supabase.from('route_city_stops').select(columns).order('route_id, position'));
     if (error) throw error;
-    return (data ?? []).map((s: any) => ({ id: s.id, route_id: s.route_id, city_id: s.city_id, city_name: s.cities?.name ?? '', price: Number(s.price ?? 0), price_ac: Number(s.price_ac) > 0 ? Number(s.price_ac) : null, position: s.position }));
+    return (data ?? []).map((s: any) => ({ id: s.id, route_id: s.route_id, city_id: s.city_id, city_name: s.cities?.name ?? '', price: Number(s.price ?? 0), price_no_ac: Number(s.price_no_ac) > 0 ? Number(s.price_no_ac) : null, position: s.position }));
   },
   // Stations allowed as « Gare de vente secondaire » for each route (set by the admin through the
   // route's secondary routes). A marker row ends the list, so that it is never empty (an empty
