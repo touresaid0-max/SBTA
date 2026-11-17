@@ -354,8 +354,14 @@ export default function POSVente() {
 
   // « Climatisé : Oui / Non » clicked: the departure's choice (made at its creation) is changed and
   // sent to the server, so every guichet applies the same fare
+  // The route sold here has a tarif non climatisé (admin › Itinéraires): only then can a climatisé
+  // departure be switched to « Non »
+  const routeHasNoAc = (lignes.find(l => l.id === saleDepart?.route_id)?.base_price_no_ac ?? 0) > 0
+    || currentRouteStops.some(s => (s.price_no_ac ?? 0) > 0);
+  const canToggleAc = !isAc || routeHasNoAc;
+
   const toggleAc = async () => {
-    if (!depart || savingAc) return;
+    if (!depart || savingAc || !canToggleAc) return;
     setSavingAc(true);
     try {
       const updated = await localUpdate<DepartRecord>('departs', depart.id, { is_no_ac: isAc });
@@ -1133,13 +1139,13 @@ export default function POSVente() {
             <button
               type="button"
               onClick={toggleAc}
-              disabled={savingAc}
-              title="Cliquer pour changer : climatisé (tarif standard) ou non (tarif non climatisé)"
-              className="text-left rounded-lg px-1 -mx-1 hover:bg-black/5 disabled:opacity-60"
-              style={{ cursor: 'pointer' }}
+              disabled={savingAc || !canToggleAc}
+              title={canToggleAc ? 'Cliquer pour changer : climatisé (tarif standard) ou non (tarif non climatisé)' : 'Pas de tarif non climatisé pour cet itinéraire'}
+              className={`text-left rounded-lg px-1 -mx-1 ${canToggleAc ? 'hover:bg-black/5' : ''} disabled:cursor-default`}
+              style={{ cursor: canToggleAc ? 'pointer' : 'default' }}
             >
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Climatisé</p>
-              <p className="text-sm font-bold underline decoration-dotted" style={{ color: isAc ? 'var(--info)' : 'var(--text-muted)' }}>{isAc ? 'Oui' : 'Non'}</p>
+              <p className={`text-sm font-bold ${canToggleAc ? 'underline decoration-dotted' : ''}`} style={{ color: isAc ? 'var(--info)' : 'var(--text-muted)' }}>{isAc ? 'Oui' : 'Non'}</p>
             </button>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Ligne</p>

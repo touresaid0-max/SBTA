@@ -14,6 +14,7 @@ import {
   type SeatAllocation,
   type DepartRecord,
 } from '@/services/pos/departService';
+import { getRouteCityStops } from '@/services/pos/ticketService';
 import { checkAndApplyPendingTransfers } from '@/services/pos/transferService';
 import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair, Lock, Info } from 'lucide-react';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
@@ -42,6 +43,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   // « Non climatisé » unticked by default: the departure is climatisé and the route's tarif standard
   // applies; ticked, the tarif non climatisé applies at the sale
   const [isNoAc, setIsNoAc] = useState(false);
+  // Routes the admin gave a tarif non climatisé (« Non climatisé » ticked in Itinéraires): only
+  // their departures can be « Non climatisé »
+  const [noAcRouteIds, setNoAcRouteIds] = useState<Set<string>>(new Set());
   const [enableOtherStation, setEnableOtherStation] = useState(false);
   const [otherStationId, setOtherStationId] = useState('');
   const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
@@ -77,6 +81,15 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         : fromServer;
       const [l, v, c, g, fresh, secondary] = await Promise.all([getLignes(), getVehicules(), getChauffeurs(), getGares(), assigned, getSecondaryStationsByRoute()]);
       setSecondaryByRoute(secondary);
+      try {
+        const stops = await getRouteCityStops();
+        setNoAcRouteIds(new Set([
+          ...l.filter(r => (r.base_price_no_ac ?? 0) > 0).map(r => r.id),
+          ...stops.filter(s => (s.price_no_ac ?? 0) > 0).map(s => s.route_id),
+        ]));
+      } catch {
+        setNoAcRouteIds(new Set(l.filter(r => (r.base_price_no_ac ?? 0) > 0).map(r => r.id)));
+      }
 
       const routeIds = fresh.length > 0 ? fresh : known;
 
@@ -228,7 +241,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         is_ramassage: isRamassage,
         is_ac: false,
         // A departure linked to a main station's departure keeps its choice
-        is_no_ac: isLinked ? linkedParent?.is_no_ac === true : isNoAc,
+        is_no_ac: isLinked ? linkedParent?.is_no_ac === true : (isNoAc && noAcRouteIds.has(ligneId)),
         seats_total: lastSeat,
         seats_from: seatsFrom,
         seats_capacity: seatsTotal,
@@ -433,38 +446,41 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Valeur définie par l'Admin, non modifiable</p>
             </div>
 
-            {/* Non climatisé (ticked) or climatisé (unticked, tarif standard): the fare applied at the sale */}
-            <div>
-              <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                Climatisation {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
-              </label>
-              {(() => {
-                const noAc = isLinked ? linkedParent?.is_no_ac === true : isNoAc;
-                return (
-                  <label
-                    className="flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-sm font-bold select-none transition-colors"
-                    style={{
-                      borderColor: noAc ? 'var(--primary)' : 'var(--border)',
-                      backgroundColor: noAc ? 'var(--primary-light)' : 'var(--surface)',
-                      color: noAc ? 'var(--primary)' : 'var(--text-secondary)',
-                      cursor: isLinked ? 'not-allowed' : 'pointer',
-                      opacity: isLinked ? 0.7 : 1,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      className="w-5 h-5"
-                      style={{ accentColor: 'var(--primary)' }}
-                      checked={noAc}
-                      disabled={isLinked}
-                      onChange={e => setIsNoAc(e.target.checked)}
-                    />
-                    Non climatisé
-                  </label>
-                );
-              })()}
-              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Cochez pour un bus non climatisé (tarif non climatisé)</p>
-            </div>
+            {/* Non climatisé (ticked) or climatisé (unticked, tarif standard): the fare applied at the sale.
+                Shown only when the route has a tarif non climatisé (admin › Itinéraires) */}
+            {(isLinked ? linkedParent?.is_no_ac === true : noAcRouteIds.has(ligneId)) && (
+              <div>
+                <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
+                  Climatisation {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
+                </label>
+                {(() => {
+                  const noAc = isLinked ? linkedParent?.is_no_ac === true : isNoAc;
+                  return (
+                    <label
+                      className="flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-sm font-bold select-none transition-colors"
+                      style={{
+                        borderColor: noAc ? 'var(--primary)' : 'var(--border)',
+                        backgroundColor: noAc ? 'var(--primary-light)' : 'var(--surface)',
+                        color: noAc ? 'var(--primary)' : 'var(--text-secondary)',
+                        cursor: isLinked ? 'not-allowed' : 'pointer',
+                        opacity: isLinked ? 0.7 : 1,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-5 h-5"
+                        style={{ accentColor: 'var(--primary)' }}
+                        checked={noAc}
+                        disabled={isLinked}
+                        onChange={e => setIsNoAc(e.target.checked)}
+                      />
+                      Non climatisé
+                    </label>
+                  );
+                })()}
+                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Cochez pour un bus non climatisé (tarif non climatisé)</p>
+              </div>
+            )}
           </div>
 
           {/* Seat range info banner for linked secondary station */}
