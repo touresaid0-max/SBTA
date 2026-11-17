@@ -107,9 +107,14 @@ function serverSeatAllocations(value: unknown): Record<string, unknown>[] | null
     }));
 }
 
-/** A server without the seat allocation columns (migration 20261111200000 not run yet) */
-function isMissingAllocationColumn(error: { code?: string; message?: string } | null): boolean {
-  return !!error && /seat_allocations/.test(String(error.message ?? '')) && (error.code === 'PGRST204' || /column/i.test(String(error.message ?? '')));
+/** Departure columns a server may not have yet (migrations 20261111200000, 20261117150000 not
+ *  run): the departure is then sent without them */
+const OPTIONAL_DEPART_COLUMNS = ['seat_allocations', 'is_no_ac'];
+function missingDepartColumn(error: { code?: string; message?: string } | null): string | undefined {
+  if (!error) return undefined;
+  const msg = String(error.message ?? '');
+  if (!(error.code === 'PGRST204' || /column/i.test(msg))) return undefined;
+  return OPTIONAL_DEPART_COLUMNS.find(c => new RegExp(`\\b${c}\\b`).test(msg));
 }
 
 function mapDepartInsert(payload: Record<string, unknown>): Record<string, unknown> {
@@ -139,6 +144,8 @@ function mapDepartInsert(payload: Record<string, unknown>): Record<string, unkno
     updated_at: p.updated_at ?? trustedNowIso(),
     is_ramassage: p.is_ramassage ?? false,
     is_anticipated: false,
+    // « Non climatisé » ticked by the guichetier (climatisé, tarif standard, by default)
+    is_no_ac: p.is_no_ac === true,
     ...(serverSeatAllocations(p.seat_allocations) ? { seat_allocations: serverSeatAllocations(p.seat_allocations) } : {}),
   };
 }
@@ -164,6 +171,7 @@ function mapDepartUpdate(payload: Record<string, unknown>): Record<string, unkno
   if (p.station_id !== undefined) result.departure_station_id = p.station_id;
   if (p.arrival_station_id !== undefined) result.arrival_station_id = p.arrival_station_id;
   if (p.is_ramassage !== undefined) result.is_ramassage = p.is_ramassage;
+  if (p.is_no_ac !== undefined) result.is_no_ac = p.is_no_ac === true;
   if (p.seat_allocations !== undefined) result.seat_allocations = serverSeatAllocations(p.seat_allocations);
   if (p.departure_datetime !== undefined) {
     result.departure_datetime = p.departure_datetime;
@@ -582,9 +590,9 @@ async function executeInsert(
   // hundreds of tickets already on the server showed as refused. A row already there (same id)
   // counts as sent, and the server's copy is left as it is.
   let { error } = await supabase.from(table).insert(payload);
-  if (store === 'departs' && isMissingAllocationColumn(error)) {
-    // Server not updated yet: the departure is sent without its allocations
-    delete payload.seat_allocations;
+  // Server not updated yet: the departure is sent without the columns it does not have
+  for (let col = store === 'departs' ? missingDepartColumn(error) : undefined; col && col in payload; col = missingDepartColumn(error)) {
+    delete payload[col];
     ({ error } = await supabase.from(table).insert(payload));
   }
   if (error && !isAlreadyReceived(error)) {
@@ -679,8 +687,8 @@ async function executeUpdate(store: StoreName, id: string, patch: Record<string,
 
   if (!remotePayload) return;
   let { data, error } = await supabase.from(table).update(remotePayload).eq('id', id).select('id');
-  if (store === 'departs' && isMissingAllocationColumn(error)) {
-    delete remotePayload.seat_allocations;
+  for (let col = store === 'departs' ? missingDepartColumn(error) : undefined; col && col in remotePayload; col = missingDepartColumn(error)) {
+    delete remotePayload[col];
     if (Object.keys(remotePayload).length <= 1) return;
     ({ data, error } = await supabase.from(table).update(remotePayload).eq('id', id).select('id'));
   }

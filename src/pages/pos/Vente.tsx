@@ -69,6 +69,12 @@ export default function POSVente() {
   const seatDropdownRef = useRef<HTMLDivElement>(null);
   const [tarif, setTarif] = useState(0);
   const [isReduced, setIsReduced] = useState(false);
+  // The route has no fare of the departure's kind (standard / non climatisé) for this destination: sale refused
+  const [fareMissing, setFareMissing] = useState(false);
+  // Climatisé (tarif standard) unless « Non climatisé » was ticked at the departure's creation; a
+  // click on « Climatisé : Oui / Non » changes it
+  const isAc = depart?.is_no_ac !== true;
+  const [savingAc, setSavingAc] = useState(false);
   const [isReported, setIsReported] = useState(false);
   const [sameDestination, setSameDestination] = useState(false);
   const [printTicket, setPrintTicket] = useState(true);
@@ -322,22 +328,51 @@ export default function POSVente() {
   // Auto-calculate tarif when destination changes
   // Destination can be a station ID (final destination) or `city:{id}` (intermediate city)
   useEffect(() => {
-    if (!saleDepart || !destination) { setTarif(0); return; }
+    if (!saleDepart || !destination) { setTarif(0); setFareMissing(false); return; }
     // Fares of the route sold here (the secondary route at a secondary station)
     const ligne = lignes.find(l => l.id === saleDepart.route_id);
 
-    let basePrice = 0;
+    // Tarif standard (climatisé, the prices as before) and tarif non climatisé (admin › Itinéraires)
+    let acPrice = 0;
+    let noAcPrice = 0;
     if (destination.startsWith('city:')) {
       const cityId = destination.slice(5);
       const stop = currentRouteStops.find(s => s.city_id === cityId);
-      basePrice = stop?.price ?? 0;
+      acPrice = stop?.price ?? 0;
+      noAcPrice = stop?.price_no_ac ?? 0;
     } else {
       const tarifRef = tarifs.find(t => t.route_id === saleDepart.route_id && t.station_id === destination);
-      basePrice = tarifRef?.price ?? ligne?.base_price ?? 0;
+      acPrice = tarifRef?.price ?? ligne?.base_price ?? 0;
+      noAcPrice = ligne?.base_price_no_ac ?? 0;
     }
 
-    setTarif(calculatePrice(basePrice, saleDepart.is_ac, isReduced));
-  }, [destination, saleDepart, tarifs, lignes, currentRouteStops, isReduced]);
+    // No fare of the chosen kind: 0, the sale is refused (« contactez l'administrateur »)
+    const basePrice = isAc ? acPrice : noAcPrice;
+    setFareMissing(!(basePrice > 0));
+    setTarif(basePrice > 0 ? calculatePrice(basePrice, isReduced) : 0);
+  }, [destination, saleDepart, tarifs, lignes, currentRouteStops, isReduced, isAc]);
+
+  // « Climatisé : Oui / Non » clicked: the departure's choice (made at its creation) is changed and
+  // sent to the server, so every guichet applies the same fare
+  // The route sold here has a tarif non climatisé (admin › Itinéraires): only then can a climatisé
+  // departure be switched to « Non »
+  const routeHasNoAc = (lignes.find(l => l.id === saleDepart?.route_id)?.base_price_no_ac ?? 0) > 0
+    || currentRouteStops.some(s => (s.price_no_ac ?? 0) > 0);
+  const canToggleAc = !isAc || routeHasNoAc;
+
+  const toggleAc = async () => {
+    if (!depart || savingAc || !canToggleAc) return;
+    setSavingAc(true);
+    try {
+      const updated = await localUpdate<DepartRecord>('departs', depart.id, { is_no_ac: isAc });
+      if (updated) setDepart(updated);
+    } catch {
+      setError('Impossible de changer la climatisation du départ');
+    } finally {
+      setSavingAc(false);
+    }
+  };
+
 
   // Preview ticket number
   useEffect(() => {
@@ -556,7 +591,10 @@ export default function POSVente() {
       }
     }
     if (!destination) { setError('Veuillez sélectionner une destination'); return; }
-    if (tarif <= 0) { setError("Aucun tarif pour cette destination — contactez l'administrateur"); return; }
+    if (tarif <= 0) {
+      setError(`Aucun tarif ${isAc ? 'standard' : 'non climatisé'} pour cette destination — contactez l'administrateur`);
+      return;
+    }
     // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
     const tarifCheck = checkAmounts([{ value: tarif, rule: AMOUNT_RULES.ticketPrice }]);
     if (!tarifCheck.ok) { if (tarifCheck.error) setError(tarifCheck.error); return; }
@@ -580,7 +618,7 @@ export default function POSVente() {
         destination: destName,
         destinationId: destId,
         price: tarif, originalPrice: tarif,
-        isReduced, isReported, isAc: depart.is_ac, printTicket,
+        isReduced, isReported, isAc, printTicket,
         loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
         loyaltyName: loyaltyEnabled ? cleanText(loyaltyName, TEXT_LIMITS.name) : undefined,
         stationAgencyCode: session?.station_name,
@@ -1098,10 +1136,17 @@ export default function POSVente() {
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>N° Départ</p>
               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>#{depart.route_number}</p>
             </div>
-            <div>
-              <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tarif Climatisé</p>
-              <p className="text-sm font-bold" style={{ color: depart.is_ac ? 'var(--info)' : 'var(--text-muted)' }}>{depart.is_ac ? 'Oui (+10%)' : 'Non'}</p>
-            </div>
+            <button
+              type="button"
+              onClick={toggleAc}
+              disabled={savingAc || !canToggleAc}
+              title={canToggleAc ? 'Cliquer pour changer : climatisé (tarif standard) ou non (tarif non climatisé)' : 'Pas de tarif non climatisé pour cet itinéraire'}
+              className={`text-left rounded-lg px-1 -mx-1 ${canToggleAc ? 'hover:bg-black/5' : ''} disabled:cursor-default`}
+              style={{ cursor: canToggleAc ? 'pointer' : 'default' }}
+            >
+              <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Climatisé</p>
+              <p className={`text-sm font-bold ${canToggleAc ? 'underline decoration-dotted' : ''}`} style={{ color: isAc ? 'var(--info)' : 'var(--text-muted)' }}>{isAc ? 'Oui' : 'Non'}</p>
+            </button>
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Ligne</p>
               <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{saleDepart?.route_name ?? depart.route_name}</p>
@@ -1323,6 +1368,12 @@ export default function POSVente() {
                   <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Imprimer ticket</span>
                 </label>
               </div>
+
+              {fareMissing && destination && (
+                <p className="text-xs mb-3" style={{ color: 'var(--danger)' }}>
+                  Aucun tarif {isAc ? 'standard' : 'non climatisé'} pour cette destination : vente impossible, contactez l'administrateur.
+                </p>
+              )}
 
               {/* ── Structure du bus (affichée si Vente avec structure est activé) ── */}
               {structureMode && (

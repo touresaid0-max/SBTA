@@ -12,7 +12,10 @@ interface IntermediateStop {
   id?: string;
   city_id: string;
   city_name?: string;
+  /** Tarif standard (climatisé, the stop's price, as before) */
   price: number;
+  /** Tarif non climatisé (only when the route has « Non climatisé »; applied to a departure « Non climatisé ») */
+  price_no_ac?: number | null;
 }
 
 interface StationLite {
@@ -28,7 +31,10 @@ interface RouteData {
   destination_city_id: string;
   distance_km: number;
   estimated_duration_minutes: number;
-  base_price: number;
+  /** Tarif standard (climatisé, the route's price, as before) */
+  base_price: number | null;
+  /** Tarif non climatisé */
+  base_price_no_ac?: number | null;
   is_active: boolean;
   origin_city?: { name: string };
   destination_city?: { name: string };
@@ -50,7 +56,9 @@ export default function Routes() {
     destination_city_id: '',
     distance_km: 0,
     estimated_duration_minutes: 0,
-    base_price: 0,
+    // Tarif standard (the current prices) and tarif non climatisé
+    base_price: null as number | null,
+    base_price_no_ac: null as number | null,
     is_active: true
   });
 
@@ -60,6 +68,8 @@ export default function Routes() {
   // Secondary routes: their stations are the only ones the guichet can pick as « Gare de vente
   // secondaire » when a departure of this route is loaded in another station
   const [secondaryRouteIds, setSecondaryRouteIds] = useState<string[]>([]);
+  // « Non climatisé » ticked: the tarif non climatisé fields show; unticked, none is saved
+  const [noAcEnabled, setNoAcEnabled] = useState(false);
   const [stations, setStations] = useState<StationLite[]>([]);
   // Station names linked to each secondary route (guichets with that route, origin station)
   const [secondaryStations, setSecondaryStations] = useState<Record<string, string[]>>({});
@@ -178,17 +188,29 @@ export default function Routes() {
   const loadRouteStops = async (routeId: string): Promise<IntermediateStop[]> => {
     const { data, error } = await supabase
       .from('route_city_stops')
-      .select('id, city_id, price, cities!inner(name)')
+      .select('id, city_id, price, price_no_ac, cities!inner(name)')
       .eq('route_id', routeId)
       .order('position');
 
-    if (error) throw error;
+    // Server without the non climatisé fares yet: the stops are read without them (an empty list
+    // here would delete them all at the next save)
+    let rows: any[] | null = data;
+    if (error) {
+      const retry = await supabase
+        .from('route_city_stops')
+        .select('id, city_id, price, cities!inner(name)')
+        .eq('route_id', routeId)
+        .order('position');
+      if (retry.error) throw retry.error;
+      rows = retry.data;
+    }
 
-    return (data || []).map((s: any) => ({
+    return (rows || []).map((s: any) => ({
       id: s.id,
       city_id: s.city_id,
       city_name: s.cities?.name,
       price: Number(s.price) || 0,
+      price_no_ac: s.price_no_ac != null && Number(s.price_no_ac) > 0 ? Number(s.price_no_ac) : null,
     }));
   };
 
@@ -205,11 +227,17 @@ export default function Routes() {
 
     try {
       let routeId = editingId;
+      // Without a tarif standard, 0 is saved (other screens show the price as a number)
+      const payload = {
+        ...formData,
+        base_price: formData.base_price ?? 0,
+        base_price_no_ac: noAcEnabled ? formData.base_price_no_ac : null,
+      };
 
       if (editingId) {
         const { error } = await supabase
           .from('routes')
-          .update(formData)
+          .update(payload)
           .eq('id', editingId);
 
         if (error) throw error;
@@ -217,7 +245,7 @@ export default function Routes() {
       } else {
         const { data, error } = await supabase
           .from('routes')
-          .insert([formData])
+          .insert([payload])
           .select('id')
           .single();
 
@@ -271,6 +299,7 @@ export default function Routes() {
         city_id: stop.city_id,
         position: i + 1,
         price: stop.price,
+        price_no_ac: noAcEnabled && stop.price_no_ac && stop.price_no_ac > 0 ? stop.price_no_ac : null,
       };
 
       if (stop.id) {
@@ -328,14 +357,17 @@ export default function Routes() {
       destination_city_id: route.destination_city_id,
       distance_km: route.distance_km,
       estimated_duration_minutes: route.estimated_duration_minutes,
-      base_price: route.base_price,
+      base_price: route.base_price != null && Number(route.base_price) > 0 ? Number(route.base_price) : null,
+      base_price_no_ac: route.base_price_no_ac != null && Number(route.base_price_no_ac) > 0 ? Number(route.base_price_no_ac) : null,
       is_active: route.is_active
     });
     setEditingId(route.id);
+    setNoAcEnabled(Number(route.base_price_no_ac) > 0);
 
     try {
       const stops = await loadRouteStops(route.id);
       setIntermediateStops(stops);
+      if (stops.some(s => (s.price_no_ac ?? 0) > 0)) setNoAcEnabled(true);
     } catch {
       setIntermediateStops([]);
     }
@@ -373,11 +405,13 @@ export default function Routes() {
       destination_city_id: '',
       distance_km: 0,
       estimated_duration_minutes: 0,
-      base_price: 0,
+      base_price: null,
+      base_price_no_ac: null,
       is_active: true
     });
     setIntermediateStops([]);
     setSecondaryRouteIds([]);
+    setNoAcEnabled(false);
   };
 
   // --- Intermediate stops management ---
@@ -400,6 +434,10 @@ export default function Routes() {
 
   const updateStopPrice = (index: number, price: number) => {
     setIntermediateStops(intermediateStops.map((s, i) => i === index ? { ...s, price } : s));
+  };
+
+  const updateStopPriceNoAc = (index: number, price: number | null) => {
+    setIntermediateStops(intermediateStops.map((s, i) => i === index ? { ...s, price_no_ac: price } : s));
   };
 
   const moveStop = (index: number, direction: 'up' | 'down') => {
@@ -560,16 +598,38 @@ export default function Routes() {
                           </div>
 
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            <input
-                              type="number"
-                              value={stop.price}
-                              onChange={(e) => updateStopPrice(index, parseFloat(e.target.value) || 0)}
-                              className="w-24 p-1.5 text-sm border rounded text-right"
-                              min="0"
-                              step="100"
-                              placeholder="Tarif"
-                            />
-                            <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>FCFA</span>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Standard</span>
+                              <input
+                                type="number"
+                                value={stop.price || ''}
+                                onChange={(e) => updateStopPrice(index, parseFloat(e.target.value) || 0)}
+                                className="w-24 p-1.5 text-sm border rounded text-right"
+                                min="0"
+                                step="100"
+                                placeholder="Standard"
+                                title="Tarif standard"
+                              />
+                            </div>
+                            {noAcEnabled && (
+                              <div className="flex flex-col items-end">
+                                <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Non clim.</span>
+                                <input
+                                  type="number"
+                                  value={stop.price_no_ac ?? ''}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value);
+                                    updateStopPriceNoAc(index, Number.isFinite(v) && v > 0 ? v : null);
+                                  }}
+                                  className="w-24 p-1.5 text-sm border rounded text-right"
+                                  min="0"
+                                  step="100"
+                                  placeholder="Non clim."
+                                  title="Tarif non climatisé"
+                                />
+                              </div>
+                            )}
+                            <span className="text-xs font-medium self-end mb-2" style={{ color: 'var(--text-muted)' }}>FCFA</span>
                           </div>
 
                           <div className="flex flex-col flex-shrink-0">
@@ -734,17 +794,52 @@ export default function Routes() {
                   </div>
 
                   <div>
-                    <label className="block mb-2 font-medium">Prix de base (FCFA) *</label>
+                    <label className="block mb-2 font-medium">Tarif standard (FCFA)</label>
                     <input
                       type="number"
-                      value={formData.base_price}
-                      onChange={(e) => setFormData({ ...formData, base_price: parseFloat(e.target.value) })}
+                      value={formData.base_price ?? ''}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        setFormData({ ...formData, base_price: Number.isFinite(v) && v > 0 ? v : null });
+                      }}
                       className="w-full p-3 border rounded-lg"
                       min="0"
                       step="100"
-                      required
                     />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 items-end">
+                  <label className="flex items-center gap-2 pb-3 font-medium cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={noAcEnabled}
+                      onChange={(e) => setNoAcEnabled(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    Non climatisé
+                  </label>
+                  {noAcEnabled && (
+                    <div>
+                      <label className="block mb-2 font-medium">Tarif non climatisé (FCFA)</label>
+                      <input
+                        type="number"
+                        value={formData.base_price_no_ac ?? ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setFormData({ ...formData, base_price_no_ac: Number.isFinite(v) && v > 0 ? v : null });
+                        }}
+                        className="w-full p-3 border rounded-lg"
+                        min="0"
+                        step="100"
+                      />
+                    </div>
+                  )}
+                  <p className={`${noAcEnabled ? '' : 'col-span-2 '}text-sm pb-3`} style={{ color: 'var(--text-secondary)' }}>
+                    {noAcEnabled
+                      ? 'Au guichet, un départ climatisé applique le tarif standard, un départ « Non climatisé » ce tarif.'
+                      : 'Le tarif standard est le tarif climatisé. Cochez « Non climatisé » pour saisir le tarif des bus non climatisés.'}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -791,7 +886,7 @@ export default function Routes() {
               <th className="text-left p-4 font-semibold">Destination</th>
               <th className="text-left p-4 font-semibold">Distance</th>
               <th className="text-left p-4 font-semibold">Durée</th>
-              <th className="text-left p-4 font-semibold">Prix de base</th>
+              <th className="text-left p-4 font-semibold">Tarif standard / non climatisé</th>
               <th className="text-left p-4 font-semibold">Statut</th>
               <th className="text-left p-4 font-semibold">Actions</th>
             </tr>
@@ -817,7 +912,14 @@ export default function Routes() {
                   </td>
                   <td className="p-4">{route.distance_km} km</td>
                   <td className="p-4">{Math.floor(route.estimated_duration_minutes / 60)}h{route.estimated_duration_minutes % 60 > 0 ? ` ${route.estimated_duration_minutes % 60}min` : ''}</td>
-                  <td className="p-4">{route.base_price.toLocaleString()} FCFA</td>
+                  <td className="p-4">
+                    {route.base_price ? `${Number(route.base_price).toLocaleString()} FCFA` : '—'}
+                    {Number(route.base_price_no_ac) > 0 && (
+                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Non climatisé : {Number(route.base_price_no_ac).toLocaleString()} FCFA
+                      </div>
+                    )}
+                  </td>
                   <td className="p-4">
                     <span
                       className="px-3 py-1 rounded-full text-xs font-medium"

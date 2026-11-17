@@ -21,7 +21,7 @@ const LOCAL_ONLY_UPDATE_FIELDS = new Set([
   'cloture_at', 'cloture_by', 'departure_number',
   'bus_plate', 'bus_name', 'driver_name', 'convoyeur_id', 'convoyeur_name',
   'apprenti_id', 'apprenti_name', 'departure_date', 'departure_time',
-  'is_ac', 'seats_from', 'station_name',
+  'seats_from', 'station_name',
   'counter_id', 'other_station_id', 'other_station_name',
   'synced', 'updated_at', 'id',
   'printed', 'printed_at', 'reopened_at',
@@ -32,7 +32,7 @@ function hasRemoteMappableFields(entity: StoreName, patch: Record<string, unknow
   if (keys.length === 0) return false;
 
   if (entity === 'departs') {
-    const remoteMappable = ['route_id', 'bus_id', 'driver_id', 'station_id', 'arrival_station_id', 'is_ramassage', 'departure_datetime', 'status', 'seats_total', 'seats_sold', 'route_name', 'route_number', 'confirmed', 'cancelled', 'cloture'];
+    const remoteMappable = ['route_id', 'bus_id', 'driver_id', 'station_id', 'arrival_station_id', 'is_ramassage', 'is_no_ac', 'departure_datetime', 'status', 'seats_total', 'seats_sold', 'route_name', 'route_number', 'confirmed', 'cancelled', 'cloture'];
     return keys.some(k => remoteMappable.includes(k));
   }
   if (entity === 'tickets') {
@@ -642,20 +642,31 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       // Departures with a change made here and not sent yet (a closing, for instance)
       const pendingDeparts = await getPendingIds('departs');
 
-      // Seat allocations kept on the server (shared buses), read apart: a server without the
-      // column still gives the departures themselves
+      // Seat allocations kept on the server (shared buses) and the « Non climatisé » choice, read apart:
+      // a server without these columns still gives the departures themselves
       const serverAllocations = new Map<string, SeatAllocation[]>();
+      const serverNoAc = new Map<string, boolean>();
       try {
+        let columns = 'id, seat_allocations, is_no_ac';
         for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
-          const { data, error } = await supabase
+          let { data, error }: { data: unknown[] | null; error: unknown } = await supabase
             .from('schedules')
-            .select('id, seat_allocations')
+            .select(columns)
             .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK));
+          if (error && columns.includes('is_no_ac')) {
+            // Server without the column (migration 20261117150000 not run yet)
+            columns = 'id, seat_allocations';
+            ({ data, error } = await supabase
+              .from('schedules')
+              .select(columns)
+              .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK)));
+          }
           if (error) break;
-          for (const row of (data ?? []) as { id: string; seat_allocations: SeatAllocation[] | null }[]) {
+          for (const row of (data ?? []) as { id: string; seat_allocations: SeatAllocation[] | null; is_no_ac?: boolean | null }[]) {
             if (Array.isArray(row.seat_allocations) && row.seat_allocations.length > 0) {
               serverAllocations.set(row.id, row.seat_allocations);
             }
+            if (typeof row.is_no_ac === 'boolean') serverNoAc.set(row.id, row.is_no_ac);
           }
         }
       } catch { /* allocations kept on the device */ }
@@ -688,6 +699,10 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             seat_allocations: pendingDeparts.has(s.id)
               ? existing.seat_allocations
               : (serverAllocations.get(s.id) ?? existing.seat_allocations),
+            // Non climatisé: the device's choice while a change made here is not sent yet; else the server's
+            is_no_ac: pendingDeparts.has(s.id)
+              ? existing.is_no_ac === true
+              : (serverNoAc.get(s.id) ?? existing.is_no_ac === true),
             // Numbering and capacity from the server (bus « vendu à partir de », number of
             // seats): this also gives back the seat lost by the departures created before (2 to
             // 63 for 63 seats). Kept as on the device while a change made here is not sent yet
@@ -716,6 +731,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
           const mainAlloc = allocations?.find(a => a.station_id === s.departure_station_id);
           await (db.departs as any).put({
             ...localRecord,
+            is_no_ac: serverNoAc.get(s.id) ?? false,
             ...(allocations ? { seat_allocations: allocations } : {}),
             ...(sharedIds.has(s.id) && mainAlloc ? { station_name: mainAlloc.station_name } : {}),
             bus_plate: plate ?? '',

@@ -40,6 +40,9 @@ export interface DepartRecord {
   departure_date: string;
   departure_time: string;
   is_ac: boolean;
+  /** « Non climatisé » ticked at the creation (or changed at the sale): the tarif non climatisé
+   *  applies; unset or false: climatisé, the tarif standard applies */
+  is_no_ac?: boolean;
   is_ramassage?: boolean;
   ramassage_notified?: boolean;
   /** Re-opened by the admin after it was closed (server: schedules.admin_reactivated_at) */
