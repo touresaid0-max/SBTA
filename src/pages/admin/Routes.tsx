@@ -71,8 +71,16 @@ export default function Routes() {
   // « Non climatisé » ticked: the tarif non climatisé fields show; unticked, none is saved
   const [noAcEnabled, setNoAcEnabled] = useState(false);
   const [stations, setStations] = useState<StationLite[]>([]);
-  // Station names linked to each secondary route (guichets with that route, origin station)
+  // Stations linked to each secondary route (guichets with that route, origin station): the
+  // stations proposed, pre-ticked, as partner stations
   const [secondaryStations, setSecondaryStations] = useState<Record<string, string[]>>({});
+  // Partner stations ticked by the admin for each secondary route: only these can receive seats
+  // of a departure of this route at the guichet. Missing: not chosen yet (the linked stations).
+  const [partnerStations, setPartnerStations] = useState<Record<string, string[]>>({});
+  // Routes of which this route is a secondary route: sharing goes one way only, so they cannot be
+  // its secondary routes
+  const [mainRouteIds, setMainRouteIds] = useState<string[]>([]);
+  const [addStationFor, setAddStationFor] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const missing = secondaryRouteIds.filter(id => !(id in secondaryStations));
@@ -93,12 +101,15 @@ export default function Routes() {
         }
         const origin = routes.find(r => r.id === id)?.origin_station_id;
         if (origin) ids.add(origin);
-        next[id] = Array.from(ids)
-          .map(sid => stations.find(s => s.id === sid)?.name)
-          .filter((n): n is string => !!n)
-          .sort((a, b) => a.localeCompare(b));
+        next[id] = Array.from(ids).filter(sid => stations.some(s => s.id === sid));
       }
       setSecondaryStations(prev => ({ ...prev, ...next }));
+      // A secondary route without a choice yet: its linked stations, pre-ticked
+      setPartnerStations(prev => {
+        const out = { ...prev };
+        for (const id of missing) if (!(id in out)) out[id] = next[id];
+        return out;
+      });
     })();
     return () => { cancelled = true; };
   }, [secondaryRouteIds, secondaryStations, routes, stations]);
@@ -257,7 +268,13 @@ export default function Routes() {
       // Sync intermediate stops and secondary routes
       if (routeId) {
         await syncIntermediateStops(routeId, intermediateStops);
-        await syncSecondaryRoutes(routeId, secondaryRouteIds);
+        // The ticked stations; a secondary route left as proposed: its linked stations
+        const partners: Record<string, string[]> = {};
+        for (const id of secondaryRouteIds) {
+          const list = partnerStations[id] ?? secondaryStations[id];
+          if (list) partners[id] = list;
+        }
+        await syncSecondaryRoutes(routeId, secondaryRouteIds, partners);
       }
 
       setShowForm(false);
@@ -320,7 +337,12 @@ export default function Routes() {
     }
   };
 
-  const syncSecondaryRoutes = async (routeId: string, ids: string[]) => {
+  // A database where the partner stations column does not exist yet (migration 20261118160000
+  // not run): the secondary routes are saved without it, as before
+  const missingPartnerColumn = (e: { code?: string; message?: string } | null) =>
+    !!e && (e.code === '42703' || e.code === 'PGRST204' || /partner_station_ids/.test(e.message ?? ''));
+
+  const syncSecondaryRoutes = async (routeId: string, ids: string[], partners: Record<string, string[]>) => {
     const { data: current, error } = await supabase
       .from('route_secondary_routes')
       .select('id, secondary_route_id')
@@ -330,24 +352,49 @@ export default function Routes() {
     const toDelete = (current ?? []).filter((c: any) => !wanted.has(c.secondary_route_id)).map((c: any) => c.id);
     const have = new Set((current ?? []).map((c: any) => c.secondary_route_id));
     const toInsert = Array.from(wanted).filter(id => !have.has(id))
-      .map(id => ({ route_id: routeId, secondary_route_id: id }));
+      .map(id => ({ route_id: routeId, secondary_route_id: id, partner_station_ids: partners[id] ?? [] }));
     if (toDelete.length > 0) {
       const { error: delError } = await supabase.from('route_secondary_routes').delete().in('id', toDelete);
       if (delError) throw new Error(`Itinéraires secondaires : ${delError.message}`);
     }
     if (toInsert.length > 0) {
-      const { error: insError } = await supabase.from('route_secondary_routes').insert(toInsert);
+      let { error: insError } = await supabase.from('route_secondary_routes').insert(toInsert);
+      if (missingPartnerColumn(insError)) {
+        ({ error: insError } = await supabase.from('route_secondary_routes')
+          .insert(toInsert.map(r => ({ route_id: r.route_id, secondary_route_id: r.secondary_route_id }))));
+      }
       if (insError) throw new Error(`Itinéraires secondaires : ${insError.message}`);
+    }
+    // The partner stations of the secondary routes kept
+    for (const c of (current ?? []) as { id: string; secondary_route_id: string }[]) {
+      if (!wanted.has(c.secondary_route_id) || !(c.secondary_route_id in partners)) continue;
+      const { error: upError } = await supabase.from('route_secondary_routes')
+        .update({ partner_station_ids: partners[c.secondary_route_id] })
+        .eq('id', c.id);
+      if (missingPartnerColumn(upError)) break;
+      if (upError) throw new Error(`Gares partenaires : ${upError.message}`);
     }
   };
 
-  const loadSecondaryRoutes = async (routeId: string): Promise<string[]> => {
-    const { data, error } = await supabase
+  const loadSecondaryRoutes = async (routeId: string): Promise<{ ids: string[]; partners: Record<string, string[]> }> => {
+    let { data, error }: { data: any[] | null; error: any } = await supabase
       .from('route_secondary_routes')
-      .select('secondary_route_id')
+      .select('secondary_route_id, partner_station_ids')
       .eq('route_id', routeId);
+    if (missingPartnerColumn(error)) {
+      ({ data, error } = await supabase.from('route_secondary_routes').select('secondary_route_id').eq('route_id', routeId));
+    }
     if (error) throw error;
-    return (data ?? []).map((r: any) => r.secondary_route_id as string);
+    const partners: Record<string, string[]> = {};
+    for (const r of data ?? []) {
+      if (Array.isArray(r.partner_station_ids)) partners[r.secondary_route_id] = r.partner_station_ids as string[];
+    }
+    return { ids: (data ?? []).map((r: any) => r.secondary_route_id as string), partners };
+  };
+
+  const loadMainRoutes = async (routeId: string): Promise<string[]> => {
+    const { data } = await supabase.from('route_secondary_routes').select('route_id').eq('secondary_route_id', routeId);
+    return (data ?? []).map((r: any) => r.route_id as string);
   };
 
   const handleEdit = async (route: RouteData) => {
@@ -373,10 +420,14 @@ export default function Routes() {
     }
 
     try {
-      setSecondaryRouteIds(await loadSecondaryRoutes(route.id));
+      const loaded = await loadSecondaryRoutes(route.id);
+      setPartnerStations(loaded.partners);
+      setSecondaryRouteIds(loaded.ids);
     } catch {
+      setPartnerStations({});
       setSecondaryRouteIds([]);
     }
+    setMainRouteIds(await loadMainRoutes(route.id));
 
     setShowForm(true);
   };
@@ -411,6 +462,9 @@ export default function Routes() {
     });
     setIntermediateStops([]);
     setSecondaryRouteIds([]);
+    setPartnerStations({});
+    setMainRouteIds([]);
+    setAddStationFor({});
     setNoAcEnabled(false);
   };
 
@@ -697,15 +751,29 @@ export default function Routes() {
                     </h3>
                   </div>
                   <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-                    Au guichet, « Charger dans une autre gare » ne propose que les gares liées à ces itinéraires
-                    (gares dont un guichet a l'itinéraire, ou gare d'origine de l'itinéraire).
+                    Au guichet, « Charger dans une autre gare » ne propose que les <b>gares partenaires cochées</b>.
+                    Partage dans un seul sens : seule la gare de cet itinéraire crée le départ et choisit avec qui elle le partage.
                   </p>
+                  {mainRouteIds.length > 0 && (
+                    <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--warning-light, #FEF3C7)', color: '#92400E' }}>
+                      Cet itinéraire est déjà l'itinéraire secondaire de : {mainRouteIds.map(id => routes.find(r => r.id === id)?.name ?? '?').join(', ')}.
+                      Le partage se fait dans un seul sens : ces itinéraires ne peuvent pas devenir ses itinéraires secondaires.
+                    </p>
+                  )}
 
                   {secondaryRouteIds.length > 0 ? (
                     <div className="space-y-2 mb-3">
                       {secondaryRouteIds.map(id => {
                         const r = routes.find(x => x.id === id);
-                        const names = secondaryStations[id];
+                        const linked = secondaryStations[id];
+                        const ticked = partnerStations[id] ?? linked ?? [];
+                        const shown = Array.from(new Set([...(linked ?? []), ...ticked]))
+                          .map(sid => ({ id: sid, name: stations.find(s => s.id === sid)?.name ?? 'Gare désactivée' }))
+                          .sort((a, b) => a.name.localeCompare(b.name));
+                        const toggle = (sid: string) => setPartnerStations(prev => {
+                          const cur = prev[id] ?? linked ?? [];
+                          return { ...prev, [id]: cur.includes(sid) ? cur.filter(x => x !== sid) : [...cur, sid] };
+                        });
                         return (
                           <div
                             key={id}
@@ -717,13 +785,50 @@ export default function Routes() {
                               <p className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                                 {r?.name ?? 'Itinéraire supprimé'}
                               </p>
-                              <p className="text-xs" style={{ color: names && names.length === 0 ? 'var(--warning)' : 'var(--text-muted)' }}>
-                                {names === undefined
-                                  ? 'Gares : chargement…'
-                                  : names.length > 0
-                                    ? `Gares : ${names.join(', ')}`
-                                    : 'Aucune gare liée : attribuez cet itinéraire à un guichet'}
-                              </p>
+                              {linked === undefined && !(id in partnerStations) ? (
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Gares : chargement…</p>
+                              ) : (
+                                <>
+                                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Gares partenaires :</p>
+                                  <div className="flex flex-wrap gap-1.5 mt-1">
+                                    {shown.map(st => {
+                                      const on = ticked.includes(st.id);
+                                      return (
+                                        <button key={st.id} type="button" onClick={() => toggle(st.id)}
+                                          className="flex items-center gap-1.5 rounded-lg border-2 px-2 py-1 text-xs font-medium"
+                                          style={{ borderColor: on ? 'var(--primary)' : '#E2EAE5', backgroundColor: on ? '#f2faf4' : '#fff', color: on ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                                          title={on ? 'Cliquer pour retirer cette gare' : 'Cliquer pour cocher cette gare'}>
+                                          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded border text-[10px] text-white"
+                                            style={{ borderColor: on ? 'var(--primary)' : '#9BB5A4', backgroundColor: on ? 'var(--primary)' : '#fff' }}>
+                                            {on ? '✓' : ''}
+                                          </span>
+                                          {st.name}
+                                        </button>
+                                      );
+                                    })}
+                                    <select
+                                      value={addStationFor[id] ?? ''}
+                                      onChange={(e) => {
+                                        const sid = e.target.value;
+                                        if (!sid) return;
+                                        setPartnerStations(prev => ({ ...prev, [id]: [...(prev[id] ?? linked ?? []).filter(x => x !== sid), sid] }));
+                                        setAddStationFor(prev => ({ ...prev, [id]: '' }));
+                                      }}
+                                      className="border rounded-lg px-2 py-1 text-xs"
+                                      style={{ borderColor: '#E2EAE5', color: 'var(--text-muted)' }}>
+                                      <option value="">＋ Ajouter une gare…</option>
+                                      {stations.filter(st => !shown.some(x => x.id === st.id)).map(st => (
+                                        <option key={st.id} value={st.id}>{st.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  {ticked.length === 0 && (
+                                    <p className="text-xs mt-1" style={{ color: 'var(--warning)' }}>
+                                      Aucune gare cochée : les départs de cet itinéraire ne pourront pas être partagés par cet itinéraire secondaire.
+                                    </p>
+                                  )}
+                                </>
+                              )}
                             </div>
                             <button
                               type="button"
@@ -747,7 +852,7 @@ export default function Routes() {
 
                   <RouteAutocomplete
                     routes={routes}
-                    excludedIds={[...(editingId ? [editingId] : []), ...secondaryRouteIds]}
+                    excludedIds={[...(editingId ? [editingId] : []), ...secondaryRouteIds, ...mainRouteIds]}
                     onSelect={(id) => setSecondaryRouteIds([...secondaryRouteIds, id])}
                   />
                 </div>

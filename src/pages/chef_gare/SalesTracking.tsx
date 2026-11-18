@@ -129,7 +129,8 @@ export default function ChefGareSalesTracking() {
       }
       const split = await supabase.rpc('get_station_sales_split', { p_from: range.start, p_to: range.end });
       if (!split.error) {
-        const all = (split.data || []) as SaleRow[];
+        const all = ((split.data || []) as SaleRow[])
+          .sort((a, b) => String(a.departure_datetime).localeCompare(String(b.departure_datetime)));
         setRows(visibleCounterIds ? all.filter(r => r.counter_id && visibleCounterIds!.includes(r.counter_id)) : all);
         return;
       }
