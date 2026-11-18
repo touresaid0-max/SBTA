@@ -27,6 +27,12 @@ interface SaleRow {
   total_ticket_amount: number;
   total_charges: number;
   solde_ticket: number;
+  /** Shared departure: this station's share only (seats, tickets, baggage, its part of the bus
+   *  expenses). share_with: the other station(s) of the bus. */
+  share_role?: 'principale' | 'partenaire' | null;
+  seat_from?: number | null;
+  seat_to?: number | null;
+  share_with?: string | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
@@ -109,6 +115,26 @@ export default function ChefGareSalesTracking() {
         .eq('station_id', stationId);
       const restrictManagerId = (chefCount ?? 0) > 1 ? user?.id ?? null : null;
 
+      // Shared departures: the station's own share, on the departures it created and on those of
+      // another station it loads (server function). A database not updated yet: the former view.
+      let visibleCounterIds: string[] | null = null;
+      if (restrictManagerId) {
+        const { data: ownCounters } = await supabase
+          .from('counters')
+          .select('id')
+          .eq('station_id', stationId)
+          .eq('manager_id', restrictManagerId);
+        visibleCounterIds = (ownCounters || []).map((c: any) => c.id);
+        if (visibleCounterIds.length === 0) { setRows([]); return; }
+      }
+      const split = await supabase.rpc('get_station_sales_split', { p_from: range.start, p_to: range.end });
+      if (!split.error) {
+        const all = ((split.data || []) as SaleRow[])
+          .sort((a, b) => String(a.departure_datetime).localeCompare(String(b.departure_datetime)));
+        setRows(visibleCounterIds ? all.filter(r => r.counter_id && visibleCounterIds!.includes(r.counter_id)) : all);
+        return;
+      }
+
       let summaryQuery = supabase
         .from('schedule_receipt_summary')
         .select('*')
@@ -117,15 +143,8 @@ export default function ChefGareSalesTracking() {
         .lte('departure_date', range.end)
         .order('departure_datetime', { ascending: true });
 
-      if (restrictManagerId) {
-        const { data: ownCounters } = await supabase
-          .from('counters')
-          .select('id')
-          .eq('station_id', stationId)
-          .eq('manager_id', restrictManagerId);
-        const visibleIds = (ownCounters || []).map((c: any) => c.id);
-        if (visibleIds.length === 0) { setRows([]); return; }
-        summaryQuery = summaryQuery.in('counter_id', visibleIds);
+      if (visibleCounterIds) {
+        summaryQuery = summaryQuery.in('counter_id', visibleCounterIds);
       }
 
       const { data, error } = await summaryQuery;
@@ -312,6 +331,14 @@ export default function ChefGareSalesTracking() {
                                   <MapPin className="w-3 h-3 flex-shrink-0" />
                                   {row.origin_city} → {row.destination_city}
                                 </div>
+                                {row.share_role && (
+                                  <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold"
+                                    style={{ color: '#1D6FA4', backgroundColor: '#DBEAFE' }}
+                                    title="Car partagé : seule la part de votre gare est comptée ici">
+                                    {row.share_role === 'partenaire' ? 'Partagé · créé par ' : 'Partagé avec '}{row.share_with || 'une autre gare'}
+                                    {row.seat_from && row.seat_to ? ` · vos sièges ${row.seat_from}-${row.seat_to}` : ''}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-4 py-3">
                                 <span className="px-2 py-1 rounded-full text-xs font-semibold"

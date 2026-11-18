@@ -9,7 +9,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { usePompisteTanks } from '../../hooks/usePompisteTanks';
 import { Droplets as DropletsIcon } from 'lucide-react';
 
-type ReportTab = 'daily' | 'weekly' | 'by_company' | 'by_bus' | 'by_supplier' | 'by_tank';
+type ReportTab = 'daily' | 'weekly' | 'by_company' | 'by_bus' | 'by_supplier' | 'by_tank' | 'variances';
 const NIL_TANK = '00000000-0000-0000-0000-000000000000';
 
 interface TankStat {
@@ -19,6 +19,26 @@ interface TankStat {
 interface CompanyStat { company_name: string; total_liters: number; total_amount: number; bus_count: number; }
 interface BusStat { license_plate: string; company_name: string; total_liters: number; total_amount: number; count: number; }
 interface SupplierStat { supplier_name: string; total_liters: number; total_amount: number; depotage_count: number; }
+// Measured deliveries of the month: announced, really received, loading / unloading variances
+interface VarianceRow {
+  id: string; arrival_at: string; tank: string; supplier: string; note: string | null;
+  announced: number; received: number; loading: number; unloading: number; total: number; value: number;
+}
+interface VarianceGroup { name: string; count: number; announced: number; received: number; loading: number; unloading: number; total: number; value: number; }
+const signedL = (v: number) => `${v > 0 ? '+ ' : v < 0 ? '− ' : ''}${Math.abs(Math.round(v)).toLocaleString('fr-FR')} L`;
+const signedF = (v: number) => `${v > 0 ? '+ ' : v < 0 ? '− ' : ''}${formatCurrency(Math.abs(v))}`;
+const vColor = (v: number) => (v < 0 ? '#AF3029' : v > 0 ? '#1D6FA4' : 'var(--text-secondary)');
+function groupVariances(rows: VarianceRow[], key: (r: VarianceRow) => string): VarianceGroup[] {
+  const map = new Map<string, VarianceGroup>();
+  for (const r of rows) {
+    const k = key(r);
+    const g = map.get(k) ?? { name: k, count: 0, announced: 0, received: 0, loading: 0, unloading: 0, total: 0, value: 0 };
+    g.count += 1; g.announced += r.announced; g.received += r.received; g.loading += r.loading;
+    g.unloading += r.unloading; g.total += r.total; g.value += r.value;
+    map.set(k, g);
+  }
+  return [...map.values()].sort((a, b) => a.total - b.total);
+}
 
 export default function Reports() {
   const { tanks: myTanks, tankIds, loading: tanksLoading, isPompiste } = usePompisteTanks();
@@ -33,8 +53,10 @@ export default function Reports() {
   const [supplierStats, setSupplierStats] = useState<SupplierStat[]>([]);
   const [tankStats, setTankStats] = useState<TankStat[]>([]);
   const [loading, setLoading] = useState(false);
+  const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
+  const [varianceRows, setVarianceRows] = useState<VarianceRow[]>([]);
 
-  useEffect(() => { if (!tanksLoading) loadReport(); }, [tab, dateFilter, weekFilter, tanksLoading, tankIds.join(',')]);
+  useEffect(() => { if (!tanksLoading) loadReport(); }, [tab, dateFilter, weekFilter, tanksLoading, tankIds.join(','), monthFilter]);
 
   const loadReport = async () => {
     setLoading(true);
@@ -45,6 +67,7 @@ export default function Reports() {
       else if (tab === 'by_bus') await loadBusReport();
       else if (tab === 'by_supplier') await loadSupplierReport();
       else if (tab === 'by_tank') await loadTankReport();
+      else if (tab === 'variances') await loadVarianceReport();
     } catch { toast.error('Erreur de chargement'); }
     finally { setLoading(false); }
   };
@@ -179,6 +202,29 @@ export default function Reports() {
     })));
   };
 
+  const loadVarianceReport = async () => {
+    if (isPompiste && tankIds.length === 0) { setVarianceRows([]); return; }
+    const [y, m] = monthFilter.split('-').map(Number);
+    const from = new Date(y, m - 1, 1);
+    const to = new Date(y, m, 1);
+    let q = supabase.from('fuel_depotages')
+      .select('id, arrival_at, created_at, announced_quantity, quantity_liters, citerne_variance, variance_unloading, variance_total, unit_price, observation, measure_observation, tanks:tank_id(name), fuel_suppliers:supplier_id(name)')
+      .eq('measure_status', 'mesure')
+      .gte('arrival_at', from.toISOString()).lt('arrival_at', to.toISOString())
+      .order('arrival_at', { ascending: true });
+    if (isPompiste) q = q.in('tank_id', tankIds);
+    const { data, error } = await q;
+    if (error) { setVarianceRows([]); return; }
+    setVarianceRows((data || []).map((d: any) => ({
+      id: d.id, arrival_at: d.arrival_at || d.created_at,
+      tank: d.tanks?.name || '—', supplier: d.fuel_suppliers?.name || '—',
+      note: [d.observation, d.measure_observation].filter(Boolean).join(' — ') || null,
+      announced: Number(d.announced_quantity), received: Number(d.quantity_liters),
+      loading: Number(d.citerne_variance ?? 0), unloading: Number(d.variance_unloading ?? 0),
+      total: Number(d.variance_total ?? 0), value: Number(d.variance_total ?? 0) * Number(d.unit_price ?? 0),
+    })));
+  };
+
   const TABS: { id: ReportTab; label: string; icon: React.ReactNode }[] = [
     { id: 'daily', label: 'Récap. Journalier', icon: <Calendar className="w-4 h-4" /> },
     { id: 'weekly', label: 'Récap. Hebdo', icon: <BarChart2 className="w-4 h-4" /> },
@@ -186,6 +232,7 @@ export default function Reports() {
     { id: 'by_bus', label: 'Par bus', icon: <Bus className="w-4 h-4" /> },
     { id: 'by_supplier', label: 'Par fournisseur', icon: <ArrowDownCircle className="w-4 h-4" /> },
     { id: 'by_tank', label: 'Par cuve', icon: <Droplets className="w-4 h-4" /> },
+    { id: 'variances', label: 'Écarts de dépotage', icon: <Filter className="w-4 h-4" /> },
   ];
 
   return (
@@ -363,6 +410,84 @@ export default function Reports() {
               </table>
             </div>
           )}
+
+          {/* variances of the measured deliveries */}
+          {tab === 'variances' && (() => {
+            const totals = groupVariances(varianceRows, () => 'Total')[0];
+            const vTable = (title: string, groups: VarianceGroup[]) => (
+              <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+                <p className="px-4 pt-3 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{title}</p>
+                <table className="w-full text-sm">
+                  <thead><tr style={{ backgroundColor: 'var(--bg-subtle, #F9FAFB)' }}>
+                    {['', 'Dépotages', 'Annoncé', 'Réel', 'Écart chargement', 'Écart dépotage', 'Écart total', 'Valeur'].map((h, i) => <th key={h || i} className={`px-4 py-3 text-xs font-semibold uppercase ${i ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-muted)' }}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {groups.map(g => (
+                      <tr key={g.name} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                        <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text-primary)' }}>{g.name}</td>
+                        <td className="px-4 py-2.5 text-right">{g.count}</td>
+                        <td className="px-4 py-2.5 text-right">{Math.round(g.announced).toLocaleString('fr-FR')} L</td>
+                        <td className="px-4 py-2.5 text-right">{Math.round(g.received).toLocaleString('fr-FR')} L</td>
+                        <td className="px-4 py-2.5 text-right" style={{ color: vColor(g.loading) }}>{signedL(g.loading)}</td>
+                        <td className="px-4 py-2.5 text-right" style={{ color: vColor(g.unloading) }}>{signedL(g.unloading)}</td>
+                        <td className="px-4 py-2.5 text-right font-bold" style={{ color: vColor(g.total) }}>{signedL(g.total)}</td>
+                        <td className="px-4 py-2.5 text-right font-bold" style={{ color: vColor(g.value) }}>{signedF(g.value)}</td>
+                      </tr>
+                    ))}
+                    {groups.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>Aucun dépotage mesuré ce mois-ci</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            );
+            return (
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
+                    className="px-3 py-2.5 border rounded-xl text-sm outline-none" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Dépotages mesurés à la règle. Rouge : manque · Bleu : surplus.</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  {[
+                    { l: 'Annoncé', v: `${Math.round(totals?.announced ?? 0).toLocaleString('fr-FR')} L`, c: 'var(--text-primary)' },
+                    { l: 'Réellement reçu', v: `${Math.round(totals?.received ?? 0).toLocaleString('fr-FR')} L`, c: 'var(--text-primary)' },
+                    { l: 'Écart total', v: signedL(totals?.total ?? 0), c: vColor(totals?.total ?? 0) },
+                    { l: 'Valeur de l\'écart', v: signedF(totals?.value ?? 0), c: vColor(totals?.value ?? 0) },
+                  ].map(k => (
+                    <div key={k.l} className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{k.l}</p>
+                      <p className="text-xl font-bold" style={{ color: k.c }}>{k.v}</p>
+                    </div>
+                  ))}
+                </div>
+                {vTable('Par fournisseur', groupVariances(varianceRows, r => r.supplier))}
+                {vTable('Par cuve', groupVariances(varianceRows, r => r.tank))}
+                <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+                  <p className="px-4 pt-3 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Détail des dépotages</p>
+                  <table className="w-full text-sm">
+                    <thead><tr style={{ backgroundColor: 'var(--bg-subtle, #F9FAFB)' }}>
+                      {['Dépotage', 'Cuve', 'Fournisseur', 'Annoncé', 'Réel', 'Chargement', 'Dépotage', 'Total', 'Observation'].map((h, i) => <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase ${i >= 3 && i <= 7 ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-muted)' }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {varianceRows.map(r => (
+                        <tr key={r.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                          <td className="px-4 py-2.5 whitespace-nowrap">{format(new Date(r.arrival_at), 'dd/MM HH:mm')}</td>
+                          <td className="px-4 py-2.5">{r.tank}</td>
+                          <td className="px-4 py-2.5">{r.supplier}</td>
+                          <td className="px-4 py-2.5 text-right">{Math.round(r.announced).toLocaleString('fr-FR')} L</td>
+                          <td className="px-4 py-2.5 text-right">{Math.round(r.received).toLocaleString('fr-FR')} L</td>
+                          <td className="px-4 py-2.5 text-right" style={{ color: vColor(r.loading) }}>{signedL(r.loading)}</td>
+                          <td className="px-4 py-2.5 text-right" style={{ color: vColor(r.unloading) }}>{signedL(r.unloading)}</td>
+                          <td className="px-4 py-2.5 text-right font-bold" style={{ color: vColor(r.total) }}>{signedL(r.total)}</td>
+                          <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>{r.note || ''}</td>
+                        </tr>
+                      ))}
+                      {varianceRows.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center" style={{ color: 'var(--text-muted)' }}>Aucun dépotage mesuré ce mois-ci</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* by tank */}
           {tab === 'by_tank' && (

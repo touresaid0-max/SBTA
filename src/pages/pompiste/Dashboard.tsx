@@ -51,6 +51,8 @@ export default function PompisteDashboard() {
   const [tanks, setTanks] = useState<TankSummary[]>([]);
   const [depotages, setDepotages] = useState<RecentDepotage[]>([]);
   const [enlevements, setEnlevements] = useState<RecentEnlevement[]>([]);
+  // Deliveries waiting for their measurement at the ruler (one hour after the tanker's arrival)
+  const [pendingMeasures, setPendingMeasures] = useState<{ id: string; arrival_at: string | null; created_at: string; announced_quantity: number | null; tanks?: { name: string } }[]>([]);
 
   useEffect(() => { if (!tanksLoading) load(); }, [tanksLoading, tankIds.join(',')]);
 
@@ -107,6 +109,10 @@ export default function PompisteDashboard() {
       setTanks(tankList);
       setDepotages(((recentDep.data as unknown) || []) as RecentDepotage[]);
       setEnlevements(((recentEnl.data as unknown) || []) as RecentEnlevement[]);
+      // Server without the measurement columns: no reminder, the rest is unchanged
+      const pendingRes = await scopedDepot('id, arrival_at, created_at, announced_quantity, tanks:tank_id(name)')
+        .eq('measure_status', 'en_attente_mesure').order('created_at', { ascending: true });
+      setPendingMeasures(pendingRes.error ? [] : (((pendingRes.data as unknown) || []) as typeof pendingMeasures));
     } catch {
       toast.error('Erreur de chargement');
     } finally { setLoading(false); }
@@ -136,6 +142,25 @@ export default function PompisteDashboard() {
               Contactez votre administrateur pour qu'il vous assigne une cuve. Vous pourrez ensuite consulter et gérer uniquement celle(s)-ci.
             </p>
           </div>
+        </div>
+      )}
+
+      {pendingMeasures.length > 0 && (
+        <div className="rounded-xl border p-4 mb-6 flex flex-wrap items-center justify-between gap-3" style={{ borderColor: '#FCD34D', backgroundColor: '#FEF3C7' }}>
+          <div className="text-sm" style={{ color: '#92400E' }}>
+            <p className="font-bold">{pendingMeasures.length} dépotage{pendingMeasures.length > 1 ? 's' : ''} en attente de mesure à la règle</p>
+            {pendingMeasures.map(p => {
+              const due = new Date(new Date(p.arrival_at || p.created_at).getTime() + 60 * 60_000);
+              return (
+                <p key={p.id} className="text-xs mt-0.5">
+                  {p.tanks?.name ?? 'Cuve'} : {Number(p.announced_quantity ?? 0).toLocaleString('fr-FR')} L annoncés — {due.getTime() > Date.now() ? `mesure à partir de ${format(due, 'HH:mm')}` : 'mesure à faire maintenant'}
+                </p>
+              );
+            })}
+          </div>
+          <button onClick={() => navigate('/pompiste/depotages')} className="rounded-xl border-2 bg-white px-4 py-2 text-sm font-bold" style={{ borderColor: '#FCD34D', color: '#92400E' }}>
+            Saisir la mesure
+          </button>
         </div>
       )}
 
