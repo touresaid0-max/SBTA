@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { AlertTriangle, CheckCircle2, Download, Loader2, Search, X } from 'lucide-react';
 import { usePagination } from '@/hooks/usePagination';
 import Pagination from '@/components/pos/Pagination';
-import { type Depart, DeparturesUnavailableError, STATUS_LABELS, departSheetRow, fetchDepartures, fileSafe, fill, fmtF, fmtN, stationLabel, totalsOf } from './departures';
+import { type Depart, DeparturesUnavailableError, STATUS_LABELS, departSheetRow, fetchDepartures, fileSafe, fill, fmtF, fmtN, totalsOf } from './departures';
 
 const HEADERS = ['Date', 'Heure', 'N° dép.', 'Ligne', 'Gare', 'Guichet', 'Car', 'Société', 'Statut', 'Places', 'Vendus', 'Rempl.', 'Tickets', 'Bagages', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'];
 const FIRST_NUMERIC = 9;
@@ -12,7 +12,7 @@ const cells = (d: Depart): string[] => {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return [
     dt ? format(dt, 'dd/MM/yyyy') : '—', dt ? format(dt, 'HH:mm') : '—', d.number != null ? String(d.number) : '—',
-    d.route, stationLabel(d), d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
+    d.route, d.station, d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
     d.isDeparture ? fmtN(d.capacity) : '—', fmtN(d.seats), d.isDeparture ? fill(d.seats, d.capacity) : '—',
     fmtF(d.tickets), d.baggageCount > 0 ? `${fmtF(d.baggage)} (${d.baggageCount})` : fmtF(d.baggage),
     fmtF(d.ramassage), fmtF(d.caisse), fmtF(d.expenses), fmtF(d.solde),
