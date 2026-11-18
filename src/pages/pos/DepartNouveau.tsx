@@ -8,6 +8,7 @@ import {
   getAssignedRouteIds,
   nextDepartureNumber,
   nextRouteNumber,
+  isSequentialNumberingStation,
   validateSeatAllocations,
   lastSeatNumber,
   type LigneRef, type VehiculeRef, type ChauffeurRef, type GareRef,
@@ -124,7 +125,13 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
     if (session?.station_id && ligneId) {
       nextRouteNumber(session.station_id, ligneId, session?.counter_id, departureDate).then(setDepartureNo);
     } else if (session?.station_id) {
-      nextDepartureNumber(session.station_id, session?.counter_id, departureDate).then(setDepartureNo);
+      // Continuous numbering (admin › Gares): the next number of the station, whatever the line
+      const stationId = session.station_id;
+      isSequentialNumberingStation(stationId)
+        .then(sequential => sequential
+          ? nextRouteNumber(stationId, '', session?.counter_id, departureDate)
+          : nextDepartureNumber(stationId, session?.counter_id, departureDate))
+        .then(setDepartureNo);
     }
   }, [session?.station_id, session?.counter_id, ligneId, departureDate]);
 

@@ -36,9 +36,13 @@ const QUERIES: Record<RefType, () => Promise<unknown[]>> = {
     return (data ?? []).map((t: any) => ({ id: t.id, route_id: t.route_id, station_id: t.station_id, price: Number(t.price ?? 0), stop_order: t.position }));
   },
   gares: async () => {
-    const { data, error } = await supabase.from('stations').select('id, name, city_id, agency_code, is_active, cities(name)').eq('is_active', true).order('name');
+    // sequential_departure_numbers: continuous numbering of the station's departures. A server
+    // without the column (migration 20261118100000 not run) is read without it.
+    const columns = 'id, name, city_id, agency_code, is_active, cities(name)';
+    let { data, error }: { data: any[] | null; error: unknown } = await supabase.from('stations').select(`${columns}, sequential_departure_numbers`).eq('is_active', true).order('name');
+    if (error) ({ data, error } = await supabase.from('stations').select(columns).eq('is_active', true).order('name'));
     if (error) throw error;
-    return (data ?? []).map((s: any) => ({ id: s.id, name: s.name, city_id: s.city_id, city: s.cities?.name ?? '', agency_code: s.agency_code, is_active: s.is_active }));
+    return (data ?? []).map((s: any) => ({ id: s.id, name: s.name, city_id: s.city_id, city: s.cities?.name ?? '', agency_code: s.agency_code, is_active: s.is_active, sequential_departure_numbers: s.sequential_departure_numbers === true }));
   },
   route_city_stops: async () => {
     const columns = 'id, route_id, city_id, price, position, cities(name)';

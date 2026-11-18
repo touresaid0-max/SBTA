@@ -13,7 +13,9 @@ export type { DepartRecord, SeatAllocation, SeatTransfer };
 export interface LigneRef { id: string; name: string; origin_station_id: string; destination_station_id: string; destination_city_id?: string; base_price: number; base_price_no_ac?: number | null; is_active: boolean }
 export interface VehiculeRef { id: string; plate_number: string; capacity: number; company_id: string; status: string; brand?: string; model?: string; seats_sold_from?: number }
 export interface ChauffeurRef { id: string; full_name: string; email: string; role: string; employee_id?: string; phone?: string }
-export interface GareRef { id: string; name: string; city: string; city_id: string; agency_code: string; is_active: boolean }
+/** sequential_departure_numbers: the station numbers its departures of the day #1, #2, #3… whatever
+ *  the line or the counter (admin › Gares); otherwise each line has its own numbers */
+export interface GareRef { id: string; name: string; city: string; city_id: string; agency_code: string; is_active: boolean; sequential_departure_numbers?: boolean }
 
 export async function getLignes(): Promise<LigneRef[]> {
   return getReferentiel<LigneRef>('lignes');
@@ -136,14 +138,29 @@ export async function nextDepartureNumber(stationId: string, counterId?: string,
   return Math.max(localMax, server?.departure ?? 0) + 1;
 }
 
+/** The station numbers its departures continuously (admin › Gares), not per line */
+export async function isSequentialNumberingStation(stationId: string): Promise<boolean> {
+  try {
+    const gares = await getGares();
+    return gares.find(g => g.id === stationId)?.sequential_departure_numbers === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function nextRouteNumber(stationId: string, routeId: string, counterId?: string, departureDate?: string): Promise<number> {
+  // Continuous numbering: after the highest number of the station's departures of the day, all
+  // lines and all counters together (ADJAME-DIVO: #1, #2, #3… instead of #1 on each line)
+  const sequential = await isSequentialNumberingStation(stationId);
   const all = await getAll<DepartRecord>('departs');
-  let routeDeparts = all.filter(d => d.station_id === stationId && d.route_id === routeId && d.departure_date === departureDate);
-  if (counterId) {
+  let routeDeparts = all.filter(d => d.station_id === stationId && (sequential || d.route_id === routeId) && d.departure_date === departureDate);
+  if (counterId && !sequential) {
     routeDeparts = routeDeparts.filter(d => d.counter_id === counterId);
   }
   const localMax = Math.max(0, ...routeDeparts.map(d => d.route_number ?? 0));
-  const server = await serverMaxNumbers(stationId, counterId, departureDate, routeId);
+  const server = sequential
+    ? await serverMaxNumbers(stationId, undefined, departureDate)
+    : await serverMaxNumbers(stationId, counterId, departureDate, routeId);
   return Math.max(localMax, server?.route ?? 0) + 1;
 }
 
@@ -179,11 +196,13 @@ export async function updateDepart(
 export async function renumberDepartsAfterCancellation(
   cancelledDepart: DepartRecord,
 ): Promise<void> {
+  // Continuous numbering: the numbers follow each other across all the station's lines
+  const sequential = await isSequentialNumberingStation(cancelledDepart.station_id);
   const all = await getAll<DepartRecord>('departs');
   const siblings = all
     .filter(d =>
       d.id !== cancelledDepart.id &&
-      d.route_id === cancelledDepart.route_id &&
+      (sequential || d.route_id === cancelledDepart.route_id) &&
       d.station_id === cancelledDepart.station_id &&
       d.departure_date === cancelledDepart.departure_date &&
       !d.cancelled,
