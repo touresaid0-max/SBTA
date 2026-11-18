@@ -254,6 +254,8 @@ export default function POSVente() {
       if (Number.isNaN(n)) return false;
       if (n < depart.seats_from || n > depart.seats_total) return false;
       if (range && (n < range.from || n > range.to)) return false;
+      // A shared departure where this station has no seat left: nothing to sell
+      if (!range && depart.seat_allocations && depart.seat_allocations.length > 0) return false;
       if (soldSeats.includes(n)) return false;
       return true;
     });
@@ -449,9 +451,13 @@ export default function POSVente() {
   const sellableSeatNumbers = useMemo(() => {
     if (!depart) return [];
     const base: number[] = [];
-    const from = allowedSeatRange?.from ?? depart.seats_from;
-    const to = allowedSeatRange?.to ?? depart.seats_total;
-    for (let n = from; n <= to; n++) base.push(n);
+    const shared = !!(depart.seat_allocations && depart.seat_allocations.length > 0);
+    // Shared departure: only this station's seats, never the whole bus (no range = no seat)
+    if (allowedSeatRange || !shared) {
+      const from = allowedSeatRange?.from ?? depart.seats_from;
+      const to = allowedSeatRange?.to ?? depart.seats_total;
+      for (let n = from; n <= to; n++) base.push(n);
+    }
     for (const n of receivedTransferSeats) {
       if (!base.includes(n)) base.push(n);
     }
@@ -578,11 +584,13 @@ export default function POSVente() {
       if (seat < depart.seats_from || seat > depart.seats_total) {
         setError(`Le siège n°${seat} est hors de la plage autorisée (${depart.seats_from}–${depart.seats_total})`); return;
       }
-      if (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to) && !receivedTransferSeats.includes(seat)) {
+      const sharedNoRange = !allowedSeatRange && !!(depart?.seat_allocations && depart.seat_allocations.length > 0);
+      if ((sharedNoRange || (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to))) && !receivedTransferSeats.includes(seat)) {
         const ownerStation = getStationNameForSeat(depart, seat);
+        const yours = allowedSeatRange ? ` Vos sièges : ${allowedSeatRange.from} à ${allowedSeatRange.to}.` : ' Votre gare n\'a pas de siège sur ce départ.';
         setError(ownerStation && ownerStation !== session?.station_name
-          ? `Le siège n°${seat} est réservé à la gare de ${ownerStation}.`
-          : `Siège n°${seat} indisponible : attribué à une autre gare.`);
+          ? `Le siège n°${seat} est réservé à la gare de ${ownerStation} sur ce départ.${yours}`
+          : `Siège n°${seat} indisponible : attribué à une autre gare.${yours}`);
         return;
       }
       if (soldSeats.includes(seat)) { setError(`Le siège n°${seat} est déjà vendu`); return; }

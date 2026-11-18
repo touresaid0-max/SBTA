@@ -52,8 +52,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   const [seatAllocations, setSeatAllocations] = useState<SeatAllocation[]>([]);
   const [newAllocStationId, setNewAllocStationId] = useState('');
   const [newAllocSeatCount, setNewAllocSeatCount] = useState('');
-  const [newAllocSeatFrom, setNewAllocSeatFrom] = useState('');
-  const [newAllocSeatTo, setNewAllocSeatTo] = useState('');
   const [allocError, setAllocError] = useState('');
   const [convoyeurId, setConvoyeurId] = useState('');
 
@@ -140,6 +138,27 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   // 63 seats sold from n°2 → 2 to 64
   const lastSeat = lastSeatNumber(seatsFrom, seatsTotal);
 
+  // Seat sharing (« Charger dans une autre gare »): a partner station gets a number of seats at
+  // the end of the bus, each new one just before the previous; the main station keeps one block,
+  // all the other seats, from the first seat. Typing the first and last seat let a partner start at
+  // seat 1, leaving the main station no range: its counter then sold the whole bus, the partner's
+  // seats included (seats sold twice, ATTECOUBE, 18/11/2026).
+  const packAllocations = (list: SeatAllocation[], last: number): SeatAllocation[] => {
+    let end = last;
+    return list.map(a => {
+      const count = a.seat_to - a.seat_from + 1;
+      const packed = { ...a, seat_from: end - count + 1, seat_to: end };
+      end = packed.seat_from - 1;
+      return packed;
+    });
+  };
+  const partnersFirstSeat = seatAllocations.length > 0 ? Math.min(...seatAllocations.map(a => a.seat_from)) : lastSeat + 1;
+  const mainSeatTo = partnersFirstSeat - 1;
+  const newAllocCount = parseInt(newAllocSeatCount) || 0;
+  const newAllocTo = mainSeatTo;
+  const newAllocFrom = mainSeatTo - newAllocCount + 1;
+  const primaryStationLabel = session?.station_name ?? 'Gare principale';
+
   const handleBusChange = (id: string) => {
     setBusId(id);
     const bus = vehicules.find(v => v.id === id);
@@ -152,6 +171,17 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   };
 
   const isLinked = !!linkedParent;
+
+  // Another bus: the partner seats move to the end of the new bus (dropped if they no longer fit)
+  useEffect(() => {
+    setSeatAllocations(prev => {
+      if (prev.length === 0) return prev;
+      const packed = packAllocations(prev, lastSeat);
+      if (packed[packed.length - 1].seat_from <= seatsFrom) return [];
+      return packed.every((a, i) => a.seat_from === prev[i].seat_from && a.seat_to === prev[i].seat_to) ? prev : packed;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastSeat, seatsFrom]);
 
   // « Gare de vente secondaire »: only the stations of the line's secondary routes
   const secondaryStationIds = secondaryByRoute ? (secondaryByRoute.get(ligneId) ?? new Set<string>()) : null;
@@ -532,22 +562,12 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                     </thead>
                     <tbody>
                       {/* Primary station row */}
-                      {(() => {
-                        const sorted = [...seatAllocations].sort((a, b) => a.seat_from - b.seat_from);
-                        const primaryTo = sorted[0].seat_from - 1;
-                        const primaryFrom = seatsFrom;
-                        if (primaryTo >= primaryFrom) {
-                          return (
-                            <tr style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--primary-light)' }}>
-                              <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--primary)' }}>{session?.station_name ?? 'Gare primaire'}</td>
-                              <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--primary)' }}>{primaryFrom} à {primaryTo}</td>
-                              <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: 'var(--primary)' }}>{primaryTo - primaryFrom + 1}</td>
-                              <td className="px-3 py-2"></td>
-                            </tr>
-                          );
-                        }
-                        return null;
-                      })()}
+                      <tr style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--primary-light)' }}>
+                        <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--primary)' }}>{primaryStationLabel} (gare principale)</td>
+                        <td className="px-3 py-2 text-xs text-center" style={{ color: 'var(--primary)' }}>{seatsFrom} à {mainSeatTo}</td>
+                        <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: 'var(--primary)' }}>{mainSeatTo - seatsFrom + 1}</td>
+                        <td className="px-3 py-2"></td>
+                      </tr>
                       {seatAllocations.map((a, i) => (
                         <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
                           <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{a.station_name}</td>
@@ -556,7 +576,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                           <td className="px-3 py-2 text-right">
                             <button
                               type="button"
-                              onClick={() => setSeatAllocations(seatAllocations.filter((_, idx) => idx !== i))}
+                              onClick={() => setSeatAllocations(packAllocations(seatAllocations.filter((_, idx) => idx !== i), lastSeat))}
                               className="p-1 rounded-lg"
                               style={{ color: 'var(--danger)' }}
                             >
@@ -570,8 +590,8 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                       <tr style={{ borderTop: '2px solid var(--border)' }}>
                         <td className="px-3 py-2 text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Total attribué</td>
                         <td className="px-3 py-2"></td>
-                        <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0) + (seatAllocations.length > 0 ? seatAllocations[0].seat_from - seatsFrom : 0) > seatsTotal ? 'var(--danger)' : 'var(--success)' }}>
-                          {seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0) + (seatAllocations.length > 0 ? seatAllocations[0].seat_from - seatsFrom : 0)} / {seatsTotal}
+                        <td className="px-3 py-2 text-xs text-center font-bold" style={{ color: 'var(--success)' }}>
+                          {(mainSeatTo - seatsFrom + 1) + seatAllocations.reduce((s, a) => s + (a.seat_to - a.seat_from + 1), 0)} / {seatsTotal} ✓
                         </td>
                         <td className="px-3 py-2"></td>
                       </tr>
@@ -608,57 +628,30 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                     </p>
                   )}
                 </div>
-                <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                    Nombre de sièges <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />
-                  </label>
+                <div className="col-span-2">
+                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Nombre de sièges pour cette gare</label>
                   <input
                     type="number"
-                    readOnly
-                    value={(() => {
-                      const from = parseInt(newAllocSeatFrom);
-                      const to = parseInt(newAllocSeatTo);
-                      if (!isNaN(from) && !isNaN(to) && to >= from) return to - from + 1;
-                      return newAllocSeatCount || '';
-                    })()}
+                    min={1}
+                    max={Math.max(0, mainSeatTo - seatsFrom)}
+                    value={newAllocSeatCount}
+                    onChange={e => { setNewAllocSeatCount(e.target.value); setAllocError(''); }}
                     className={fieldInput}
-                    style={{ ...fieldStyle, cursor: 'not-allowed', opacity: 0.7 }}
-                    placeholder={selectedBus ? `${selectedBus.capacity}` : '0'}
+                    style={{ ...fieldStyle, borderColor: 'var(--primary)' }}
+                    placeholder={`1 à ${Math.max(0, mainSeatTo - seatsFrom)}`}
                   />
-                  <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Calculé automatiquement depuis le bus</p>
-                </div>
-                <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Premier numéro de siège</label>
-                  <input
-                    type="number"
-                    min={seatsFrom}
-                    max={lastSeat}
-                    value={newAllocSeatFrom}
-                    onChange={e => {
-                      setNewAllocSeatFrom(e.target.value);
-                      const from = parseInt(e.target.value) || 0;
-                      const count = parseInt(newAllocSeatCount) || 0;
-                      if (from > 0 && count > 0) {
-                        setNewAllocSeatTo(String(Math.min(from + count - 1, lastSeat)));
-                      }
-                    }}
-                    className={fieldInput}
-                    style={fieldStyle}
-                    placeholder="Ex: 32"
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Dernier numéro de siège</label>
-                  <input
-                    type="number"
-                    min={seatsFrom}
-                    max={lastSeat}
-                    value={newAllocSeatTo}
-                    onChange={e => setNewAllocSeatTo(e.target.value)}
-                    className={fieldInput}
-                    style={fieldStyle}
-                    placeholder="Ex: 62"
-                  />
+                  {newAllocCount > 0 && (
+                    newAllocFrom > seatsFrom ? (
+                      <p className="mt-1.5 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: '#EFF6FF', color: '#1E3A8A' }}>
+                        {(gares.find(g => g.id === newAllocStationId)?.name) ?? 'Cette gare'} aura les sièges <b>{newAllocFrom} à {newAllocTo}</b> (à la fin du car).{' '}
+                        <b>{primaryStationLabel} garde les sièges {seatsFrom} à {newAllocFrom - 1}</b>.
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+                        {newAllocCount} sièges : {primaryStationLabel} doit garder au moins 1 siège (au plus {Math.max(0, mainSeatTo - seatsFrom)} pour cette gare).
+                      </p>
+                    )
+                  )}
                 </div>
               </div>
 
@@ -666,11 +659,12 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                 type="button"
                 onClick={() => {
                   if (!newAllocStationId) { setAllocError('Veuillez sélectionner une gare secondaire'); return; }
-                  const from = parseInt(newAllocSeatFrom);
-                  const to = parseInt(newAllocSeatTo);
-                  if (isNaN(from) || isNaN(to) || from < seatsFrom || to > lastSeat || from > to) {
-                    setAllocError(`Plage invalide — les sièges doivent être entre ${seatsFrom} et ${lastSeat}`); return;
+                  if (newAllocCount <= 0) { setAllocError('Indiquez le nombre de sièges pour cette gare'); return; }
+                  if (newAllocFrom <= seatsFrom) {
+                    setAllocError(`${primaryStationLabel} doit garder au moins 1 siège : au plus ${Math.max(0, mainSeatTo - seatsFrom)} sièges pour cette gare`); return;
                   }
+                  const from = newAllocFrom;
+                  const to = newAllocTo;
                   const gare = gares.find(g => g.id === newAllocStationId);
                   const newAlloc: SeatAllocation = {
                     station_id: newAllocStationId,
@@ -682,10 +676,10 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
                   const err = validateSeatAllocations(updated, lastSeat, seatsFrom);
                   if (err) { setAllocError(err); return; }
                   setSeatAllocations(updated);
-                  setNewAllocStationId(''); setNewAllocSeatCount(''); setNewAllocSeatFrom(''); setNewAllocSeatTo('');
+                  setNewAllocStationId(''); setNewAllocSeatCount('');
                   setAllocError('');
                 }}
-                disabled={!newAllocStationId || !newAllocSeatFrom || !newAllocSeatTo}
+                disabled={!newAllocStationId || newAllocCount <= 0}
                 className="w-full py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-60 flex items-center justify-center gap-2"
                 style={{ backgroundColor: 'var(--primary)' }}
               >
