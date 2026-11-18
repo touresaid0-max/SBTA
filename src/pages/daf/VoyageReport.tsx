@@ -66,6 +66,11 @@ interface Depart {
   solde: number;
   /** A trip made: not cancelled, with tickets sold (or a convoy) */
   voyage: boolean;
+  /** Shared departure (« Charger dans une autre gare »): one row per station, with its share of
+   *  the seats, tickets, baggage and expenses. Null on an ordinary departure. */
+  share: { role: 'principale' | 'partenaire'; from: number; to: number } | null;
+  /** Unique row key: the departure, and the station on a shared departure */
+  key: string;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -105,6 +110,9 @@ function toDepart(r: Record<string, unknown>): Depart {
     caisse,
     solde: caisse - expenses,
     voyage: status !== 'annule' && (seats > 0 || tickets > 0 || status === 'convoi'),
+    share: r.share_role === 'principale' || r.share_role === 'partenaire'
+      ? { role: r.share_role, from: num(r.seat_from), to: num(r.seat_to) } : null,
+    key: `${String(r.schedule_id)}:${String(r.station_id ?? '')}`,
   };
 }
 
@@ -124,13 +132,22 @@ interface Totals {
   expenses: number;
   caisse: number;
   solde: number;
+  /** Departures already counted: a shared departure has one row per station but is one
+   *  departure (and one trip) for a line, a company or the whole period */
+  counted?: Set<string>;
+  trips?: Set<string>;
 }
 const emptyTotals = (): Totals => ({ departs: 0, voyages: 0, annules: 0, sold: 0, seats: 0, capacity: 0, tickets: 0, baggage: 0, ramassage: 0, expenses: 0, caisse: 0, solde: 0 });
 function addTo(t: Totals, d: Depart) {
-  t.departs += 1;
-  if (d.status === 'annule') t.annules += 1;
+  const counted = (t.counted ??= new Set());
+  const trips = (t.trips ??= new Set());
+  if (!counted.has(d.id)) {
+    counted.add(d.id);
+    t.departs += 1;
+    if (d.status === 'annule') t.annules += 1;
+  }
   if (d.voyage) {
-    t.voyages += 1;
+    if (!trips.has(d.id)) { trips.add(d.id); t.voyages += 1; }
     // Fill rate: seats sold over the seats of the trips made (an empty or cancelled departure
     // would lower it without being a trip)
     if (d.capacity > 0) { t.seats += d.seats; t.capacity += d.capacity; }
@@ -191,7 +208,7 @@ const departCells = (d: Depart): string[] => {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return [
     dt ? format(dt, 'dd/MM/yyyy') : '—', dt ? format(dt, 'HH:mm') : '—', d.number != null ? String(d.number) : '—',
-    d.route, d.station, d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
+    d.route, d.share ? `${d.station} (sièges ${d.share.from}-${d.share.to})` : d.station, d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
     fmtN(d.capacity), fmtN(d.seats), d.capacity > 0 ? pct((d.seats / d.capacity) * 100) : '—',
     fmtF(d.tickets), fmtF(d.baggage), fmtF(d.ramassage), fmtF(d.caisse), fmtF(d.expenses), fmtF(d.solde),
   ];
@@ -381,7 +398,9 @@ export default function DAFVoyageReport() {
       const dt = d.datetime ? new Date(d.datetime) : null;
       return {
         'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° départ': d.number ?? '',
-        'Ligne': d.route, 'Gare': d.station, 'Arrivée': d.arrival, 'Guichet': d.counter, 'Car': d.bus, 'Société': d.company,
+        'Ligne': d.route, 'Gare': d.station,
+        'Départ partagé': d.share ? `${d.share.role === 'principale' ? 'Gare principale' : 'Gare partenaire'}, sièges ${d.share.from}-${d.share.to}` : '',
+        'Arrivée': d.arrival, 'Guichet': d.counter, 'Car': d.bus, 'Société': d.company,
         'Statut': STATUS_LABELS[d.status] ?? d.status, 'Voyage effectué': d.voyage ? 'Oui' : 'Non',
         'Places': d.capacity, 'Sièges vendus': d.seats,
         'Remplissage %': d.capacity > 0 ? Number(((d.seats / d.capacity) * 100).toFixed(1)) : '',
@@ -688,7 +707,7 @@ export default function DAFVoyageReport() {
                     </thead>
                     <tbody>
                       {pDeparts.pageItems.map(d => (
-                        <tr key={d.id} className="border-t" style={{ borderColor: 'var(--border)', opacity: d.status === 'annule' ? 0.55 : 1 }}>
+                        <tr key={d.key} className="border-t" style={{ borderColor: 'var(--border)', opacity: d.status === 'annule' ? 0.55 : 1 }}>
                           {departCells(d).map((c, i) => (
                             <td key={i} className={`px-3 py-2 whitespace-nowrap ${i >= 9 ? 'text-right' : ''}`}
                               style={{

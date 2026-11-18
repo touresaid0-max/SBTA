@@ -41,7 +41,12 @@ export interface Depart {
   expenses: number;
   caisse: number;
   solde: number;
+  /** Shared departure: this row is one station's share (its seats, tickets, baggage, expenses) */
+  share: { role: 'principale' | 'partenaire'; from: number; to: number } | null;
 }
+
+/** The station of a row, with its seats on a shared departure */
+export const stationLabel = (d: Depart) => (d.share ? `${d.station} (sièges ${d.share.from}-${d.share.to})` : d.station);
 
 export function toDepart(r: Record<string, unknown>, i: number): Depart {
   const tickets = num(r.tickets_amount);
@@ -74,6 +79,8 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
     expenses,
     caisse,
     solde: caisse - expenses,
+    share: r.share_role === 'principale' || r.share_role === 'partenaire'
+      ? { role: r.share_role, from: num(r.seat_from), to: num(r.seat_to) } : null,
   };
 }
 
@@ -100,7 +107,7 @@ export function departSheetRow(d: Depart): Record<string, string | number> {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return {
     'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° dép.': d.number ?? '',
-    'Ligne': d.route, 'Gare': d.station, 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
+    'Ligne': d.route, 'Gare': stationLabel(d), 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
     'Société': d.company, 'Statut': STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
     'Vendus': d.seats, 'Rempl. %': d.isDeparture && d.capacity > 0 ? Number(((d.seats / d.capacity) * 100).toFixed(1)) : '',
     'Tickets': d.tickets, 'Nb bagages': d.baggageCount, 'Bagages': d.baggage, 'Ramassage': d.ramassage, 'Caisse': d.caisse,
