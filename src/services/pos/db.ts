@@ -107,6 +107,9 @@ export interface TicketRecord {
   sold_here?: boolean;
   loyalty_card_number?: string;
   loyalty_name?: string;
+  /** Station of the counter that sold the ticket: on a shared departure the ticket counts for it
+   *  (bordereaux, clôture), as in the reports. Set at the sale, or read from the server. */
+  sold_station_id?: string | null;
   created_at: string;
   updated_at: string;
   synced?: boolean;

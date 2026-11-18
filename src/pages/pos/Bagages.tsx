@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { getDepartById, getSeatRangeForStation, isDepartForCounter, type DepartRecord } from '@/services/pos/departService';
+import { getDepartById, getSeatRangeForStation, ticketsOfStation, isDepartForCounter, type DepartRecord } from '@/services/pos/departService';
 import { getStations, getTicketsForDepart, type StationRef, type TicketRecord } from '@/services/pos/ticketService';
 import {
   registerBagage, getBagagesForDepart, findTicketByNumber,
@@ -88,10 +88,8 @@ export default function POSBagages() {
 
   const scopedBagages = useMemo(() => {
     const active = bagages.filter(b => b.description !== '__deleted__' && b.payment_status !== 'en_attente');
-    if (!hasAllocations || !stationRange) return active;
-    const scopedTicketIds = new Set(
-      tickets.filter(t => t.seat_number >= stationRange.from && t.seat_number <= stationRange.to).map(t => t.id)
-    );
+    if (!hasAllocations || !depart || !session?.station_id) return active;
+    const scopedTicketIds = new Set(ticketsOfStation(tickets, depart, session.station_id).map(t => t.id));
     return active.filter(b => {
       if (b.ticket_id && scopedTicketIds.has(b.ticket_id)) return true;
       if (b.ticket_id) return false;

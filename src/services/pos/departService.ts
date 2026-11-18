@@ -256,6 +256,25 @@ export async function getDepartById(id: string): Promise<DepartRecord | undefine
   return id ? getById<DepartRecord>('departs', id) : undefined;
 }
 
+/**
+ * On a shared departure, the tickets that count for a station: the ones its counters sold (the
+ * cash is there), as in the reports (« le billet va à la gare qui l'a vendu », 18/11/2026); a
+ * ticket whose seller station is unknown, or not one of the departure's stations, by its seat.
+ * Not shared: every ticket. Cancelled tickets are left to the caller.
+ */
+export function ticketsOfStation<T extends { seat_number: number; sold_station_id?: string | null }>(
+  tickets: T[], d: DepartRecord, stationId: string,
+): T[] {
+  if (!d.seat_allocations || d.seat_allocations.length === 0) return tickets;
+  const stations = new Set<string>([d.station_id, ...d.seat_allocations.map(a => a.station_id)]);
+  const range = getSeatRangeForStation(d, stationId);
+  const received = getReceivedTransferSeatsForStation(d, stationId);
+  return tickets.filter(t => {
+    if (t.sold_station_id && stations.has(t.sold_station_id)) return t.sold_station_id === stationId;
+    return (!!range && t.seat_number >= range.from && t.seat_number <= range.to) || received.includes(t.seat_number);
+  });
+}
+
 export function seatsAllocatedForStation(d: DepartRecord, stationId: string): number {
   const range = getSeatRangeForStation(d, stationId);
   const base = range ? range.to - range.from + 1 : 0;
@@ -265,10 +284,21 @@ export function seatsAllocatedForStation(d: DepartRecord, stationId: string): nu
 export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
   const range = getSeatRangeForStation(d, stationId);
   const received = getReceivedTransferSeatsForStation(d, stationId);
-  const inSeatPool = (seatNumber: number) =>
-    (range && seatNumber >= range.from && seatNumber <= range.to) || received.includes(seatNumber);
-  if (!range && received.length === 0) return d.seats_sold;
-  return tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled' && inSeatPool(t.seat_number)).length;
+  const sold = ticketsOfStation(tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled'), d, stationId);
+  if (!range && received.length === 0 && sold.length === 0) return d.seats_sold;
+  return sold.length;
+}
+
+/** Seats of the station's own range (and transfers received) that hold a ticket, whoever sold it */
+function seatsTakenForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
+  const range = getSeatRangeForStation(d, stationId);
+  const received = getReceivedTransferSeatsForStation(d, stationId);
+  const seats = new Set<number>();
+  for (const t of tickets) {
+    if (t.depart_id !== d.id || t.status === 'cancelled') continue;
+    if ((range && t.seat_number >= range.from && t.seat_number <= range.to) || received.includes(t.seat_number)) seats.add(t.seat_number);
+  }
+  return seats.size;
 }
 
 /**
@@ -291,9 +321,10 @@ export function seatsLibres(d: DepartRecord): number {
 }
 
 export function seatsLibresForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
+  // Free seats: the station's seats without a ticket (a ticket sold here on another station's seat
+  // does not free one of ours)
   const allocated = seatsAllocatedForStation(d, stationId);
-  const sold = seatsVendusForStation(tickets, d, stationId);
-  return Math.max(0, allocated - sold);
+  return Math.max(0, allocated - seatsTakenForStation(tickets, d, stationId));
 }
 
 export function computeSolde(d: DepartRecord): number {
@@ -342,15 +373,8 @@ export function computeStationScopedTotals(
     };
   }
 
-  const range = getSeatRangeForStation(depart, stationId);
-  const stationTickets = range
-    ? tickets.filter(t =>
-        t.depart_id === depart.id &&
-        t.status !== 'cancelled' &&
-        t.seat_number >= range.from &&
-        t.seat_number <= range.to,
-      )
-    : [];
+  const stationTickets = ticketsOfStation(
+    tickets.filter(t => t.depart_id === depart.id && t.status !== 'cancelled'), depart, stationId);
   const stationTicketIds = new Set(stationTickets.map(t => t.id));
 
   const primaryStationId = depart.station_id;

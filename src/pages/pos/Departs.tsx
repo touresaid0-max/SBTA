@@ -9,6 +9,7 @@ import {
   seatsCommercialisables,
   lastSeatNumber,
   getSeatRangeForStation,
+  ticketsOfStation,
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
   getVehicules, getChauffeurs, getGares,
   findNextDepartForRoute, transferTicketsToDepart,
@@ -110,10 +111,9 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string, st
   let activeTickets = tickets.filter(
     t => t.depart_id === depart.id && t.status !== 'cancelled'
   );
-  if (seatRange) {
-    activeTickets = activeTickets.filter(
-      t => t.seat_number >= seatRange.from && t.seat_number <= seatRange.to,
-    );
+  if (hasAllocations && stationId) {
+    // The tickets this station sold (seat of its range when the seller is unknown)
+    activeTickets = ticketsOfStation(activeTickets, depart, stationId);
   }
 
   const stationTicketIds = new Set(activeTickets.map(t => t.id));
@@ -561,10 +561,9 @@ export default function POSDeparts() {
           getDepensesForDepart(d.id),
         ]);
         const hasAllocations = !!(d.seat_allocations && d.seat_allocations.length > 0);
-        const seatRange = hasAllocations && session?.station_id ? getSeatRangeForStation(d, session.station_id) : null;
         let active = dTickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled');
-        if (seatRange) {
-          active = active.filter(t => t.seat_number >= seatRange.from && t.seat_number <= seatRange.to);
+        if (hasAllocations && session?.station_id) {
+          active = ticketsOfStation(active, d, session.station_id);
         }
         const stationTicketIds = new Set(active.map(t => t.id));
         const scopedBagages = hasAllocations && session?.station_id

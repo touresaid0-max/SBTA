@@ -11,7 +11,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes, getSaleRouteForStation } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibres, seatsLibresForStation, seatsCommercialisables, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
+import { getSeatRangeForStation, ticketsOfStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibres, seatsLibresForStation, seatsCommercialisables, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
@@ -486,16 +486,12 @@ export default function POSVente() {
   const isSecondaryStation = depart && session?.station_id && depart.station_id !== session.station_id;
 
   const hasAllocations = !!(depart?.seat_allocations && depart.seat_allocations.length > 0);
-  const stationRange = hasAllocations && session?.station_id ? getSeatRangeForStation(depart!, session.station_id) : null;
 
   const scopedTickets = useMemo(() => {
-    if (!hasAllocations || !stationRange) return tickets;
-    const received = receivedTransferSeats;
-    return tickets.filter(t => {
-      if (t.status === 'cancelled') return false;
-      return (t.seat_number >= stationRange.from && t.seat_number <= stationRange.to) || received.includes(t.seat_number);
-    });
-  }, [tickets, hasAllocations, stationRange, receivedTransferSeats]);
+    if (!hasAllocations || !depart || !session?.station_id) return tickets;
+    // The tickets this station sold (seat of its range when the seller is unknown)
+    return ticketsOfStation(tickets.filter(t => t.status !== 'cancelled'), depart, session.station_id);
+  }, [tickets, hasAllocations, depart, session?.station_id]);
 
   // Ticket id → pending reprint authorization (POS tickets are synced as reservations with the same id)
   const reprintAuthByTicket = useMemo(() => {
@@ -630,6 +626,7 @@ export default function POSVente() {
         loyaltyCardNumber: loyaltyEnabled ? loyaltyCardNumber : undefined,
         loyaltyName: loyaltyEnabled ? cleanText(loyaltyName, TEXT_LIMITS.name) : undefined,
         stationAgencyCode: session?.station_name,
+        soldStationId: session?.station_id,
       });
 
       const [t, s] = await Promise.all([getTicketsForDepart(departId), getSoldSeats(departId)]);
