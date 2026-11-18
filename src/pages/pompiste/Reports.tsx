@@ -465,7 +465,7 @@ export default function Reports() {
                   <p className="px-4 pt-3 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Détail des dépotages</p>
                   <table className="w-full text-sm">
                     <thead><tr style={{ backgroundColor: 'var(--bg-subtle, #F9FAFB)' }}>
-                      {['Arrivée', 'Cuve', 'Fournisseur', 'Annoncé', 'Réel', 'Chargement', 'Dépotage', 'Total', 'Observation'].map((h, i) => <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase ${i >= 3 && i <= 7 ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-muted)' }}>{h}</th>)}
+                      {['Dépotage', 'Cuve', 'Fournisseur', 'Annoncé', 'Réel', 'Chargement', 'Dépotage', 'Total', 'Observation'].map((h, i) => <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase ${i >= 3 && i <= 7 ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-muted)' }}>{h}</th>)}
                     </tr></thead>
                     <tbody>
                       {varianceRows.map(r => (

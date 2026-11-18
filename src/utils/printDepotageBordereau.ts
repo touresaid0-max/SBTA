@@ -48,7 +48,7 @@ export function depotageBordereauHtml(d: DepotageBordereauData): string {
     <div class="c t">SBTA</div><div class="c b">BORDEREAU DE DÉPOTAGE</div><hr>
     ${row('Cuve :', d.tankName)}${row('Fournisseur :', d.supplierName)}${row('Produit :', d.productName)}
     ${d.deliveryNote ? row('Bon de livraison :', d.deliveryNote) : ''}
-    ${row('Arrivée :', dateTime(d.arrivalAt))}${row('Mesure :', measured ? dateTime(d.measuredAt) : 'en attente')}<hr>
+    ${row('Fin dépotage :', dateTime(d.arrivalAt))}${row('Mesure :', measured ? dateTime(d.measuredAt) : 'en attente')}<hr>
     ${row('Stock de départ', liters(d.stockBefore))}${row('Dépoté théorique', liters(d.announced))}
     ${row('Total attendu', liters(d.stockBefore + d.announced), true)}<hr>
     ${measured ? `

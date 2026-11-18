@@ -8,12 +8,15 @@ import { usePompisteTanks } from '../../hooks/usePompisteTanks';
 import { printDepotageBordereau, type DepotageBordereauData } from '../../utils/printDepotageBordereau';
 
 /*
- * Dépotage en deux étapes (demande du responsable carburant et du DG, 17/11/2026) :
- *  1. arrivée de la citerne : quantité annoncée (bon du fournisseur), stock de départ, écart
- *     constaté sur la citerne au contrôle « contre-plein » ; la cuve reçoit provisoirement
- *     l'annoncé ;
- *  2. une heure après, mesure à la règle : la base calcule le dépotage réel et les écarts, et met
- *     la cuve au niveau mesuré (record_depotage_measure).
+ * Fiche de dépotage (demande du responsable carburant et du DG, 17/11/2026 ; retours du pompiste
+ * le 18/11) :
+ *  1. livraison : bon du fournisseur, quantité annoncée ;
+ *  2. avant de dépoter : stock de départ jaugé, contrôle « contre-plein » de la citerne, et la
+ *     fin du dépotage (la citerne peut arriver la nuit et être dépotée un autre jour : seule
+ *     compte l'heure de fin du dépotage, d'où part l'heure de repos) ;
+ *  3. au moins une heure après la fin du dépotage, la mesure à la règle, sur la même fiche ou plus
+ *     tard (« Saisir la mesure ») : la base calcule le dépotage réel et les écarts, et met la cuve
+ *     au niveau mesuré (record_depotage_measure).
  * L'écart, en plus ou en moins, figure sur le bordereau.
  */
 
@@ -48,6 +51,8 @@ const localDateTime = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-
 
 const EMPTY = {
   depot_date: todayStr(), arrival_time: nowTime(),
+  // Measurement at the ruler, on the same sheet (optional: otherwise later)
+  measured_level: '', measured_date: todayStr(), measured_time: nowTime(), measure_note: '',
   tank_id: '', supplier_id: '', purchase_order_id: '', product_id: '',
   delivery_note_number: '', announced_quantity: '', stock_before: '',
   citerne_state: 'conforme' as CiterneState, citerne_liters: '',
@@ -155,8 +160,24 @@ export default function Depotages() {
   const citerneVariance = form.citerne_state === 'manque' ? -citerneLiters : form.citerne_state === 'surplus' ? citerneLiters : 0;
   const selectedTank = tanks.find(t => t.id === form.tank_id);
   const expected = (isNaN(stockBefore) ? 0 : stockBefore) + announced;
+  // End of the unloading: the rest before measuring starts there
+  const endAt = new Date(`${form.depot_date}T${form.arrival_time || '00:00'}:00`);
+  const measureFrom = new Date(endAt.getTime() + REST_MINUTES * 60_000);
+  // Measurement entered on the sheet
+  const measuredLevel = parseFloat(form.measured_level);
+  const hasMeasure = form.measured_level !== '' && !isNaN(measuredLevel);
+  const measuredAt = new Date(`${form.measured_date}T${form.measured_time || '00:00'}:00`);
+  const received = hasMeasure && !isNaN(stockBefore) ? measuredLevel - stockBefore : null;
+  const totalVariance = received !== null ? received - announced : null;
+  const unloadingVariance = totalVariance !== null ? totalVariance - citerneVariance : null;
+  const price = parseFloat(form.unit_price) || 0;
+  const measureTooEarly = hasMeasure && !isNaN(measuredAt.getTime()) && !isNaN(endAt.getTime())
+    && measuredAt.getTime() - endAt.getTime() < REST_MINUTES * 60_000;
+  const minutesAfterEnd = Math.max(0, Math.floor((measuredAt.getTime() - endAt.getTime()) / 60_000));
+  const measureNoteRequired = totalVariance !== null && announced > 0 && Math.abs(totalVariance) > (announced * NOTE_THRESHOLD_PCT) / 100;
+  const [confirmEarlySheet, setConfirmEarlySheet] = useState(false);
 
-  const handleSave = async () => {
+  const handleSave = async (earlyConfirmed = false) => {
     if (!form.tank_id || !form.supplier_id || !form.product_id || !form.announced_quantity) {
       toast.error('Cuve, fournisseur, produit et quantité annoncée obligatoires'); return;
     }
@@ -168,12 +189,25 @@ export default function Depotages() {
       toast.error(`Dépassement de capacité : ${expected.toLocaleString('fr-FR')} L attendus pour ${Number(selectedTank.capacity_liters).toLocaleString('fr-FR')} L`); return;
     }
     if (pendingTankIds.has(form.tank_id)) { toast.error('Un dépotage de cette cuve attend encore sa mesure : saisissez-la d\'abord'); return; }
-    const arrival = new Date(`${form.depot_date}T${form.arrival_time || '00:00'}:00`);
-    if (isNaN(arrival.getTime()) || arrival.getTime() > Date.now() + 5 * 60_000) { toast.error('Heure d\'arrivée invalide (dans le futur)'); return; }
+    const arrival = endAt;
+    if (isNaN(arrival.getTime()) || arrival.getTime() > Date.now() + 5 * 60_000) { toast.error('Heure de fin du dépotage invalide (dans le futur)'); return; }
+    if (hasMeasure) {
+      if (measuredLevel < 0) { toast.error('Niveau mesuré invalide'); return; }
+      if (selectedTank && Number(selectedTank.capacity_liters) > 0 && measuredLevel > Number(selectedTank.capacity_liters)) {
+        toast.error(`Le niveau mesuré dépasse la capacité de la cuve (${Number(selectedTank.capacity_liters).toLocaleString('fr-FR')} L)`); return;
+      }
+      if (received !== null && received < 0) { toast.error('Mesure inférieure au stock de départ : vérifiez la valeur'); return; }
+      if (isNaN(measuredAt.getTime()) || measuredAt.getTime() < arrival.getTime() || measuredAt.getTime() > Date.now() + 5 * 60_000) {
+        toast.error('Heure de la mesure invalide : après la fin du dépotage et pas dans le futur'); return;
+      }
+      if (measureNoteRequired && !form.measure_note.trim()) { toast.error(`Écart de plus de ${NOTE_THRESHOLD_PCT} % : indiquez une observation sur la mesure`); return; }
+      if (measureTooEarly && !earlyConfirmed) { setConfirmEarlySheet(true); return; }
+    }
+    setConfirmEarlySheet(false);
 
     setSaving(true);
     try {
-      const { error } = await supabase.from('fuel_depotages').insert({
+      const { data: created, error } = await supabase.from('fuel_depotages').insert({
         depot_date: form.depot_date,
         arrival_at: arrival.toISOString(),
         tank_id: form.tank_id,
@@ -188,10 +222,21 @@ export default function Depotages() {
         citerne_variance: citerneVariance,
         unit_price: parseFloat(form.unit_price) || 0,
         observation: form.observation.trim() || null,
-      });
+      }).select('id').single();
       if (error) throw error;
-      const measureAt = new Date(arrival.getTime() + REST_MINUTES * 60_000);
-      toast.success(`Arrivée enregistrée — mesure à la règle à faire à partir de ${pad(measureAt.getHours())}:${pad(measureAt.getMinutes())}`);
+      if (hasMeasure && created?.id) {
+        const { error: mError } = await supabase.rpc('record_depotage_measure', {
+          p_depotage_id: created.id, p_measured_level: measuredLevel, p_measured_at: measuredAt.toISOString(),
+          p_observation: form.measure_note.trim() || null,
+        });
+        if (mError) {
+          toast.error(`Dépotage enregistré, mais la mesure a été refusée : ${mError.message}. Saisissez-la avec « Saisir la mesure ».`);
+        } else {
+          toast.success('Dépotage et mesure enregistrés — la cuve est au niveau mesuré');
+        }
+      } else {
+        toast.success(`Dépotage enregistré — mesure à la règle à faire à partir de ${format(measureFrom, 'dd/MM HH:mm')}`);
+      }
       setShowForm(false); load(); loadRefs();
     } catch (e: any) { toast.error(e.message || 'Erreur'); }
     finally { setSaving(false); }
@@ -241,7 +286,7 @@ export default function Depotages() {
           </h1>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Entrées carburant dans les cuves — quantité annoncée, puis mesure à la règle une heure après</p>
         </div>
-        <button onClick={() => { setForm({ ...EMPTY, depot_date: todayStr(), arrival_time: nowTime() }); setShowForm(true); }}
+        <button onClick={() => { setForm({ ...EMPTY, depot_date: todayStr(), arrival_time: nowTime(), measured_date: todayStr(), measured_time: nowTime() }); setConfirmEarlySheet(false); setShowForm(true); }}
           disabled={isPompiste && myTanks.length === 0}
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ backgroundColor: '#16A34A' }}>
@@ -268,7 +313,7 @@ export default function Depotages() {
           <div key={d.id} className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3" style={{ borderColor: '#FCD34D', backgroundColor: '#FEF3C7' }}>
             <p className="text-sm" style={{ color: '#92400E' }}>
               <Timer className="mr-1.5 inline h-4 w-4" />
-              <b>Mesure en attente</b> — {d.tanks?.name ?? 'Cuve'}, {d.fuel_suppliers?.name ?? ''} : {L(d.announced_quantity)} annoncés, arrivée à {format(new Date(d.arrival_at || d.created_at), 'HH:mm')}.
+              <b>Mesure en attente</b> — {d.tanks?.name ?? 'Cuve'}, {d.fuel_suppliers?.name ?? ''} : {L(d.announced_quantity)} annoncés, dépotage fini à {format(new Date(d.arrival_at || d.created_at), 'HH:mm')}.
               {' '}{due.getTime() > Date.now() ? `Mesure possible à partir de ${format(due, 'HH:mm')}.` : 'Mesure à faire maintenant.'}
             </p>
             <button onClick={() => setMeasuring(d)} className="flex items-center gap-1.5 rounded-xl border-2 bg-white px-4 py-2 text-sm font-bold" style={{ borderColor: '#FCD34D', color: '#92400E' }}>
@@ -305,7 +350,7 @@ export default function Depotages() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-subtle, #F9FAFB)' }}>
-                {['Arrivée', 'Cuve', 'Fournisseur', 'Annoncé', 'Réel', 'Écart chargement', 'Écart dépotage', 'Écart total', 'Montant', 'Statut', ''].map((h, i) => (
+                {['Dépotage', 'Cuve', 'Fournisseur', 'Annoncé', 'Réel', 'Écart chargement', 'Écart dépotage', 'Écart total', 'Montant', 'Statut', ''].map((h, i) => (
                   <th key={h || i} className={`px-3 py-3 text-xs font-semibold uppercase tracking-wide ${i >= 3 && i <= 8 ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -357,105 +402,198 @@ export default function Depotages() {
             <div className="flex items-center justify-between px-7 pt-6 pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
               <div>
                 <h3 className="font-bold text-lg flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                  <ArrowDownCircle className="w-5 h-5" style={{ color: '#16A34A' }} /> Nouveau dépotage
+                  <ArrowDownCircle className="w-5 h-5" style={{ color: '#16A34A' }} /> Fiche de dépotage
                 </h3>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Étape 1 : arrivée de la citerne · Étape 2 : mesure à la règle, {REST_MINUTES} min après</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>① Livraison · ② Avant de dépoter · ③ Mesure à la règle, au moins {REST_MINUTES} min après la fin du dépotage</p>
               </div>
               <button onClick={() => setShowForm(false)} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} /></button>
             </div>
-            <div className="px-7 py-5 grid grid-cols-2 gap-4 max-h-[65vh] overflow-y-auto">
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Date d'arrivée</label>
-                <input type="date" value={form.depot_date} max={todayStr()} onChange={e => setForm(f => ({ ...f, depot_date: e.target.value }))} className={field} style={fieldStyle} />
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Heure d'arrivée</label>
-                <input type="time" value={form.arrival_time} onChange={e => setForm(f => ({ ...f, arrival_time: e.target.value }))} className={field} style={fieldStyle} />
-              </div>
-              <div className="col-span-2">
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Cuve *</label>
-                <select value={form.tank_id} onChange={e => handleTankChange(e.target.value)} className={field} style={fieldStyle}>
-                  <option value="">— Sélectionner —</option>
-                  {tanks.map(t => (
-                    <option key={t.id} value={t.id} disabled={pendingTankIds.has(t.id)}>
-                      {t.name} (niveau : {Number(t.current_level_liters).toLocaleString('fr-FR')} L / {Number(t.capacity_liters).toLocaleString('fr-FR')} L){pendingTankIds.has(t.id) ? ' — mesure en attente' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Fournisseur *</label>
-                <select value={form.supplier_id} onChange={e => setForm(f => ({ ...f, supplier_id: e.target.value }))} className={field} style={fieldStyle}>
-                  <option value="">— Sélectionner —</option>
-                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Produit *</label>
-                <select value={form.product_id} onChange={e => handleProductChange(e.target.value)} className={field} style={fieldStyle}>
-                  <option value="">— Sélectionner —</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.designation}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>N° du bon de livraison</label>
-                <input value={form.delivery_note_number} maxLength={60} onChange={e => setForm(f => ({ ...f, delivery_note_number: e.target.value }))} className={field} style={fieldStyle} />
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Bon de commande lié (facultatif)</label>
-                <select value={form.purchase_order_id} onChange={e => setForm(f => ({ ...f, purchase_order_id: e.target.value }))} className={field} style={fieldStyle}>
-                  <option value="">Aucun</option>
-                  {purchaseOrders.map(po => <option key={po.id} value={po.id}>{po.order_number}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Quantité annoncée (bon du fournisseur, L) *</label>
-                <input type="number" min={0} value={form.announced_quantity} onChange={e => setForm(f => ({ ...f, announced_quantity: e.target.value }))} className={field} style={{ ...fieldStyle, borderColor: 'var(--primary)' }} />
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Stock de départ de la cuve (L) *</label>
-                <input type="number" min={0} value={form.stock_before} onChange={e => setForm(f => ({ ...f, stock_before: e.target.value }))} className={field} style={{ ...fieldStyle, borderColor: 'var(--primary)' }} />
-                {selectedTank && <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Proposé : niveau théorique {Number(selectedTank.current_level_liters).toLocaleString('fr-FR')} L — modifiable</p>}
-              </div>
-              <div className="col-span-2">
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Écart constaté sur la citerne avant dépotage (contrôle contre-plein)</label>
-                <div className="flex flex-wrap items-center gap-2">
-                  {([['conforme', 'Conforme'], ['manque', 'Manque (−)'], ['surplus', 'Surplus (+)']] as [CiterneState, string][]).map(([k, label]) => (
-                    <button key={k} type="button" onClick={() => setForm(f => ({ ...f, citerne_state: k, citerne_liters: k === 'conforme' ? '' : f.citerne_liters }))}
-                      className="rounded-xl border-2 px-3 py-2 text-sm font-semibold"
-                      style={form.citerne_state === k ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-light)', color: 'var(--primary)' } : { borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-                      {label}
-                    </button>
-                  ))}
-                  {form.citerne_state !== 'conforme' && (
-                    <input type="number" min={0} placeholder="Litres" value={form.citerne_liters} onChange={e => setForm(f => ({ ...f, citerne_liters: e.target.value }))}
-                      className="w-32 px-3 py-2 border rounded-xl text-sm outline-none" style={fieldStyle} />
+            <div className="px-7 py-5 space-y-5 max-h-[68vh] overflow-y-auto">
+              {/* ① Livraison */}
+              <section>
+                <p className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>① Livraison (bon du fournisseur)</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Cuve *</label>
+                    <select value={form.tank_id} onChange={e => handleTankChange(e.target.value)} className={field} style={fieldStyle}>
+                      <option value="">— Sélectionner —</option>
+                      {tanks.map(t => (
+                        <option key={t.id} value={t.id} disabled={pendingTankIds.has(t.id)}>
+                          {t.name} (niveau : {Number(t.current_level_liters).toLocaleString('fr-FR')} L / {Number(t.capacity_liters).toLocaleString('fr-FR')} L){pendingTankIds.has(t.id) ? ' — mesure en attente' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Fournisseur *</label>
+                    <select value={form.supplier_id} onChange={e => setForm(f => ({ ...f, supplier_id: e.target.value }))} className={field} style={fieldStyle}>
+                      <option value="">— Sélectionner —</option>
+                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Produit *</label>
+                    <select value={form.product_id} onChange={e => handleProductChange(e.target.value)} className={field} style={fieldStyle}>
+                      <option value="">— Sélectionner —</option>
+                      {products.map(p => <option key={p.id} value={p.id}>{p.designation}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>N° du bon de livraison</label>
+                    <input value={form.delivery_note_number} maxLength={60} onChange={e => setForm(f => ({ ...f, delivery_note_number: e.target.value }))} className={field} style={fieldStyle} />
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Quantité annoncée sur le bon (L) *</label>
+                    <input type="number" min={0} value={form.announced_quantity} onChange={e => setForm(f => ({ ...f, announced_quantity: e.target.value }))} className={field} style={{ ...fieldStyle, borderColor: 'var(--primary)' }} />
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Bon de commande lié (facultatif)</label>
+                    <select value={form.purchase_order_id} onChange={e => setForm(f => ({ ...f, purchase_order_id: e.target.value }))} className={field} style={fieldStyle}>
+                      <option value="">Aucun</option>
+                      {purchaseOrders.map(po => <option key={po.id} value={po.id}>{po.order_number}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Prix du litre (FCFA)</label>
+                    <input type="number" min={0} value={form.unit_price} onChange={e => setForm(f => ({ ...f, unit_price: e.target.value }))} className={field} style={fieldStyle} />
+                  </div>
+                </div>
+              </section>
+
+              {/* ② Avant de dépoter */}
+              <section className="border-t pt-4" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>② Avant de dépoter</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Stock de départ de la cuve, jaugé avant de dépoter (L) *</label>
+                    <input type="number" min={0} value={form.stock_before} onChange={e => setForm(f => ({ ...f, stock_before: e.target.value }))} className={field} style={{ ...fieldStyle, borderColor: 'var(--primary)' }} />
+                    {selectedTank && <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Proposé : niveau théorique {Number(selectedTank.current_level_liters).toLocaleString('fr-FR')} L — remplacez-le par la valeur jaugée</p>}
+                  </div>
+                  <div className="col-span-2">
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Contrôle contre-plein de la citerne</label>
+                    <div className="flex flex-wrap gap-2">
+                      {([['conforme', 'Conforme'], ['manque', 'Manque (−)'], ['surplus', 'Surplus (+)']] as [CiterneState, string][]).map(([k, label]) => (
+                        <button key={k} type="button" onClick={() => setForm(f => ({ ...f, citerne_state: k, citerne_liters: k === 'conforme' ? '' : f.citerne_liters }))}
+                          className="rounded-xl border-2 px-4 py-2 text-sm font-semibold"
+                          style={form.citerne_state === k ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-light)', color: 'var(--primary)' } : { borderColor: 'var(--border)', color: 'var(--text-secondary)', backgroundColor: '#fff' }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {form.citerne_state !== 'conforme' && (
+                      <div className="mt-3 rounded-xl border-2 p-3" style={{ borderColor: form.citerne_state === 'manque' ? '#AF3029' : '#1D6FA4', backgroundColor: '#fff' }}>
+                        <label className={lbl} style={{ color: form.citerne_state === 'manque' ? '#AF3029' : '#1D6FA4' }}>
+                          {form.citerne_state === 'manque' ? 'Litres qui manquent dans la citerne *' : 'Litres en trop dans la citerne *'}
+                        </label>
+                        <input type="number" min={0} inputMode="numeric" autoFocus placeholder="Ex. : 50" value={form.citerne_liters}
+                          onChange={e => setForm(f => ({ ...f, citerne_liters: e.target.value }))}
+                          className="w-full px-3 py-2.5 border-2 rounded-xl text-base font-semibold outline-none bg-white"
+                          style={{ borderColor: form.citerne_state === 'manque' ? '#AF3029' : '#1D6FA4', color: 'var(--text-primary)' }} />
+                        <p className="mt-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {citerneLiters > 0
+                            ? <>La citerne contient <b>{form.citerne_state === 'manque' ? `${citerneLiters.toLocaleString('fr-FR')} L de moins` : `${citerneLiters.toLocaleString('fr-FR')} L de plus`}</b> que le bon : cet écart est mis sur le <b>chargement</b> (fournisseur ou transport). Après la mesure à la règle, le reste de l'écart sera l'écart au dépotage.</>
+                            : 'Saisissez les litres constatés au contre-plein.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Date de fin du dépotage</label>
+                    <input type="date" value={form.depot_date} max={todayStr()} onChange={e => setForm(f => ({ ...f, depot_date: e.target.value }))} className={field} style={fieldStyle} />
+                  </div>
+                  <div>
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Heure de fin du dépotage</label>
+                    <input type="time" value={form.arrival_time} onChange={e => setForm(f => ({ ...f, arrival_time: e.target.value }))} className={field} style={fieldStyle} />
+                  </div>
+                  <p className="col-span-2 -mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Pas besoin de l'heure d'arrivée de la citerne : le temps de repos de {REST_MINUTES} min se compte à partir de la fin du dépotage.
+                  </p>
+                </div>
+                {announced > 0 && !isNaN(stockBefore) && (
+                  <div className="mt-3 rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface-raised)' }}>
+                    <div className="flex justify-between"><span>Stock de départ</span><b>{L(stockBefore)}</b></div>
+                    <div className="flex justify-between"><span>+ Quantité annoncée</span><b>{L(announced)}</b></div>
+                    <div className="mt-1 flex justify-between border-t pt-1.5" style={{ borderColor: 'var(--border)' }}><b>Total attendu en cuve</b><b>{L(expected)}</b></div>
+                    {citerneVariance !== 0 && <div className="flex justify-between" style={{ color: varianceColor(citerneVariance) }}><span>Écart citerne (contre-plein)</span><b>{signedL(citerneVariance)}</b></div>}
+                  </div>
+                )}
+              </section>
+
+              {/* ③ Mesure à la règle */}
+              <section className="border-t pt-4" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Ruler className="w-4 h-4" style={{ color: '#16A34A' }} /> ③ Mesure à la règle après dépotage</p>
+                <p className="mt-1 mb-3 text-xs rounded-lg px-3 py-2" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                  À jauger à partir de <b>{isNaN(measureFrom.getTime()) ? '—' : format(measureFrom, "dd/MM 'à' HH:mm")}</b> ({REST_MINUTES} min après la fin du dépotage).
+                  Si la mesure n'est pas encore faite, laissez vide : le dépotage restera « En attente de mesure » et vous la saisirez plus tard avec le bouton « Saisir la mesure ».
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Niveau lu à la règle dans la cuve (L)</label>
+                    <input type="number" min={0} value={form.measured_level} onChange={e => setForm(f => ({ ...f, measured_level: e.target.value }))}
+                      placeholder="À remplir après le temps de repos" className={field} style={{ ...fieldStyle, borderColor: '#16A34A' }} />
+                  </div>
+                  {hasMeasure && (
+                    <>
+                      <div>
+                        <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Date de la mesure</label>
+                        <input type="date" value={form.measured_date} max={todayStr()} onChange={e => setForm(f => ({ ...f, measured_date: e.target.value }))} className={field} style={fieldStyle} />
+                      </div>
+                      <div>
+                        <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Heure de la mesure</label>
+                        <input type="time" value={form.measured_time} onChange={e => setForm(f => ({ ...f, measured_time: e.target.value }))} className={field} style={fieldStyle} />
+                      </div>
+                    </>
                   )}
                 </div>
-              </div>
+                {hasMeasure && received !== null && (
+                  <>
+                    <div className="mt-3 rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface-raised)' }}>
+                      <div className="flex justify-between"><span>Total attendu</span><b>{L(expected)}</b></div>
+                      <div className="flex justify-between"><span>Mesuré en cuve</span><b>{L(measuredLevel)}</b></div>
+                      <div className="flex justify-between"><span><b>Dépotage réel</b> ({Math.round(measuredLevel).toLocaleString('fr-FR')} − {Math.round(stockBefore).toLocaleString('fr-FR')})</span><b>{L(received)}</b></div>
+                    </div>
+                    <div className="mt-2 rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: totalVariance! < 0 ? '#f8d7d5' : totalVariance! > 0 ? '#DBEAFE' : '#d4edda', color: varianceColor(totalVariance) }}>
+                      <div className="flex justify-between"><b>Écart total</b><b>{signedL(totalVariance)} · {totalVariance! < 0 ? '− ' : totalVariance! > 0 ? '+ ' : ''}{formatCurrency(Math.abs(totalVariance! * price))}</b></div>
+                      <div className="flex justify-between"><span>dont écart au chargement (contre-plein)</span><b>{signedL(citerneVariance)}</b></div>
+                      <div className="flex justify-between"><span>dont écart réel au dépotage</span><b>{signedL(unloadingVariance)}</b></div>
+                    </div>
+                    <div className="mt-3">
+                      <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Observation sur la mesure{measureNoteRequired ? ` * (écart de plus de ${NOTE_THRESHOLD_PCT} %)` : ''}</label>
+                      <input value={form.measure_note} maxLength={300} onChange={e => setForm(f => ({ ...f, measure_note: e.target.value }))}
+                        placeholder="Ex. : manque au contre-plein, compartiment 2" className={field}
+                        style={{ ...fieldStyle, borderColor: measureNoteRequired && !form.measure_note.trim() ? '#AF3029' : 'var(--border)' }} />
+                    </div>
+                  </>
+                )}
+              </section>
+
               <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Prix du litre (FCFA)</label>
-                <input type="number" min={0} value={form.unit_price} onChange={e => setForm(f => ({ ...f, unit_price: e.target.value }))} className={field} style={fieldStyle} />
-              </div>
-              <div>
-                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Observation</label>
+                <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Observation générale</label>
                 <input value={form.observation} maxLength={300} onChange={e => setForm(f => ({ ...f, observation: e.target.value }))} className={field} style={fieldStyle} />
               </div>
-              {announced > 0 && !isNaN(stockBefore) && (
-                <div className="col-span-2 rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface-raised)' }}>
-                  <div className="flex justify-between"><span>Stock de départ</span><b>{L(stockBefore)}</b></div>
-                  <div className="flex justify-between"><span>+ Quantité annoncée</span><b>{L(announced)}</b></div>
-                  {citerneVariance !== 0 && <div className="flex justify-between" style={{ color: varianceColor(citerneVariance) }}><span>Écart citerne (contre-plein)</span><b>{signedL(citerneVariance)}</b></div>}
-                  <div className="mt-1 flex justify-between border-t pt-1.5" style={{ borderColor: 'var(--border)' }}><b>Total attendu en cuve</b><b>{L(expected)}</b></div>
-                  <div className="flex justify-between" style={{ color: '#D97706' }}><span>Mesure à la règle à faire à partir de</span><b>{(() => { const a = new Date(`${form.depot_date}T${form.arrival_time || '00:00'}:00`); const m = new Date(a.getTime() + REST_MINUTES * 60_000); return isNaN(m.getTime()) ? '—' : `${pad(m.getHours())}:${pad(m.getMinutes())}`; })()}</b></div>
+            </div>
+            <div className="px-7 pb-6 pt-2">
+              {confirmEarlySheet ? (
+                <div className="w-full rounded-xl border-2 p-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+                  <p className="flex items-center gap-2 text-sm font-bold" style={{ color: '#92400E' }}>
+                    <AlertTriangle className="h-5 w-5 flex-shrink-0" /> Mesure prise {minutesAfterEnd} min après la fin du dépotage (repos conseillé : {REST_MINUTES} min)
+                  </p>
+                  <p className="mt-1 text-xs" style={{ color: '#92400E' }}>Le carburant n'est peut-être pas encore stabilisé : la mesure et l'écart peuvent être faussés.</p>
+                  <div className="mt-3 flex gap-3">
+                    <button onClick={() => setConfirmEarlySheet(false)} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm bg-white" style={{ borderColor: '#F59E0B', color: '#92400E' }}>Attendre</button>
+                    <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#D97706' }}>
+                      {saving ? 'Enregistrement…' : 'Confirmer quand même'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <button onClick={() => setShowForm(false)} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Annuler</button>
+                  <button onClick={() => handleSave()} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
+                    {saving ? 'Enregistrement…' : hasMeasure ? 'Enregistrer le dépotage et la mesure' : 'Enregistrer — mesure plus tard'}
+                  </button>
                 </div>
               )}
-            </div>
-            <div className="flex gap-3 px-7 pb-6">
-              <button onClick={() => setShowForm(false)} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Annuler</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
-                {saving ? 'Enregistrement…' : 'Enregistrer l\'arrivée'}
-              </button>
             </div>
           </div>
         </div>
@@ -548,7 +686,7 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
             <h3 className="font-bold text-lg flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Ruler className="w-5 h-5" style={{ color: '#16A34A' }} /> Saisir la mesure — {d.tanks?.name ?? 'Cuve'}{d.delivery_note_number ? ` · BL ${d.delivery_note_number}` : ''}
             </h3>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{d.fuel_suppliers?.name ?? ''} · arrivée le {format(arrival, 'dd/MM/yyyy à HH:mm')}</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{d.fuel_suppliers?.name ?? ''} · fin du dépotage le {format(arrival, 'dd/MM/yyyy à HH:mm')}</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} /></button>
         </div>
@@ -567,7 +705,7 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
           )}
           {tooEarly && !done && !confirmEarly && (
             <p className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
-              <AlertTriangle className="h-4 w-4" /> Moins de {REST_MINUTES} minutes depuis l'arrivée : attendez que le carburant se stabilise avant de mesurer.
+              <AlertTriangle className="h-4 w-4" /> Moins de {REST_MINUTES} minutes depuis la fin du dépotage : attendez que le carburant se stabilise avant de mesurer.
             </p>
           )}
           <div className="rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface-raised)' }}>
@@ -600,7 +738,7 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
           ) : confirmEarly ? (
             <div className="w-full rounded-xl border-2 p-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
               <p className="flex items-center gap-2 text-sm font-bold" style={{ color: '#92400E' }}>
-                <AlertTriangle className="h-5 w-5 flex-shrink-0" /> Mesure prise {minutesSinceArrival} min après l'arrivée de la citerne (repos conseillé : {REST_MINUTES} min)
+                <AlertTriangle className="h-5 w-5 flex-shrink-0" /> Mesure prise {minutesSinceArrival} min après la fin du dépotage (repos conseillé : {REST_MINUTES} min)
               </p>
               <p className="mt-1 text-xs" style={{ color: '#92400E' }}>
                 Le carburant n'est peut-être pas encore stabilisé : la mesure et l'écart peuvent être faussés. Vous pouvez attendre et mesurer plus tard, ou confirmer cette mesure maintenant.
