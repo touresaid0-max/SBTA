@@ -208,7 +208,7 @@ const departCells = (d: Depart): string[] => {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return [
     dt ? format(dt, 'dd/MM/yyyy') : '—', dt ? format(dt, 'HH:mm') : '—', d.number != null ? String(d.number) : '—',
-    d.route, d.share ? `${d.station} (sièges ${d.share.from}-${d.share.to})` : d.station, d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
+    d.route, d.share ? `${d.station} (${d.share.from > 0 ? `sièges ${d.share.from}-${d.share.to}` : 'départ partagé'})` : d.station, d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
     fmtN(d.capacity), fmtN(d.seats), d.capacity > 0 ? pct((d.seats / d.capacity) * 100) : '—',
     fmtF(d.tickets), fmtF(d.baggage), fmtF(d.ramassage), fmtF(d.caisse), fmtF(d.expenses), fmtF(d.solde),
   ];
@@ -399,7 +399,7 @@ export default function DAFVoyageReport() {
       return {
         'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° départ': d.number ?? '',
         'Ligne': d.route, 'Gare': d.station,
-        'Départ partagé': d.share ? `${d.share.role === 'principale' ? 'Gare principale' : 'Gare partenaire'}, sièges ${d.share.from}-${d.share.to}` : '',
+        'Départ partagé': d.share ? `${d.share.role === 'principale' ? 'Gare principale' : 'Gare partenaire'}${d.share.from > 0 ? `, sièges ${d.share.from}-${d.share.to}` : ''}` : '',
         'Arrivée': d.arrival, 'Guichet': d.counter, 'Car': d.bus, 'Société': d.company,
         'Statut': STATUS_LABELS[d.status] ?? d.status, 'Voyage effectué': d.voyage ? 'Oui' : 'Non',
         'Places': d.capacity, 'Sièges vendus': d.seats,

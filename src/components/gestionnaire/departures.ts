@@ -46,7 +46,7 @@ export interface Depart {
 }
 
 /** The station of a row, with its seats on a shared departure */
-export const stationLabel = (d: Depart) => (d.share ? `${d.station} (sièges ${d.share.from}-${d.share.to})` : d.station);
+export const stationLabel = (d: Depart) => (d.share ? `${d.station} (${d.share.from > 0 ? `sièges ${d.share.from}-${d.share.to}` : 'départ partagé'})` : d.station);
 
 export function toDepart(r: Record<string, unknown>, i: number): Depart {
   const tickets = num(r.tickets_amount);

@@ -166,7 +166,8 @@ STABLE
 SET search_path = public
 AS $$
   WITH s AS (
-    SELECT sc.id AS sid, sc.departure_station_id AS main_id, sc.seat_allocations AS al
+    SELECT sc.id AS sid, sc.departure_station_id AS main_id, sc.seat_allocations AS al,
+           coalesce(nullif(sc.seats_total, 0), (SELECT nullif(bu.total_seats, 0) FROM buses bu WHERE bu.id = sc.bus_id), 0) AS cap
     FROM schedules sc
     WHERE sc.id = ANY (p_schedule_ids)
       AND coalesce(sc.status, '') <> 'convoi'
@@ -182,18 +183,23 @@ AS $$
       AND a->>'seat_from' ~ '^[0-9]+$' AND a->>'seat_to' ~ '^[0-9]+$'
       AND (a->>'seat_to')::int >= (a->>'seat_from')::int
   ),
-  -- Each station of the departure with its seats. A main station without its own range (every
-  -- seat given away) keeps the seats before the first range.
+  -- Each station of the departure with its seats. The main station is always there, even when the
+  -- guichet recorded no range for it (the partner range starting at seat 1): no seat range then.
   stn AS (
     SELECT rg.sid, rg.st, min(rg.f) AS f, max(rg.t) AS t, sum(rg.t - rg.f + 1)::int AS n
     FROM rg GROUP BY rg.sid, rg.st
     UNION ALL
-    SELECT s.sid, s.main_id, 1, m.first_seat - 1, greatest(m.first_seat - 1, 0)
+    SELECT s.sid, s.main_id, NULL::int, NULL::int, 0
     FROM s
-    CROSS JOIN LATERAL (SELECT min(rg.f) AS first_seat FROM rg WHERE rg.sid = s.sid) m
     WHERE NOT EXISTS (SELECT 1 FROM rg WHERE rg.sid = s.sid AND rg.st = s.main_id)
   ),
-  tot AS (SELECT stn.sid, sum(stn.n) AS n FROM stn GROUP BY stn.sid),
+  -- Places of the bus: the seats given to no station stay with the main station, so a partner
+  -- station pays the bus expenses for its own seats only
+  tot AS (
+    SELECT stn.sid, greatest(sum(stn.n), max(s.cap)) AS n
+    FROM stn JOIN s ON s.sid = stn.sid
+    GROUP BY stn.sid
+  ),
   -- Tickets of the departure (same as the DAF report), at the station of their first seat
   tk AS (
     SELECT r.id AS rid, r.schedule_id AS sid, r.booked_by,
