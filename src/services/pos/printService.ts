@@ -1,5 +1,5 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, buildRamassageReportESCPOS, concat, type PrintRamassageReportData, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { ticketRouteLine, buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, buildRamassageReportESCPOS, concat, type PrintRamassageReportData, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization, type PrintCustomization } from '../printCustomization';
 import { setPrintingGuard } from '@/store/authStore';
 import { formatPhoneCI } from '@/utils/phoneCI';
@@ -295,9 +295,8 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
   const phoneLine = overridePhone || customization.bus_ticket_phones[0] || 'Tel 01 14 34 60 / 01 14 34 87';
   const customNotes = customization.bus_ticket_notes;
 
-  const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
-  const originCity = (routeParts[0] ?? 'ABIDJAN').toUpperCase().trim();
-  const destCity   = (ticket.destination || routeParts[routeParts.length - 1] || '').toUpperCase().trim();
+  // The selling station, then the whole route of the bus, as on the baggage ticket (18/11/2026)
+  const [originCity, destCity] = ticketRouteLine(depart.route_name, data.stationName).split(' => ');
   const seatStr    = ticket.seat_number ? String(ticket.seat_number) : '—';
   const tarifStr   = ticket.price.toLocaleString('fr-FR') + ' f';
   const carPlate   = escapeHtml((depart.bus_plate ?? '—').toUpperCase());
@@ -340,8 +339,7 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
     <span class="depart-num">${escapeHtml(depNum)}</span>
   </div>
   <div class="section route-row">
-    <span class="route-from">${escapeHtml(originCity)}</span>
-    <span class="route-to"><span class="arrow">=&gt;</span> ${escapeHtml(destCity)}</span>
+    <span class="city">${escapeHtml(originCity)}</span> <span class="arrow">=&gt;</span> ${(destCity ?? '').split(' - ').map(c => `<span class="city">${escapeHtml(c)}</span>`).join(' - ')}
   </div>
   <div class="section">
     <div class="line">
@@ -410,10 +408,11 @@ async function buildHTMLTickets(list: PrintTicketData[], settings: PrintSettings
   .depart-sep { flex: 1 1 auto; text-align: center; border-left: 1px solid #000; height: 17px; align-self: center; margin: 0 auto; width: 0; }
   .depart-num { flex: 0 0 auto; }
 
-  .route-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 12px; font-weight: 900; padding: 3px 4px; }
-  .route-from { flex: 0 1 auto; white-space: normal; word-break: break-word; }
-  .route-to { flex: 1 1 auto; text-align: right; white-space: normal; word-break: break-word; }
-  .route-to .arrow { font-weight: 900; }
+  /* « ISSIA => ISSIA - YAKRO - ABIDJAN », centred; a long route goes to the next line between two
+     cities, never inside a city name (« ISSI / A » on 58 mm paper, 18/11/2026) */
+  .route-row { text-align: center; font-size: 12px; font-weight: 900; padding: 3px 4px; line-height: 1.3; }
+  .route-row .city { white-space: nowrap; }
+  .route-row .arrow { font-weight: 900; white-space: nowrap; }
 
   .line { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 10px; padding: 1px 4px; flex-wrap: wrap; }
   .line .lbl { flex: 0 0 auto; white-space: normal; word-break: break-word; }
