@@ -50,6 +50,8 @@ interface Station {
   agency_code?: string | null;
   sms_api_key?: string | null;
   sms_credit?: number;
+  /** Continuous numbering of the departures of the day (all lines), not per line */
+  sequential_departure_numbers?: boolean;
   cities?: { name: string; region: string };
   manager?: { id: string; full_name: string } | null;
 }
@@ -130,6 +132,8 @@ export default function Stations() {
     agency_code: '',
     sms_api_key: '',
     sms_credit: 0,
+    // undefined: server without the column (migration 20261118100000 not run), not sent
+    sequential_departure_numbers: false as boolean | undefined,
   });
 
   useEffect(() => {
@@ -323,6 +327,9 @@ export default function Stations() {
         agency_code: formData.agency_code || null,
         sms_api_key: formData.sms_api_key || null,
         sms_credit: formData.sms_credit ?? 0,
+        ...(formData.sequential_departure_numbers !== undefined
+          ? { sequential_departure_numbers: formData.sequential_departure_numbers }
+          : {}),
       };
 
       let savedStationId = editingId;
@@ -548,6 +555,9 @@ export default function Stations() {
       agency_code: station.agency_code || '',
       sms_api_key: (station as any).sms_api_key || '',
       sms_credit: (station as any).sms_credit ?? 0,
+      sequential_departure_numbers: 'sequential_departure_numbers' in station
+        ? station.sequential_departure_numbers === true
+        : undefined,
     });
     setSelectedAgentIds(ids);
     setPrimaryAgentId(primary?.agent_id ?? (ids[0] || null));
@@ -599,6 +609,7 @@ export default function Stations() {
       agency_code: '',
       sms_api_key: '',
       sms_credit: 0,
+      sequential_departure_numbers: stations.length > 0 && !('sequential_departure_numbers' in stations[0]) ? undefined : false,
     });
     setSelectedAgentIds([]);
     setPrimaryAgentId(null);
@@ -1285,6 +1296,24 @@ export default function Stations() {
                     Affiche le QR code sur les tickets courrier imprimés de cette gare
                   </p>
                 </div>
+
+                {formData.sequential_departure_numbers !== undefined && (
+                  <div className="flex items-center gap-2 p-4 border rounded-lg" style={{ backgroundColor: 'var(--neutral-50)' }}>
+                    <input
+                      type="checkbox"
+                      id="sequential_departure_numbers"
+                      checked={formData.sequential_departure_numbers}
+                      onChange={(e) => setFormData({ ...formData, sequential_departure_numbers: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor="sequential_departure_numbers" className="font-medium">
+                      Numérotation continue des départs
+                    </label>
+                    <p className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                      Les départs du jour se suivent (#1, #2, #3…), toutes lignes confondues. Décochée : chaque ligne a ses propres numéros
+                    </p>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2">
                   <input
