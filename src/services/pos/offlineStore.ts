@@ -817,6 +817,22 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
           }
         }
 
+        // Shared departures: the station that sold each ticket (the ticket counts for it in the
+        // bordereaux and the clôture). A database without the function: the seat rule, as before.
+        const sharedIds = remoteSchedules
+          .filter(s => Array.isArray(serverAllocations.get(s.id)) && (serverAllocations.get(s.id)?.length ?? 0) > 0)
+          .map(s => s.id);
+        for (let i = 0; i < sharedIds.length; i += SCHEDULE_ID_CHUNK) {
+          const { data: sellers, error: sellersError } = await supabase
+            .rpc('get_reservation_seller_stations', { p_schedule_ids: sharedIds.slice(i, i + SCHEDULE_ID_CHUNK) });
+          if (sellersError) break;
+          for (const row of (sellers ?? []) as { reservation_id: string; station_id: string | null }[]) {
+            if (!row.station_id) continue;
+            const t = await (db.tickets as any).get(row.reservation_id);
+            if (t && t.sold_station_id !== row.station_id) await (db.tickets as any).put({ ...t, sold_station_id: row.station_id });
+          }
+        }
+
         const breakdownMap = new Map<string, number>();
         for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
           const { data: breakdownData } = await supabase

@@ -235,6 +235,8 @@ export interface SellTicketParams {
   loyaltyCardNumber?: string;
   loyaltyName?: string;
   stationAgencyCode?: string;
+  /** Station of the counter selling (session): the ticket counts for it on a shared departure */
+  soldStationId?: string;
 }
 
 export async function sellTicket(params: SellTicketParams): Promise<TicketRecord> {
@@ -269,6 +271,7 @@ export async function sellTicket(params: SellTicketParams): Promise<TicketRecord
     print_ticket: params.printTicket,
     // Kept on the device only (not sent): a ticket of this device never printed stays printable
     sold_here: true,
+    sold_station_id: params.soldStationId ?? null,
     payment_method: 'cash',
     status: 'sold',
     loyalty_card_number: params.loyaltyCardNumber,

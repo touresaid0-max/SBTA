@@ -107,12 +107,10 @@ export default function POSCloture() {
         let displayBagages = b.filter(x => x.description !== '__deleted__');
         let displayDepenses = dp.filter(x => x.description !== '__deleted__');
         if (hasAlloc && session?.station_id) {
-          const { getSeatRangeForStation } = await import('@/services/pos/departService');
-          const range = getSeatRangeForStation(d, session.station_id);
-          if (range) {
-            displayTickets = activeTickets.filter(
-              x => x.seat_number >= range.from && x.seat_number <= range.to,
-            );
+          const { ticketsOfStation } = await import('@/services/pos/departService');
+          {
+            // The tickets this station sold (seat of its range when the seller is unknown)
+            displayTickets = ticketsOfStation(activeTickets, d, session.station_id);
             const stationTicketIds = new Set(displayTickets.map(x => x.id));
             displayBagages = displayBagages.filter(x => {
               if (x.ticket_id && stationTicketIds.has(x.ticket_id)) return true;
@@ -120,10 +118,6 @@ export default function POSCloture() {
               return session.station_id === d.station_id;
             });
             displayDepenses = displayDepenses.filter(x => x.station_id === session.station_id);
-          } else {
-            displayTickets = [];
-            displayBagages = [];
-            displayDepenses = [];
           }
         }
         setTickets(displayTickets);
