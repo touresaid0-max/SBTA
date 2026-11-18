@@ -1,5 +1,5 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, buildRamassageReportESCPOS, concat, type PrintRamassageReportData, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { ticketRouteLine, buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, buildRamassageReportESCPOS, concat, type PrintRamassageReportData, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization, type PrintCustomization } from '../printCustomization';
 import { setPrintingGuard } from '@/store/authStore';
 import { formatPhoneCI } from '@/utils/phoneCI';
@@ -295,9 +295,8 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
   const phoneLine = overridePhone || customization.bus_ticket_phones[0] || 'Tel 01 14 34 60 / 01 14 34 87';
   const customNotes = customization.bus_ticket_notes;
 
-  const routeParts = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
-  const originCity = (routeParts[0] ?? 'ABIDJAN').toUpperCase().trim();
-  const destCity   = (ticket.destination || routeParts[routeParts.length - 1] || '').toUpperCase().trim();
+  // The selling station, then the whole route of the bus, as on the baggage ticket (18/11/2026)
+  const [originCity, destCity] = ticketRouteLine(depart.route_name, data.stationName).split(' => ');
   const seatStr    = ticket.seat_number ? String(ticket.seat_number) : '—';
   const tarifStr   = ticket.price.toLocaleString('fr-FR') + ' f';
   const carPlate   = escapeHtml((depart.bus_plate ?? '—').toUpperCase());
