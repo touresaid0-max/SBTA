@@ -490,7 +490,8 @@ function markServerSyncDone(stationId: string | undefined): void {
   } catch { /* storage unavailable: only the « last update » note is missing */ }
 }
 
-export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceDate?: string): Promise<ServerSyncResult> {
+/** counterId: the departures this counter made at another station before being moved are pulled too */
+export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceDate?: string, counterId?: string): Promise<ServerSyncResult> {
   // A failure used to be swallowed: the Départs screen kept showing the figures of the last
   // reading (0 seat sold) without saying that they were not up to date
   if (!isOnline()) return { ok: false, reason: 'offline' };
@@ -586,6 +587,30 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       const known = new Set(remoteSchedules.map(s => s.id));
       for (const s of (reopened ?? []) as unknown as RemoteSchedule[]) if (!known.has(s.id)) remoteSchedules.push(s);
     } catch { /* server without the column: the usual days only */ }
+
+    // Departures this counter made at its former station (the admin moved the counter to another
+    // station: guichet BLANDINE, Gare Yopougon until 17/11/2026, then YOP-DALOA). Only this
+    // station's departures were read: the guichetière no longer saw her former departures.
+    const formerIds = new Set<string>();
+    if (stationId && counterId) {
+      try {
+        const known = new Set(remoteSchedules.map(s => s.id));
+        const { data: former, error: formerError } = await supabase
+          .from('schedules')
+          .select(SCHEDULE_COLUMNS)
+          .eq('counter_id', counterId)
+          .neq('departure_station_id', stationId)
+          .gte('departure_datetime', `${fromStr}T00:00:00`)
+          .order('departure_datetime', { ascending: true })
+          .limit(RESERVATION_PAGE_SIZE);
+        if (!formerError) {
+          for (const s of (former ?? []) as unknown as RemoteSchedule[]) {
+            formerIds.add(s.id);
+            if (!known.has(s.id)) remoteSchedules.push(s);
+          }
+        }
+      } catch { /* read again at the next sync */ }
+    }
 
     // Departures of another station shared with this one (« Charger dans une autre gare »): the
     // main station's guichet gave this station a range of seats. Without them, the other station
@@ -781,9 +806,13 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
         // All the tickets of these departures were just read: one missing is no longer on the server.
         const remoteTicketIds = new Set(remoteReservations.map(r => String(r.id)));
         const pulledDeparts = new Set(scheduleIds);
+        // Not on a departure of the counter's former station: a server where the guichetier cannot
+        // read the tickets other accounts sold there (migration 20261118200000 not run) would
+        // have them taken for deleted
         const goneTickets = ((await db.tickets.toArray()) as TicketRecord[]).filter(t =>
           sentBeforeRead.tickets.has(t.id) &&
           pulledDeparts.has(t.depart_id) &&
+          !formerIds.has(t.depart_id) &&
           t.synced !== false &&
           !pendingTickets.has(t.id) &&
           !remoteTicketIds.has(t.id),

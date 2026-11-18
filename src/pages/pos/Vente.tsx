@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { getDepartById, isDepartForCounter } from '@/services/pos/departService';
+import { getDepartById, isDepartForCounter, isFormerStationDepart } from '@/services/pos/departService';
 import { syncDepartsAndTicketsFromServer, localUpdate, getById } from '@/services/pos/offlineStore';
 import {
   sellTicket, sellTickets, PartialSaleError, getTicketsForDepart, getSoldSeats, neverPrinted,
@@ -571,6 +571,8 @@ export default function POSVente() {
     if (!depart || !departId) return;
     if (depart.cancelled) { setError('Ce départ est annulé — vente impossible'); return; }
     if (depart.cloture) { setError('Ce départ est clôturé — vente impossible'); return; }
+    // A departure of the counter's former station: shown for its figures only
+    if (isFormerStationDepart(depart, session?.station_id, session?.counter_id)) { setError("Départ de l'ancienne gare de ce guichet — consultation seulement"); return; }
     const todayStr = trustedNowIso().slice(0, 10);
     if (depart.departure_date < todayStr) { setError('Ce départ appartient à une journée antérieure — vente impossible'); return; }
     if (depart.status === 'panne') { setError('Ce départ est en panne — vente impossible'); return; }
@@ -808,6 +810,7 @@ export default function POSVente() {
     if (!depart || !departId || !bagMode) return;
     if (depart.cancelled) { setBagError('Ce départ est annulé — opération impossible'); return; }
     if (depart.cloture) { setBagError('Ce départ est clôturé — opération impossible'); return; }
+    if (isFormerStationDepart(depart, session?.station_id, session?.counter_id)) { setBagError("Départ de l'ancienne gare de ce guichet — consultation seulement"); return; }
     const todayStr = trustedNowIso().slice(0, 10);
     if (depart.departure_date < todayStr) { setBagError('Ce départ appartient à une journée antérieure — opération impossible'); return; }
     if (depart.status === 'panne') { setBagError('Ce départ est en panne — opération impossible'); return; }
