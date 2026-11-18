@@ -174,6 +174,9 @@ export default function Depotages() {
   const measureTooEarly = hasMeasure && !isNaN(measuredAt.getTime()) && !isNaN(endAt.getTime())
     && measuredAt.getTime() - endAt.getTime() < REST_MINUTES * 60_000;
   const minutesAfterEnd = Math.max(0, Math.floor((measuredAt.getTime() - endAt.getTime()) / 60_000));
+  // A level below the starting stock is impossible after a delivery: usually the starting stock is
+  // the theoretical level, not the one gauged, or the reading is incomplete
+  const measureBelowStock = received !== null && received < 0;
   const measureNoteRequired = totalVariance !== null && announced > 0 && Math.abs(totalVariance) > (announced * NOTE_THRESHOLD_PCT) / 100;
   const [confirmEarlySheet, setConfirmEarlySheet] = useState(false);
 
@@ -196,7 +199,7 @@ export default function Depotages() {
       if (selectedTank && Number(selectedTank.capacity_liters) > 0 && measuredLevel > Number(selectedTank.capacity_liters)) {
         toast.error(`Le niveau mesuré dépasse la capacité de la cuve (${Number(selectedTank.capacity_liters).toLocaleString('fr-FR')} L)`); return;
       }
-      if (received !== null && received < 0) { toast.error('Mesure inférieure au stock de départ : vérifiez la valeur'); return; }
+      if (measureBelowStock) { toast.error('Niveau lu inférieur au stock de départ : vérifiez le stock jaugé avant de dépoter ou le niveau lu'); return; }
       if (isNaN(measuredAt.getTime()) || measuredAt.getTime() < arrival.getTime() || measuredAt.getTime() > Date.now() + 5 * 60_000) {
         toast.error('Heure de la mesure invalide : après la fin du dépotage et pas dans le futur'); return;
       }
@@ -466,7 +469,7 @@ export default function Depotages() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Stock de départ de la cuve, jaugé avant de dépoter (L) *</label>
-                    <input type="number" min={0} value={form.stock_before} onChange={e => setForm(f => ({ ...f, stock_before: e.target.value }))} className={field} style={{ ...fieldStyle, borderColor: 'var(--primary)' }} />
+                    <input type="number" min={0} value={form.stock_before} onChange={e => setForm(f => ({ ...f, stock_before: e.target.value }))} className={field} style={{ ...fieldStyle, borderColor: measureBelowStock ? '#AF3029' : 'var(--primary)', borderWidth: measureBelowStock ? 2 : undefined }} />
                     {selectedTank && <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Proposé : niveau théorique {Number(selectedTank.current_level_liters).toLocaleString('fr-FR')} L — remplacez-le par la valeur jaugée</p>}
                   </div>
                   <div className="col-span-2">
@@ -530,7 +533,7 @@ export default function Depotages() {
                   <div className="col-span-2">
                     <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Niveau lu à la règle dans la cuve (L)</label>
                     <input type="number" min={0} value={form.measured_level} onChange={e => setForm(f => ({ ...f, measured_level: e.target.value }))}
-                      placeholder="À remplir après le temps de repos" className={field} style={{ ...fieldStyle, borderColor: '#16A34A' }} />
+                      placeholder="À remplir après le temps de repos" className={field} style={{ ...fieldStyle, borderColor: measureBelowStock ? '#AF3029' : '#16A34A', borderWidth: measureBelowStock ? 2 : undefined }} />
                   </div>
                   {hasMeasure && (
                     <>
@@ -545,7 +548,21 @@ export default function Depotages() {
                     </>
                   )}
                 </div>
-                {hasMeasure && received !== null && (
+                {measureBelowStock && (
+                  <div className="mt-3 rounded-xl border-2 px-4 py-3 text-sm" style={{ borderColor: '#AF3029', backgroundColor: '#FEF2F2', color: '#7F1D1D' }}>
+                    <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4 flex-shrink-0" /> Niveau lu inférieur au stock de départ</p>
+                    <p className="mt-1">
+                      Vous avez lu <b>{L(measuredLevel)}</b> après dépotage, mais le stock de départ indiqué est <b>{L(stockBefore)}</b> :
+                      la cuve ne peut pas avoir moins de carburant après une livraison qu'avant.
+                    </p>
+                    <ul className="mt-1 list-disc pl-5 text-xs">
+                      <li>Le <b>stock de départ</b> (partie ②) est-il bien celui <b>jaugé avant de dépoter</b> ? Le niveau proposé est un niveau théorique, qui peut être faux.</li>
+                      <li>Le <b>niveau lu à la règle</b> est-il complet (pas de chiffre oublié) ?</li>
+                    </ul>
+                    <p className="mt-1 text-xs">Corrigez l'une des deux valeurs, ou laissez la mesure vide pour la saisir plus tard.</p>
+                  </div>
+                )}
+                {hasMeasure && received !== null && !measureBelowStock && (
                   <>
                     <div className="mt-3 rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface-raised)' }}>
                       <div className="flex justify-between"><span>Total attendu</span><b>{L(expected)}</b></div>
@@ -589,7 +606,7 @@ export default function Depotages() {
               ) : (
                 <div className="flex gap-3">
                   <button onClick={() => setShowForm(false)} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Annuler</button>
-                  <button onClick={() => handleSave()} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
+                  <button onClick={() => handleSave()} disabled={saving || measureBelowStock} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
                     {saving ? 'Enregistrement…' : hasMeasure ? 'Enregistrer le dépotage et la mesure' : 'Enregistrer — mesure plus tard'}
                   </button>
                 </div>
@@ -649,13 +666,14 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
   const at = new Date(measuredAt);
   const minutesSinceArrival = isNaN(at.getTime()) ? 0 : Math.max(0, Math.floor((at.getTime() - arrival.getTime()) / 60_000));
   const tooEarly = !isNaN(at.getTime()) && at.getTime() - arrival.getTime() < REST_MINUTES * 60_000;
-  const noteRequired = total !== null && Math.abs(total) > (announced * NOTE_THRESHOLD_PCT) / 100;
+  const belowStock = received !== null && received < 0;
+  const noteRequired = total !== null && !belowStock && Math.abs(total) > (announced * NOTE_THRESHOLD_PCT) / 100;
   const capacity = Number(d.tanks?.capacity_liters ?? 0);
 
   const save = async (earlyConfirmed = false) => {
     if (!hasLevel || measured < 0) { toast.error('Saisissez le niveau mesuré à la règle'); return; }
     if (capacity > 0 && measured > capacity) { toast.error(`Le niveau mesuré dépasse la capacité de la cuve (${capacity.toLocaleString('fr-FR')} L)`); return; }
-    if (received !== null && received < 0) { toast.error('Mesure inférieure au stock de départ : vérifiez la valeur'); return; }
+    if (belowStock) { toast.error('Niveau lu inférieur au stock de départ : vérifiez le niveau lu à la règle'); return; }
     if (isNaN(at.getTime()) || at.getTime() < arrival.getTime() || at.getTime() > Date.now() + 5 * 60_000) { toast.error('Heure de mesure invalide'); return; }
     if (noteRequired && !note.trim()) { toast.error(`Écart de plus de ${NOTE_THRESHOLD_PCT} % : indiquez une observation`); return; }
     if (tooEarly && !earlyConfirmed) { setConfirmEarly(true); return; }
@@ -708,17 +726,28 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
               <AlertTriangle className="h-4 w-4" /> Moins de {REST_MINUTES} minutes depuis la fin du dépotage : attendez que le carburant se stabilise avant de mesurer.
             </p>
           )}
+          {belowStock && (
+            <div className="rounded-xl border-2 px-4 py-3 text-sm" style={{ borderColor: '#AF3029', backgroundColor: '#FEF2F2', color: '#7F1D1D' }}>
+              <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4 flex-shrink-0" /> Niveau lu inférieur au stock de départ</p>
+              <p className="mt-1">Vous avez lu <b>{L(measured)}</b>, mais le stock de départ enregistré est <b>{L(stockBefore)}</b>{withdrawn > 0 ? <> (et {L(withdrawn)} de pleins faits pendant l'attente)</> : null} : vérifiez le niveau lu à la règle (chiffre oublié ?).</p>
+              <p className="mt-1 text-xs">Si c'est le stock de départ enregistré qui est faux, ne validez pas : signalez-le à l'administrateur.</p>
+            </div>
+          )}
+          {!belowStock && (
           <div className="rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface-raised)' }}>
             {line(`Total attendu (${Math.round(stockBefore).toLocaleString('fr-FR')} + ${Math.round(announced).toLocaleString('fr-FR')})`, L(stockBefore + announced))}
             {line('Mesuré en cuve', hasLevel ? L(measured) : '—')}
             {withdrawn > 0 && line('+ Pleins faits sur cette cuve pendant l\'attente', L(withdrawn))}
             {line(<><b>Dépotage réel</b>{hasLevel ? ` (${Math.round(measured).toLocaleString('fr-FR')} − ${Math.round(stockBefore).toLocaleString('fr-FR')}${withdrawn > 0 ? ` + ${Math.round(withdrawn).toLocaleString('fr-FR')}` : ''})` : ''}</>, L(received))}
           </div>
+          )}
+          {!belowStock && (
           <div className="rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: totalBg, color: total === null ? 'var(--text-secondary)' : varianceColor(total) }}>
             {line('Écart total', total === null ? '—' : `${signedL(total)} · ${total < 0 ? '− ' : total > 0 ? '+ ' : ''}${formatCurrency(Math.abs(total * price))}`, undefined, true)}
             {line('dont écart au chargement (citerne, contre-plein)', `${signedL(loading)} · ${loading < 0 ? '− ' : loading > 0 ? '+ ' : ''}${formatCurrency(Math.abs(loading * price))}`)}
             {line('dont écart réel au dépotage', unloading === null ? '—' : `${signedL(unloading)} · ${unloading < 0 ? '− ' : unloading > 0 ? '+ ' : ''}${formatCurrency(Math.abs(unloading * price))}`)}
           </div>
+          )}
           {!done && (
             <div>
               <label className={lbl} style={{ color: 'var(--text-secondary)' }}>Observation{noteRequired ? ' * (écart de plus de ' + NOTE_THRESHOLD_PCT + ' %)' : ''}</label>
@@ -753,7 +782,7 @@ function MeasureModal({ depotage: d, onClose, onDone, onPrint }: { depotage: Dep
           ) : (
             <>
               <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Plus tard</button>
-              <button onClick={() => save()} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
+              <button onClick={() => save()} disabled={saving || belowStock} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#16A34A' }}>
                 {saving ? 'Enregistrement…' : 'Valider la mesure et mettre la cuve à jour'}
               </button>
             </>
