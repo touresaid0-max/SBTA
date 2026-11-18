@@ -480,7 +480,25 @@ export function getSeatRangeForStation(
     return null;
   }
   const alloc = depart.seat_allocations.find(a => a.station_id === stationId);
-  if (!alloc) return null;
+  if (!alloc) {
+    // The main station without a range of its own: the guichet records it only for the seats
+    // before the first partner range, so a partner range starting at the first seat left it none,
+    // and the sale then opened the whole bus, the partner's seats included (seats sold twice,
+    // ATTECOUBE, 18/11/2026). It now has the seats no station was given: the largest block of them.
+    if (depart.station_id !== stationId) return null;
+    const taken = (n: number) => depart.seat_allocations!.some(a => n >= a.seat_from && n <= a.seat_to);
+    let best: { from: number; to: number } | null = null;
+    let start: number | null = null;
+    for (let n = sellableFrom; n <= depart.seats_total + 1; n++) {
+      const free = n <= depart.seats_total && !taken(n);
+      if (free && start === null) start = n;
+      if (!free && start !== null) {
+        if (!best || n - 1 - start > best.to - best.from) best = { from: start, to: n - 1 };
+        start = null;
+      }
+    }
+    return best;
+  }
   const from = Math.max(sellableFrom, alloc.seat_from);
   return from <= alloc.seat_to ? { from, to: alloc.seat_to } : null;
 }
