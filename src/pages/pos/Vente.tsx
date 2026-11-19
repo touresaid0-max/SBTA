@@ -640,7 +640,8 @@ export default function POSVente() {
       setSuccess(soldTickets.length === 1
         ? `Siège ${seatsLabel} vendu — Ticket ${soldTickets[0].ticket_number}`
         : `${soldTickets.length} tickets vendus — Sièges : ${seatsLabel}`);
-      setSelectedSeats([]); setIsReduced(false); setIsReported(false);
+      // Nothing stays selected for the next sale
+      setSelectedSeats([]); setStructSelectedSeats([]); setIsReduced(false); setIsReported(false);
       if (!sameDestination) { setDestination(''); setTarif(0); }
       setLoyaltyEnabled(false); setLoyaltyNewCard(false);
       setLoyaltyCardNumber(''); setLoyaltyName(''); setLoyaltyPhone(''); setLoyaltyTrips(0);
@@ -1650,7 +1651,7 @@ export default function POSVente() {
                 </div>
               )}
               <button
-                onClick={handleSell}
+                onClick={() => handleSell()}
                 disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < trustedNowIso().slice(0, 10)}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
