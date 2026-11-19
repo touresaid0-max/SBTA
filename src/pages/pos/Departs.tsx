@@ -15,6 +15,8 @@ import {
   findNextDepartForRoute, transferTicketsToDepart,
   renumberDepartsAfterCancellation,
   computeStationScopedTotals,
+  isFormerStationDepart,
+  scopeStationFor,
 } from '@/services/pos/departService';
 import { getByDeparts, groupByDepart, syncDepartsAndTicketsFromServer, lastServerSyncAt, type ServerSyncResult } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
@@ -365,7 +367,8 @@ export default function POSDeparts() {
     const computed = new Set(ids);
     const hydrated = all.map(d => {
       if (!computed.has(d.id)) return d;
-      const totals = computeStationScopedTotals(d, ticketsBy.get(d.id) ?? [], bagagesBy.get(d.id) ?? [], depensesBy.get(d.id) ?? [], session?.station_id);
+      // A departure made at the counter's former station: that station's share
+      const totals = computeStationScopedTotals(d, ticketsBy.get(d.id) ?? [], bagagesBy.get(d.id) ?? [], depensesBy.get(d.id) ?? [], scopeStationFor(d, session?.station_id, session?.counter_id));
       return {
         ...d,
         mt_ticket: totals.mt_ticket,
@@ -376,7 +379,7 @@ export default function POSDeparts() {
       };
     });
     setAllTickets(tickets);
-    setDeparts(hydrated.map(d => toRow(d, ticketsBy.get(d.id) ?? [], session?.station_id)));
+    setDeparts(hydrated.map(d => toRow(d, ticketsBy.get(d.id) ?? [], scopeStationFor(d, session?.station_id, session?.counter_id))));
     setLoading(false);
 
     // Check for pending transfers needing a next depart
@@ -390,9 +393,9 @@ export default function POSDeparts() {
   // Waiting for the sync first left the list loading for minutes on a slow connection.
   const loadDeparts = useCallback(async () => {
     await showLocalDeparts();
-    setServerSync(await syncDepartsAndTicketsFromServer(session?.station_id));
+    setServerSync(await syncDepartsAndTicketsFromServer(session?.station_id, undefined, session?.counter_id));
     await showLocalDeparts();
-  }, [session?.station_id, showLocalDeparts]);
+  }, [session?.station_id, session?.counter_id, showLocalDeparts]);
 
   useEffect(() => {
     loadDeparts();
@@ -416,7 +419,7 @@ export default function POSDeparts() {
     if (reloading) return;
     setReloading(true);
     try {
-      const res = await syncDepartsAndTicketsFromServer(session?.station_id, range.from);
+      const res = await syncDepartsAndTicketsFromServer(session?.station_id, range.from, session?.counter_id);
       setServerSync(res);
       if (res.ok && range.from) pulledSinceRef.current = range.from;
       await showLocalDeparts();
@@ -446,7 +449,7 @@ export default function POSDeparts() {
     if (!isOnline()) return;
     let cancelled = false;
     setPeriodLoading(true);
-    syncDepartsAndTicketsFromServer(session?.station_id, since)
+    syncDepartsAndTicketsFromServer(session?.station_id, since, session?.counter_id)
       .then(res => {
         // Pulled again at the next change of period if the reading failed
         if (res.ok) pulledSinceRef.current = since;
@@ -454,7 +457,7 @@ export default function POSDeparts() {
       })
       .finally(() => { if (!cancelled) setPeriodLoading(false); });
     return () => { cancelled = true; };
-  }, [range.from, todayStr, session?.station_id, loadDeparts]);
+  }, [range.from, todayStr, session?.station_id, session?.counter_id, loadDeparts]);
 
   const filterBaseDeparts = useMemo(() => {
     const list = departs.filter(d =>
@@ -679,12 +682,15 @@ export default function POSDeparts() {
         return;
       }
       if (action === 'imprimer') {
-        const summaries = visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id));
+        const summaries = visibleDeparts.map(d => departToSummary(d, allTickets, scopeStationFor(d, session?.station_id, session?.counter_id)));
         printDeparturesList(summaries, session?.station_name);
         return;
       }
       if (action === 'bordereau') {
-        await printBordereauForDepart(depart, session?.station_id, session?.station_name,
+        // A departure of the counter's former station: printed with that station's name
+        const former = isFormerStationDepart(depart, session?.station_id, session?.counter_id);
+        await printBordereauForDepart(depart, scopeStationFor(depart, session?.station_id, session?.counter_id),
+          former ? (depart.station_name || session?.station_name) : session?.station_name,
           phoneLine || cachedTicketPhoneLine(session?.counter_id));
         return;
       }
@@ -768,7 +774,7 @@ export default function POSDeparts() {
                 <div className="fixed inset-0 z-40" onClick={() => setShowExportsMenu(false)} />
                 <div className="absolute z-50 mt-1 left-0 min-w-[200px] rounded-lg shadow-xl border-2 py-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
                   <button
-                    onClick={() => { setShowExportsMenu(false); printDeparturesList(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), session?.station_name); }}
+                    onClick={() => { setShowExportsMenu(false); printDeparturesList(visibleDeparts.map(d => departToSummary(d, allTickets, scopeStationFor(d, session?.station_id, session?.counter_id))), session?.station_name); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
                     style={{ color: 'var(--text-primary)' }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
@@ -777,7 +783,7 @@ export default function POSDeparts() {
                     <Copy className="w-4 h-4" /> Imprimer liste
                   </button>
                   <button
-                    onClick={() => { setShowExportsMenu(false); exportToPDF(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${exportSuffix}.pdf`, `Récapitulatif des départs — ${periodText}`); }}
+                    onClick={() => { setShowExportsMenu(false); exportToPDF(visibleDeparts.map(d => departToSummary(d, allTickets, scopeStationFor(d, session?.station_id, session?.counter_id))), `recap-departs-${exportSuffix}.pdf`, `Récapitulatif des départs — ${periodText}`); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
                     style={{ color: 'var(--text-primary)' }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
@@ -786,7 +792,7 @@ export default function POSDeparts() {
                     <FileText className="w-4 h-4" /> Export PDF
                   </button>
                   <button
-                    onClick={() => { setShowExportsMenu(false); exportToExcel(visibleDeparts.map(d => departToSummary(d, allTickets, session?.station_id)), `recap-departs-${exportSuffix}.xlsx`); }}
+                    onClick={() => { setShowExportsMenu(false); exportToExcel(visibleDeparts.map(d => departToSummary(d, allTickets, scopeStationFor(d, session?.station_id, session?.counter_id))), `recap-departs-${exportSuffix}.xlsx`); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left transition-colors"
                     style={{ color: 'var(--text-primary)' }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface-raised)'; }}
@@ -1121,6 +1127,15 @@ export default function POSDeparts() {
                           {d.station_id !== session?.station_id && d.seat_allocations?.some(a => a.station_id === session?.station_id) && (
                             <span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
                               Gare secondaire
+                            </span>
+                          )}
+                          {isFormerStationDepart(d, session?.station_id, session?.counter_id) && (
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap"
+                              style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning, #B45309)' }}
+                              title="Départ fait par ce guichet dans son ancienne gare : consultation et impression seulement"
+                            >
+                              Ancienne gare{d.station_name ? ` : ${d.station_name}` : ''}
                             </span>
                           )}
                         </div>

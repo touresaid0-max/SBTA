@@ -235,6 +235,22 @@ export function isDepartForCounter(d: DepartRecord, stationId?: string | null, c
   return !!stationId && d.station_id !== stationId && (d.seat_allocations?.some(a => a.station_id === stationId) ?? false);
 }
 
+/**
+ * A departure this counter made at another station, before the admin moved the counter (guichet
+ * BLANDINE: Gare Yopougon until 17/11/2026, then YOP-DALOA). Shown at the guichet with its figures,
+ * read only: the guichetière keeps her former departures, tickets and bordereaux.
+ */
+export function isFormerStationDepart(d: DepartRecord, stationId?: string | null, counterId?: string | null): boolean {
+  return !!stationId && !!counterId && d.counter_id === counterId && d.station_id !== stationId &&
+    !(d.seat_allocations?.some(a => a.station_id === stationId) ?? false) &&
+    d.other_station_id !== stationId;
+}
+
+/** The station whose share of a departure the guichet shows: its former one for such a departure */
+export function scopeStationFor(d: DepartRecord, stationId?: string, counterId?: string): string | undefined {
+  return isFormerStationDepart(d, stationId, counterId) ? d.station_id : stationId;
+}
+
 export async function getAllDeparts(stationId?: string, counterId?: string): Promise<DepartRecord[]> {
   const all = await getAll<DepartRecord>('departs');
   let result = all;
@@ -242,7 +258,9 @@ export async function getAllDeparts(stationId?: string, counterId?: string): Pro
     result = result.filter(d =>
       d.station_id === stationId ||
       (d.seat_allocations?.some(a => a.station_id === stationId) ?? false) ||
-      d.other_station_id === stationId,
+      d.other_station_id === stationId ||
+      // Made by this counter at its former station
+      (!!counterId && d.counter_id === counterId),
     );
   }
   if (counterId) {
