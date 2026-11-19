@@ -43,7 +43,7 @@ export interface Depart {
   expenses: number;
   caisse: number;
   solde: number;
-  /** Direct ramassage: the destination city typed at the guichet (« MAN »), shown as its status */
+  /** Direct ramassage: the destination city typed at the guichet (« MAN »), shown in the Ligne column */
   destination: string | null;
   /** Shared departure: this row is one station's share (its seats, tickets, baggage, expenses) */
   share: { role: 'principale' | 'partenaire'; from: number; to: number } | null;
@@ -119,8 +119,8 @@ export function departSheetRow(d: Depart): Record<string, string | number> {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return {
     'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° dép.': d.number ?? '',
-    'Ligne': d.route, 'Gare': stationLabel(d), 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
-    'Société': d.company, 'Statut': d.destination ?? STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
+    'Ligne': d.destination ?? d.route, 'Gare': stationLabel(d), 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
+    'Société': d.company, 'Statut': STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
     'Vendus': d.seats, 'Rempl. %': d.isDeparture && d.capacity > 0 ? Number(((d.seats / d.capacity) * 100).toFixed(1)) : '',
     'Tickets': d.tickets, 'Convoi': d.convoi, 'Ramassage': d.ramassage, 'Caisse': d.caisse,
     'Dépenses': d.expenses, 'Solde': d.solde, 'Recette (rapport)': d.recette, 'Part reversée (panne)': d.transferred,
