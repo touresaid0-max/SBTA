@@ -560,14 +560,16 @@ export default function FinancialReport() {
                   <tbody>
                     {pRoutes.pageItems.map((r, i) => {
                       const mp = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
-                      const open = openRouteId != null && openRouteId === r.route_id;
+                      // The direct ramassages (no line) open too, on their own key
+                      const rowKey = r.route_id ?? '__ramassage_direct__';
+                      const open = openRouteId != null && openRouteId === rowKey;
                       return (
                         <React.Fragment key={r.route_id || i}>
                         <tr className="border-t" style={{ borderColor: 'var(--border)', backgroundColor: open ? 'var(--bg-subtle)' : undefined }}>
                           <td className="px-3 py-2.5 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{r.route_name}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            {r.route_id && Number(r.trip_count) > 0 ? (
-                              <button type="button" onClick={() => setOpenRouteId(open ? null : r.route_id)}
+                            {Number(r.trip_count) > 0 ? (
+                              <button type="button" onClick={() => setOpenRouteId(open ? null : rowKey)}
                                 aria-expanded={open} title={open ? 'Masquer le détail' : 'Voir les gares et les départs'}
                                 className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold"
                                 style={{ borderColor: open ? '#10B981' : 'var(--border)', color: open ? '#047857' : 'var(--text-primary)', backgroundColor: open ? 'rgba(16,185,129,0.12)' : 'var(--surface)' }}>
@@ -591,7 +593,7 @@ export default function FinancialReport() {
                           <tr className="border-t" style={{ borderColor: 'var(--border)' }}>
                             <td colSpan={10} className="p-0">
                               <div style={{ position: 'sticky', left: 0, width: linesBoxWidth || undefined }}>
-                              <RouteDeparturesDetail routeId={r.route_id} routeName={r.route_name} dateFrom={dateFrom} dateTo={dateTo}
+                              <RouteDeparturesDetail routeId={r.route_id ?? null} routeName={r.route_name} dateFrom={dateFrom} dateTo={dateTo}
                                 expectedTrips={Number(r.trip_count)} expectedRevenue={Number(r.revenue)} expectedExpenses={Number(r.total_expense ?? 0)}
                                 onClose={() => setOpenRouteId(null)} />
                               </div>
