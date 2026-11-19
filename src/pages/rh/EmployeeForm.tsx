@@ -181,6 +181,8 @@ export default function EmployeeForm() {
   const [saving, setSaving]           = useState(false)
   // Fiche créée : le RH active le compte de connexion tout de suite, sans passer par l'admin
   const [createdEmployee, setCreatedEmployee] = useState<PendingEmployee | null>(null)
+  // Modification d'une fiche sans compte de connexion : même choix qu'à la création
+  const [accountPending, setAccountPending] = useState(false)
   const [loading, setLoading]         = useState(isEdit)
   const [avatarFile, setAvatarFile]   = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string>('')
@@ -214,6 +216,7 @@ export default function EmployeeForm() {
     const load = async () => {
       // Chercher d'abord dans employees, puis fallback users
       const { data: emp } = await supabase.from('employees').select('*').eq('id', id).maybeSingle()
+      setAccountPending(emp?.account_status === 'pending')
 
       const data = emp ?? await supabase.from('users').select('*').eq('id', id)
         .maybeSingle().then(r => r.data)
@@ -373,30 +376,18 @@ export default function EmployeeForm() {
         }
         if (isGuichetier) await syncCounterRoute(id, base.assigned_route_ids)
         toast.success('Employé mis à jour')
+        if (accountPending) {
+          // Still without a login account: the same next step as after a creation
+          setCreatedEmployee(pendingFromForm(id))
+          return
+        }
       } else {
         const empId = await callEdge('POST', { ...base, ...emails })
         if (isGuichetier && empId) await syncCounterRoute(empId, base.assigned_route_ids)
         toast.success(`Fiche créée pour ${form.first_name} ${form.last_name}.`)
         if (empId) {
           // Next step in the same flow: create and activate the login account
-          setCreatedEmployee({
-            id: empId,
-            first_name: form.first_name,
-            last_name: form.last_name,
-            full_name: `${form.first_name} ${form.last_name}`.trim(),
-            role: form.role,
-            professional_email: form.professional_email.trim() || null,
-            personal_email: form.personal_email.trim() || null,
-            phone: form.phone.trim() || null,
-            employee_id: form.employee_id.trim() || null,
-            hire_date: form.hire_date || null,
-            account_status: 'pending',
-            created_by_hr_at: '',
-            company_id: form.company_id || null,
-            company_name: null,
-            company_code: null,
-            station_name: null,
-          })
+          setCreatedEmployee(pendingFromForm(empId))
           return
         }
       }
@@ -409,6 +400,26 @@ export default function EmployeeForm() {
       setSaving(false)
     }
   }
+
+  /** The employee just saved, in the shape the account window expects */
+  const pendingFromForm = (employeeId: string): PendingEmployee => ({
+    id: employeeId,
+    first_name: form.first_name,
+    last_name: form.last_name,
+    full_name: `${form.first_name} ${form.last_name}`.trim(),
+    role: form.role,
+    professional_email: form.professional_email.trim() || null,
+    personal_email: form.personal_email.trim() || null,
+    phone: form.phone.trim() || null,
+    employee_id: form.employee_id.trim() || null,
+    hire_date: form.hire_date || null,
+    account_status: 'pending',
+    created_by_hr_at: '',
+    company_id: form.company_id || null,
+    company_name: null,
+    company_code: null,
+    station_name: null,
+  })
 
   if (loading) {
     return (
@@ -446,16 +457,19 @@ export default function EmployeeForm() {
         </button>
       </div>
 
-      {/* Bandeau informatif (création seulement) */}
-      {!isEdit && (
+      {/* Bandeau informatif (création, ou fiche encore sans compte) */}
+      {(!isEdit || accountPending) && (
         <div className="bg-[#DBEAFE] border border-[#1D6FA4] rounded-2xl p-4 flex gap-3">
           <Info className="w-5 h-5 text-[#1D6FA4] flex-shrink-0 mt-0.5" />
           <div>
             <div className="font-bold text-[#1A2E22] text-sm">Information importante</div>
             <div className="text-sm text-[#374151] mt-0.5">
-              Vous créez la <strong>fiche employé</strong> (données RH).
-              Le compte de connexion à la plateforme sera créé séparément par l'administrateur.
-              L'employé apparaîtra automatiquement dans la liste de l'admin en attente de compte.
+              {isEdit
+                ? <>Cet employé n'a pas encore de <strong>compte de connexion</strong>.</>
+                : <>Vous créez la <strong>fiche employé</strong> (données RH).</>}{' '}
+              Après l'enregistrement, vous pourrez créer et activer son compte de connexion vous-même
+              (email et mot de passe). Si vous le faites plus tard, la fiche reste « En attente » :
+              bouton clé dans la liste des employés.
             </div>
           </div>
         </div>
