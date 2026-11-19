@@ -5,7 +5,7 @@ import {
   Trash2, AlertTriangle, RotateCcw, Truck, MapPin,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
-import { callEdgeFunction, edgeErrorMessage } from '../../services/edgeFunction';
+import { callEdgeFunction, edgeErrorMessage, SESSION_EXPIRED_MESSAGE } from '../../services/edgeFunction';
 import DataTable from '../../components/shared/DataTable';
 import StatusBadge from '../../components/shared/StatusBadge';
 import CreateAccountModal from '../../components/admin/CreateAccountModal';
@@ -125,6 +125,21 @@ const emptyForm = () => ({
 });
 
 type TabType = 'pending' | 'active' | 'inactive' | 'pending_deletion';
+
+/** Chauffeurs en attente, triés avant l'activation groupée */
+interface BatchReview {
+  ready: PendingEmployee[];
+  noEmail: PendingEmployee[];
+  sharedEmail: PendingEmployee[];
+  usedElsewhere: PendingEmployee[];
+}
+
+interface BatchReport {
+  activated: PendingEmployee[];
+  failed: { emp: PendingEmployee; message: string }[];
+  notSent: PendingEmployee[];
+  stopReason: string | null;
+}
 
 const USER_COLUMNS = 'id, email, full_name, first_name, last_name, phone, role, avatar_url, company_id, '
   + 'station_id, organization_id, status, is_active, employee_id, license_number, license_expiry, '
@@ -547,50 +562,115 @@ export default function Users() {
     user.first_name ? `${user.first_name} ${user.last_name}` : user.full_name || '—';
 
   const [batchActivating, setBatchActivating] = useState(false);
+  const [batchReview, setBatchReview] = useState<BatchReview | null>(null);
+  const [batchReport, setBatchReport] = useState<BatchReport | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+
+  /**
+   * « Activer tous les chauffeurs » (19/11/2026) : the 133 chauffeurs were all sent, then the
+   * connection dropped (net::ERR_NAME_NOT_RESOLVED) and every call failed one after another, with
+   * only three names in the message. Now: a review first (ready, without email, email shared with
+   * another chauffeur or used by another account), only the ready ones are sent, the batch stops
+   * as soon as the server cannot be reached, and the full report is shown at the end.
+   */
+  const reviewChauffeursForBatch = async (): Promise<BatchReview> => {
+    const chauffeurs = pendingEmployees.filter(e => e.role === 'chauffeur');
+    // The chauffeur's own sign-in profile (created without connexion): its email is not « used by
+    // another account ». Not in the pending view: read on the employees.
+    const ownProfile = new Map<string, string>();
+    const { data: links } = await supabase
+      .from('employees')
+      .select('id, auth_user_id')
+      .in('id', chauffeurs.map(e => e.id));
+    for (const l of (links ?? []) as { id: string; auth_user_id: string | null }[]) {
+      if (l.auth_user_id) ownProfile.set(l.id, l.auth_user_id);
+    }
+    const emailOf = (e: PendingEmployee) => (e.professional_email ?? e.personal_email ?? '').trim().toLowerCase();
+    const count = new Map<string, number>();
+    for (const e of chauffeurs) {
+      const em = emailOf(e);
+      if (em) count.set(em, (count.get(em) ?? 0) + 1);
+    }
+    const review: BatchReview = { ready: [], noEmail: [], sharedEmail: [], usedElsewhere: [] };
+    for (const e of chauffeurs) {
+      const em = emailOf(e);
+      if (!em) { review.noEmail.push(e); continue; }
+      if ((count.get(em) ?? 0) > 1) { review.sharedEmail.push(e); continue; }
+      // Another account (not this chauffeur's own profile) already signs in with this email
+      if (users.some(u => (u.email ?? '').trim().toLowerCase() === em && u.id !== ownProfile.get(e.id))) {
+        review.usedElsewhere.push(e);
+        continue;
+      }
+      review.ready.push(e);
+    }
+    return review;
+  };
 
   const handleBatchActivateChauffeurs = async () => {
-    const chauffeurs = pendingEmployees.filter(e => e.role === 'chauffeur');
-    if (chauffeurs.length === 0) {
+    if (pendingEmployees.filter(e => e.role === 'chauffeur').length === 0) {
       toast('Aucun chauffeur en attente', { icon: 'ℹ️' });
       return;
     }
-    if (!confirm(
-      `Activer ${chauffeurs.length} compte${chauffeurs.length > 1 ? 's' : ''} chauffeur en attente ?\n` +
-      `Des identifiants de connexion seront créés automatiquement avec un mot de passe généré.\n` +
-      `Les chauffeurs seront visibles dans tous les menus de sélection.`
-    )) return;
-
     setBatchActivating(true);
-    let success = 0;
-    const failures: string[] = [];
+    try {
+      setBatchReport(null);
+      setBatchReview(await reviewChauffeursForBatch());
+    } catch {
+      toast.error('Impossible de préparer l’activation : vérifiez la connexion internet de ce poste.');
+    } finally {
+      setBatchActivating(false);
+    }
+  };
 
-    for (const emp of chauffeurs) {
-      const email = emp.professional_email ?? emp.personal_email;
-      if (!email) {
-        failures.push(`${emp.first_name} ${emp.last_name} — aucun email`);
-        continue;
+  const runBatchActivation = async () => {
+    if (!batchReview || batchReview.ready.length === 0) return;
+    const ready = batchReview.ready;
+    setBatchActivating(true);
+    const report: BatchReport = { activated: [], failed: [], notSent: [], stopReason: null };
+
+    for (let i = 0; i < ready.length; i++) {
+      const emp = ready[i];
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        report.stopReason = 'La connexion internet de ce poste est coupée.';
+        report.notSent = ready.slice(i);
+        break;
       }
+      setBatchProgress({ done: i, total: ready.length });
       try {
         await createAccountByAdmin({
           employee_id: emp.id,
-          email,
+          email: (emp.professional_email ?? emp.personal_email ?? '').trim(),
           password: generateSecurePassword(),
           send_welcome_email: false,
         });
-        success++;
+        report.activated.push(emp);
       } catch (err) {
-        failures.push(`${emp.first_name} ${emp.last_name} — ${err instanceof Error ? err.message : 'erreur'}`);
+        const message = err instanceof Error ? err.message : 'erreur';
+        // The server cannot be reached (connection or DNS down): the next ones would fail the
+        // same way — stop here, they can be sent again once the connection is back
+        const network = err instanceof TypeError || /failed to fetch|networkerror|load failed|err_name_not_resolved/i.test(message);
+        if (network) {
+          report.stopReason = 'Le serveur ne répond plus (connexion internet ou DNS coupée sur ce poste).';
+          report.notSent = ready.slice(i);
+          break;
+        }
+        if (message === SESSION_EXPIRED_MESSAGE) {
+          report.stopReason = SESSION_EXPIRED_MESSAGE;
+          report.notSent = ready.slice(i);
+          break;
+        }
+        report.failed.push({ emp, message });
       }
     }
 
+    setBatchProgress(null);
     setBatchActivating(false);
-    if (success > 0) {
-      toast.success(`${success} chauffeur${success > 1 ? 's' : ''} activé${success > 1 ? 's' : ''} avec succès`);
+    setBatchReport(report);
+    if (report.activated.length > 0) {
+      toast.success(`${report.activated.length} chauffeur${report.activated.length > 1 ? 's' : ''} activé${report.activated.length > 1 ? 's' : ''}`);
     }
-    if (failures.length > 0) {
-      toast.error(`${failures.length} échec${failures.length > 1 ? 's' : ''} : ${failures.slice(0, 3).join(', ')}${failures.length > 3 ? '…' : ''}`, { duration: 8000 });
-    }
-    await Promise.all([loadPending(), loadUsers()]);
+    if (report.stopReason) toast.error('Activation interrompue : ' + report.stopReason, { duration: 8000 });
+    await Promise.all([loadPending(), loadUsers()]).catch(() => { /* list read again later */ });
   };
 
   const getRoleInfo = (role: UserRole) => ROLES.find(r => r.value === role) ?? ROLES[ROLES.length - 1];
@@ -1567,6 +1647,98 @@ export default function Users() {
           </div>
         </div>
       )}
+      {/* Activation groupée des chauffeurs : bilan avant, rapport après */}
+      {batchReview && (() => {
+        const nameOf = (e: PendingEmployee) => `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim() || e.employee_id || '—';
+        const emailOf = (e: PendingEmployee) => e.professional_email ?? e.personal_email ?? '';
+        const close = () => { if (!batchActivating) { setBatchReview(null); setBatchReport(null); } };
+        const section = (title: string, color: string, rows: { key: string; label: string; detail?: string }[], hint?: string) =>
+          rows.length === 0 ? null : (
+            <details className="rounded-lg border" style={{ borderColor: '#E5E7EB' }} open={rows.length <= 10}>
+              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold" style={{ color }}>
+                {title} ({rows.length})
+              </summary>
+              {hint && <p className="px-3 pb-1 text-xs text-gray-500">{hint}</p>}
+              <ul className="max-h-48 overflow-y-auto px-3 pb-2 text-xs text-gray-700 space-y-0.5">
+                {rows.map(r => (
+                  <li key={r.key}>{r.label}{r.detail ? <span className="text-gray-500"> — {r.detail}</span> : null}</li>
+                ))}
+              </ul>
+            </details>
+          );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={close}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-5 border-b">
+                <h2 className="text-lg font-bold text-gray-900">
+                  {batchReport ? 'Activation des chauffeurs — rapport' : 'Activer les chauffeurs en attente'}
+                </h2>
+                <button onClick={close} disabled={batchActivating} className="p-1 rounded-lg hover:bg-gray-100 disabled:opacity-40"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                {!batchReport ? (
+                  <>
+                    <p className="text-sm text-gray-700">
+                      <strong>{batchReview.ready.length}</strong> chauffeur{batchReview.ready.length > 1 ? 's' : ''} prêt{batchReview.ready.length > 1 ? 's' : ''} à activer.
+                      Des identifiants seront créés avec un mot de passe généré.
+                      Les autres doivent d'abord être corrigés par les RH (fiche employé).
+                    </p>
+                    {section('Prêts à activer', '#0B7439', batchReview.ready.map(e => ({ key: e.id, label: nameOf(e), detail: emailOf(e) })))}
+                    {section('Sans email', '#B45309', batchReview.noEmail.map(e => ({ key: e.id, label: nameOf(e), detail: e.employee_id ?? undefined })),
+                      'Ajouter un email sur la fiche employé.')}
+                    {section('Email partagé avec un autre chauffeur', '#B45309', batchReview.sharedEmail.map(e => ({ key: e.id, label: nameOf(e), detail: emailOf(e) })),
+                      'Un email ne peut servir qu\u2019à un seul compte : donner un email différent à chacun.')}
+                    {section('Email déjà utilisé par un autre compte', '#B45309', batchReview.usedElsewhere.map(e => ({ key: e.id, label: nameOf(e), detail: emailOf(e) })))}
+                    {batchProgress && (
+                      <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-[#0B7439] border-t-transparent rounded-full animate-spin" />
+                        Activation en cours : {batchProgress.done} / {batchProgress.total}…
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {batchReport.stopReason && (
+                      <div className="rounded-lg border p-3 text-sm" style={{ borderColor: '#FCA5A5', backgroundColor: '#FEF2F2', color: '#991B1B' }}>
+                        <strong>Activation interrompue.</strong> {batchReport.stopReason} Les chauffeurs non envoyés restent en attente :
+                        relancez « Activer tous les chauffeurs » quand la connexion est rétablie (les comptes déjà activés ne seront pas refaits).
+                      </div>
+                    )}
+                    {section('Activés', '#0B7439', batchReport.activated.map(e => ({ key: e.id, label: nameOf(e), detail: emailOf(e) })))}
+                    {section('Refusés par le serveur', '#AF3029', batchReport.failed.map(f => ({ key: f.emp.id, label: nameOf(f.emp), detail: f.message })))}
+                    {section('Non envoyés (activation interrompue)', '#B45309', batchReport.notSent.map(e => ({ key: e.id, label: nameOf(e), detail: emailOf(e) })))}
+                    {section('Non envoyés : à corriger par les RH', '#6B7280',
+                      [...batchReview.noEmail.map(e => ({ key: e.id, label: nameOf(e), detail: 'sans email' })),
+                       ...batchReview.sharedEmail.map(e => ({ key: e.id, label: nameOf(e), detail: `email partagé : ${emailOf(e)}` })),
+                       ...batchReview.usedElsewhere.map(e => ({ key: e.id, label: nameOf(e), detail: `email déjà utilisé : ${emailOf(e)}` }))])}
+                  </>
+                )}
+              </div>
+              <div className="flex gap-2 p-4 border-t">
+                {!batchReport ? (
+                  <>
+                    <button onClick={close} disabled={batchActivating} className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50">
+                      Annuler
+                    </button>
+                    <button
+                      onClick={() => void runBatchActivation()}
+                      disabled={batchActivating || batchReview.ready.length === 0}
+                      className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                      style={{ backgroundColor: '#0B7439' }}
+                    >
+                      {batchActivating ? 'Activation en cours…' : `Activer ${batchReview.ready.length} chauffeur${batchReview.ready.length > 1 ? 's' : ''}`}
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={close} className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ backgroundColor: '#0B7439' }}>
+                    Fermer
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
