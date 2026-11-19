@@ -68,7 +68,7 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
     number: r.departure_number == null ? null : num(r.departure_number),
     status: String(r.status ?? ''),
     routeId: r.route_id ? String(r.route_id) : null,
-    route: String(r.route_name ?? '') || 'Ligne inconnue',
+    route: r.is_departure === false && !r.route_id ? 'Ramassage direct' : (String(r.route_name ?? '') || 'Ligne inconnue'),
     stationId: String(r.station_id ?? 'none'),
     station: String(r.station_name ?? '') || 'Gare inconnue',
     counter: String(r.counter_number ?? '') || '—',
