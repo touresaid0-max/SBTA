@@ -20,7 +20,8 @@ const cells = (d: Depart): string[] => {
 };
 
 interface Props {
-  routeId: string;
+  /** The line; null: the direct ramassages (« Ramassage direct (sans ligne) ») */
+  routeId: string | null;
   routeName: string;
   dateFrom: string;
   dateTo: string;
@@ -41,7 +42,8 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
     let cancelled = false;
     setRows(null); setError(null); setStation(null); setSearch('');
     fetchDepartures(routeId, dateFrom, dateTo)
-      .then(list => { if (!cancelled) setRows(list); })
+      // No line: the function sends every line; only the direct ramassages (no line) are kept
+      .then(list => { if (!cancelled) setRows(routeId ? list : list.filter(d => d.routeId === null)); })
       .catch(err => {
         if (cancelled) return;
         setError(err instanceof DeparturesUnavailableError
