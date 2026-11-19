@@ -43,6 +43,8 @@ export interface Depart {
   expenses: number;
   caisse: number;
   solde: number;
+  /** Direct ramassage: the destination city typed at the guichet (« MAN »), shown as its status */
+  destination: string | null;
   /** Shared departure: this row is one station's share (its seats, tickets, baggage, expenses) */
   share: { role: 'principale' | 'partenaire'; from: number; to: number } | null;
 }
@@ -69,6 +71,9 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
     status: String(r.status ?? ''),
     routeId: r.route_id ? String(r.route_id) : null,
     route: r.is_departure === false && !r.route_id ? 'Ramassage direct' : (String(r.route_name ?? '') || 'Ligne inconnue'),
+    // « Ramassage direct — MAN » → « MAN » (a database not updated yet sends no name: none)
+    destination: r.is_departure === false && String(r.route_name ?? '').includes('\u2014')
+      ? (String(r.route_name).split('\u2014').pop() ?? '').trim().toUpperCase() || null : null,
     stationId: String(r.station_id ?? 'none'),
     station: String(r.station_name ?? '') || 'Gare inconnue',
     counter: String(r.counter_number ?? '') || '—',
@@ -115,7 +120,7 @@ export function departSheetRow(d: Depart): Record<string, string | number> {
   return {
     'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° dép.': d.number ?? '',
     'Ligne': d.route, 'Gare': stationLabel(d), 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
-    'Société': d.company, 'Statut': STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
+    'Société': d.company, 'Statut': d.destination ?? STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
     'Vendus': d.seats, 'Rempl. %': d.isDeparture && d.capacity > 0 ? Number(((d.seats / d.capacity) * 100).toFixed(1)) : '',
     'Tickets': d.tickets, 'Convoi': d.convoi, 'Ramassage': d.ramassage, 'Caisse': d.caisse,
     'Dépenses': d.expenses, 'Solde': d.solde, 'Recette (rapport)': d.recette, 'Part reversée (panne)': d.transferred,

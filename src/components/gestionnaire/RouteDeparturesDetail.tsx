@@ -12,7 +12,7 @@ const cells = (d: Depart): string[] => {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return [
     dt ? format(dt, 'dd/MM/yyyy') : '—', dt ? format(dt, 'HH:mm') : '—', d.number != null ? String(d.number) : '—',
-    d.route, stationLabel(d), d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
+    d.route, stationLabel(d), d.counter, d.bus, d.company, d.destination ?? STATUS_LABELS[d.status] ?? d.status,
     d.isDeparture ? fmtN(d.capacity) : '—', fmtN(d.seats), d.isDeparture ? fill(d.seats, d.capacity) : '—',
     fmtF(d.tickets), fmtF(d.convoi),
     fmtF(d.ramassage), fmtF(d.caisse), fmtF(d.expenses), fmtF(d.solde),
