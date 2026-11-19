@@ -154,9 +154,26 @@ export function stripStationLabel(s: string): string {
 }
 
 /**
- * The route line of a passenger ticket, as on the baggage ticket (request of 18/11/2026): the
- * station that sells, then the whole route of the bus (« ISSIA => ISSIA - YAKRO - ABIDJAN »).
- * Without the station name: the first city of the route.
+ * Lines whose passenger ticket shows the selling station then the whole route of the bus, as on
+ * the baggage ticket (« ISSIA => ISSIA - YAKRO - ABIDJAN »). Asked for the line of Issia only
+ * (18-19/11/2026): every other line keeps « first city of the line => passenger's destination ».
+ * Cities in capitals, separated by « - ».
+ */
+const FULL_ROUTE_TICKET_LINES = ['ISSIA - YAKRO - ABIDJAN'];
+
+const routeCities = (routeName: string | null | undefined): string[] =>
+  (routeName ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/\s*[-–—]\s*/).map(c => c.trim()).filter(Boolean);
+
+/** Whether the ticket of this line shows the whole route (line of Issia) */
+export function isFullRouteTicketLine(routeName: string | null | undefined): boolean {
+  const key = routeCities(routeName).join(' - ');
+  return FULL_ROUTE_TICKET_LINES.includes(key);
+}
+
+/**
+ * The route line of a passenger ticket: the station that sells, then the whole route of the bus
+ * (« ISSIA => ISSIA - YAKRO - ABIDJAN »). Without the station name: the first city of the route.
  */
 export function ticketRouteLine(routeName: string | null | undefined, stationName: string | null | undefined): string {
   const route = (routeName ?? '').toUpperCase().replace(/\s*[-–—]\s*/g, ' - ').trim();
@@ -203,9 +220,26 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
 
   // Body — compact: combine fields on the same line to halve ticket length
   parts.push(setAlign('left'));
-  // The selling station, then the whole route of the bus, as on the baggage ticket
-  const routeLines = wrapText(ticketRouteLine(depart.route_name, stationName), innerW).slice(0, 3);
-  for (const l of routeLines) parts.push(setBold(true), text(vLine(l)), lineFeed(), setBold(false));
+  // Line of Issia: the selling station, then the whole route of the bus, as on the baggage ticket.
+  // Every other line: « Ligne: first city => passenger's destination », as before.
+  const fullRoute = isFullRouteTicketLine(depart.route_name);
+  const routePartsTicket = (depart.route_name ?? '').split(/\s*[-–—]\s*/);
+  const originCityTicket = (routePartsTicket[0] ?? '').toUpperCase().trim() || '-';
+  const destCityTicket = (ticket.destination || routePartsTicket[routePartsTicket.length - 1] || '').toUpperCase().trim() || '-';
+  const routeNameFull = `${originCityTicket} => ${destCityTicket}`;
+  const routeName = routeNameFull.slice(0, innerW - 8);
+  const routeLines = fullRoute ? wrapText(ticketRouteLine(depart.route_name, stationName), innerW).slice(0, 3) : [];
+  const pushRouteLines = () => {
+    if (fullRoute) {
+      for (const l of routeLines) parts.push(setBold(true), text(vLine(l)), lineFeed(), setBold(false));
+      return;
+    }
+    parts.push(setBold(true), text(vLine(`${padRight('Ligne:', 8)}${routeName}`)), lineFeed(), setBold(false));
+    if (routeNameFull.length > innerW - 8) {
+      parts.push(text(vLine(routeNameFull.slice(innerW - 8))), lineFeed());
+    }
+  };
+  pushRouteLines();
   const depLabel = `Dep.${depart.route_number ?? '-'}`;
   const dateShort = formatDateTime(depart.departure_datetime).slice(0, 10);
   parts.push(text(vLine(`${padRight(depLabel, 14)}${dateShort}`)), lineFeed());
@@ -258,7 +292,7 @@ export function buildTicketESCPOS(data: PrintTicketData, settings: PrintSettings
   parts.push(setAlign('center'), setBold(true), text('SOUCHE'), lineFeed(), setBold(false));
 
   parts.push(setAlign('left'));
-  for (const l of routeLines) parts.push(setBold(true), text(vLine(l)), lineFeed(), setBold(false));
+  pushRouteLines();
   parts.push(text(vLine(`${padRight(depLabel, 14)}${dateShort}`)), lineFeed());
   if (seatLine.length <= seatPad) {
     parts.push(setDouble(true), text(vLine(padRight(seatLine, innerW - tarifPart.length) + tarifPart)), lineFeed(), setNormal());
