@@ -79,6 +79,9 @@ export default function POSVente() {
   const [sameDestination, setSameDestination] = useState(false);
   const [printTicket, setPrintTicket] = useState(true);
   const [selling, setSelling] = useState(false);
+  // Several seats selected: the sale waits for a confirmation listing them (a seat clicked by
+  // mistake was sold with the right one, ATTECOUBE 19/11/2026: seats 5 and 41 in one sale)
+  const [confirmMulti, setConfirmMulti] = useState(false);
   const [ticketPreview, setTicketPreview] = useState('');
   const [printError, setPrintError] = useState('');
   const [printing, setPrinting] = useState(false);
@@ -262,6 +265,10 @@ export default function POSVente() {
     const nums = valid.map(s => parseInt(s.label, 10)).sort((a, b) => a - b);
     setSelectedSeats(nums);
   }, [structSelectedSeats, structureMode, depart, session?.station_id, soldSeats]);
+
+  // Another selection: the confirmation is asked again
+  const selectedKey = selectedSeats.join(",");
+  useEffect(() => { setConfirmMulti(false); }, [selectedKey]);
 
   // Clear structure selection when structure mode is turned off
   useEffect(() => {
@@ -567,7 +574,7 @@ export default function POSVente() {
   const freeSeatNumbers = sellableSeatNumbers.filter(n => !soldSeats.includes(n) && !lockedSeats.includes(n));
   const allFreeSelected = freeSeatNumbers.length > 0 && freeSeatNumbers.every(n => selectedSeats.includes(n));
 
-  const handleSell = async () => {
+  const handleSell = async (multiConfirmed = false) => {
     if (!depart || !departId) return;
     if (depart.cancelled) { setError('Ce départ est annulé — vente impossible'); return; }
     if (depart.cloture) { setError('Ce départ est clôturé — vente impossible'); return; }
@@ -604,6 +611,8 @@ export default function POSVente() {
     // Typing slip on the price (audit m5): refused above the maximum, confirmed when unusual
     const tarifCheck = checkAmounts([{ value: tarif, rule: AMOUNT_RULES.ticketPrice }]);
     if (!tarifCheck.ok) { if (tarifCheck.error) setError(tarifCheck.error); return; }
+    if (selectedSeats.length > 1 && !multiConfirmed) { setConfirmMulti(true); return; }
+    setConfirmMulti(false);
 
     setSelling(true);
     try {
@@ -640,7 +649,8 @@ export default function POSVente() {
       setSuccess(soldTickets.length === 1
         ? `Siège ${seatsLabel} vendu — Ticket ${soldTickets[0].ticket_number}`
         : `${soldTickets.length} tickets vendus — Sièges : ${seatsLabel}`);
-      setSelectedSeats([]); setIsReduced(false); setIsReported(false);
+      // Nothing stays selected for the next sale
+      setSelectedSeats([]); setStructSelectedSeats([]); setIsReduced(false); setIsReported(false);
       if (!sameDestination) { setDestination(''); setTarif(0); }
       setLoyaltyEnabled(false); setLoyaltyNewCard(false);
       setLoyaltyCardNumber(''); setLoyaltyName(''); setLoyaltyPhone(''); setLoyaltyTrips(0);
@@ -1643,14 +1653,50 @@ export default function POSVente() {
                 </div>
               </div>
 
+              {/* The seats about to be sold, always in sight above the button (the list under the
+                  bus plan was out of view): a seat clicked by mistake is seen and removed here */}
+              {selectedSeats.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                    {selectedSeats.length > 1 ? 'Sièges choisis :' : 'Siège choisi :'}
+                  </span>
+                  {selectedSeats.map(n => (
+                    <span key={n} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
+                      {n}
+                      <button type="button" title={`Retirer le siège ${n}`} className="leading-none"
+                        onClick={() => {
+                          if (structureMode) setStructSelectedSeats(prev => prev.filter(st => parseInt(st.label, 10) !== n));
+                          else setSelectedSeats(prev => prev.filter(x => x !== n));
+                          setConfirmMulti(false);
+                        }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
               {selectedSeats.length > 1 && tarif > 0 && (
                 <div className="mt-3 px-3 py-2 rounded-lg flex items-center justify-between text-sm font-bold" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
                   <span>{selectedSeats.length} tickets</span>
                   <span>{(tarif * selectedSeats.length).toLocaleString('fr-FR')} FCFA</span>
                 </div>
               )}
+              {confirmMulti && selectedSeats.length > 1 ? (
+                <div className="mt-4 rounded-xl border-2 p-4" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+                  <p className="flex items-center gap-2 text-sm font-bold" style={{ color: '#92400E' }}>
+                    <AlertCircle className="h-5 w-5 flex-shrink-0" /> Vous allez vendre {selectedSeats.length} tickets : sièges {selectedSeats.join(', ')}
+                  </p>
+                  <p className="mt-1 text-xs" style={{ color: '#92400E' }}>
+                    Total {(tarif * selectedSeats.length).toLocaleString('fr-FR')} FCFA. Vérifiez que chaque siège est voulu : retirez avec × celui qui ne l'est pas.
+                  </p>
+                  <div className="mt-3 flex gap-3">
+                    <button type="button" onClick={() => setConfirmMulti(false)} className="flex-1 px-4 py-2.5 rounded-xl border font-semibold text-sm bg-white" style={{ borderColor: '#F59E0B', color: '#92400E' }}>Annuler</button>
+                    <button type="button" onClick={() => handleSell(true)} disabled={selling} className="flex-1 px-4 py-2.5 rounded-xl text-white font-semibold text-sm disabled:opacity-50" style={{ backgroundColor: '#D97706' }}>
+                      {selling ? 'Vente…' : `Confirmer les ${selectedSeats.length} tickets`}
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <button
-                onClick={handleSell}
+                onClick={() => handleSell()}
                 disabled={selling || selectedSeats.length === 0 || !destination || tarif <= 0 || depart.cloture || depart.cancelled || depart.status === 'panne' || depart.departure_date < trustedNowIso().slice(0, 10)}
                 className="w-full mt-4 py-3.5 rounded-xl font-bold text-white text-base disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity"
                 style={{ backgroundColor: 'var(--primary)' }}
@@ -1658,6 +1704,7 @@ export default function POSVente() {
                 {selling ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
                 {selectedSeats.length > 1 ? `Vendre ${selectedSeats.length} tickets` : 'Vendre le ticket'}
               </button>
+              )}
             </div>
 
             {/* ── Bagage block ── */}
