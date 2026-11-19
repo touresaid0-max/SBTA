@@ -7,15 +7,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// The RH users see in their messaging that the admin created a login account (as for a user
-// created by the admin, function create-user). Best effort: never makes the creation fail.
+// The other side sees in its messaging that a login account was created: the RH when the admin
+// created it (as for a user created by the admin, function create-user), the admins when the RH
+// created it. Best effort: never makes the creation fail.
 // deno-lint-ignore no-explicit-any
-async function notifyRh(supabaseAdmin: any, senderId: string, content: string): Promise<void> {
+async function notifyRole(supabaseAdmin: any, role: string, senderId: string, content: string): Promise<void> {
   try {
     const { data: rhUsers } = await supabaseAdmin
       .from("users")
       .select("id")
-      .eq("role", "rh")
+      .eq("role", role)
       .eq("status", "active");
     if (rhUsers && rhUsers.length > 0) {
       await supabaseAdmin.from("admin_chat_messages").insert(
@@ -44,7 +45,8 @@ Deno.serve(async (req: Request) => {
   );
 
   try {
-    // 1. Vérifier que l'appelant est admin
+    // 1. Vérifier que l'appelant est admin ou RH (19/11/2026 : le RH crée et active lui-même
+    //    les comptes de ses employés, sans passer par l'admin)
     const token = req.headers.get("Authorization")?.replace("Bearer ", "") ?? "";
     const { data: { user: caller } } = await supabaseAdmin.auth.getUser(token);
     if (!caller) {
@@ -58,12 +60,14 @@ Deno.serve(async (req: Request) => {
       (caller.app_metadata?.role as string | undefined) ??
       (caller.user_metadata?.role as string | undefined);
 
-    if (callerRole !== "admin") {
+    if (callerRole !== "admin" && callerRole !== "rh") {
       return new Response(
-        JSON.stringify({ error: "Accès refusé — Admin uniquement" }),
+        JSON.stringify({ error: "Accès refusé — Admin ou RH uniquement" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    const byRh = callerRole === "rh";
+    const byLabel = byRh ? "le RH" : "l'Admin";
 
     const { employee_id, email, password, assigned_route_ids, assistance_gp } = await req.json();
 
@@ -79,6 +83,14 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (fetchError || !employee) throw new Error("Employé introuvable ou compte déjà créé");
+
+    // Le RH n'active pas un compte administrateur : seul un admin donne ces droits
+    if (byRh && employee.role === "admin") {
+      return new Response(
+        JSON.stringify({ error: "Seul un administrateur peut activer un compte administrateur" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // 3. Déterminer l'email du compte
     const accountEmail = email || employee.professional_email || employee.personal_email;
@@ -142,14 +154,15 @@ Deno.serve(async (req: Request) => {
           target_id:   employee_id,
           target_type: "employee",
           action:      "account_created_by_admin",
-          description: `Compte créé pour ${employee.first_name} ${employee.last_name} (${employee.role}) — Email : ${accountEmail} (profil chauffeur repris)`,
+          description: `Compte créé par ${byLabel} pour ${employee.first_name} ${employee.last_name} (${employee.role}) — Email : ${accountEmail} (profil chauffeur repris)`,
           new_values:  { email: accountEmail, auth_user_id: profileId },
         });
 
-        await notifyRh(
+        await notifyRole(
           supabaseAdmin,
+          byRh ? "admin" : "rh",
           caller.id,
-          `Compte de connexion créé par l'Admin : ${employee.first_name ?? ""} ${employee.last_name ?? ""} (${employee.role}) — ${accountEmail}`,
+          `Compte de connexion créé par ${byLabel} : ${employee.first_name ?? ""} ${employee.last_name ?? ""} (${employee.role}) — ${accountEmail}`,
         );
 
         return new Response(
@@ -301,14 +314,15 @@ Deno.serve(async (req: Request) => {
       target_id:   employee_id,
       target_type: "employee",
       action:      "account_created_by_admin",
-      description: `Compte créé pour ${employee.first_name} ${employee.last_name} (${employee.role}) — Email : ${accountEmail}`,
+      description: `Compte créé par ${byLabel} pour ${employee.first_name} ${employee.last_name} (${employee.role}) — Email : ${accountEmail}`,
       new_values:  { email: accountEmail, auth_user_id: authUid },
     });
 
-    await notifyRh(
+    await notifyRole(
       supabaseAdmin,
+      byRh ? "admin" : "rh",
       caller.id,
-      `Compte de connexion créé par l'Admin : ${employee.first_name ?? ""} ${employee.last_name ?? ""} (${employee.role}) — ${accountEmail}`,
+      `Compte de connexion créé par ${byLabel} : ${employee.first_name ?? ""} ${employee.last_name ?? ""} (${employee.role}) — ${accountEmail}`,
     );
 
     return new Response(

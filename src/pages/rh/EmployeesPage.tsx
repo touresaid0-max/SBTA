@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX } from 'lucide-react'
+import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX, KeyRound } from 'lucide-react'
+import CreateAccountModal from '@/components/admin/CreateAccountModal'
+import type { PendingEmployee } from '@/services/employeeAccount.service'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { fetchEmployees, deactivateEmployee } from '@/services/hr.service'
@@ -64,6 +66,28 @@ interface DeactivateModal {
   reason: string
 }
 
+/** A pending employee of the RH list, in the shape the account window expects */
+function toPendingEmployee(emp: Employee): PendingEmployee {
+  return {
+    id: emp.id,
+    first_name: emp.first_name,
+    last_name: emp.last_name,
+    full_name: emp.full_name,
+    role: emp.role,
+    professional_email: emp.professional_email ?? null,
+    personal_email: emp.personal_email ?? null,
+    phone: emp.phone ?? null,
+    employee_id: emp.employee_id,
+    hire_date: emp.hire_date ?? null,
+    account_status: 'pending',
+    created_by_hr_at: '',
+    company_id: emp.company_id,
+    company_name: emp.company_name,
+    company_code: emp.company_code,
+    station_name: emp.station_name,
+  }
+}
+
 export default function EmployeesPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -91,6 +115,9 @@ export default function EmployeesPage() {
     }
     loadRef()
   }, [])
+
+  // « Activer le compte » : le RH crée lui-même le compte de connexion (19/11/2026)
+  const [accountEmployee, setAccountEmployee] = useState<PendingEmployee | null>(null)
 
   const loadEmployees = useCallback(() => {
     setLoading(true)
@@ -427,6 +454,15 @@ export default function EmployeesPage() {
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
+                        {emp.status === 'pending' && (
+                          <button
+                            onClick={() => setAccountEmployee(toPendingEmployee(emp))}
+                            className="p-1.5 rounded-lg hover:bg-[#D4EDDA] text-[#0B7439] transition-colors"
+                            title="Créer et activer le compte de connexion"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => setDeactivateModal({ employee: emp, reason: '' })}
                           disabled={emp.status !== 'active'}
@@ -492,6 +528,13 @@ export default function EmployeesPage() {
             </div>
           </div>
         </div>
+      )}
+      {accountEmployee && (
+        <CreateAccountModal
+          employee={accountEmployee}
+          onClose={() => setAccountEmployee(null)}
+          onSuccess={() => { setAccountEmployee(null); loadEmployees() }}
+        />
       )}
     </div>
   )

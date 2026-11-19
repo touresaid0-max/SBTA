@@ -10,6 +10,8 @@ import type { GarageTypeTechnicien } from '@/types/garage.types'
 import { fetchTypesTechniciens } from '@/services/garageSbta.service'
 import type { SBTARole } from '@/store/authStore'
 import { computeAge, monthsUntilRetirement, RETIREMENT_AGE, RETIREMENT_ALERT_MONTHS } from '@/utils/retirement'
+import CreateAccountModal from '@/components/admin/CreateAccountModal'
+import type { PendingEmployee } from '@/services/employeeAccount.service'
 
 async function callEdge(method: 'POST' | 'PUT', body: Record<string, unknown>): Promise<string | undefined> {
   const res = await callEdgeFunction('rh-create-employee', { method, body })
@@ -177,6 +179,8 @@ export default function EmployeeForm() {
   const [routes,    setRoutes]        = useState<Route[]>([])
   const [techTypes, setTechTypes]     = useState<GarageTypeTechnicien[]>([])
   const [saving, setSaving]           = useState(false)
+  // Fiche créée : le RH active le compte de connexion tout de suite, sans passer par l'admin
+  const [createdEmployee, setCreatedEmployee] = useState<PendingEmployee | null>(null)
   const [loading, setLoading]         = useState(isEdit)
   const [avatarFile, setAvatarFile]   = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string>('')
@@ -372,10 +376,29 @@ export default function EmployeeForm() {
       } else {
         const empId = await callEdge('POST', { ...base, ...emails })
         if (isGuichetier && empId) await syncCounterRoute(empId, base.assigned_route_ids)
-        toast.success(
-          `Fiche créée pour ${form.first_name} ${form.last_name}. L'administrateur pourra créer le compte de connexion.`,
-          { duration: 5000 }
-        )
+        toast.success(`Fiche créée pour ${form.first_name} ${form.last_name}.`)
+        if (empId) {
+          // Next step in the same flow: create and activate the login account
+          setCreatedEmployee({
+            id: empId,
+            first_name: form.first_name,
+            last_name: form.last_name,
+            full_name: `${form.first_name} ${form.last_name}`.trim(),
+            role: form.role,
+            professional_email: form.professional_email.trim() || null,
+            personal_email: form.personal_email.trim() || null,
+            phone: form.phone.trim() || null,
+            employee_id: form.employee_id.trim() || null,
+            hire_date: form.hire_date || null,
+            account_status: 'pending',
+            created_by_hr_at: '',
+            company_id: form.company_id || null,
+            company_name: null,
+            company_code: null,
+            station_name: null,
+          })
+          return
+        }
       }
 
       navigate('/rh/employees')
@@ -857,6 +880,16 @@ export default function EmployeeForm() {
           {saving ? 'Enregistrement...' : 'Enregistrer'}
         </button>
       </div>
+      {createdEmployee && (
+        <CreateAccountModal
+          employee={createdEmployee}
+          onClose={() => {
+            toast('Compte non activé : vous pourrez l’activer depuis la liste des employés (bouton clé).', { duration: 6000 })
+            navigate('/rh/employees')
+          }}
+          onSuccess={() => navigate('/rh/employees')}
+        />
+      )}
     </div>
   )
 }
