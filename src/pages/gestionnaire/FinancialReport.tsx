@@ -203,7 +203,7 @@ export default function FinancialReport() {
       };
       const pct = (seats: number, capacity: number) => (capacity > 0 ? Number(((seats / capacity) * 100).toFixed(1)) : '');
       const amounts = (t: ReturnType<typeof totalsOf>) => ({
-        'Voyages': t.voyages, 'Vendus': t.seats, 'Rempl. %': pct(t.seats, t.capacity), 'Tickets': t.tickets, 'Bagages': t.baggage,
+        'Voyages': t.voyages, 'Vendus': t.seats, 'Rempl. %': pct(t.seats, t.capacity), 'Tickets': t.tickets, 'Convoi': t.convoi,
         'Ramassage': t.ramassage, 'Caisse': t.caisse, 'Dépenses': t.expenses, 'Solde': t.solde,
       });
 
