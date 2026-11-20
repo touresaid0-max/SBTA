@@ -123,6 +123,8 @@ export default function EmployeesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const deleteConfirmed = deleteConfirmText.trim().toUpperCase() === 'CONFIRMER'
   // Chauffeurs en attente : activation groupée sans connexion
   const [pendingDriverIds, setPendingDriverIds] = useState<string[]>([])
   const [confirmBulkDrivers, setConfirmBulkDrivers] = useState(false)
@@ -184,12 +186,12 @@ export default function EmployeesPage() {
   }, [loadEmployees, user?.id])
 
   const handleDelete = async () => {
-    if (!deleteTarget) return
+    if (!deleteTarget || !deleteConfirmed) return
     setDeleting(true)
     setDeleteError(null)
     try {
       const name = await deleteEmployeePermanently(deleteTarget.id)
-      toast.success(`${name || deleteTarget.full_name} a été supprimé définitivement`)
+      toast.success(`${name || deleteTarget.full_name} : employé supprimé`, { duration: 6000 })
       setDeleteTarget(null)
       loadEmployees()
       void loadDriverState()
@@ -544,7 +546,7 @@ export default function EmployeesPage() {
                           </button>
                         )}
                         <button
-                          onClick={() => { setDeleteError(null); setDeleteTarget(emp) }}
+                          onClick={() => { setDeleteError(null); setDeleteConfirmText(''); setDeleteTarget(emp) }}
                           disabled={emp.role === 'admin' || emp.id === user?.id || emp.auth_user_id === user?.id}
                           className="p-1.5 rounded-lg hover:bg-[#F8D7D5] text-[#AF3029] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                           title="Supprimer définitivement"
@@ -640,10 +642,24 @@ export default function EmployeesPage() {
               Voulez-vous vraiment supprimer <strong>{deleteTarget.full_name}</strong>
               {deleteTarget.employee_id ? <> (matricule {deleteTarget.employee_id})</> : null} ?
             </p>
-            <p className="text-sm text-[#6B7280] mb-4">
-              Sa fiche employé et son compte de connexion seront supprimés. <strong>Cette action est irréversible.</strong>{' '}
-              Un employé qui a déjà travaillé (départs, tickets, courriers…) ne peut pas être supprimé : désactivez-le à la place.
+            <p className="text-sm text-[#6B7280] mb-3">
+              Sa fiche employé et son compte de connexion seront supprimés : il disparaît des listes et
+              ne peut plus se connecter. <strong>Cette action est irréversible.</strong>{' '}
+              S&apos;il a déjà travaillé, ses départs, tickets et caisses passés gardent son nom.
             </p>
+            <label className="block text-sm font-medium text-[#374151] mb-1">
+              Pour confirmer, saisissez <strong className="text-[#AF3029]">CONFIRMER</strong>
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && deleteConfirmed && !deleting) void handleDelete() }}
+              placeholder="CONFIRMER"
+              autoFocus
+              disabled={deleting}
+              className="w-full border border-[#E2EAE5] rounded-xl px-3 py-2 text-sm text-[#374151] mb-4 focus:outline-none focus:ring-2 focus:ring-[#AF3029]"
+            />
             {deleteError && (
               <div className="mb-4 rounded-xl border border-[#AF3029] bg-[#FEF2F2] p-3 text-sm text-[#991B1B]">
                 {deleteError}
@@ -657,20 +673,12 @@ export default function EmployeesPage() {
               >
                 Annuler
               </button>
-              {deleteError && deleteTarget.status === 'active' && (
-                <button
-                  onClick={() => { setDeactivateModal({ employee: deleteTarget, reason: '' }); setDeleteTarget(null) }}
-                  className="px-4 py-2 border border-[#AF3029] rounded-xl text-sm font-semibold text-[#AF3029] hover:bg-[#FEF2F2]"
-                >
-                  Désactiver à la place
-                </button>
-              )}
               <button
                 onClick={handleDelete}
-                disabled={deleting}
+                disabled={deleting || !deleteConfirmed}
                 className="px-4 py-2 bg-[#AF3029] text-white rounded-xl text-sm font-semibold hover:bg-[#8B1F1A] disabled:opacity-50 transition-colors"
               >
-                {deleting ? 'Suppression...' : 'Oui, supprimer'}
+                {deleting ? 'Suppression...' : 'Supprimer définitivement'}
               </button>
             </div>
           </div>

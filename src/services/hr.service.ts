@@ -102,7 +102,8 @@ export async function fetchEmployees(filters: EmployeeFilters): Promise<Employee
     email: e.professional_email ?? e.personal_email ?? '',
   }, 'employees'))
 
-  return [...fromUsers, ...fromEmp].sort((a, b) =>
+  // Supprimés avec historique conservé (20261120120000) : plus affichés dans les listes RH
+  return [...fromUsers, ...fromEmp].filter(e => e.status !== 'deleted').sort((a, b) =>
     (a.last_name ?? '').localeCompare(b.last_name ?? '', 'fr')
   )
 }
@@ -177,6 +178,7 @@ function mapEmployeeRow(data: any, source: 'employees' | 'users'): Employee {
       : data.account_status === 'suspended' ? 'suspended'
       : data.account_status === 'inactive' ? 'inactive'
       : data.account_status === 'pending_deletion' ? 'pending_deletion'
+      : data.account_status === 'deleted' ? 'deleted'
       : 'pending')
     : (data.status ?? (data.is_active ? 'active' : 'inactive'))
 
