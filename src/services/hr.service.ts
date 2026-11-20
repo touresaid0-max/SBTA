@@ -102,7 +102,8 @@ export async function fetchEmployees(filters: EmployeeFilters): Promise<Employee
     email: e.professional_email ?? e.personal_email ?? '',
   }, 'employees'))
 
-  return [...fromUsers, ...fromEmp].sort((a, b) =>
+  // Supprimés avec historique conservé (20261120120000) : plus affichés dans les listes RH
+  return [...fromUsers, ...fromEmp].filter(e => e.status !== 'deleted').sort((a, b) =>
     (a.last_name ?? '').localeCompare(b.last_name ?? '', 'fr')
   )
 }
@@ -177,6 +178,7 @@ function mapEmployeeRow(data: any, source: 'employees' | 'users'): Employee {
       : data.account_status === 'suspended' ? 'suspended'
       : data.account_status === 'inactive' ? 'inactive'
       : data.account_status === 'pending_deletion' ? 'pending_deletion'
+      : data.account_status === 'deleted' ? 'deleted'
       : 'pending')
     : (data.status ?? (data.is_active ? 'active' : 'inactive'))
 
@@ -369,6 +371,18 @@ export async function deleteEmployeePermanently(id: string): Promise<string> {
   const { data, error } = await supabase.rpc('admin_delete_employee_permanently', { p_id: id })
   if (error) throw new Error(error.message)
   return String(data ?? '')
+}
+
+// ── Activer des chauffeurs sans connexion (RH ou admin) ──────────
+// Les chauffeurs ne se connectent pas : leur fiche et leur profil chauffeur (compte verrouillé,
+// sans e-mail ni mot de passe) passent actifs (rh_activate_drivers_without_login).
+export async function activateDriversWithoutLogin(
+  employeeIds: string[],
+): Promise<{ activated: number; skipped: { id: string; raison: string }[] }> {
+  const { data, error } = await supabase.rpc('rh_activate_drivers_without_login', { p_employee_ids: employeeIds })
+  if (error) throw new Error(error.message)
+  const res = (data ?? {}) as { activated?: number; skipped?: { id: string; raison: string }[] }
+  return { activated: Number(res.activated ?? 0), skipped: res.skipped ?? [] }
 }
 
 // ── Taux journaliers par itinéraire ──────────────────────────────

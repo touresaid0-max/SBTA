@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Eye, EyeOff, RefreshCw, CheckCircle, User, MapPin, Search } from 'lucide-react';
 import { createAccountByAdmin, type PendingEmployee } from '../../services/employeeAccount.service';
+import { activateDriversWithoutLogin } from '../../services/hr.service';
 import { generateSecurePassword } from '../../utils/generatePassword';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
@@ -58,9 +59,11 @@ interface Props {
   employee: PendingEmployee;
   onClose: () => void;
   onSuccess: () => void;
+  /** A chauffeur already activated without login, who now gets real sign-in details */
+  loginOnly?: boolean;
 }
 
-export default function CreateAccountModal({ employee, onClose, onSuccess }: Props) {
+export default function CreateAccountModal({ employee, onClose, onSuccess, loginOnly = false }: Props) {
   const [email, setEmail] = useState(employee.professional_email ?? employee.personal_email ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -75,6 +78,9 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
   const [tpeMode, setTpeMode] = useState<'sans_guichet' | 'avec_guichet'>('sans_guichet');
 
   const isGuichetier = employee.role === 'guichetier';
+  // Les chauffeurs ne se connectent pas (20/11/2026) : activés sans e-mail ni mot de passe par défaut
+  const canSkipLogin = employee.role === 'chauffeur' && !loginOnly;
+  const [withoutLogin, setWithoutLogin] = useState(canSkipLogin);
   const isGerantPrincipal = employee.role === 'gerant_principal';
   const isBagagiste = employee.role === 'bagagiste';
 
@@ -99,6 +105,23 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
     const pwd = generateSecurePassword(12);
     setPassword(pwd);
     setShowPassword(true);
+  };
+
+  const handleActivateWithoutLogin = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
+    try {
+      const res = await activateDriversWithoutLogin([employee.id]);
+      if (res.activated === 0) {
+        throw new Error(res.skipped[0]?.raison ?? 'Activation impossible');
+      }
+      toast.success(`${employee.first_name} ${employee.last_name} est activé (sans connexion)`);
+      onSuccess();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de l\u2019activation');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleCreateAccount = async () => {
@@ -134,7 +157,7 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#E2EAE5' }}>
           <h2 className="text-lg font-bold" style={{ color: '#1A2E22' }}>
-            Créer le compte de connexion
+            {withoutLogin ? 'Activer le chauffeur' : 'Créer le compte de connexion'}
           </h2>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 transition-colors">
             <X className="w-5 h-5" style={{ color: '#8AA898' }} />
@@ -170,12 +193,42 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
             </div>
           </div>
 
+          {/* Chauffeur : avec ou sans connexion */}
+          {canSkipLogin && (
+            <div className="space-y-2">
+              <label className="flex items-start gap-3 rounded-xl border p-3 cursor-pointer"
+                style={{ borderColor: withoutLogin ? '#0B7439' : '#E2EAE5', backgroundColor: withoutLogin ? '#F0FAF3' : 'white' }}>
+                <input type="radio" name="driver_login_mode" checked={withoutLogin} onChange={() => setWithoutLogin(true)} className="mt-1 accent-[#0B7439]" />
+                <span className="text-sm" style={{ color: '#1A2E22' }}>
+                  <strong>Activer sans connexion</strong> (recommandé)
+                  <span className="block text-xs mt-0.5" style={{ color: '#4A6B55' }}>
+                    Le chauffeur ne se connecte pas : aucun e-mail ni mot de passe. Il devient actif et
+                    sélectionnable partout (départs, carburant, paie).
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border p-3 cursor-pointer"
+                style={{ borderColor: !withoutLogin ? '#0B7439' : '#E2EAE5', backgroundColor: !withoutLogin ? '#F0FAF3' : 'white' }}>
+                <input type="radio" name="driver_login_mode" checked={!withoutLogin} onChange={() => setWithoutLogin(false)} className="mt-1 accent-[#0B7439]" />
+                <span className="text-sm" style={{ color: '#1A2E22' }}>
+                  <strong>Créer des identifiants de connexion</strong>
+                  <span className="block text-xs mt-0.5" style={{ color: '#4A6B55' }}>
+                    E-mail et mot de passe, si le chauffeur doit utiliser l&apos;application.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
+
           {/* Note informative */}
+          {!withoutLogin && (
           <div className="rounded-xl p-3 text-sm border" style={{ backgroundColor: '#DBEAFE', borderColor: '#1D6FA4', color: '#1D6FA4' }}>
             <strong>Information :</strong> Vous créez uniquement les identifiants de connexion.
-            Les données RH ont déjà été saisies par le Responsable RH.
+            Les données de la fiche employé sont déjà enregistrées.
           </div>
+          )}
 
+          {!withoutLogin && (<>
           {/* Itinéraires (guichetier only) */}
           {isGuichetier && (
             <div>
@@ -442,6 +495,8 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
             </div>
           )}
 
+          </>)}
+
           {/* Boutons */}
           <div className="flex gap-3 pt-1">
             <button
@@ -454,17 +509,17 @@ export default function CreateAccountModal({ employee, onClose, onSuccess }: Pro
             </button>
             <button
               type="button"
-              onClick={handleCreateAccount}
-              disabled={!canSubmit}
+              onClick={withoutLogin ? handleActivateWithoutLogin : handleCreateAccount}
+              disabled={withoutLogin ? isCreating : !canSubmit}
               className="flex-1 py-3 rounded-xl font-bold text-white transition-colors flex items-center justify-center gap-2"
-              style={{ backgroundColor: canSubmit ? '#0B7439' : '#8AA898' }}
+              style={{ backgroundColor: (withoutLogin ? !isCreating : canSubmit) ? '#0B7439' : '#8AA898' }}
             >
               {isCreating ? (
-                <span>Création...</span>
+                <span>{withoutLogin ? 'Activation...' : 'Création...'}</span>
               ) : (
                 <>
                   <CheckCircle className="w-4 h-4" />
-                  Créer le compte
+                  {withoutLogin ? 'Activer le chauffeur' : 'Créer le compte'}
                 </>
               )}
             </button>

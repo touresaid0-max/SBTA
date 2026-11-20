@@ -230,14 +230,15 @@ export default function Users() {
       if (routesRes.data) setRoutes(routesRes.data as Route[]);
       if (techTypesRes) setTechTypes(techTypesRes);
 
-      const usersData: UserRow[] = (usersRes.data ?? []).map(u => ({ ...u }));
+      // Supprimés avec historique conservé (20261120120000) : plus affichés nulle part
+      const usersData: UserRow[] = (usersRes.data ?? []).filter(u => u.status !== 'deleted').map(u => ({ ...u }));
 
       // IDs auth des employees qui ont déjà un compte users (pour dédupliquer)
       const usersIds = new Set(usersData.map(u => u.id));
 
       // Convertir les employees (sans compte users) vers UserRow
       const empRows: UserRow[] = (empRes.data ?? [])
-        .filter(e => !e.auth_user_id || !usersIds.has(e.auth_user_id))
+        .filter(e => (!e.auth_user_id || !usersIds.has(e.auth_user_id)) && e.account_status !== 'deleted')
         .map(e => ({
           id:           e.id,
           email:        e.professional_email ?? e.personal_email ?? '',
