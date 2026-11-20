@@ -4,6 +4,7 @@ import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import type { DepartRecord, TicketRecord } from '@/services/pos/db';
 import { seatsCommercialisables, type VehiculeRef, type ChauffeurRef } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
+import { fetchPendingReprints, consumeReprint } from '@/services/ticketReprint.service';
 
 /** Ticket of the departure as the server knows it (all counters and stations, not only this device) */
 export interface ServerSeatTicket {
@@ -563,13 +564,19 @@ function ReseatConfirmation({
   const local = result.moved
     .map(m => ({ m, t: soldTickets.find(t => t.id === m.reservation_id) }))
     .filter((x): x is { m: ReseatResult['moved'][number]; t: TicketRecord } => !!x.t);
-  const handlePrint = () => {
+  // DUPLICATA with the new seat. The server gave each moved ticket a reprint authorization (no
+  // admin step); the one used here is consumed, so the ticket is not reprinted twice.
+  const handlePrint = async () => {
+    const auths = await fetchPendingReprints(depart.id);
     for (const { m, t } of local) {
-      PrintService.printTicket({
+      const ok = await PrintService.printTicket({
         ticket: { ...t, seat_number: m.to, seat_numbers: [String(m.to)] },
         depart,
         stationName: depart.station_name,
+        duplicate: true,
       });
+      const auth = auths.find(a => a.reservation_id === m.reservation_id);
+      if (ok && auth) await consumeReprint(auth.id);
     }
   };
   return (
@@ -599,7 +606,7 @@ function ReseatConfirmation({
       )}
       {result.moved.length > local.length && (
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {result.moved.length - local.length} ticket{result.moved.length - local.length > 1 ? 's' : ''} vendu{result.moved.length - local.length > 1 ? 's' : ''} sur un autre poste : à réimprimer par le guichet qui l'a vendu (le nouveau siège y apparaît à la synchronisation).
+          {result.moved.length - local.length} ticket{result.moved.length - local.length > 1 ? 's' : ''} vendu{result.moved.length - local.length > 1 ? 's' : ''} sur un autre poste : à réimprimer par le guichet qui l'a vendu : le bandeau « Réimprimer » apparaît sur son écran Vente, sans autorisation de l'admin.
         </p>
       )}
       <div className="flex gap-3">
