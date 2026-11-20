@@ -11,7 +11,7 @@ import {
 } from '@/services/pos/ticketService';
 import { getLignes, getSaleRouteForStation } from '@/services/pos/departService';
 import type { LigneRef } from '@/services/pos/departService';
-import { getSeatRangeForStation, ticketsOfStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibres, seatsLibresForStation, seatsCommercialisables, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations } from '@/services/pos/departService';
+import { getSeatRangeForStation, ticketsOfStation, isSeatAllowedForStation, getStationNameForSeat, seatsAllocatedForStation, seatsVendusForStation, seatsLibres, seatsLibresForStation, seatsCommercialisables, getAvailableSeatsForTransfer, isSeatTransferredLocked, getTransferredSeatsForStation, getReceivedTransferSeatsForStation, transferSeatsBetweenStations, stationSeatsNow, seatRangesLabel, transferTotalsForStation } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 import { registerBagage, getBagagesForDepart, type BagageRecord } from '@/services/pos/bagageService';
 import { getDepensesForDepart, type DepenseRecord } from '@/services/pos/depenseService';
@@ -249,13 +249,15 @@ export default function POSVente() {
     if (!structureMode) { setStructSelectedSeats(prev => (prev.length === 0 ? prev : [])); return; }
     if (!depart) return;
     const range = session?.station_id ? getSeatRangeForStation(depart, session.station_id) : null;
+    const shared = !!(depart.seat_allocations && depart.seat_allocations.length > 0);
+    const heldSeats = new Set(shared && session?.station_id ? stationSeatsNow(depart, session.station_id) : []);
     const valid = structSelectedSeats.filter(s => {
       const n = parseInt(s.label, 10);
       if (Number.isNaN(n)) return false;
       if (n < depart.seats_from || n > depart.seats_total) return false;
-      if (range && (n < range.from || n > range.to)) return false;
-      // A shared departure where this station has no seat left: nothing to sell
-      if (!range && depart.seat_allocations && depart.seat_allocations.length > 0) return false;
+      // Shared departure: only the seats this station holds now (after the transfers)
+      if (shared) { if (!heldSeats.has(n)) return false; }
+      else if (range && (n < range.from || n > range.to)) return false;
       if (soldSeats.includes(n)) return false;
       return true;
     });
@@ -448,12 +450,19 @@ export default function POSVente() {
     return getReceivedTransferSeatsForStation(depart, session.station_id);
   }, [depart, session?.station_id]);
 
+  // Shared departure: the seats this station may sell now (its own, less the ones given to another
+  // station, plus the ones received). Null when the bus is not shared.
+  const mySeatsNow = useMemo(() => {
+    if (!depart || !depart.seat_allocations || depart.seat_allocations.length === 0) return null;
+    return new Set(session?.station_id ? stationSeatsNow(depart, session.station_id) : []);
+  }, [depart, session?.station_id]);
+
   const sellableSeatNumbers = useMemo(() => {
     if (!depart) return [];
     const base: number[] = [];
-    const shared = !!(depart.seat_allocations && depart.seat_allocations.length > 0);
-    // Shared departure: only this station's seats, never the whole bus (no range = no seat)
-    if (allowedSeatRange || !shared) {
+    // Shared departure: only the seats this station holds now, never the whole bus
+    if (mySeatsNow) return [...mySeatsNow].sort((a, b) => a - b);
+    {
       const from = allowedSeatRange?.from ?? depart.seats_from;
       const to = allowedSeatRange?.to ?? depart.seats_total;
       for (let n = from; n <= to; n++) base.push(n);
@@ -462,16 +471,18 @@ export default function POSVente() {
       if (!base.includes(n)) base.push(n);
     }
     return base.sort((a, b) => a - b);
-  }, [depart, allowedSeatRange, receivedTransferSeats]);
+  }, [depart, allowedSeatRange, receivedTransferSeats, mySeatsNow]);
 
   const seatsRemaining = useMemo(() => {
     if (!depart) return 0;
+    // Shared departure: the seats held now without a ticket (the seats given are no longer counted)
+    if (mySeatsNow && session?.station_id) return seatsLibresForStation(tickets, depart, session.station_id);
     if (allowedSeatRange && session?.station_id) {
       const libres = seatsLibresForStation(tickets, depart, session.station_id);
       return Math.max(0, libres - lockedSeats.length);
     }
     return seatsLibres(depart);
-  }, [depart, tickets, allowedSeatRange, session?.station_id, lockedSeats]);
+  }, [depart, tickets, allowedSeatRange, session?.station_id, lockedSeats, mySeatsNow]);
 
   const stationSeatsAllocated = useMemo(() => {
     if (!depart || !session?.station_id) return depart ? seatsCommercialisables(depart) : 0;
@@ -582,10 +593,11 @@ export default function POSVente() {
       if (seat < depart.seats_from || seat > depart.seats_total) {
         setError(`Le siège n°${seat} est hors de la plage autorisée (${depart.seats_from}–${depart.seats_total})`); return;
       }
-      const sharedNoRange = !allowedSeatRange && !!(depart?.seat_allocations && depart.seat_allocations.length > 0);
-      if ((sharedNoRange || (allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to))) && !receivedTransferSeats.includes(seat)) {
+      const notMine = mySeatsNow ? !mySeatsNow.has(seat) : !!allowedSeatRange && (seat < allowedSeatRange.from || seat > allowedSeatRange.to);
+      if (notMine) {
         const ownerStation = getStationNameForSeat(depart, seat);
-        const yours = allowedSeatRange ? ` Vos sièges : ${allowedSeatRange.from} à ${allowedSeatRange.to}.` : ' Votre gare n\'a pas de siège sur ce départ.';
+        const mine = mySeatsNow ? [...mySeatsNow] : [];
+        const yours = mine.length > 0 ? ` Vos sièges : ${seatRangesLabel(mine)}.` : allowedSeatRange && !mySeatsNow ? ` Vos sièges : ${allowedSeatRange.from} à ${allowedSeatRange.to}.` : ' Votre gare n\'a pas de siège sur ce départ.';
         setError(ownerStation && ownerStation !== session?.station_name
           ? `Le siège n°${seat} est réservé à la gare de ${ownerStation} sur ce départ.${yours}`
           : `Siège n°${seat} indisponible : attribué à une autre gare.${yours}`);
@@ -794,7 +806,7 @@ export default function POSVente() {
       });
       const updatedDepart = await getDepartById(departId);
       if (updatedDepart) setDepart(updatedDepart);
-      const targetName = depart.seat_allocations?.find(a => a.station_id === transferTargetStation)?.station_name ?? 'gare destinataire';
+      const targetName = depart.seat_allocations?.find(a => a.station_id === transferTargetStation)?.station_name ?? (transferTargetStation === depart.station_id ? depart.station_name : undefined) ?? 'gare destinataire';
       setSuccess(`${transferSeatCount} siège(s) transféré(s) vers ${targetName} — disponibles à la vente`);
       setShowTransferModal(false);
       setTransferTargetStation('');
@@ -967,12 +979,17 @@ export default function POSVente() {
           </div>
         )}
 
-        {/* Secondary station seat allocation banner */}
-        {isSecondaryStation && allowedSeatRange && (
-          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2 text-sm" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', border: '1px solid var(--primary)' }}>
-            <Armchair className="w-4 h-4 flex-shrink-0" />
+        {/* Shared departure: the seats this station may sell now (after the transfers), and the
+            ones it gave to another station, locked here */}
+        {mySeatsNow && (isSecondaryStation || lockedSeats.length > 0 || receivedTransferSeats.length > 0) && (
+          <div className="rounded-xl px-3 py-2.5 mb-4 flex items-start gap-2 text-sm" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', border: '1px solid var(--primary)' }}>
+            <Armchair className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>
-              Vous êtes autorisé à vendre uniquement les sièges n°{allowedSeatRange.from} à n°{allowedSeatRange.to}.
+              {mySeatsNow.size > 0
+                ? <>Vous êtes autorisé à vendre uniquement les sièges n°{seatRangesLabel([...mySeatsNow])}.</>
+                : <>Votre gare n'a plus de siège sur ce départ.</>}
+              {receivedTransferSeats.length > 0 && <> Dont reçus d'une autre gare : <b>{seatRangesLabel(receivedTransferSeats)}</b>.</>}
+              {lockedSeats.length > 0 && <> Cédés à une autre gare (verrouillés) : <b>{seatRangesLabel(lockedSeats)}</b>.</>}
             </span>
           </div>
         )}
@@ -986,7 +1003,7 @@ export default function POSVente() {
               </p>
               {session?.station_id && (() => {
                 const myFreeSeats = getAvailableSeatsForTransfer(depart, tickets, session.station_id);
-                const otherStations = depart.seat_allocations!.filter(a => a.station_id !== session.station_id);
+                const otherStations = [...new Set([depart.station_id, ...depart.seat_allocations!.map(a => a.station_id)])].filter(id => id !== session.station_id);
                 return otherStations.length > 0 && myFreeSeats.length > 0 && !depart.cloture && !depart.cancelled ? (
                   <button
                     onClick={() => { setTransferError(''); setShowTransferModal(true); }}
@@ -1011,21 +1028,24 @@ export default function POSVente() {
                 </thead>
                 <tbody>
                   {depart.seat_allocations.map((a, i) => {
+                    // After the transfers: the seats the station holds now, sold by it, free
+                    const held = stationSeatsNow(depart, a.station_id);
                     const sold = seatsVendusForStation(tickets, depart, a.station_id);
-                    const allocated = a.seat_to - a.seat_from + 1;
-                    const libres = allocated - sold;
-                    const transferredOut = getTransferredSeatsForStation(depart, a.station_id).length;
-                    const receivedTransfers = (depart.seat_transfers ?? []).filter(tr => tr.to_station_id === a.station_id).reduce((sum, tr) => sum + (tr.seats?.length ?? (tr.seat_to - tr.seat_from + 1)), 0);
+                    const libres = seatsLibresForStation(tickets, depart, a.station_id);
+                    const moved = transferTotalsForStation(depart, a.station_id);
                     return (
                       <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
                         <td className="px-2 py-2 text-sm font-bold" style={{ color: a.station_id === session?.station_id ? 'var(--primary)' : 'var(--text-primary)' }}>
                           {a.station_name}{a.station_id === session?.station_id ? ' (vous)' : ''}
                         </td>
-                        <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--text-secondary)' }}>{a.seat_from}–{a.seat_to}</td>
+                        <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--text-secondary)' }}>
+                          {held.length}
+                          <span className="block text-xs font-normal" style={{ color: 'var(--text-muted)' }}>{held.length > 0 ? `n° ${seatRangesLabel(held).replace(/ à /g, '–')}` : 'aucun siège'}</span>
+                        </td>
                         <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--danger)' }}>{sold}</td>
                         <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: libres > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{libres}</td>
                         <td className="px-2 py-2 text-sm text-center font-bold" style={{ color: 'var(--warning)' }}>
-                          {transferredOut > 0 ? `−${transferredOut}` : receivedTransfers > 0 ? `+${receivedTransfers}` : '—'}
+                          {moved.in === 0 && moved.out === 0 ? '—' : [moved.in > 0 ? `+${moved.in} reçus` : '', moved.out > 0 ? `−${moved.out} cédés` : ''].filter(Boolean).join(' / ')}
                         </td>
                       </tr>
                     );
@@ -1039,11 +1059,12 @@ export default function POSVente() {
                   <Unlock className="w-3.5 h-3.5" /> Historique des transferts
                 </p>
                 {depart.seat_transfers.map((tr, i) => {
-                  const fromName = depart.seat_allocations?.find(a => a.station_id === tr.from_station_id)?.station_name ?? tr.from_station_id;
-                  const toName = depart.seat_allocations?.find(a => a.station_id === tr.to_station_id)?.station_name ?? tr.to_station_id;
+                  const nameOf = (id: string) => depart.seat_allocations?.find(a => a.station_id === id)?.station_name ?? (id === depart.station_id ? depart.station_name : undefined) ?? 'Autre gare';
+                  const fromName = nameOf(tr.from_station_id);
+                  const toName = nameOf(tr.to_station_id);
                   return (
                     <p key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {fromName} → {toName} : sièges {tr.seat_from}–{tr.seat_to} ({tr.seats?.length ?? (tr.seat_to - tr.seat_from + 1)} siège(s))
+                      {fromName} → {toName} : sièges {tr.seats && tr.seats.length > 0 ? seatRangesLabel(tr.seats).replace(/ à /g, '–') : `${tr.seat_from}–${tr.seat_to}`} ({tr.seats?.length ?? (tr.seat_to - tr.seat_from + 1)} siège(s)){tr.transferred_by ? ` — par ${tr.transferred_by}` : ''}{tr.transferred_at ? `, ${new Date(tr.transferred_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}
                     </p>
                   );
                 })}
@@ -1090,8 +1111,12 @@ export default function POSVente() {
                     style={fieldStyle}
                   >
                     <option value="">— Sélectionner —</option>
-                    {depart.seat_allocations!.filter(a => a.station_id !== session.station_id).map(a => (
-                      <option key={a.station_id} value={a.station_id}>{a.station_name}</option>
+                    {[
+                      ...depart.seat_allocations!.map(a => ({ id: a.station_id, name: a.station_name })),
+                      // The main station, also when the guichet recorded no range for it
+                      ...(depart.seat_allocations!.some(a => a.station_id === depart.station_id) ? [] : [{ id: depart.station_id, name: depart.station_name ?? 'Gare principale' }]),
+                    ].filter(o => o.id !== session.station_id).map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
                     ))}
                   </select>
                 </div>
@@ -1114,7 +1139,7 @@ export default function POSVente() {
                   </p>
                 </div>
                 <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'var(--warning-light)', color: 'var(--warning)' }}>
-                  Les sièges transférés seront <strong>verrouillés</strong> dans votre gare et <strong>disponibles à la vente</strong> dans la gare destinataire.
+                  Les sièges transférés seront <strong>verrouillés</strong> dans votre gare et <strong>disponibles à la vente</strong> dans la gare destinataire. Vous pouvez transférer à nouveau plus tard, dans les deux sens (connexion Internet requise).
                 </div>
               </div>
               <button
@@ -1409,7 +1434,7 @@ export default function POSVente() {
                               const n = parseInt(seat.label, 10);
                               const isSelected = structSelectedSeats.some(s => s.id === seat.id);
                               const isSold = !Number.isNaN(n) && soldSeats.includes(n);
-                              const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to) && !receivedTransferSeats.includes(n);
+                              const isOutAllowed = !Number.isNaN(n) && (mySeatsNow ? !mySeatsNow.has(n) : !!allowedSeatRange && (n < allowedSeatRange.from || n > allowedSeatRange.to));
                               const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
                               const seatColor = isSelected
                                 ? 'bg-[#0B7439] border-[#085c2d] text-white'
@@ -1464,7 +1489,7 @@ export default function POSVente() {
                                       const n = parseInt(seat.label, 10);
                                       const isSelected = structSelectedSeats.some(s => s.id === seat.id);
                                       const isSold = !Number.isNaN(n) && soldSeats.includes(n);
-                                      const isOutAllowed = allowedSeatRange && !Number.isNaN(n) && (n < allowedSeatRange.from || n > allowedSeatRange.to) && !receivedTransferSeats.includes(n);
+                                      const isOutAllowed = !Number.isNaN(n) && (mySeatsNow ? !mySeatsNow.has(n) : !!allowedSeatRange && (n < allowedSeatRange.from || n > allowedSeatRange.to));
                                       const disabledSeat = isSold || isOutAllowed || seat.status === 'occupied' || seat.status === 'out_of_service' || seat.status === 'online_reserved' || seat.status === 'boarding' || seat.status === 'locked';
                                       const seatColor = isSelected ? 'bg-[#0B7439] border-[#085c2d] text-white' : isSold ? 'bg-red-500 border-red-600 text-white cursor-not-allowed' : isOutAllowed ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-[#0B7439] hover:text-[#0B7439] cursor-pointer';
                                       return (
@@ -1519,7 +1544,7 @@ export default function POSVente() {
                 {/* N° Siège — multi-select dropdown (disabled in structure mode) */}
                 <div ref={seatDropdownRef} className="relative" style={{ opacity: structureMode ? 0.5 : 1, pointerEvents: structureMode ? 'none' : 'auto' }}>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
-                    N° Siège {allowedSeatRange ? `(${allowedSeatRange.from}–${allowedSeatRange.to})` : `(${depart.seats_from}–${depart.seats_total})`}{structureMode ? ' — via structure' : ''}
+                    N° Siège {mySeatsNow ? `(${mySeatsNow.size > 0 ? seatRangesLabel([...mySeatsNow]).replace(/ à /g, '–') : 'aucun'})` : allowedSeatRange ? `(${allowedSeatRange.from}–${allowedSeatRange.to})` : `(${depart.seats_from}–${depart.seats_total})`}{structureMode ? ' — via structure' : ''}
                   </label>
                   {/* Trigger button */}
                   <button

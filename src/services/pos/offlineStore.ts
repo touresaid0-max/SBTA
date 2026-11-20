@@ -1,4 +1,4 @@
-import { db, type BagageRecord, type DepenseRecord, type DepartRecord, type TicketRecord, type SeatAllocation } from './db';
+import { db, type BagageRecord, type DepenseRecord, type DepartRecord, type TicketRecord, type SeatAllocation, type SeatTransfer } from './db';
 import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType } from './syncEngine';
@@ -671,8 +671,11 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
       // a server without these columns still gives the departures themselves
       const serverAllocations = new Map<string, SeatAllocation[]>();
       const serverNoAc = new Map<string, boolean>();
+      // Seat transfers between the stations of a shared bus, as the server keeps them: a transfer
+      // made at the other station reached this one only this way (it stayed on the other device)
+      const serverTransfers = new Map<string, SeatTransfer[]>();
       try {
-        let columns = 'id, seat_allocations, is_no_ac';
+        let columns = 'id, seat_allocations, is_no_ac, seat_transfers';
         for (let i = 0; i < scheduleIds.length; i += SCHEDULE_ID_CHUNK) {
           let { data, error }: { data: unknown[] | null; error: unknown } = await supabase
             .from('schedules')
@@ -680,6 +683,13 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK));
           if (error && columns.includes('is_no_ac')) {
             // Server without the column (migration 20261117150000 not run yet)
+            columns = 'id, seat_allocations, seat_transfers';
+            ({ data, error } = await supabase
+              .from('schedules')
+              .select(columns)
+              .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK)));
+          }
+          if (error && columns.includes('seat_transfers')) {
             columns = 'id, seat_allocations';
             ({ data, error } = await supabase
               .from('schedules')
@@ -687,9 +697,12 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
               .in('id', scheduleIds.slice(i, i + SCHEDULE_ID_CHUNK)));
           }
           if (error) break;
-          for (const row of (data ?? []) as { id: string; seat_allocations: SeatAllocation[] | null; is_no_ac?: boolean | null }[]) {
+          for (const row of (data ?? []) as { id: string; seat_allocations: SeatAllocation[] | null; is_no_ac?: boolean | null; seat_transfers?: SeatTransfer[] | null }[]) {
             if (Array.isArray(row.seat_allocations) && row.seat_allocations.length > 0) {
               serverAllocations.set(row.id, row.seat_allocations);
+              if (columns.includes('seat_transfers')) {
+                serverTransfers.set(row.id, Array.isArray(row.seat_transfers) ? row.seat_transfers : []);
+              }
             }
             if (typeof row.is_no_ac === 'boolean') serverNoAc.set(row.id, row.is_no_ac);
           }
@@ -724,6 +737,8 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             seat_allocations: pendingDeparts.has(s.id)
               ? existing.seat_allocations
               : (serverAllocations.get(s.id) ?? existing.seat_allocations),
+            // Transfers are recorded on the server only (never queued on the device): its list wins
+            seat_transfers: serverTransfers.get(s.id) ?? existing.seat_transfers,
             // Non climatisé: the device's choice while a change made here is not sent yet; else the server's
             is_no_ac: pendingDeparts.has(s.id)
               ? existing.is_no_ac === true
@@ -758,6 +773,7 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             ...localRecord,
             is_no_ac: serverNoAc.get(s.id) ?? false,
             ...(allocations ? { seat_allocations: allocations } : {}),
+            ...(serverTransfers.has(s.id) ? { seat_transfers: serverTransfers.get(s.id) } : {}),
             ...(sharedIds.has(s.id) && mainAlloc ? { station_name: mainAlloc.station_name } : {}),
             bus_plate: plate ?? '',
             bus_name: plate ?? '',

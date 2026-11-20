@@ -285,36 +285,32 @@ export function ticketsOfStation<T extends { seat_number: number; sold_station_i
 ): T[] {
   if (!d.seat_allocations || d.seat_allocations.length === 0) return tickets;
   const stations = new Set<string>([d.station_id, ...d.seat_allocations.map(a => a.station_id)]);
-  const range = getSeatRangeForStation(d, stationId);
-  const received = getReceivedTransferSeatsForStation(d, stationId);
+  // Seller unknown: the station holding the seat (after the transfers)
+  const mine = new Set(stationSeatsNow(d, stationId));
   return tickets.filter(t => {
     if (t.sold_station_id && stations.has(t.sold_station_id)) return t.sold_station_id === stationId;
-    return (!!range && t.seat_number >= range.from && t.seat_number <= range.to) || received.includes(t.seat_number);
+    return mine.has(t.seat_number);
   });
 }
 
+/** Seats of the station now: its range, less the seats given, plus the seats received */
 export function seatsAllocatedForStation(d: DepartRecord, stationId: string): number {
-  const range = getSeatRangeForStation(d, stationId);
-  const base = range ? range.to - range.from + 1 : 0;
-  return Math.max(0, base) + getReceivedTransferSeatsForStation(d, stationId).length;
+  return stationSeatsNow(d, stationId).length;
 }
 
 export function seatsVendusForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
-  const range = getSeatRangeForStation(d, stationId);
-  const received = getReceivedTransferSeatsForStation(d, stationId);
   const sold = ticketsOfStation(tickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled'), d, stationId);
-  if (!range && received.length === 0 && sold.length === 0) return d.seats_sold;
+  if (stationSeatsNow(d, stationId).length === 0 && sold.length === 0) return d.seats_sold;
   return sold.length;
 }
 
-/** Seats of the station's own range (and transfers received) that hold a ticket, whoever sold it */
+/** Seats the station holds now (its own and the ones received) that hold a ticket, whoever sold it */
 function seatsTakenForStation(tickets: import('./db').TicketRecord[], d: DepartRecord, stationId: string): number {
-  const range = getSeatRangeForStation(d, stationId);
-  const received = getReceivedTransferSeatsForStation(d, stationId);
+  const mine = new Set(stationSeatsNow(d, stationId));
   const seats = new Set<number>();
   for (const t of tickets) {
     if (t.depart_id !== d.id || t.status === 'cancelled') continue;
-    if ((range && t.seat_number >= range.from && t.seat_number <= range.to) || received.includes(t.seat_number)) seats.add(t.seat_number);
+    if (mine.has(t.seat_number)) seats.add(t.seat_number);
   }
   return seats.size;
 }
@@ -545,14 +541,70 @@ export function getSeatRangeForStation(
   return from <= alloc.seat_to ? { from, to: alloc.seat_to } : null;
 }
 
+/** The seats of a transfer */
+function seatsOfTransfer(tr: SeatTransfer): number[] {
+  if (tr.seats && tr.seats.length > 0) return tr.seats.map(Number).filter(n => Number.isFinite(n));
+  const seats: number[] = [];
+  for (let s = Number(tr.seat_from); s <= Number(tr.seat_to); s++) seats.push(s);
+  return seats;
+}
+
+/**
+ * On a shared departure, the station that may sell each seat now: the seats given at the creation
+ * (allocations), then each transfer in order (« Charger dans une autre gare »), in both directions
+ * and as many times as needed. A transfer moves only seats its station held then. Null when the
+ * departure is not shared.
+ */
+export function seatOwnersOf(depart: DepartRecord): Map<number, string> | null {
+  if (!depart.seat_allocations || depart.seat_allocations.length === 0) return null;
+  const owners = new Map<number, string>();
+  const stations = [depart.station_id, ...depart.seat_allocations.map(a => a.station_id)];
+  for (const st of new Set(stations)) {
+    const range = getSeatRangeForStation(depart, st);
+    if (!range) continue;
+    for (let n = range.from; n <= range.to; n++) if (!owners.has(n)) owners.set(n, st);
+  }
+  for (const tr of depart.seat_transfers ?? []) {
+    for (const n of seatsOfTransfer(tr)) {
+      if (owners.get(n) === tr.from_station_id) owners.set(n, tr.to_station_id);
+    }
+  }
+  return owners;
+}
+
+/** The seats a station may sell now on a shared departure (its own, given ones out, received ones in) */
+export function stationSeatsNow(depart: DepartRecord, stationId: string): number[] {
+  const owners = seatOwnersOf(depart);
+  if (!owners) {
+    const range = getSeatRangeForStation(depart, stationId);
+    const seats: number[] = [];
+    if (range) for (let n = range.from; n <= range.to; n++) seats.push(n);
+    return seats;
+  }
+  return [...owners].filter(([, st]) => st === stationId).map(([n]) => n).sort((a, b) => a - b);
+}
+
+/** « 22 à 31, 42 à 47 » */
+export function seatRangesLabel(seats: number[]): string {
+  const sorted = [...new Set(seats)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const start = sorted[i];
+    while (i + 1 < sorted.length && sorted[i + 1] === sorted[i] + 1) i++;
+    parts.push(start === sorted[i] ? `${start}` : `${start} à ${sorted[i]}`);
+  }
+  return parts.join(', ');
+}
+
 export function isSeatAllowedForStation(
   depart: DepartRecord,
   stationId: string,
   seatNumber: number,
 ): boolean {
+  const owners = seatOwnersOf(depart);
+  if (owners) return owners.get(seatNumber) === stationId;
   const range = getSeatRangeForStation(depart, stationId);
-  if (range && seatNumber >= range.from && seatNumber <= range.to) return true;
-  return getReceivedTransferSeatsForStation(depart, stationId).includes(seatNumber);
+  return !!range && seatNumber >= range.from && seatNumber <= range.to;
 }
 
 export function getStationNameForSeat(
@@ -560,6 +612,9 @@ export function getStationNameForSeat(
   seatNumber: number,
 ): string | null {
   if (!depart.seat_allocations || depart.seat_allocations.length === 0) return null;
+  // The station holding the seat now (after the transfers)
+  const owner = seatOwnersOf(depart)?.get(seatNumber);
+  if (owner) return depart.seat_allocations.find(a => a.station_id === owner)?.station_name ?? depart.station_name ?? null;
   const alloc = depart.seat_allocations.find(a => seatNumber >= a.seat_from && seatNumber <= a.seat_to);
   return alloc?.station_name ?? null;
 }
@@ -650,20 +705,19 @@ export async function getSoldSeatNumbers(departId: string): Promise<number[]> {
 
 // ── Seat transfer between stations (same depart) ──
 
+/**
+ * Seats of the station's own range that another station holds now (given with « Charger dans une
+ * autre gare »): locked here, sold there. A seat given back is the station's again.
+ */
 export function getTransferredSeatsForStation(
   depart: DepartRecord,
   stationId: string,
 ): number[] {
+  const owners = seatOwnersOf(depart);
+  const range = getSeatRangeForStation(depart, stationId);
+  if (!owners || !range) return [];
   const seats: number[] = [];
-  for (const tr of depart.seat_transfers ?? []) {
-    if (tr.from_station_id === stationId) {
-      if (tr.seats && tr.seats.length > 0) {
-        seats.push(...tr.seats);
-      } else {
-        for (let s = tr.seat_from; s <= tr.seat_to; s++) seats.push(s);
-      }
-    }
-  }
+  for (let n = range.from; n <= range.to; n++) if (owners.get(n) !== stationId) seats.push(n);
   return seats;
 }
 
@@ -674,21 +728,29 @@ export function getReceivedTransfersForStation(
   return (depart.seat_transfers ?? []).filter(tr => tr.to_station_id === stationId);
 }
 
+/** Seats received from another station that the station holds now (outside its own range) */
 export function getReceivedTransferSeatsForStation(
   depart: DepartRecord,
   stationId: string,
 ): number[] {
-  const seats: number[] = [];
+  const owners = seatOwnersOf(depart);
+  if (!owners) return [];
+  const range = getSeatRangeForStation(depart, stationId);
+  return [...owners]
+    .filter(([n, st]) => st === stationId && !(range && n >= range.from && n <= range.to))
+    .map(([n]) => n)
+    .sort((a, b) => a - b);
+}
+
+/** Seats moved by the transfers, out of and into a station (history, for the « Transférés » column) */
+export function transferTotalsForStation(depart: DepartRecord, stationId: string): { out: number; in: number } {
+  let out = 0; let inn = 0;
   for (const tr of depart.seat_transfers ?? []) {
-    if (tr.to_station_id === stationId) {
-      if (tr.seats && tr.seats.length > 0) {
-        seats.push(...tr.seats);
-      } else {
-        for (let s = tr.seat_from; s <= tr.seat_to; s++) seats.push(s);
-      }
-    }
+    const n = seatsOfTransfer(tr).length;
+    if (tr.from_station_id === stationId) out += n;
+    if (tr.to_station_id === stationId) inn += n;
   }
-  return seats;
+  return { out, in: inn };
 }
 
 export function isSeatTransferredLocked(
@@ -704,19 +766,14 @@ export function getAvailableSeatsForTransfer(
   tickets: TicketRecord[],
   fromStationId: string,
 ): number[] {
-  const range = getSeatRangeForStation(depart, fromStationId);
-  if (!range) return [];
+  // The seats the station holds now (its own and the ones received), without a ticket: a station
+  // can pass on seats it received, and give seats back
   const sold = new Set(
     tickets
       .filter(t => t.depart_id === depart.id && t.status !== 'cancelled')
       .map(t => t.seat_number),
   );
-  const locked = new Set(getTransferredSeatsForStation(depart, fromStationId));
-  const available: number[] = [];
-  for (let s = range.from; s <= range.to; s++) {
-    if (!sold.has(s) && !locked.has(s)) available.push(s);
-  }
-  return available;
+  return stationSeatsNow(depart, fromStationId).filter(n => !sold.has(n));
 }
 
 export async function transferSeatsBetweenStations(params: {
@@ -731,52 +788,39 @@ export async function transferSeatsBetweenStations(params: {
   if (!depart.seat_allocations || depart.seat_allocations.length === 0) {
     throw new Error('Aucune répartition de sièges pour ce départ');
   }
+  if (!depart.seat_allocations.some(a => a.station_id === params.toStationId) && depart.station_id !== params.toStationId) {
+    throw new Error('Gare destinataire introuvable dans la répartition');
+  }
+  // Both stations must see the transfer: it is recorded on the server, never on this device only
+  // (a transfer kept on the device of YAMOUSSOUKRO stayed unknown to DALOA, 20/11/2026)
+  if (!isOnline()) {
+    throw new Error('Connexion Internet requise pour transférer des sièges : l\'autre gare doit les recevoir.');
+  }
 
   const departTickets = await getByDeparts<TicketRecord>('tickets', [depart.id]);
   const available = getAvailableSeatsForTransfer(depart, departTickets, params.fromStationId);
-
   if (available.length === 0) {
     throw new Error('Aucun siège libre disponible au transfert dans cette gare');
   }
-
+  // The last free seats first: the station keeps its first seats together
   const count = Math.min(params.seatCount, available.length);
-  const seatsToTransfer = available.slice(0, count);
-  const seatFrom = seatsToTransfer[0];
-  const seatTo = seatsToTransfer[count - 1];
+  const seatsToTransfer = available.slice(available.length - count);
 
-  const fromAlloc = depart.seat_allocations.find(a => a.station_id === params.fromStationId);
-  const toAlloc = depart.seat_allocations.find(a => a.station_id === params.toStationId);
-  if (!fromAlloc) throw new Error('Gare source introuvable dans la répartition');
-  if (!toAlloc) throw new Error('Gare destinataire introuvable dans la répartition');
-
-  const transfers: SeatTransfer[] = [
-    ...(depart.seat_transfers ?? []),
-    {
-      from_station_id: params.fromStationId,
-      to_station_id: params.toStationId,
-      seat_from: seatFrom,
-      seat_to: seatTo,
-      seats: seatsToTransfer,
-      transferred_at: trustedNowIso(),
-      transferred_by: params.transferredBy,
-    },
-  ];
-
-  const updated = await localUpdate<DepartRecord>('departs', params.departId, {
-    seat_transfers: transfers,
+  const { data, error } = await supabase.rpc('transfer_schedule_seats', {
+    p_schedule_id: params.departId,
+    p_from_station_id: params.fromStationId,
+    p_to_station_id: params.toStationId,
+    p_seats: seatsToTransfer,
+    p_transferred_by: params.transferredBy ?? null,
   });
-
-  try {
-    await supabase
-      .from('schedules')
-      .update({
-        seat_transfers: transfers,
-        updated_at: trustedNowIso(),
-      })
-      .eq('id', params.departId);
-  } catch {
-    /* offline: local-only */
+  if (error) {
+    const msg = String(error.message ?? '');
+    if (/transfer_schedule_seats|function .* does not exist|PGRST202/i.test(msg) || error.code === 'PGRST202') {
+      throw new Error('Le serveur n\'est pas encore à jour pour les transferts de sièges (SQL à exécuter).');
+    }
+    throw new Error(msg || 'Transfert refusé par le serveur');
   }
-
+  const transfers = (Array.isArray(data) ? data : []) as SeatTransfer[];
+  const updated = await localUpdate<DepartRecord>('departs', params.departId, { seat_transfers: transfers });
   return updated ?? { ...depart, seat_transfers: transfers };
 }
