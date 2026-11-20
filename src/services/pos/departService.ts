@@ -558,11 +558,18 @@ function seatsOfTransfer(tr: SeatTransfer): number[] {
 export function seatOwnersOf(depart: DepartRecord): Map<number, string> | null {
   if (!depart.seat_allocations || depart.seat_allocations.length === 0) return null;
   const owners = new Map<number, string>();
-  const stations = [depart.station_id, ...depart.seat_allocations.map(a => a.station_id)];
-  for (const st of new Set(stations)) {
-    const range = getSeatRangeForStation(depart, st);
-    if (!range) continue;
-    for (let n = range.from; n <= range.to; n++) if (!owners.has(n)) owners.set(n, st);
+  // Every range of the allocations, in order: a station can have several (a departure shared after
+  // tickets of another station were moved onto it, 20/11/2026)
+  const sellableFrom = Math.max(1, depart.seats_from || 1);
+  for (const a of depart.seat_allocations) {
+    const from = Math.max(sellableFrom, Number(a.seat_from));
+    const to = Math.min(depart.seats_total, Number(a.seat_to));
+    for (let n = from; n <= to; n++) if (!owners.has(n)) owners.set(n, a.station_id);
+  }
+  // The main station without a range of its own: the largest block of seats given to no one
+  if (!depart.seat_allocations.some(a => a.station_id === depart.station_id)) {
+    const range = getSeatRangeForStation(depart, depart.station_id);
+    if (range) for (let n = range.from; n <= range.to; n++) if (!owners.has(n)) owners.set(n, depart.station_id);
   }
   for (const tr of depart.seat_transfers ?? []) {
     for (const n of seatsOfTransfer(tr)) {
@@ -582,6 +589,22 @@ export function stationSeatsNow(depart: DepartRecord, stationId: string): number
     return seats;
   }
   return [...owners].filter(([, st]) => st === stationId).map(([n]) => n).sort((a, b) => a - b);
+}
+
+/** The seats of the station's own ranges (given at the creation, before any transfer) */
+function ownRangeSeats(depart: DepartRecord, stationId: string): number[] {
+  const seats: number[] = [];
+  const sellableFrom = Math.max(1, depart.seats_from || 1);
+  const allocs = (depart.seat_allocations ?? []).filter(a => a.station_id === stationId);
+  if (allocs.length === 0) {
+    const range = getSeatRangeForStation(depart, stationId);
+    if (range) for (let n = range.from; n <= range.to; n++) seats.push(n);
+    return seats;
+  }
+  for (const a of allocs) {
+    for (let n = Math.max(sellableFrom, Number(a.seat_from)); n <= Math.min(depart.seats_total, Number(a.seat_to)); n++) seats.push(n);
+  }
+  return seats;
 }
 
 /** « 22 à 31, 42 à 47 » */
@@ -714,11 +737,9 @@ export function getTransferredSeatsForStation(
   stationId: string,
 ): number[] {
   const owners = seatOwnersOf(depart);
-  const range = getSeatRangeForStation(depart, stationId);
-  if (!owners || !range) return [];
-  const seats: number[] = [];
-  for (let n = range.from; n <= range.to; n++) if (owners.get(n) !== stationId) seats.push(n);
-  return seats;
+  if (!owners) return [];
+  const own = ownRangeSeats(depart, stationId);
+  return own.filter(n => owners.get(n) !== stationId);
 }
 
 export function getReceivedTransfersForStation(
@@ -735,9 +756,9 @@ export function getReceivedTransferSeatsForStation(
 ): number[] {
   const owners = seatOwnersOf(depart);
   if (!owners) return [];
-  const range = getSeatRangeForStation(depart, stationId);
+  const own = new Set(ownRangeSeats(depart, stationId));
   return [...owners]
-    .filter(([n, st]) => st === stationId && !(range && n >= range.from && n <= range.to))
+    .filter(([n, st]) => st === stationId && !own.has(n))
     .map(([n]) => n)
     .sort((a, b) => a - b);
 }
