@@ -74,15 +74,24 @@ Deno.serve(async (req: Request) => {
     if (!employee_id) throw new Error("employee_id requis");
     if (!password) throw new Error("Mot de passe requis");
 
-    // 2. Récupérer l'employé (doit exister et être en attente)
+    // 2. Récupérer l'employé (en attente de compte ; ou chauffeur activé sans connexion par le
+    //    RH, 20261120100000 : il peut recevoir plus tard un vrai compte, qui reprend son profil)
     const { data: employee, error: fetchError } = await supabaseAdmin
       .from("employees")
       .select("*")
       .eq("id", employee_id)
-      .eq("account_status", "pending")
+      .in("account_status", ["pending", "active"])
       .maybeSingle();
 
     if (fetchError || !employee) throw new Error("Employé introuvable ou compte déjà créé");
+    if (employee.account_status === "active") {
+      const { data: current } = employee.auth_user_id
+        ? await supabaseAdmin.auth.admin.getUserById(employee.auth_user_id)
+        : { data: null };
+      if (current?.user?.app_metadata?.driver_profile !== true) {
+        throw new Error("Employé introuvable ou compte déjà créé");
+      }
+    }
 
     // Le RH n'active pas un compte administrateur : seul un admin donne ces droits
     if (byRh && employee.role === "admin") {

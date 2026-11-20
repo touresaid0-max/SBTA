@@ -371,6 +371,18 @@ export async function deleteEmployeePermanently(id: string): Promise<string> {
   return String(data ?? '')
 }
 
+// ── Activer des chauffeurs sans connexion (RH ou admin) ──────────
+// Les chauffeurs ne se connectent pas : leur fiche et leur profil chauffeur (compte verrouillé,
+// sans e-mail ni mot de passe) passent actifs (rh_activate_drivers_without_login).
+export async function activateDriversWithoutLogin(
+  employeeIds: string[],
+): Promise<{ activated: number; skipped: { id: string; raison: string }[] }> {
+  const { data, error } = await supabase.rpc('rh_activate_drivers_without_login', { p_employee_ids: employeeIds })
+  if (error) throw new Error(error.message)
+  const res = (data ?? {}) as { activated?: number; skipped?: { id: string; raison: string }[] }
+  return { activated: Number(res.activated ?? 0), skipped: res.skipped ?? [] }
+}
+
 // ── Taux journaliers par itinéraire ──────────────────────────────
 export async function fetchDriverDailyRates(companyId?: string) {
   let q = supabase

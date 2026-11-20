@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX, KeyRound } from 'lucide-react'
+import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX, KeyRound, Trash2, Truck } from 'lucide-react'
 import CreateAccountModal from '@/components/admin/CreateAccountModal'
 import type { PendingEmployee } from '@/services/employeeAccount.service'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
-import { fetchEmployees, deactivateEmployee } from '@/services/hr.service'
+import { fetchEmployees, deactivateEmployee, deleteEmployeePermanently, activateDriversWithoutLogin } from '@/services/hr.service'
 import { useAuthStore } from '@/store/authStore'
 import { resolveCompanyIds } from '@/utils/companyGroups'
 import { CompanyGroupSelect } from '@/components/shared/CompanyGroupSelect'
@@ -118,6 +118,28 @@ export default function EmployeesPage() {
 
   // « Activer le compte » : le RH crée lui-même le compte de connexion (19/11/2026)
   const [accountEmployee, setAccountEmployee] = useState<PendingEmployee | null>(null)
+  const [accountLoginOnly, setAccountLoginOnly] = useState(false)
+  // Suppression définitive par le RH, après confirmation (20/11/2026)
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  // Chauffeurs en attente : activation groupée sans connexion
+  const [pendingDriverIds, setPendingDriverIds] = useState<string[]>([])
+  const [confirmBulkDrivers, setConfirmBulkDrivers] = useState(false)
+  const [bulkActivating, setBulkActivating] = useState(false)
+  // Profils chauffeur sans connexion (compte verrouillé, adresse technique)
+  const [noLoginProfileIds, setNoLoginProfileIds] = useState<Set<string>>(new Set())
+
+  const loadDriverState = useCallback(async () => {
+    const [pendingRes, profilesRes] = await Promise.all([
+      supabase.from('employees').select('id').eq('role', 'chauffeur').eq('account_status', 'pending'),
+      supabase.from('users').select('id').like('email', 'chauffeur.%@profil.sbta-gestion.cloud'),
+    ])
+    setPendingDriverIds((pendingRes.data ?? []).map(r => r.id as string))
+    setNoLoginProfileIds(new Set((profilesRes.data ?? []).map(r => r.id as string)))
+  }, [])
+
+  useEffect(() => { void loadDriverState() }, [loadDriverState])
 
   const loadEmployees = useCallback(() => {
     setLoading(true)
@@ -161,6 +183,43 @@ export default function EmployeesPage() {
     return () => { supabase.removeChannel(channel) }
   }, [loadEmployees, user?.id])
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      const name = await deleteEmployeePermanently(deleteTarget.id)
+      toast.success(`${name || deleteTarget.full_name} a été supprimé définitivement`)
+      setDeleteTarget(null)
+      loadEmployees()
+      void loadDriverState()
+    } catch (err: unknown) {
+      // Refused (history, administrator…): the reason stays in the window
+      setDeleteError(err instanceof Error ? err.message : 'Suppression impossible')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleBulkActivateDrivers = async () => {
+    if (pendingDriverIds.length === 0) return
+    setBulkActivating(true)
+    try {
+      const res = await activateDriversWithoutLogin(pendingDriverIds)
+      toast.success(`${res.activated} chauffeur${res.activated > 1 ? 's' : ''} activé${res.activated > 1 ? 's' : ''} sans connexion`)
+      if (res.skipped.length > 0) {
+        toast(`${res.skipped.length} non activé${res.skipped.length > 1 ? 's' : ''} : ${res.skipped[0].raison}`, { duration: 8000 })
+      }
+      setConfirmBulkDrivers(false)
+      loadEmployees()
+      void loadDriverState()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de l\u2019activation')
+    } finally {
+      setBulkActivating(false)
+    }
+  }
+
   const handleDeactivate = async () => {
     if (!deactivateModal || !user) return
     setDeactivating(true)
@@ -175,6 +234,10 @@ export default function EmployeesPage() {
       setDeactivating(false)
     }
   }
+
+  /** An active chauffeur whose profile has no sign-in details (locked account, technical address) */
+  const isNoLoginDriver = (emp: Employee) =>
+    emp.role === 'chauffeur' && emp.status === 'active' && !!emp.auth_user_id && noLoginProfileIds.has(emp.auth_user_id)
 
   const isDriverTab = activeTab === 'chauffeur'
 
@@ -200,7 +263,17 @@ export default function EmployeesPage() {
             {loading ? 'Chargement...' : `${visibleEmployees.length} employé${visibleEmployees.length > 1 ? 's' : ''} trouvé${visibleEmployees.length > 1 ? 's' : ''}`}
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 justify-end">
+          {pendingDriverIds.length > 0 && (
+            <button
+              onClick={() => setConfirmBulkDrivers(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-[#0B7439] rounded-xl text-sm font-semibold text-[#0B7439] hover:bg-[#F0FAF3] transition-colors"
+              title="Les chauffeurs ne se connectent pas : activés sans e-mail ni mot de passe"
+            >
+              <Truck className="w-4 h-4" />
+              Activer les {pendingDriverIds.length} chauffeurs en attente
+            </button>
+          )}
           <button
             onClick={() => navigate('/rh/deactivated')}
             className="flex items-center gap-2 px-4 py-2 border border-[#E2EAE5] rounded-xl text-sm font-semibold text-[#6B7280] hover:bg-[#F8FAF8] transition-colors"
@@ -428,6 +501,11 @@ export default function EmployeesPage() {
                       {emp.status === 'active' && (
                         <span className="px-2 py-1 rounded-lg text-xs font-medium bg-[#D4EDDA] text-[#0B7439]">Actif</span>
                       )}
+                      {isNoLoginDriver(emp) && (
+                        <span className="ml-1 px-2 py-1 rounded-lg text-xs font-medium bg-[#F3F4F6] text-[#6B7280]" title="Chauffeur actif sans identifiants de connexion">
+                          Sans connexion
+                        </span>
+                      )}
                       {emp.status === 'pending' && (
                         <span className="px-2 py-1 rounded-lg text-xs font-medium bg-[#FEF3C7] text-[#D97706]">En attente</span>
                       )}
@@ -454,15 +532,25 @@ export default function EmployeesPage() {
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
-                        {emp.status === 'pending' && (
+                        {(emp.status === 'pending' || isNoLoginDriver(emp)) && (
                           <button
-                            onClick={() => setAccountEmployee(toPendingEmployee(emp))}
+                            onClick={() => { setAccountLoginOnly(emp.status !== 'pending'); setAccountEmployee(toPendingEmployee(emp)) }}
                             className="p-1.5 rounded-lg hover:bg-[#D4EDDA] text-[#0B7439] transition-colors"
-                            title="Créer et activer le compte de connexion"
+                            title={emp.status === 'pending'
+                              ? (emp.role === 'chauffeur' ? 'Activer le chauffeur (avec ou sans connexion)' : 'Créer et activer le compte de connexion')
+                              : 'Donner des identifiants de connexion à ce chauffeur'}
                           >
                             <KeyRound className="w-4 h-4" />
                           </button>
                         )}
+                        <button
+                          onClick={() => { setDeleteError(null); setDeleteTarget(emp) }}
+                          disabled={emp.role === 'admin' || emp.id === user?.id || emp.auth_user_id === user?.id}
+                          className="p-1.5 rounded-lg hover:bg-[#F8D7D5] text-[#AF3029] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Supprimer définitivement"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => setDeactivateModal({ employee: emp, reason: '' })}
                           disabled={emp.status !== 'active'}
@@ -532,9 +620,91 @@ export default function EmployeesPage() {
       {accountEmployee && (
         <CreateAccountModal
           employee={accountEmployee}
+          loginOnly={accountLoginOnly}
           onClose={() => setAccountEmployee(null)}
-          onSuccess={() => { setAccountEmployee(null); loadEmployees() }}
+          onSuccess={() => { setAccountEmployee(null); loadEmployees(); void loadDriverState() }}
         />
+      )}
+
+      {/* Suppression définitive : confirmation */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-[#F8D7D5] flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-[#AF3029]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#1A2E22]">Supprimer définitivement ?</h3>
+            </div>
+            <p className="text-sm text-[#374151] mb-2">
+              Voulez-vous vraiment supprimer <strong>{deleteTarget.full_name}</strong>
+              {deleteTarget.employee_id ? <> (matricule {deleteTarget.employee_id})</> : null} ?
+            </p>
+            <p className="text-sm text-[#6B7280] mb-4">
+              Sa fiche employé et son compte de connexion seront supprimés. <strong>Cette action est irréversible.</strong>{' '}
+              Un employé qui a déjà travaillé (départs, tickets, courriers…) ne peut pas être supprimé : désactivez-le à la place.
+            </p>
+            {deleteError && (
+              <div className="mb-4 rounded-xl border border-[#AF3029] bg-[#FEF2F2] p-3 text-sm text-[#991B1B]">
+                {deleteError}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-3 justify-end">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="px-4 py-2 border border-[#E2EAE5] rounded-xl text-sm text-[#6B7280] hover:bg-[#F8FAF8] disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              {deleteError && deleteTarget.status === 'active' && (
+                <button
+                  onClick={() => { setDeactivateModal({ employee: deleteTarget, reason: '' }); setDeleteTarget(null) }}
+                  className="px-4 py-2 border border-[#AF3029] rounded-xl text-sm font-semibold text-[#AF3029] hover:bg-[#FEF2F2]"
+                >
+                  Désactiver à la place
+                </button>
+              )}
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-[#AF3029] text-white rounded-xl text-sm font-semibold hover:bg-[#8B1F1A] disabled:opacity-50 transition-colors"
+              >
+                {deleting ? 'Suppression...' : 'Oui, supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activation groupée des chauffeurs sans connexion : confirmation */}
+      {confirmBulkDrivers && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !bulkActivating && setConfirmBulkDrivers(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[#1A2E22] mb-2">Activer {pendingDriverIds.length} chauffeurs ?</h3>
+            <p className="text-sm text-[#374151] mb-4">
+              Les chauffeurs en attente seront activés <strong>sans connexion</strong> : aucun e-mail ni
+              mot de passe, ils deviennent actifs et sélectionnables partout (départs, carburant, paie).
+              Vous pourrez plus tard donner des identifiants à l&apos;un d&apos;eux (bouton clé).
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmBulkDrivers(false)}
+                disabled={bulkActivating}
+                className="px-4 py-2 border border-[#E2EAE5] rounded-xl text-sm text-[#6B7280] hover:bg-[#F8FAF8] disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleBulkActivateDrivers}
+                disabled={bulkActivating}
+                className="px-4 py-2 bg-[#0B7439] text-white rounded-xl text-sm font-semibold hover:bg-[#085c2d] disabled:opacity-50"
+              >
+                {bulkActivating ? 'Activation...' : `Oui, activer les ${pendingDriverIds.length}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
