@@ -467,9 +467,12 @@ export default function EmployeeForm() {
               {isEdit
                 ? <>Cet employé n'a pas encore de <strong>compte de connexion</strong>.</>
                 : <>Vous créez la <strong>fiche employé</strong> (données RH).</>}{' '}
-              Après l'enregistrement, vous pourrez créer et activer son compte de connexion vous-même
-              (email et mot de passe). Si vous le faites plus tard, la fiche reste « En attente » :
-              bouton clé dans la liste des employés.
+              {isDriver
+                ? <>Après l'enregistrement, vous pourrez activer le chauffeur vous-même, sans e-mail ni mot de passe
+                  (un chauffeur ne se connecte pas).</>
+                : <>Après l'enregistrement, vous pourrez créer et activer son compte de connexion vous-même
+                  (email et mot de passe).</>}{' '}
+              Si vous le faites plus tard, la fiche reste « En attente » : bouton clé dans la liste des employés.
             </div>
           </div>
         </div>

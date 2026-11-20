@@ -59,11 +59,9 @@ interface Props {
   employee: PendingEmployee;
   onClose: () => void;
   onSuccess: () => void;
-  /** A chauffeur already activated without login, who now gets real sign-in details */
-  loginOnly?: boolean;
 }
 
-export default function CreateAccountModal({ employee, onClose, onSuccess, loginOnly = false }: Props) {
+export default function CreateAccountModal({ employee, onClose, onSuccess }: Props) {
   const [email, setEmail] = useState(employee.professional_email ?? employee.personal_email ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -79,8 +77,8 @@ export default function CreateAccountModal({ employee, onClose, onSuccess, login
 
   const isGuichetier = employee.role === 'guichetier';
   // Les chauffeurs ne se connectent pas (20/11/2026) : activés sans e-mail ni mot de passe par défaut
-  const canSkipLogin = employee.role === 'chauffeur' && !loginOnly;
-  const [withoutLogin, setWithoutLogin] = useState(canSkipLogin);
+  // Un chauffeur ne se connecte pas : il est toujours activé sans identifiants
+  const withoutLogin = employee.role === 'chauffeur';
   const isGerantPrincipal = employee.role === 'gerant_principal';
   const isBagagiste = employee.role === 'bagagiste';
 
@@ -193,30 +191,14 @@ export default function CreateAccountModal({ employee, onClose, onSuccess, login
             </div>
           </div>
 
-          {/* Chauffeur : avec ou sans connexion */}
-          {canSkipLogin && (
-            <div className="space-y-2">
-              <label className="flex items-start gap-3 rounded-xl border p-3 cursor-pointer"
-                style={{ borderColor: withoutLogin ? '#0B7439' : '#E2EAE5', backgroundColor: withoutLogin ? '#F0FAF3' : 'white' }}>
-                <input type="radio" name="driver_login_mode" checked={withoutLogin} onChange={() => setWithoutLogin(true)} className="mt-1 accent-[#0B7439]" />
-                <span className="text-sm" style={{ color: '#1A2E22' }}>
-                  <strong>Activer sans connexion</strong> (recommandé)
-                  <span className="block text-xs mt-0.5" style={{ color: '#4A6B55' }}>
-                    Le chauffeur ne se connecte pas : aucun e-mail ni mot de passe. Il devient actif et
-                    sélectionnable partout (départs, carburant, paie).
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-3 rounded-xl border p-3 cursor-pointer"
-                style={{ borderColor: !withoutLogin ? '#0B7439' : '#E2EAE5', backgroundColor: !withoutLogin ? '#F0FAF3' : 'white' }}>
-                <input type="radio" name="driver_login_mode" checked={!withoutLogin} onChange={() => setWithoutLogin(false)} className="mt-1 accent-[#0B7439]" />
-                <span className="text-sm" style={{ color: '#1A2E22' }}>
-                  <strong>Créer des identifiants de connexion</strong>
-                  <span className="block text-xs mt-0.5" style={{ color: '#4A6B55' }}>
-                    E-mail et mot de passe, si le chauffeur doit utiliser l&apos;application.
-                  </span>
-                </span>
-              </label>
+          {/* Chauffeur : activé sans identifiants */}
+          {withoutLogin && (
+            <div className="rounded-xl p-3 text-sm border" style={{ backgroundColor: '#F0FAF3', borderColor: '#0B7439', color: '#1A2E22' }}>
+              <strong>Activation sans connexion</strong>
+              <span className="block text-xs mt-0.5" style={{ color: '#4A6B55' }}>
+                Le chauffeur ne se connecte pas : aucun e-mail ni mot de passe. Il devient actif et
+                sélectionnable partout (départs, carburant, paie).
+              </span>
             </div>
           )}
 
