@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import POSLayout from '@/components/pos/POSLayout';
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
-import { getChauffeurs, getGares, getVehicules, type ChauffeurRef, type GareRef, type VehiculeRef } from '@/services/pos/departService';
+import { getAllDeparts, getChauffeurs, getGares, getVehicules, type ChauffeurRef, type DepartRecord, type GareRef, type VehiculeRef } from '@/services/pos/departService';
 import { enqueueInsert } from '@/services/pos/syncEngine';
 import { trustedNowIso } from '@/services/offline/deviceClock';
 import { uuidV4 } from '@/utils/uuid';
@@ -22,6 +22,10 @@ export default function POSRamassageDirect() {
   const [driverId, setDriverId] = useState('');
   const [destinationCity, setDestinationCity] = useState('');
   const [amount, setAmount] = useState('');
+  // Departure the ramassage belongs to (optional): its amount then goes in that departure's
+  // « Ramassage » column and balance, in the reports; without one, a « Ramassage direct » row
+  const [departs, setDeparts] = useState<DepartRecord[]>([]);
+  const [departId, setDepartId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -30,7 +34,10 @@ export default function POSRamassageDirect() {
 
   const loadReferences = useCallback(async () => {
     try {
-      const [busList, driverList, stationList] = await Promise.all([getVehicules(), getChauffeurs(), getGares()]);
+      const [busList, driverList, stationList, departList] = await Promise.all([
+        getVehicules(), getChauffeurs(), getGares(), getAllDeparts(session?.station_id),
+      ]);
+      setDeparts(departList.filter(d => !d.cancelled));
       setVehicules(busList);
       setChauffeurs(driverList);
       setGares(stationList);
@@ -39,9 +46,22 @@ export default function POSRamassageDirect() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.station_id]);
 
   useEffect(() => { loadReferences(); }, [loadReferences]);
+
+  // The departures of this bus on that day (a bus can have several): the only one is chosen for the
+  // guichetier, who can still choose « none »
+  const busDeparts = useMemo(
+    () => departs
+      .filter(d => d.bus_id === busId && d.departure_date === date)
+      .sort((a, b) => (a.route_number ?? 0) - (b.route_number ?? 0)),
+    [departs, busId, date],
+  );
+  useEffect(() => {
+    setDepartId(busDeparts.length === 1 ? busDeparts[0].id : '');
+  }, [busDeparts]);
+  const selectedDepart = busDeparts.find(d => d.id === departId) ?? null;
 
   const cityOptions = useMemo(() => Array.from(new Map(
     gares.filter(gare => gare.city).map(gare => [gare.city_id || gare.city, gare]),
@@ -96,7 +116,7 @@ export default function POSRamassageDirect() {
       // on the device. The author (collected_by / created_by) is filled with the guichetier's account.
       const collection = {
         id: collectionId,
-        schedule_id: null,
+        schedule_id: selectedDepart?.id ?? null,
         amount: numericAmount,
         station_id: session.station_id,
         observation: 'Ramassage direct',
@@ -105,10 +125,10 @@ export default function POSRamassageDirect() {
       const notification = {
         id: ramassageId,
         local_depart_id: ramassageId,
-        schedule_id: null,
-        route_id: null,
+        schedule_id: selectedDepart?.id ?? null,
+        route_id: selectedDepart?.route_id ?? null,
         route_name: `Ramassage direct — ${selectedDestination?.city ?? destinationCity}`,
-        departure_number: null,
+        departure_number: selectedDepart ? (selectedDepart.route_number ?? selectedDepart.departure_number ?? null) : null,
         bus_id: busId,
         bus_registration: selectedBus?.plate_number ?? '',
         driver_name: selectedDriver?.full_name ?? '',
@@ -169,6 +189,17 @@ export default function POSRamassageDirect() {
             <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Matricule du bus *<div className="mt-1.5"><AutocompleteSelect options={vehicules.map(bus => ({ id: bus.id, label: bus.plate_number, sublabel: [bus.brand, bus.model, `${bus.capacity} places`].filter(Boolean).join(' · '), keywords: `${bus.plate_number} ${bus.brand ?? ''} ${bus.model ?? ''}` }))} value={busId} onChange={setBusId} placeholder="Rechercher par immatriculation..." required emptyText="Aucun véhicule trouvé" /></div></label>
             <label className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Chauffeur du bus *<div className="mt-1.5"><AutocompleteSelect options={chauffeurs.map(driver => ({ id: driver.id, label: driver.full_name, sublabel: [driver.employee_id, driver.phone].filter(Boolean).join(' · '), keywords: `${driver.full_name} ${driver.employee_id ?? ''} ${driver.phone ?? ''}` }))} value={driverId} onChange={setDriverId} placeholder="Rechercher un chauffeur..." required emptyText="Aucun chauffeur trouvé" /></div></label>
             <label className="text-xs font-bold sm:col-span-2" style={{ color: 'var(--text-secondary)' }}>Ville de destination *<div className="mt-1.5"><AutocompleteSelect options={cityOptions} value={destinationCity} onChange={setDestinationCity} placeholder="Rechercher une ville..." required emptyText="Aucune ville trouvée" /></div></label>
+            <label className="text-xs font-bold sm:col-span-2" style={{ color: 'var(--text-secondary)' }}>Départ concerné (facultatif)
+              <select value={departId} onChange={e => setDepartId(e.target.value)} disabled={!busId} className={`mt-1.5 ${inputClass}`} style={inputStyle}>
+                <option value="">{busId ? (busDeparts.length > 0 ? 'Aucun : ramassage seul' : 'Aucun départ de ce car ce jour-là') : 'Choisissez d’abord le bus'}</option>
+                {busDeparts.map(d => (
+                  <option key={d.id} value={d.id}>Départ #{d.route_number ?? d.departure_number} · {d.departure_time} · {d.route_name ?? ''}</option>
+                ))}
+              </select>
+              <span className="mt-1 block font-normal" style={{ color: 'var(--text-muted)' }}>
+                {selectedDepart ? 'Le montant ira dans la colonne Ramassage de ce départ (solde du départ).' : 'Sans départ : une ligne « Ramassage direct » à part dans les rapports.'}
+              </span>
+            </label>
             <label className="text-xs font-bold sm:col-span-2" style={{ color: 'var(--text-secondary)' }}>Montant du ramassage (FCFA) *<input type="number" min="1" step="500" inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Ex : 25 000" className={`mt-1.5 ${inputClass}`} style={inputStyle} /></label>
             <div className="mt-2 flex gap-3 sm:col-span-2"><button type="button" onClick={() => navigate('/guichet/ramassage')} disabled={saving} className="flex-1 rounded-xl border-2 py-3.5 font-bold" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Annuler</button><button type="button" onClick={handleSave} disabled={saving} className="flex-1 rounded-xl py-3.5 font-bold text-white disabled:opacity-60" style={{ backgroundColor: 'var(--primary)' }}>{saving ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : 'Enregistrer le ramassage'}</button></div>
           </div>
