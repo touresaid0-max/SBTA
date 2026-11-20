@@ -34,7 +34,8 @@ import {
   departToSummary, exportToExcel, exportToPDF, printDeparturesList,
 } from '@/services/pos/posReportService';
 import { formatCurrency } from '@/utils/formatCurrency';
-import EditDepartModal from '@/components/pos/EditDepartModal';
+import EditDepartModal, { type ServerSeatTicket, type ReseatResult } from '@/components/pos/EditDepartModal';
+import { db } from '@/services/pos/db';
 import DepartExpensesModal from '@/components/pos/DepartExpensesModal';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import Pagination from '@/components/pos/Pagination';
@@ -339,6 +340,8 @@ export default function POSDeparts() {
   const [editChauffeurs, setEditChauffeurs] = useState<ChauffeurRef[]>([]);
   const [editSoldTickets, setEditSoldTickets] = useState<TicketRecord[]>([]);
   const [editNextDepart, setEditNextDepart] = useState<DepartRecord | null>(null);
+  // Tickets of the departure being changed, read from the server (all counters and stations)
+  const [editServerTickets, setEditServerTickets] = useState<ServerSeatTicket[] | null>(null);
   const [pendingTransfers, setPendingTransfers] = useState(0);
 
   // Period shown, read when the list is built (only its departures are computed, see below)
@@ -680,6 +683,28 @@ export default function POSDeparts() {
           depart.route_id, depart.id, session?.station_id, session?.counter_id
         );
         setEditNextDepart(next);
+        // Every ticket of the departure, not only this device's ones: a change of bus must see the
+        // seats sold by the other counters and the partner station
+        let serverTickets: ServerSeatTicket[] | null = null;
+        if (isOnline()) {
+          try {
+            const { data, error } = await supabase
+              .from('reservations')
+              .select('id, seat_numbers, booking_reference, passenger_name, status')
+              .eq('schedule_id', depart.id);
+            if (!error) {
+              serverTickets = ((data ?? []) as { id: string; seat_numbers: string[] | null; booking_reference: string | null; passenger_name: string | null; status: string | null }[])
+                .filter(r => !['annulee', 'annule', 'cancelled', 'remboursee'].includes(String(r.status ?? '')))
+                .map(r => ({
+                  id: r.id,
+                  seats: (r.seat_numbers ?? []).map(x => parseInt(String(x).trim(), 10)).filter(n => Number.isFinite(n)),
+                  ticket: r.booking_reference,
+                  passenger: r.passenger_name,
+                }));
+            }
+          } catch { /* the device's tickets only */ }
+        }
+        setEditServerTickets(serverTickets);
         setShowEditModal(true);
         return;
       }
@@ -1233,6 +1258,28 @@ export default function POSDeparts() {
           chauffeurs={editChauffeurs}
           soldTickets={editSoldTickets}
           nextDepart={editNextDepart}
+          serverTickets={editServerTickets}
+          online={isOnline()}
+          onReseat={async (busId) => {
+            const { data, error } = await supabase.rpc('reseat_after_bus_change', { p_schedule_id: selectedRow.id, p_bus_id: busId });
+            if (error) {
+              const msg = String(error.message ?? '');
+              throw new Error(/reseat_after_bus_change|PGRST202/i.test(msg) || error.code === 'PGRST202'
+                ? 'Car modifié, mais le serveur n\'est pas encore à jour pour replacer les passagers (SQL à exécuter).'
+                : `Car modifié, mais les passagers n'ont pas été replacés : ${msg}`);
+            }
+            const res = (data ?? {}) as ReseatResult & { seat_allocations?: DepartRecord['seat_allocations'] };
+            const result: ReseatResult = { moved: res.moved ?? [], unplaced: res.unplaced ?? [] };
+            // The device follows at once (the next sync would bring the same)
+            if (Array.isArray(res.seat_allocations) && res.seat_allocations.length > 0) {
+              await db.departs.update(selectedRow.id, { seat_allocations: res.seat_allocations });
+            }
+            for (const m of result.moved) {
+              const t = await db.tickets.get(m.reservation_id);
+              if (t) await db.tickets.put({ ...t, seat_number: m.to, seat_numbers: [String(m.to)] });
+            }
+            return result;
+          }}
           onSave={async (newBusId, newBusPlate, newDriverId, newDriverName, newCapacity) => {
             // Another bus: its capacity and its numbering (« vendu à partir de »). The capacity
             // is the number of seats; the last seat number follows from the first one.
