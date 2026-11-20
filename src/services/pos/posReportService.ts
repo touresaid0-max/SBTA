@@ -4,7 +4,7 @@ import type { DepartRecord } from './departService';
 import {
   seatsLibres, computeSolde,
   seatsAllocatedForStation, seatsVendusForStation, seatsLibresForStation,
-  getSeatRangeForStation,
+  stationSeatsNow, seatRangesLabel,
 } from './departService';
 import type { TicketRecord } from './db';
 
@@ -41,8 +41,9 @@ export function departToSummary(
   const allocated = hasAlloc ? seatsAllocatedForStation(d, stationId!) : d.seats_total;
   const sold = hasAlloc ? seatsVendusForStation(tickets!, d, stationId!) : d.seats_sold;
   const libres = hasAlloc ? seatsLibresForStation(tickets!, d, stationId!) : seatsLibres(d);
-  const range = hasAlloc ? getSeatRangeForStation(d, stationId!) : null;
-  const seatRangeStr = range ? `${range.from}–${range.to}` : `${d.seats_from}–${d.seats_total}`;
+  // Shared departure: the seats held now (after the transfers between stations)
+  const held = hasAlloc ? stationSeatsNow(d, stationId!) : [];
+  const seatRangeStr = hasAlloc ? (held.length > 0 ? seatRangesLabel(held).replace(/ à /g, '–') : '—') : `${d.seats_from}–${d.seats_total}`;
   const fillRate = allocated > 0 ? Math.round((sold / allocated) * 100) : 0;
   return {
     departure_number: d.departure_number,
