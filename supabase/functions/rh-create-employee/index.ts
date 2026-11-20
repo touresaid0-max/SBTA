@@ -116,17 +116,29 @@ Deno.serve(async (req: Request) => {
       throw new Error("La gare d'affectation est obligatoire pour ce poste");
     }
 
-    // 5. Auto-générer matricule si absent
-    let finalEmployeeId = employee_id?.trim() || null;
-    if (!finalEmployeeId) {
-      const { count } = await supabaseAdmin
+    // 5. Matricule : saisi par le RH, sinon EMP-<année>-NNNN avec le plus grand numéro de l'année + 1.
+    // (L'ancien calcul « nombre d'employés + 1 » redonnait un matricule existant après une suppression.)
+    const typedEmployeeId: string | null = employee_id?.trim() || null;
+    const year = new Date().getFullYear();
+    const prefix = `EMP-${year}-`;
+    let nextNumber = 0;
+    if (!typedEmployeeId) {
+      const { data: yearIds, error: idsError } = await supabaseAdmin
         .from("employees")
-        .select("id", { count: "exact", head: true });
-      finalEmployeeId = `EMP-${new Date().getFullYear()}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+        .select("employee_id")
+        .like("employee_id", `${prefix}%`)
+        .order("employee_id", { ascending: false })
+        .limit(1000);
+      if (idsError) throw new Error(idsError.message);
+      const maxNumber = (yearIds ?? []).reduce((max: number, r: { employee_id: string | null }) => {
+        const m = /^EMP-\d{4}-(\d+)$/.exec(r.employee_id ?? "");
+        return m ? Math.max(max, Number(m[1])) : max;
+      }, 0);
+      nextNumber = maxNumber + 1;
     }
 
     // 6. Insérer dans employees (service role = bypass RLS)
-    const { data: newEmployee, error: insertError } = await supabaseAdmin
+    const insertEmployee = (finalEmployeeId: string | null) => supabaseAdmin
       .from("employees")
       .insert({
         first_name:         first_name.trim(),
@@ -164,6 +176,21 @@ Deno.serve(async (req: Request) => {
       .select("id, first_name, last_name, role, employee_id, account_status")
       .single();
 
+    let finalEmployeeId: string | null = typedEmployeeId ?? `${prefix}${String(nextNumber).padStart(4, "0")}`;
+    let { data: newEmployee, error: insertError } = await insertEmployee(finalEmployeeId);
+    // Deux créations en même temps peuvent viser le même numéro : on prend le suivant
+    for (let attempt = 0; insertError?.code === "23505" && !typedEmployeeId
+         && String(insertError.message).includes("employee_id") && attempt < 20; attempt++) {
+      nextNumber += 1;
+      finalEmployeeId = `${prefix}${String(nextNumber).padStart(4, "0")}`;
+      ({ data: newEmployee, error: insertError } = await insertEmployee(finalEmployeeId));
+    }
+
+    if (insertError?.code === "23505" && String(insertError.message).includes("employee_id")) {
+      throw new Error(typedEmployeeId
+        ? `Le matricule ${typedEmployeeId} est déjà attribué à un autre employé. Saisissez-en un autre ou laissez le champ vide pour le générer.`
+        : "Impossible de générer un matricule libre, réessayez.");
+    }
     if (insertError) throw new Error(insertError.message ?? insertError.details ?? JSON.stringify(insertError));
 
     // 7. Journal d'activité

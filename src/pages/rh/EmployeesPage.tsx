@@ -118,7 +118,6 @@ export default function EmployeesPage() {
 
   // « Activer le compte » : le RH crée lui-même le compte de connexion (19/11/2026)
   const [accountEmployee, setAccountEmployee] = useState<PendingEmployee | null>(null)
-  const [accountLoginOnly, setAccountLoginOnly] = useState(false)
   // Suppression définitive par le RH, après confirmation (20/11/2026)
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -534,13 +533,11 @@ export default function EmployeesPage() {
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
-                        {(emp.status === 'pending' || isNoLoginDriver(emp)) && (
+                        {emp.status === 'pending' && (
                           <button
-                            onClick={() => { setAccountLoginOnly(emp.status !== 'pending'); setAccountEmployee(toPendingEmployee(emp)) }}
+                            onClick={() => setAccountEmployee(toPendingEmployee(emp))}
                             className="p-1.5 rounded-lg hover:bg-[#D4EDDA] text-[#0B7439] transition-colors"
-                            title={emp.status === 'pending'
-                              ? (emp.role === 'chauffeur' ? 'Activer le chauffeur (avec ou sans connexion)' : 'Créer et activer le compte de connexion')
-                              : 'Donner des identifiants de connexion à ce chauffeur'}
+                            title={emp.role === 'chauffeur' ? 'Activer le chauffeur (sans identifiants)' : 'Créer et activer le compte de connexion'}
                           >
                             <KeyRound className="w-4 h-4" />
                           </button>
@@ -622,7 +619,6 @@ export default function EmployeesPage() {
       {accountEmployee && (
         <CreateAccountModal
           employee={accountEmployee}
-          loginOnly={accountLoginOnly}
           onClose={() => setAccountEmployee(null)}
           onSuccess={() => { setAccountEmployee(null); loadEmployees(); void loadDriverState() }}
         />
