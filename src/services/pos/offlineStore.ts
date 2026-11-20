@@ -378,6 +378,25 @@ async function sentIdsBeforeRead(): Promise<{ departs: Set<string>; tickets: Set
 }
 
 /**
+ * Among ids the read did not return, the ones the server still has (it is asked by id, whatever the
+ * read rights). Nothing is confirmed (null) when it cannot answer: then nothing is removed. An
+ * empty answer (session expired, no read right) made the guichet remove its own sales: the 30
+ * tickets of YAMOUSSOUKRO on the departure #8 of DALOA (20/11/2026) vanished from its screen.
+ */
+async function idsStillOnServer(kind: 'reservations' | 'schedules', ids: string[]): Promise<Set<string> | null> {
+  const still = new Set<string>();
+  for (let i = 0; i < ids.length; i += 500) {
+    const { data, error } = await supabase.rpc('pos_existing_ids', { p_kind: kind, p_ids: ids.slice(i, i + 500) });
+    if (error) return null;
+    for (const row of (data ?? []) as (string | { pos_existing_ids?: string })[]) {
+      const id = typeof row === 'string' ? row : row?.pos_existing_ids;
+      if (id) still.add(String(id));
+    }
+  }
+  return still;
+}
+
+/**
  * A departure deleted on the server: removed from the device, with its tickets, baggage and
  * expenses already sent (one still waiting to be sent is kept, so that nothing unsent is lost).
  */
@@ -800,7 +819,11 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
           !onServer.has(d.id) &&
           Date.parse(d.departure_datetime) >= fromMs,
         );
-        for (const d of gone) await removeDeletedDepart(d.id);
+        // Removed only when the server confirms the departure no longer exists
+        const stillDeparts = gone.length > 0 ? await idsStillOnServer('schedules', gone.map(d => d.id)) : new Set<string>();
+        if (stillDeparts) {
+          for (const d of gone) if (!stillDeparts.has(d.id)) await removeDeletedDepart(d.id);
+        }
       }
 
       // Supabase returns at most 1 000 rows per request, and a busy station sells more than that
@@ -833,7 +856,15 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
           !pendingTickets.has(t.id) &&
           !remoteTicketIds.has(t.id),
         );
-        if (goneTickets.length > 0) await db.tickets.bulkDelete(goneTickets.map(t => t.id));
+        if (goneTickets.length > 0) {
+          // Removed only when the server confirms the ticket no longer exists: a ticket this
+          // account may not read (or a read made with an expired session) is still a sale
+          const stillTickets = await idsStillOnServer('reservations', goneTickets.map(t => t.id));
+          if (stillTickets) {
+            const deleted = goneTickets.filter(t => !stillTickets.has(t.id)).map(t => t.id);
+            if (deleted.length > 0) await db.tickets.bulkDelete(deleted);
+          }
+        }
 
         for (const r of remoteReservations) {
           const id = String(r.id);
