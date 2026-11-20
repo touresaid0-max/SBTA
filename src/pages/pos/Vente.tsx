@@ -1232,7 +1232,7 @@ export default function POSVente() {
             <div className="flex items-start gap-2 flex-1">
               <Printer className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>
-                L'administration a autorisé la réimpression de {ticketsToReprint.length} ticket(s) — Siège(s) {ticketsToReprint.map(t => t.seat_number).join(', ')}.
+                <b>Réimpression à faire</b> pour {ticketsToReprint.length} ticket(s) — Siège(s) {ticketsToReprint.map(t => t.seat_number).join(', ')} (siège ou départ modifié, ou autorisation de l'admin).
                 Chaque ticket ne peut être réimprimé qu'une fois (DUPLICATA).
               </span>
             </div>
@@ -1287,7 +1287,7 @@ export default function POSVente() {
                                 disabled={printing}
                                 className="inline-flex items-center justify-center p-1 rounded-md disabled:opacity-50"
                                 style={{ backgroundColor: 'var(--info)', color: 'white' }}
-                                title="Réimpression autorisée par l'administration — cliquer pour réimprimer (DUPLICATA)"
+                                title="Réimpression à faire — cliquer pour réimprimer (DUPLICATA)"
                               >
                                 <Printer className="w-3.5 h-3.5" />
                               </button>

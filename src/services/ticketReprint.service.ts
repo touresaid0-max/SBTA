@@ -35,6 +35,21 @@ export async function fetchPendingReprints(scheduleId: string): Promise<TicketRe
   return data as TicketReprintAuthorization[]
 }
 
+/** Pending authorizations of several schedules (the departures list): empty list offline or on error. */
+export async function fetchPendingReprintsForSchedules(scheduleIds: string[]): Promise<TicketReprintAuthorization[]> {
+  const out: TicketReprintAuthorization[] = []
+  for (let i = 0; i < scheduleIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from('ticket_reprint_authorizations')
+      .select('id, schedule_id, reservation_id, seat_label, reason, authorized_at')
+      .in('schedule_id', scheduleIds.slice(i, i + 200))
+      .eq('status', 'pending')
+    if (error || !data) return out
+    out.push(...(data as TicketReprintAuthorization[]))
+  }
+  return out
+}
+
 export async function authorizeReprint(
   scheduleId: string,
   reservationId: string,

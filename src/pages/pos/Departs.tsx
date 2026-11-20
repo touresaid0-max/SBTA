@@ -36,6 +36,7 @@ import {
 import { formatCurrency } from '@/utils/formatCurrency';
 import EditDepartModal, { type ServerSeatTicket, type ReseatResult } from '@/components/pos/EditDepartModal';
 import { db } from '@/services/pos/db';
+import { fetchPendingReprintsForSchedules } from '@/services/ticketReprint.service';
 import DepartExpensesModal from '@/components/pos/DepartExpensesModal';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
 import Pagination from '@/components/pos/Pagination';
@@ -486,6 +487,31 @@ export default function POSDeparts() {
     () => departs.filter(d => d.reopened_at && !d.cloture && !d.cancelled),
     [departs],
   );
+
+  // Tickets to reprint (seat or departure changed, or the admin's authorization), per departure:
+  // only this station's tickets, the ones its guichet hands to the passenger. A badge in the list
+  // leads to the sale screen, where they are reprinted.
+  const [reprintCounts, setReprintCounts] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isOnline() || departs.length === 0) { setReprintCounts(new Map()); return; }
+      const auths = await fetchPendingReprintsForSchedules(departs.filter(d => !d.cancelled).map(d => d.id));
+      const counts = new Map<string, number>();
+      for (const a of auths) {
+        const d = departs.find(x => x.id === a.schedule_id);
+        if (!d) continue;
+        const own = allTickets.filter(t => t.depart_id === d.id && t.status !== 'cancelled');
+        const scoped = session?.station_id && d.seat_allocations && d.seat_allocations.length > 0
+          ? ticketsOfStation(own, d, session.station_id) : own;
+        if (scoped.some(t => t.id === a.reservation_id || String(t.seat_number) === a.seat_label)) {
+          counts.set(d.id, (counts.get(d.id) ?? 0) + 1);
+        }
+      }
+      if (!cancelled) setReprintCounts(counts);
+    })();
+    return () => { cancelled = true; };
+  }, [departs, allTickets, session?.station_id]);
 
   const visibleDeparts = useMemo(() => {
     let list = filterBaseDeparts.filter(d =>
@@ -1151,6 +1177,17 @@ export default function POSDeparts() {
                       <td className={td} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                         <div className="flex items-center gap-1.5">
                           #{d.route_number}
+                          {(reprintCounts.get(d.id) ?? 0) > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); navigate(`/guichet/depart/${d.id}/vente`); }}
+                              className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap"
+                              style={{ backgroundColor: 'var(--info)', color: 'white' }}
+                              title="Tickets à réimprimer (siège ou départ modifié) : ouvrir la vente pour les réimprimer"
+                            >
+                              <Printer className="w-3 h-3" /> Réimprimer {reprintCounts.get(d.id)}
+                            </button>
+                          )}
                           {d.station_id !== session?.station_id && d.seat_allocations?.some(a => a.station_id === session?.station_id) && (
                             <span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)' }}>
                               Gare secondaire
