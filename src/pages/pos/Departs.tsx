@@ -17,6 +17,7 @@ import {
   computeStationScopedTotals,
   isFormerStationDepart,
   scopeStationFor,
+  stationSeatsNow, seatRangesLabel,
 } from '@/services/pos/departService';
 import { getByDeparts, groupByDepart, syncDepartsAndTicketsFromServer, lastServerSyncAt, type ServerSyncResult } from '@/services/pos/offlineStore';
 import { supabase } from '@/services/supabase';
@@ -190,7 +191,8 @@ async function printBordereauForDepart(depart: DepartRow, stationId?: string, st
     }
   } catch { /* keep defaults */ }
 
-  const totalSeats = seatRange ? seatRange.to - seatRange.from + 1 : seatsCommercialisables(depart);
+  // Shared departure: the seats the station holds now (after the transfers between stations)
+  const totalSeats = hasAllocations && stationId ? seatsAllocatedForStation(depart, stationId) : seatRange ? seatRange.to - seatRange.from + 1 : seatsCommercialisables(depart);
   const data: BordereauDepartData = {
     // « GUICHET : » the station of the counter printing it. A departure pulled from the server has no
     // station name (schedules has no such column): the line was printed empty.
@@ -1147,9 +1149,10 @@ export default function POSDeparts() {
                       <td className={td + ' text-right'} style={{ fontWeight: 600 }}>{d.seats_allocated}</td>
                       <td className={td + ' text-right'} style={{ color: 'var(--text-muted)' }}>
                         {(() => {
-                          if (d.seat_allocations && session?.station_id) {
-                            const range = getSeatRangeForStation(d, session.station_id);
-                            if (range) return `${range.from}–${range.to}`;
+                          if (d.seat_allocations && d.seat_allocations.length > 0 && session?.station_id) {
+                            // The seats held now (after the transfers between stations)
+                            const held = stationSeatsNow(d, session.station_id);
+                            return held.length > 0 ? seatRangesLabel(held).replace(/ à /g, '–') : '—';
                           }
                           return `${d.seats_from}–${d.seats_total}`;
                         })()}

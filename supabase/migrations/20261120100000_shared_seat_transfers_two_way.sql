@@ -15,7 +15,8 @@ l'avait fait (YAMOUSSOUKRO → DALOA, sièges 32 à 41, inconnu du serveur et de
    l'ordre) et qu'aucun n'est vendu, puis ajoute le transfert. Réservé à un compte de la gare qui
    cède (guichet de cette gare) ou à l'admin.
 2. schedule_station_shares : les places de chaque gare (partage ration / carburant / péage, colonne
-   « sièges ») tiennent compte des sièges cédés et reçus.
+   « sièges ») tiennent compte des sièges cédés et reçus. Une gare qui a cédé ou reçu des sièges
+   n'a plus une seule plage : les rapports affichent « départ partagé » au lieu de « sièges a-b ».
 
 Prérequis : le fichier 20261118220000_reservation_seller_station.sql (table reservation_sellers).
 Aucune donnée existante n'est modifiée.
@@ -246,7 +247,7 @@ AS $$
   -- Seats moved between the stations with « Charger dans une autre gare » (both directions): the
   -- seats given leave the station, the seats received join it
   mv AS (
-    SELECT x.sid, x.st, sum(x.d)::int AS d
+    SELECT x.sid, x.st, sum(x.d)::int AS d, count(*)::int AS k
     FROM (
       SELECT sc.id AS sid, (t->>'from_station_id')::uuid AS st,
              -(CASE WHEN jsonb_typeof(t->'seats') = 'array' AND jsonb_array_length(t->'seats') > 0
@@ -268,9 +269,13 @@ AS $$
     ) x
     GROUP BY x.sid, x.st
   ),
-  -- The seats of each station now: given at the creation, less the ones given, plus the ones received
+  -- The seats of each station now: given at the creation, less the ones given, plus the ones received.
+  -- A station that gave or received seats no longer has one range (« sièges a-b »): none is shown.
   stn AS (
-    SELECT stn0.sid, stn0.st, stn0.f, stn0.t, greatest(0, stn0.n + coalesce(mv.d, 0))::int AS n
+    SELECT stn0.sid, stn0.st,
+           (CASE WHEN coalesce(mv.k, 0) = 0 THEN stn0.f END) AS f,
+           (CASE WHEN coalesce(mv.k, 0) = 0 THEN stn0.t END) AS t,
+           greatest(0, stn0.n + coalesce(mv.d, 0))::int AS n
     FROM stn0 LEFT JOIN mv ON mv.sid = stn0.sid AND mv.st = stn0.st
   ),
   -- Places of the bus: the seats given to no station stay with the main station, so a partner
