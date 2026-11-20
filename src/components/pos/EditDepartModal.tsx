@@ -222,7 +222,7 @@ export default function EditDepartModal({
         {/* Body */}
         <div className="p-6 space-y-4">
           {phase === 'reseated' && reseatResult ? (
-            <ReseatConfirmation result={reseatResult} soldTickets={soldTickets} depart={depart} onClose={onClose} />
+            <ReseatConfirmation result={reseatResult} onClose={onClose} />
           ) : phase === 'transferred' && transferResult ? (
             <TransferConfirmation result={transferResult} onPrint={handlePrintTransferred} onClose={onClose} />
           ) : phase === 'pending_saved' && transferResult ? (
@@ -304,7 +304,7 @@ export default function EditDepartModal({
                       </p>
                       <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
                         Le car {selectedBus.plate_number} a les sièges {newFirst} à {newLast} ({freeInNewBus} libre{freeInNewBus > 1 ? 's' : ''}).
-                        {toReseat > 0 && <> {toReseat === outOfBus.length ? 'Ils seront replacés' : `${toReseat} seront replacés`} sur des places libres de ce car, d'abord celles de la gare qui a vendu le ticket. Le passager garde son départ ; réimprimez son ticket.</>}
+                        {toReseat > 0 && <> {toReseat === outOfBus.length ? 'Ils seront replacés' : `${toReseat} seront replacés`} sur des places libres de ce car, d'abord celles de la gare qui a vendu le ticket. Le passager garde son ticket et son départ ; prévenez-le de son nouveau siège.</>}
                         {hasSurplus && <> {Math.min(surplus, outOfBus.length)} iront au départ suivant (voir ci-dessous).</>}
                       </p>
                       <ul className="text-xs mt-2 space-y-0.5" style={{ color: 'var(--text-primary)' }}>
@@ -550,39 +550,26 @@ function PendingTransferConfirmation({
 
 function ReseatConfirmation({
   result,
-  soldTickets,
-  depart,
   onClose,
 }: {
   result: ReseatResult;
-  soldTickets: TicketRecord[];
-  depart: DepartRecord;
   onClose: () => void;
 }) {
-  // Tickets of this device: reprinted here with their new seat; the others by their station
-  const local = result.moved
-    .map(m => ({ m, t: soldTickets.find(t => t.id === m.reservation_id) }))
-    .filter((x): x is { m: ReseatResult['moved'][number]; t: TicketRecord } => !!x.t);
-  const handlePrint = () => {
-    for (const { m, t } of local) {
-      PrintService.printTicket({
-        ticket: { ...t, seat_number: m.to, seat_numbers: [String(m.to)] },
-        depart,
-        stationName: depart.station_name,
-      });
-    }
-  };
+  // No reprint: the passenger keeps his ticket (same number, departure and price); only the seat
+  // changes, and a duplicate needs the admin's authorization. The guichet tells the passengers.
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--success-light)' }}>
+        <div className="w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--success-light)' }}>
           <CheckCircle className="w-7 h-7" style={{ color: 'var(--success)' }} />
         </div>
         <div>
           <p className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
             {result.moved.length} passager{result.moved.length > 1 ? 's' : ''} replacé{result.moved.length > 1 ? 's' : ''} dans le car
           </p>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Même départ, nouveau numéro de siège : réimprimez le ticket.</p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Même ticket, même départ : seul le numéro de siège change. Prévenez ces passagers à l'embarquement.
+          </p>
         </div>
       </div>
       <div className="rounded-xl p-3 text-sm space-y-1" style={{ backgroundColor: 'var(--surface-raised)' }}>
@@ -597,19 +584,7 @@ function ReseatConfirmation({
           {result.unplaced.length} passager{result.unplaced.length > 1 ? 's' : ''} sans place libre dans ce car (siège{result.unplaced.length > 1 ? 's' : ''} {result.unplaced.map(u => u.seat).join(', ')}) : transférez-les vers le départ suivant.
         </div>
       )}
-      {result.moved.length > local.length && (
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {result.moved.length - local.length} ticket{result.moved.length - local.length > 1 ? 's' : ''} vendu{result.moved.length - local.length > 1 ? 's' : ''} sur un autre poste : à réimprimer par le guichet qui l'a vendu (le nouveau siège y apparaît à la synchronisation).
-        </p>
-      )}
-      <div className="flex gap-3">
-        {local.length > 0 && (
-          <button onClick={handlePrint} className="flex-1 py-3 rounded-xl font-bold border-2 flex items-center justify-center gap-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-            <Printer className="w-4 h-4" /> Réimprimer {local.length} ticket{local.length > 1 ? 's' : ''}
-          </button>
-        )}
-        <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-white" style={{ backgroundColor: 'var(--primary)' }}>Terminer</button>
-      </div>
+      <button onClick={onClose} className="w-full py-3 rounded-xl font-bold text-white" style={{ backgroundColor: 'var(--primary)' }}>Terminer</button>
     </div>
   );
 }
