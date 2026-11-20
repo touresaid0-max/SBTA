@@ -480,24 +480,26 @@ export default function POSConvois() {
 
   // ─── Derived ────────────────────────────────────────────────────────────────
   const selectedRoute = systemRoutes.find(r => r.id === form.route_id) || routes.find(r => r.id === form.route_id) || null;
-  const cityOptions = useMemo<CityOption[]>(() => {
-    const seen = new Set<string>();
-    return systemRoutes.flatMap(route => {
+  // One choice per destination city, on the line that starts from the given city when there is one.
+  // The first line ending in the city was taken, whatever its start: every convoy to Abidjan went
+  // on « Abengourou - Abidjan », also from DALOA (20/11/2026), and the reports showed it there.
+  const stationCityId = allStations.find(st => st.id === stationId)?.city_id ?? '';
+  const citiesFrom = (originCityId: string): CityOption[] => {
+    const byCity = new Map<string, RouteOption>();
+    for (const route of systemRoutes) {
       const city = route.destination_city;
-      if (!city || seen.has(city.id)) return [];
-      seen.add(city.id);
-      return [{ id: route.id, name: city.name, route_id: route.id, origin_name: route.origin_city?.name || '—' }];
-    });
-  }, [systemRoutes]);
-  const returnCityOptions = useMemo<CityOption[]>(() => {
-    const seen = new Set<string>();
-    return systemRoutes.flatMap(route => {
-      const city = route.destination_city;
-      if (!city || seen.has(city.id)) return [];
-      seen.add(city.id);
-      return [{ id: route.id, name: city.name, route_id: route.id, origin_name: route.origin_city?.name || '—' }];
-    });
-  }, [systemRoutes]);
+      if (!city) continue;
+      const kept = byCity.get(city.id);
+      if (!kept || (kept.origin_city_id !== originCityId && route.origin_city_id === originCityId)) byCity.set(city.id, route);
+    }
+    return [...byCity.values()].map(route => ({
+      id: route.id, name: route.destination_city!.name, route_id: route.id, origin_name: route.origin_city?.name || '—',
+    }));
+  };
+  const cityOptions = useMemo<CityOption[]>(() => citiesFrom(stationCityId), [systemRoutes, stationCityId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The return starts from the city the convoy went to
+  const allerDestinationCityId = systemRoutes.find(r => r.id === form.route_id)?.destination_city_id ?? '';
+  const returnCityOptions = useMemo<CityOption[]>(() => citiesFrom(allerDestinationCityId), [systemRoutes, allerDestinationCityId]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectedBus = buses.find(b => b.id === form.bus_id) || null;
   // A destination city not in the list: added by the database (city, and the route from this
   // station's city to it), then chosen at once. It appears in the admin's « Villes ».
