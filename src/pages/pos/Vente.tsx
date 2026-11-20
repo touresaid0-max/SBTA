@@ -1027,7 +1027,7 @@ export default function POSVente() {
                   </tr>
                 </thead>
                 <tbody>
-                  {depart.seat_allocations.map((a, i) => {
+                  {[...new Map(depart.seat_allocations.map(x => [x.station_id, x])).values()].map((a, i) => {
                     // After the transfers: the seats the station holds now, sold by it, free
                     const held = stationSeatsNow(depart, a.station_id);
                     const sold = seatsVendusForStation(tickets, depart, a.station_id);
@@ -1112,7 +1112,7 @@ export default function POSVente() {
                   >
                     <option value="">— Sélectionner —</option>
                     {[
-                      ...depart.seat_allocations!.map(a => ({ id: a.station_id, name: a.station_name })),
+                      ...[...new Map(depart.seat_allocations!.map(a => [a.station_id, a])).values()].map(a => ({ id: a.station_id, name: a.station_name })),
                       // The main station, also when the guichet recorded no range for it
                       ...(depart.seat_allocations!.some(a => a.station_id === depart.station_id) ? [] : [{ id: depart.station_id, name: depart.station_name ?? 'Gare principale' }]),
                     ].filter(o => o.id !== session.station_id).map(o => (
