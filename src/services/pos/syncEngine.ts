@@ -678,7 +678,35 @@ async function executeUpdate(store: StoreName, id: string, patch: Record<string,
   if (store === 'departs') {
     remotePayload = mapDepartUpdate({ id, ...patch });
   } else if (store === 'tickets') {
-    remotePayload = mapTicketUpdate({ id, ...patch });
+    // A ticket moved to another departure or seat goes through the server's function: a direct
+    // change is allowed only on the tickets this account sold, so moving the tickets of another
+    // counter or of the partner station was refused (« droits insuffisants », DALOA, 20/11/2026)
+    if (patch.depart_id !== undefined || patch.seat_number !== undefined) {
+      const local = await (db.tickets as any).get(id);
+      const scheduleId = String(patch.depart_id ?? local?.depart_id ?? '');
+      const seat = patch.seat_number !== undefined ? Number(patch.seat_number) : null;
+      const { data: given, error: moveError } = await supabase.rpc('pos_move_ticket', {
+        p_reservation_id: id, p_schedule_id: scheduleId, p_seat: seat,
+      });
+      const missingFn = !!moveError && (moveError.code === 'PGRST202' || /pos_move_ticket/i.test(String(moveError.message ?? '')) && /function|schema cache/i.test(String(moveError.message ?? '')));
+      if (moveError && !missingFn) {
+        throw new RefusedByServer(`Déplacement du ticket refusé par le serveur : ${moveError.message}`);
+      }
+      if (!moveError) {
+        // The server may give another free seat: the device follows
+        if (local && typeof given === 'number' && given !== local.seat_number) {
+          await (db.tickets as any).put({ ...local, seat_number: given, seat_numbers: [String(given)] });
+        }
+        const { depart_id: _d, seat_number: _s, seat_numbers: _n, ...rest } = patch;
+        void _d; void _s; void _n;
+        remotePayload = mapTicketUpdate({ id, ...rest });
+        if (!remotePayload) return;
+      } else {
+        remotePayload = mapTicketUpdate({ id, ...patch });
+      }
+    } else {
+      remotePayload = mapTicketUpdate({ id, ...patch });
+    }
   } else if (store === 'bagages') {
     remotePayload = mapBagageUpdate({ id, ...patch });
   } else if (RAW_ROW_STORES.has(store)) {
