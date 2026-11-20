@@ -5,6 +5,20 @@ import type { DepartRecord, TicketRecord } from '@/services/pos/db';
 import { seatsCommercialisables, type VehiculeRef, type ChauffeurRef } from '@/services/pos/departService';
 import { PrintService } from '@/services/pos/printService';
 
+/** Ticket of the departure as the server knows it (all counters and stations, not only this device) */
+export interface ServerSeatTicket {
+  id: string;
+  seats: number[];
+  ticket?: string | null;
+  passenger?: string | null;
+}
+
+/** Tickets put back on a free seat of the bus after the change (server answer) */
+export interface ReseatResult {
+  moved: { reservation_id: string; ticket?: string | null; passenger?: string | null; from: number; to: number }[];
+  unplaced: { reservation_id: string; ticket?: string | null; passenger?: string | null; seat: number }[];
+}
+
 export interface TransferResult {
   transferredTickets: TicketRecord[];
   nextDepart: DepartRecord | null;
@@ -23,10 +37,16 @@ interface EditDepartModalProps {
   onSave: (busId: string, busPlate: string, driverId: string, driverName: string, newCapacity: number) => Promise<void>;
   onTransfer: (surplusTickets: TicketRecord[], nextDepart: DepartRecord) => Promise<void>;
   onPendingTransfer?: (surplusTickets: TicketRecord[], newBusId: string, newBusPlate: string, newCapacity: number) => Promise<void>;
+  /** The tickets of the departure read from the server when the window opened (null: offline) */
+  serverTickets?: ServerSeatTicket[] | null;
+  /** Puts the tickets of the seats the new bus does not have on its free seats (server) */
+  onReseat?: (busId: string) => Promise<ReseatResult>;
+  /** Whether the device is online (the passengers are put back on the server) */
+  online?: boolean;
   onClose: () => void;
 }
 
-type Phase = 'edit' | 'transferring' | 'transferred' | 'pending_saved';
+type Phase = 'edit' | 'transferring' | 'transferred' | 'pending_saved' | 'reseated';
 
 export default function EditDepartModal({
   depart,
@@ -37,6 +57,9 @@ export default function EditDepartModal({
   onSave,
   onTransfer,
   onPendingTransfer,
+  serverTickets,
+  onReseat,
+  online = true,
   onClose,
 }: EditDepartModalProps) {
   const [busId, setBusId] = useState(depart.bus_id);
@@ -45,14 +68,39 @@ export default function EditDepartModal({
   const [error, setError] = useState('');
   const [phase, setPhase] = useState<Phase>('edit');
   const [transferResult, setTransferResult] = useState<TransferResult | null>(null);
+  const [reseatResult, setReseatResult] = useState<ReseatResult | null>(null);
 
   const selectedBus = vehicules.find(v => v.id === busId) ?? null;
   const selectedDriver = chauffeurs.find(c => c.id === driverId) ?? null;
   // Numbers of seats (seats_total is the last seat number: 2 to 64 is 63 seats)
   const oldCapacity = seatsCommercialisables(depart);
   const newCapacity = selectedBus?.capacity ?? oldCapacity;
-  const soldCount = soldTickets.length;
+  // Seats of the new bus: its numbering (« vendu à partir de ») and its number of seats
+  const newFirst = Math.max(1, (busId !== depart.bus_id ? selectedBus?.seats_sold_from : depart.seats_from) ?? depart.seats_from ?? 1);
+  const newLast = newFirst + newCapacity - 1;
+  // Seats taken: every ticket of the departure, as the server knows it (all counters and the
+  // partner station), and the ones of this device not sent yet. This device alone gave 1 ticket
+  // for a departure of 53 (DALOA #6, 20/11/2026): nothing was moved.
+  const occupied = useMemo(() => {
+    const seats = new Map<number, { ticket?: string | null; passenger?: string | null }>();
+    for (const t of serverTickets ?? []) for (const n of t.seats) seats.set(n, { ticket: t.ticket, passenger: t.passenger });
+    for (const t of soldTickets) if (!seats.has(t.seat_number)) seats.set(t.seat_number, { ticket: t.ticket_number, passenger: t.passenger_name });
+    return seats;
+  }, [serverTickets, soldTickets]);
+  const soldCount = Math.max(soldTickets.length, occupied.size);
   const surplus = Math.max(0, soldCount - newCapacity);
+  // Tickets on a seat the new bus does not have (62 and 63 of a 63-seat bus replaced by a 61-seat one)
+  const outOfBus = useMemo(
+    () => [...occupied.entries()].filter(([n]) => n > newLast || n < newFirst).sort((a, b) => a[0] - b[0]),
+    [occupied, newFirst, newLast],
+  );
+  const freeInNewBus = useMemo(() => {
+    let free = 0;
+    for (let n = newFirst; n <= newLast; n++) if (!occupied.has(n)) free++;
+    return free;
+  }, [occupied, newFirst, newLast]);
+  const toReseat = busId !== depart.bus_id ? Math.max(0, Math.min(outOfBus.length - surplus, freeInNewBus)) : 0;
+  const sharedNeedsCut = busId !== depart.bus_id && (depart.seat_allocations ?? []).some(a => a.seat_to > newLast);
   const capacityReduced = newCapacity < oldCapacity;
   const hasSurplus = surplus > 0;
   const hasNextDepart = !!nextDepart;
@@ -63,15 +111,25 @@ export default function EditDepartModal({
 
   const surplusTickets = useMemo(() => {
     if (!hasSurplus) return [];
+    // The tickets on a seat the new bus does not have first, then the last sold
     return [...soldTickets]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .sort((a, b) => {
+        const outA = a.seat_number > newLast || a.seat_number < newFirst ? 1 : 0;
+        const outB = b.seat_number > newLast || b.seat_number < newFirst ? 1 : 0;
+        return outB - outA || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      })
       .slice(0, surplus);
-  }, [soldTickets, hasSurplus, surplus]);
+  }, [soldTickets, hasSurplus, surplus, newFirst, newLast]);
 
   const handleSave = async () => {
     setError('');
     if (!busId) { setError('Veuillez sélectionner un car.'); return; }
     if (!driverId) { setError('Veuillez sélectionner un chauffeur.'); return; }
+    // The passengers are put back on the server: all the tickets of the departure are there
+    if ((toReseat > 0 || sharedNeedsCut) && !online) {
+      setError('Connexion Internet requise : des passagers sont sur des sièges que le nouveau car n\'a pas. Reconnectez-vous pour les replacer.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -90,6 +148,14 @@ export default function EditDepartModal({
 
       // Step 2: Now save the bus/driver change (safe — reservation count is reduced)
       await onSave(busId, selectedBus?.plate_number ?? '', driverId, selectedDriver?.full_name ?? '', newCapacity);
+
+      // Step 3: the tickets on a seat the new bus does not have go to its free seats (a seat of the
+      // station that sold them first), and the seat ranges of the stations are cut to the bus
+      let reseat: ReseatResult | null = null;
+      if ((toReseat > 0 || sharedNeedsCut) && onReseat && busChanged) {
+        reseat = await onReseat(busId);
+        setReseatResult(reseat);
+      }
 
       if (hasSurplus && nextDepart) {
         setTransferResult({
@@ -111,6 +177,8 @@ export default function EditDepartModal({
           pendingSaved: true,
         });
         setPhase('pending_saved');
+      } else if (reseat && (reseat.moved.length > 0 || reseat.unplaced.length > 0)) {
+        setPhase('reseated');
       } else {
         onClose();
       }
@@ -140,7 +208,7 @@ export default function EditDepartModal({
         <div className="flex items-start justify-between p-6 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
             <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-              {phase === 'transferred' ? 'Transfert effectué' : phase === 'pending_saved' ? 'Transfert en attente' : 'Modifier le départ'}
+              {phase === 'transferred' ? 'Transfert effectué' : phase === 'pending_saved' ? 'Transfert en attente' : phase === 'reseated' ? 'Passagers replacés' : 'Modifier le départ'}
             </h3>
             <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
               Départ #{depart.route_number} — {depart.route_name}
@@ -153,7 +221,9 @@ export default function EditDepartModal({
 
         {/* Body */}
         <div className="p-6 space-y-4">
-          {phase === 'transferred' && transferResult ? (
+          {phase === 'reseated' && reseatResult ? (
+            <ReseatConfirmation result={reseatResult} soldTickets={soldTickets} depart={depart} onClose={onClose} />
+          ) : phase === 'transferred' && transferResult ? (
             <TransferConfirmation result={transferResult} onPrint={handlePrintTransferred} onClose={onClose} />
           ) : phase === 'pending_saved' && transferResult ? (
             <PendingTransferConfirmation result={transferResult} onClose={onClose} />
@@ -221,6 +291,36 @@ export default function EditDepartModal({
                     </span>
                   )}
                 </div>
+              )}
+
+              {/* Seats the new bus does not have */}
+              {busChanged && selectedBus && outOfBus.length > 0 && (
+                <div className="rounded-xl p-4 space-y-2" style={{ backgroundColor: 'var(--warning-light, #FEF3C7)', border: '1px solid var(--warning, #D97706)' }}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--warning, #D97706)' }} />
+                    <div className="flex-1">
+                      <p className="text-sm font-bold" style={{ color: 'var(--warning, #D97706)' }}>
+                        {outOfBus.length} passager{outOfBus.length > 1 ? 's' : ''} sur des sièges que ce car n'a pas (n° {outOfBus.map(([n]) => n).join(', ')})
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        Le car {selectedBus.plate_number} a les sièges {newFirst} à {newLast} ({freeInNewBus} libre{freeInNewBus > 1 ? 's' : ''}).
+                        {toReseat > 0 && <> {toReseat === outOfBus.length ? 'Ils seront replacés' : `${toReseat} seront replacés`} sur des places libres de ce car, d'abord celles de la gare qui a vendu le ticket. Le passager garde son départ ; réimprimez son ticket.</>}
+                        {hasSurplus && <> {Math.min(surplus, outOfBus.length)} iront au départ suivant (voir ci-dessous).</>}
+                      </p>
+                      <ul className="text-xs mt-2 space-y-0.5" style={{ color: 'var(--text-primary)' }}>
+                        {outOfBus.map(([n, t]) => (
+                          <li key={n}>Siège <b>{n}</b>{t.ticket ? ` · ${t.ticket}` : ''}{t.passenger ? ` · ${t.passenger}` : ''}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {busChanged && selectedBus && sharedNeedsCut && (
+                <p className="text-xs flex items-start gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+                  <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  Départ partagé : la répartition des sièges entre les gares sera ramenée aux sièges {newFirst} à {newLast} de ce car.
+                </p>
               )}
 
               {/* Surplus warning */}
@@ -303,7 +403,7 @@ export default function EditDepartModal({
         </div>
 
         {/* Footer */}
-        {phase !== 'transferred' && phase !== 'transferring' && phase !== 'pending_saved' && (
+        {phase !== 'transferred' && phase !== 'transferring' && phase !== 'pending_saved' && phase !== 'reseated' && (
           <div className="flex gap-3 p-6 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
             <button
               onClick={onClose}
@@ -318,7 +418,7 @@ export default function EditDepartModal({
               className="flex-1 py-3 rounded-xl font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ backgroundColor: 'var(--primary)' }}
             >
-              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : hasSurplus ? (hasNextDepart ? 'Modifier et transférer' : 'Modifier et mettre en attente') : 'Enregistrer'}
+              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : hasSurplus ? (hasNextDepart ? `Modifier et transférer vers le départ #${nextDepart?.route_number}` : 'Modifier et mettre en attente') : toReseat > 0 ? `Enregistrer et replacer ${toReseat} passager${toReseat > 1 ? 's' : ''}` : 'Enregistrer'}
             </button>
           </div>
         )}
@@ -443,6 +543,72 @@ function PendingTransferConfirmation({
         >
           Compris, créer le prochain départ
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ReseatConfirmation({
+  result,
+  soldTickets,
+  depart,
+  onClose,
+}: {
+  result: ReseatResult;
+  soldTickets: TicketRecord[];
+  depart: DepartRecord;
+  onClose: () => void;
+}) {
+  // Tickets of this device: reprinted here with their new seat; the others by their station
+  const local = result.moved
+    .map(m => ({ m, t: soldTickets.find(t => t.id === m.reservation_id) }))
+    .filter((x): x is { m: ReseatResult['moved'][number]; t: TicketRecord } => !!x.t);
+  const handlePrint = () => {
+    for (const { m, t } of local) {
+      PrintService.printTicket({
+        ticket: { ...t, seat_number: m.to, seat_numbers: [String(m.to)] },
+        depart,
+        stationName: depart.station_name,
+      });
+    }
+  };
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--success-light)' }}>
+          <CheckCircle className="w-7 h-7" style={{ color: 'var(--success)' }} />
+        </div>
+        <div>
+          <p className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
+            {result.moved.length} passager{result.moved.length > 1 ? 's' : ''} replacé{result.moved.length > 1 ? 's' : ''} dans le car
+          </p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Même départ, nouveau numéro de siège : réimprimez le ticket.</p>
+        </div>
+      </div>
+      <div className="rounded-xl p-3 text-sm space-y-1" style={{ backgroundColor: 'var(--surface-raised)' }}>
+        {result.moved.map(m => (
+          <p key={m.reservation_id} style={{ color: 'var(--text-primary)' }}>
+            {m.ticket ?? 'Ticket'}{m.passenger ? ` · ${m.passenger}` : ''} : siège <b>{m.from}</b> → <b>{m.to}</b>
+          </p>
+        ))}
+      </div>
+      {result.unplaced.length > 0 && (
+        <div className="rounded-xl p-3 text-sm" style={{ backgroundColor: 'var(--danger-light)', color: 'var(--danger)' }}>
+          {result.unplaced.length} passager{result.unplaced.length > 1 ? 's' : ''} sans place libre dans ce car (siège{result.unplaced.length > 1 ? 's' : ''} {result.unplaced.map(u => u.seat).join(', ')}) : transférez-les vers le départ suivant.
+        </div>
+      )}
+      {result.moved.length > local.length && (
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          {result.moved.length - local.length} ticket{result.moved.length - local.length > 1 ? 's' : ''} vendu{result.moved.length - local.length > 1 ? 's' : ''} sur un autre poste : à réimprimer par le guichet qui l'a vendu (le nouveau siège y apparaît à la synchronisation).
+        </p>
+      )}
+      <div className="flex gap-3">
+        {local.length > 0 && (
+          <button onClick={handlePrint} className="flex-1 py-3 rounded-xl font-bold border-2 flex items-center justify-center gap-2" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+            <Printer className="w-4 h-4" /> Réimprimer {local.length} ticket{local.length > 1 ? 's' : ''}
+          </button>
+        )}
+        <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-white" style={{ backgroundColor: 'var(--primary)' }}>Terminer</button>
       </div>
     </div>
   );
