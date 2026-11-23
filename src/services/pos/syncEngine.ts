@@ -905,7 +905,13 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     // (sent with the session of the one logged in now, in the name of their author: booked_by,
     // sold_by…). They used to wait for their author's next online login on this device: the sales
     // of a guichetier who ended his day offline did not reach the server the next day (23/11/2026).
-    const pending = waiting;
+    // Only when the server session is the one of the guichetier logged in on the device (he logged
+    // in online). A server session of another account (an account of another station, logged in
+    // earlier in this browser) had the departure refused, then all its tickets (YOP-DIVO tests,
+    // 23/11/2026): then, as before, only the operations of that account are sent.
+    const posUserId = await currentSellerId();
+    const sameAccount = !posUserId || !serverUserId || posUserId === serverUserId;
+    const pending = sameAccount ? waiting : waiting.filter(item => sentBy(item, serverUserId));
     waitingOtherUser = waiting.filter(item => !sentBy(item, serverUserId)).length;
     // Sort by created_at to preserve operation order
     pending.sort(byQueueOrder);
