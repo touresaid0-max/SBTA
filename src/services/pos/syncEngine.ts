@@ -422,6 +422,33 @@ async function serverSessionUserId(): Promise<string | undefined> {
   }
 }
 
+/**
+ * The server session's account is of the device's station (another guichetier of the same station):
+ * the server accepts everything of the station from it. An account of another station (logged in
+ * earlier in this browser) would have the station's departures refused, then their tickets.
+ */
+const accountStationCache = new Map<string, string | null>();
+async function serverAccountOfDeviceStation(serverUserId: string): Promise<boolean> {
+  try {
+    const deviceStation = (await db.session.toArray())[0]?.station_id;
+    if (!deviceStation) return false;
+    if (!accountStationCache.has(serverUserId)) {
+      const { data, error } = await supabase.from('users').select('station_id').eq('id', serverUserId).maybeSingle();
+      if (error) return false;
+      let station = (data as { station_id?: string | null } | null)?.station_id ?? null;
+      if (station !== deviceStation) {
+        // The station of its counter counts too (an account moved to another counter)
+        const { data: counters } = await supabase.from('counters').select('station_id').eq('assigned_user_id', serverUserId);
+        if ((counters ?? []).some((c: { station_id?: string | null }) => c.station_id === deviceStation)) station = deviceStation;
+      }
+      accountStationCache.set(serverUserId, station);
+    }
+    return accountStationCache.get(serverUserId) === deviceStation;
+  } catch {
+    return false;
+  }
+}
+
 /** The server session belongs to another account than the guichetier logged in on the device. */
 export async function isServerSessionOfAnotherUser(): Promise<boolean> {
   const [sellerId, serverUserId] = await Promise.all([currentSellerId(), serverSessionUserId()]);
@@ -910,7 +937,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     // earlier in this browser) had the departure refused, then all its tickets (YOP-DIVO tests,
     // 23/11/2026): then, as before, only the operations of that account are sent.
     const posUserId = await currentSellerId();
-    const sameAccount = !posUserId || !serverUserId || posUserId === serverUserId;
+    const sameAccount = !posUserId || !serverUserId || posUserId === serverUserId
+      || await serverAccountOfDeviceStation(serverUserId);
     const pending = sameAccount ? waiting : waiting.filter(item => sentBy(item, serverUserId));
     waitingOtherUser = waiting.filter(item => !sentBy(item, serverUserId)).length;
     // Sort by created_at to preserve operation order

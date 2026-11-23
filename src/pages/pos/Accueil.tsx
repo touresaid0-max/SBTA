@@ -10,7 +10,7 @@ import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
 import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
 import { StorageAlert } from '@/components/pos/StorageAlert';
 import { useAutoSync } from '@/services/pos/useAutoSync';
-import { flushSyncQueue, getPendingCount, isOnline } from '@/services/pos/syncEngine';
+import { flushSyncQueue, getPendingCount, isOnline, isServerSessionOfAnotherUser, retryAllRefused } from '@/services/pos/syncEngine';
 
 interface TileConfig {
   label: string;
@@ -50,10 +50,16 @@ export default function POSAccueil() {
     setEndBusy(true);
     setEndResult(null);
     try {
-      if (isOnline()) await flushSyncQueue();
+      if (isOnline()) {
+        // The operations refused earlier are sent again too (a departure refused, its tickets after)
+        await retryAllRefused();
+        await flushSyncQueue();
+      }
       const pending = await getPendingCount();
       const many = pending > 1;
-      if (pending === 0) {
+      if (pending > 0 && isOnline() && await isServerSessionOfAnotherUser()) {
+        setEndResult({ ok: false, text: `${pending} opération${many ? 's' : ''} pas encore ${many ? 'envoyées' : 'envoyée'} : ce navigateur est connecté au serveur avec le compte d'un autre guichetier (d'une autre gare). Déconnectez-vous, reconnectez-vous avec votre compte et Internet, puis cliquez à nouveau sur « Fin de service ».` });
+      } else if (pending === 0) {
         setEndResult({ ok: true, text: 'Fin de service : tout est envoyé au serveur. Vous pouvez vous déconnecter.' });
       } else if (!isOnline()) {
         setEndResult({ ok: false, text: `Pas de connexion : ${pending} opération${many ? 's restent' : ' reste'} sur ce poste. ${many ? 'Elles partiront' : 'Elle partira'} automatiquement dès qu'il aura Internet, même si un autre guichetier s'y connecte demain. Ne videz pas le navigateur.` });
