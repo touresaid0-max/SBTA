@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   PlusCircle, Ticket, Receipt, Lock,
-  Settings as SettingsIcon, LogOut, Bus, Truck, Wallet, Package,
+  Settings as SettingsIcon, LogOut, Bus, Truck, Wallet, Package, UploadCloud, Loader2,
 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
@@ -10,7 +10,7 @@ import { PWAUpdateBanner } from '@/components/pos/PWAUpdateBanner';
 import { ConnectionBanner } from '@/components/pos/ConnectionBanner';
 import { StorageAlert } from '@/components/pos/StorageAlert';
 import { useAutoSync } from '@/services/pos/useAutoSync';
-import { getPendingCount } from '@/services/pos/syncEngine';
+import { flushSyncQueue, getPendingCount, isOnline } from '@/services/pos/syncEngine';
 
 interface TileConfig {
   label: string;
@@ -27,19 +27,42 @@ export default function POSAccueil() {
   const courrierEnabled = session?.courrier_enabled === true;
   useAutoSync(session?.station_id, session?.courrier_enabled === true);
 
-  // Operations not yet sent stay on the device and leave only with their author's next online
-  // login here: say so before logging out
+  // Operations not yet sent stay on the device and leave as soon as it has Internet, whoever is
+  // logged in on it then (each in its author's name): say so before logging out
   const handleLogout = async () => {
     const pending = await getPendingCount();
     const many = pending > 1;
     if (pending > 0 && !window.confirm(
       `${pending} opération${many ? 's' : ''} pas encore envoyée${many ? 's' : ''} au serveur. `
       + `${many ? 'Elles resteront' : 'Elle restera'} sur ce poste et ${many ? 'partiront' : 'partira'} `
-      + 'à votre prochaine connexion avec Internet sur ce poste.\n\n'
+      + 'automatiquement dès qu\'il aura Internet, même si un autre guichetier s\'y connecte. Ne videz pas le navigateur.\n\n'
       + 'Se déconnecter quand même ?',
     )) return;
     await logout();
     navigate('/guichet/connexion');
+  };
+
+  // « Fin de service »: everything recorded on this device is sent now; without network it stays
+  // on the device and leaves by itself as soon as it has Internet, also with the next guichetier
+  const [endBusy, setEndBusy] = useState(false);
+  const [endResult, setEndResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const handleEndOfService = async () => {
+    setEndBusy(true);
+    setEndResult(null);
+    try {
+      if (isOnline()) await flushSyncQueue();
+      const pending = await getPendingCount();
+      const many = pending > 1;
+      if (pending === 0) {
+        setEndResult({ ok: true, text: 'Fin de service : tout est envoyé au serveur. Vous pouvez vous déconnecter.' });
+      } else if (!isOnline()) {
+        setEndResult({ ok: false, text: `Pas de connexion : ${pending} opération${many ? 's restent' : ' reste'} sur ce poste. ${many ? 'Elles partiront' : 'Elle partira'} automatiquement dès qu'il aura Internet, même si un autre guichetier s'y connecte demain. Ne videz pas le navigateur.` });
+      } else {
+        setEndResult({ ok: false, text: `${pending} opération${many ? 's' : ''} pas encore ${many ? 'acceptées' : 'acceptée'} par le serveur : cliquez sur « Voir » dans le bandeau pour ${many ? 'les' : 'la'} traiter. Le reste est envoyé.` });
+      }
+    } finally {
+      setEndBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -96,6 +119,15 @@ export default function POSAccueil() {
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
+              onClick={handleEndOfService}
+              disabled={endBusy}
+              className="flex items-center gap-1.5 px-3 h-11 rounded-xl text-sm font-bold transition-colors disabled:opacity-60"
+              style={{ backgroundColor: 'white', color: 'var(--primary)' }}
+              title="Envoyer au serveur tout ce qui a été fait sur ce poste"
+            >
+              {endBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />} Fin de service
+            </button>
+            <button
               onClick={() => navigate('/guichet/parametres')}
               className="flex items-center justify-center w-11 h-11 rounded-xl transition-colors hover:bg-white/15"
               aria-label="Paramètres"
@@ -115,6 +147,12 @@ export default function POSAccueil() {
 
       <ConnectionBanner />
       <StorageAlert />
+      {endResult && (
+        <div role="status" className="mx-4 mt-3 rounded-xl px-3 py-2.5 text-sm font-bold sm:mx-6"
+          style={{ backgroundColor: endResult.ok ? 'var(--success-light)' : 'var(--warning-light, #FEF3C7)', color: endResult.ok ? 'var(--success)' : 'var(--warning, #B45309)' }}>
+          {endResult.text}
+        </div>
+      )}
 
       <main className="flex-1 px-4 py-6 sm:px-6">
         <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>

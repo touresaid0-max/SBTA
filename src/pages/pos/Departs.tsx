@@ -867,6 +867,32 @@ export default function POSDeparts() {
           >
             {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ListChecks className="w-4 h-4" />} Bordereau des recettes{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
+          {/* Closing several departures at once: the ticked ones of this station, not closed yet */}
+          {(() => {
+            const closable = visibleDeparts.filter(d => selectedIds.has(d.id) && d.station_id === session?.station_id && !d.cloture && !d.cancelled);
+            if (selectedIds.size < 2 || closable.length === 0) return null;
+            return (
+              <button
+                onClick={async () => {
+                  if (!window.confirm(`Clôturer ${closable.length} départ${closable.length > 1 ? 's' : ''} : #${closable.map(d => d.route_number).join(', #')} ?\n\nPlus aucune vente ne sera possible sur ${closable.length > 1 ? 'ces départs' : 'ce départ'}.`)) return;
+                  setActionLoading(true);
+                  try {
+                    for (const d of closable) await cloturerDepart(d.id, session?.full_name);
+                    setSelectedIds(new Set());
+                    await loadDeparts();
+                  } finally {
+                    setActionLoading(false);
+                  }
+                }}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60"
+                style={{ backgroundColor: 'var(--text-secondary)' }}
+                title="Clôturer les départs cochés (plus de vente possible)"
+              >
+                <Lock className="w-4 h-4" /> Clôturer la sélection ({closable.length})
+              </button>
+            );
+          })()}
           <button
             onClick={() => void reloadFromServer()}
             disabled={reloading || !isOnline()}

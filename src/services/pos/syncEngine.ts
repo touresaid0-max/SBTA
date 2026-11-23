@@ -568,7 +568,7 @@ async function executeInsert(
     // Rows written as they are, all in one request; ids made on the device, so a retry is a no-op
     const rows = (record.rows as Record<string, unknown>[] | undefined) ?? [];
     const authorColumn = RAW_AUTHOR_COLUMN[store];
-    const userId = authorColumn ? await getCurrentUserId() : null;
+    const userId = authorColumn ? (knownUserId !== undefined ? knownUserId : await getCurrentUserId()) : null;
     const toSend = rows.map(r => (authorColumn && userId ? { ...r, [authorColumn]: userId } : r));
     if (INSERT_ONLY_STORES.has(store)) {
       for (const row of toSend) {
@@ -901,8 +901,12 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     const serverUserId = await serverSessionUserId();
     const waiting = (await db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).toArray())
       .filter(isWaitingToSend);
-    const pending = waiting.filter(item => sentBy(item, serverUserId));
-    waitingOtherUser = waiting.length - pending.length;
+    // Every operation of the device is sent, also those of a guichetier who worked before on it
+    // (sent with the session of the one logged in now, in the name of their author: booked_by,
+    // sold_by…). They used to wait for their author's next online login on this device: the sales
+    // of a guichetier who ended his day offline did not reach the server the next day (23/11/2026).
+    const pending = waiting;
+    waitingOtherUser = waiting.filter(item => !sentBy(item, serverUserId)).length;
     // Sort by created_at to preserve operation order
     pending.sort(byQueueOrder);
 
@@ -919,6 +923,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     const skipped = new Set(nothingToSend);
     const toSend = pending.filter(i => !skipped.has(i));
     const userId = serverUserId ?? null;
+    // The author of an operation: the guichetier who made it (the server session's otherwise)
+    const authorOf = (item: SyncQueueItem): string | null => item.user_id || userId;
     // After a refused batch, its operations go one by one up to this position
     let oneByOneUntil = 0;
 
@@ -932,6 +938,8 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         while (batch.length < ticketBatchSize) {
           const next = toSend[index + batch.length];
           if (!next?.id || next.entity !== 'tickets' || next.op !== 'insert') break;
+          // One author per batch (each ticket keeps the name of its seller)
+          if (authorOf(next) !== authorOf(item)) break;
           batch.push(next);
         }
         if (batch.length > 1) {
@@ -942,7 +950,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
             i.sending_since = nowIso();
           });
           const started = Date.now();
-          const error = await insertTicketBatch(batch.map(b => b.payload), userId);
+          const error = await insertTicketBatch(batch.map(b => b.payload), authorOf(item));
           if (!error) {
             ticketBatchSize = adaptBatchSize(batch.length, Date.now() - started);
             await db.sync_queue.bulkDelete(ids);
@@ -1006,7 +1014,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         await db.sync_queue.update(item.id, { status: 'syncing', tries: (item.tries ?? 0) + 1, sending_since: nowIso() });
 
         if (item.op === 'insert') {
-          await executeInsert(item.entity as StoreName, item.payload, userId);
+          await executeInsert(item.entity as StoreName, item.payload, authorOf(item));
         } else if (item.op === 'update') {
           const id = item.payload.id as string;
           const { id: _removed, ...patch } = item.payload;

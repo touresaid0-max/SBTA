@@ -99,14 +99,15 @@ export function useAutoSync(stationId?: string, courrierEnabled = false) {
       }
 
       const remaining = await updateQueueState();
+      // The operations of every guichetier of the device are sent, each in its author's name
+      // (also those of the one who worked before). The server session of another account still
+      // reads the server with that account's rights: the guichetier is asked to log in again.
       if (await isServerSessionOfAnotherUser()) {
-        // The guichetier signed in offline after another one: his operations wait for his own login
-        setLastSyncError('Session serveur d\'un autre guichetier sur ce poste : déconnectez-vous puis reconnectez-vous avec Internet pour envoyer vos opérations');
+        setLastSyncError(remaining === 0
+          ? 'Ventes envoyées. Session serveur d\'un autre guichetier sur ce poste : déconnectez-vous puis reconnectez-vous avec Internet pour voir vos chiffres à jour'
+          : 'Session serveur d\'un autre guichetier sur ce poste : déconnectez-vous puis reconnectez-vous avec Internet');
       } else if (result.failed === 0 && remaining === 0) {
         setLastSyncedAt(new Date().toISOString());
-      } else if (result.waitingOtherUser > 0 && result.failed === 0) {
-        const n = result.waitingOtherUser;
-        setLastSyncError(`${n} opération${n > 1 ? 's' : ''} d'un autre guichetier, envoyée${n > 1 ? 's' : ''} à sa prochaine connexion en ligne sur ce poste`);
       }
     } catch (error) {
       setLastSyncError(error instanceof Error ? error.message : 'Erreur inconnue pendant la synchronisation');
