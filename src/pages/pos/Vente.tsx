@@ -119,6 +119,7 @@ export default function POSVente() {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferTargetStation, setTransferTargetStation] = useState('');
   const [transferSeatCount, setTransferSeatCount] = useState(1);
+  // Typed above the free seats (40 for 4, an extra zero): refused, not cut down silently
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
 
@@ -795,6 +796,11 @@ export default function POSVente() {
     setTransferError('');
     if (!transferTargetStation) { setTransferError('Veuillez sélectionner une gare destinataire'); return; }
     if (transferSeatCount <= 0) { setTransferError('Veuillez saisir un nombre de sièges valide'); return; }
+    const transferMax = getAvailableSeatsForTransfer(depart, tickets, session.station_id).length;
+    if (transferSeatCount > transferMax) {
+      setTransferError(`Il ne reste que ${transferMax} siège(s) libre(s) : vous ne pouvez pas en transférer ${transferSeatCount}.`);
+      return;
+    }
     setTransferring(true);
     try {
       await transferSeatsBetweenStations({
@@ -1129,7 +1135,18 @@ export default function POSVente() {
                     min={1}
                     max={getAvailableSeatsForTransfer(depart, tickets, session.station_id).length}
                     value={transferSeatCount || ''}
-                    onChange={e => setTransferSeatCount(parseInt(e.target.value) || 0)}
+                    onChange={e => {
+                      // Never more than the free seats: the field stays at the maximum
+                      const typed = parseInt(e.target.value) || 0;
+                      const max = getAvailableSeatsForTransfer(depart, tickets, session.station_id).length;
+                      if (typed > max) {
+                        setTransferSeatCount(max);
+                        setTransferError(`Maximum ${max} siège(s) : il ne reste que ${max} place(s) libre(s) dans votre gare.`);
+                      } else {
+                        setTransferSeatCount(typed);
+                        setTransferError('');
+                      }
+                    }}
                     disabled={transferring}
                     className={fieldInput}
                     style={fieldStyle}
@@ -1144,7 +1161,8 @@ export default function POSVente() {
               </div>
               <button
                 onClick={handleTransferSeats}
-                disabled={transferring || !transferTargetStation || transferSeatCount <= 0}
+                disabled={transferring || !transferTargetStation || transferSeatCount <= 0
+                  || transferSeatCount > getAvailableSeatsForTransfer(depart, tickets, session.station_id).length}
                 className="w-full mt-4 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2"
                 style={{ backgroundColor: 'var(--primary)' }}
               >

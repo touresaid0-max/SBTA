@@ -823,6 +823,10 @@ export async function transferSeatsBetweenStations(params: {
   if (available.length === 0) {
     throw new Error('Aucun siège libre disponible au transfert dans cette gare');
   }
+  // More than the free seats is refused (a typing slip, 40 for 4), never cut down silently
+  if (params.seatCount > available.length) {
+    throw new Error(`Il ne reste que ${available.length} siège(s) libre(s) : vous ne pouvez pas en transférer ${params.seatCount}.`);
+  }
   // The last free seats first: the station keeps its first seats together
   const count = Math.min(params.seatCount, available.length);
   const seatsToTransfer = available.slice(available.length - count);
