@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX, KeyRound, Trash2, Truck } from 'lucide-react'
+import { Search, Plus, FileText, Eye, Pencil, Ban, ChevronDown, UserX, KeyRound, Trash2, Truck, FileSpreadsheet } from 'lucide-react'
+import { exportEmployeesExcel } from '@/utils/rhEmployeesExport'
 import CreateAccountModal from '@/components/admin/CreateAccountModal'
 import type { PendingEmployee } from '@/services/employeeAccount.service'
 import toast from 'react-hot-toast'
@@ -247,6 +248,34 @@ export default function EmployeesPage() {
     [employees, filters.search],
   )
 
+  /** Excel export of the list exactly as filtered on screen (tab, filters, search; every page) */
+  const handleExport = () => {
+    const tab = TABS.find(t => t.key === activeTab)
+    const company = companies.find(c => c.id === filters.company_id)
+    const station = stations.find(s => s.id === filters.station_id)
+    const STATUS: Record<string, string> = { active: 'Actifs', pending: 'En attente', suspended: 'Suspendus', inactive: 'Inactifs', pending_deletion: 'Suppression demandée' }
+    const appliedFilters: [string, string][] = []
+    if (activeTab !== 'all' && tab) appliedFilters.push(['Poste', tab.label])
+    if (company) appliedFilters.push(['Société', company.is_group ? `${company.name} (groupe et filiales)` : company.name])
+    if (station) appliedFilters.push(['Gare', station.name])
+    if (filters.contract_type) appliedFilters.push(['Type de contrat', filters.contract_type === 'titulaire' ? 'Titulaires' : 'Contractuels'])
+    if (filters.contract_nature) appliedFilters.push(['Nature du contrat', CONTRACT_NATURE_LABELS[filters.contract_nature] ?? filters.contract_nature])
+    if (filters.status) appliedFilters.push(['Statut', STATUS[filters.status] ?? filters.status])
+    if (filters.search?.trim()) appliedFilters.push(['Recherche', filters.search.trim()])
+    try {
+      exportEmployeesExcel({
+        employees: visibleEmployees,
+        roleLabels: ROLE_LABELS,
+        filters: appliedFilters,
+        isNoLoginDriver,
+        fileTag: [activeTab !== 'all' ? tab?.label : '', company?.code ?? company?.name, station?.name].filter(Boolean).join(' '),
+      })
+      toast.success(`${visibleEmployees.length} employé${visibleEmployees.length > 1 ? 's' : ''} exporté${visibleEmployees.length > 1 ? 's' : ''}`)
+    } catch (err) {
+      toast.error("Export impossible : " + (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
   // Same pagination as the bus list: back to page 1 when a filter, the tab or the search changes
   const pagination = usePagination(
     visibleEmployees,
@@ -275,6 +304,15 @@ export default function EmployeesPage() {
               Activer les {pendingDriverIds.length} chauffeurs en attente
             </button>
           )}
+          <button
+            onClick={handleExport}
+            disabled={loading || visibleEmployees.length === 0}
+            className="flex items-center gap-2 px-4 py-2 border border-[#0B7439] rounded-xl text-sm font-semibold text-[#0B7439] hover:bg-[#F0FAF3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Exporter la liste affichée (onglet, filtres et recherche appliqués) en Excel"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Exporter ({visibleEmployees.length})
+          </button>
           <button
             onClick={() => navigate('/rh/deactivated')}
             className="flex items-center gap-2 px-4 py-2 border border-[#E2EAE5] rounded-xl text-sm font-semibold text-[#6B7280] hover:bg-[#F8FAF8] transition-colors"
