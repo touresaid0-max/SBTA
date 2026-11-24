@@ -275,9 +275,11 @@ export default function BagagisteBaggageSale() {
           .select('id, name, origin_city_id, destination_city:destination_city_id(name)')
           .order('name');
         if (error) throw error;
-        const all = (data || []) as any[];
-        const fromHere = all.filter(r => st?.city_id && r.origin_city_id === st.city_id);
-        const list: LineOption[] = (fromHere.length > 0 ? fromHere : all).map(r => ({
+        // Every line (a passenger may hold a ticket of any line), those leaving from the station first
+        const all = ((data || []) as any[]).sort((a, b) =>
+          Number(b.origin_city_id === st?.city_id) - Number(a.origin_city_id === st?.city_id)
+          || String(a.name).localeCompare(String(b.name), 'fr'));
+        const list: LineOption[] = all.map(r => ({
           id: r.id, name: r.name,
           destination: ((Array.isArray(r.destination_city) ? r.destination_city[0]?.name : r.destination_city?.name) || '').toUpperCase(),
         }));
