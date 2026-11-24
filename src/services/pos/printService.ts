@@ -389,6 +389,10 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
 /** One HTML document for one or more tickets — a single print dialog, one page per ticket. */
 async function buildHTMLTickets(list: PrintTicketData[], settings: PrintSettings): Promise<string> {
   const mm = settings.width_mm;
+  // The width the printer really prints: an 80 mm roll is printed over its middle 72 mm. Laid out
+  // over 80 mm, the start and the end of each line were cut (« EPART », « => DIV », « 00:0 »).
+  // Same widths as the bordereaux de départ and des recettes.
+  const bodyWidthMm = mm === 80 ? 71 : mm - 2;
   const customization = await getPrintCustomization();
   const containers = list.map(data => buildHTMLTicketContainer(data, customization)).join('\n  <div class="ticket-break"></div>\n  ');
 
@@ -397,7 +401,7 @@ async function buildHTMLTickets(list: PrintTicketData[], settings: PrintSettings
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
   body { margin: 0; padding: 0; }
-  .ticket-container { width: ${mm}mm; margin: 0 auto; padding: 0; }
+  .ticket-container { width: ${bodyWidthMm}mm; margin: 0 auto; padding: 0; }
 
   .ticket-block { width: 100%; overflow: visible; }
 
@@ -457,7 +461,7 @@ async function buildHTMLTickets(list: PrintTicketData[], settings: PrintSettings
 
   @media print {
     body { margin: 0; padding: 0; background: #fff; }
-    .ticket-container { width: ${mm}mm !important; margin: 0 auto !important; padding: 0; }
+    .ticket-container { width: ${bodyWidthMm}mm !important; margin: 0 auto !important; padding: 0; }
     .ticket-break { break-after: page; page-break-after: always; height: 0; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
