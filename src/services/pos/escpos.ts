@@ -690,10 +690,13 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
   // ── INFOS GUICHET / TRAJET ───────────────────────────────────────
   parts.push(setAlign('left'));
   const padR = (s: string, n: number) => s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);
+  // Label left, value right, inside the side borders (w - 2 chars: a full-width line lost the
+  // value's last 2 characters, e.g. the seat counts and the end of the date)
   const pair = (label: string, value: string, bold = false) => {
-    const v = truncate(value, w - label.length);
+    const inner = w - 2;
+    const v = truncate(value, Math.max(0, inner - label.length - 1));
     if (bold) parts.push(setBold(true));
-    parts.push(...line(`${padR(label, w - v.length > 0 ? w - v.length : label.length)}${v}`));
+    parts.push(...line(`${padR(label, inner - v.length)}${v}`));
     if (bold) parts.push(setBold(false));
   };
   // Departure number, bus and driver read from afar (like the seat number of the ticket): the
@@ -725,7 +728,8 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
   pair('NBRE PLACE', fmtNum(bord.total_seats));
   pair('VENDU(S)', fmtNum(bord.seats_sold));
   pair('RESTANT(S)', fmtNum(bord.seats_remaining));
-  parts.push(...separator());
+  // Convoy: a rule before the amounts; normal departure: the grid table draws its own top rule
+  if (bord.is_convoy) parts.push(...separator());
 
   if (bord.is_convoy) {
     // Convoy: simplified financial section
@@ -738,52 +742,80 @@ export function buildBordereauDepartESCPOS(data: PrintBordereauDepartData, setti
     pair('SOLDE CONVOI:', fmt(bord.convoy_amount - bord.total_charges), true);
     pair('MT TOTAL BAGAGE:', fmt(bord.total_baggage));
   } else {
-    // Normal: sales table by destination
-    // Column layout for 62 inner chars:
-    // DEST(26) | SIEG(4) | TARIF(16) | MONTANT(16) = 62
-    const C_DEST = 26;
-    const C_SIEG = 4;
-    const C_TARIF = 16;
-    const C_MONTANT = 16;
+    // Normal: grid table like the paper model — one row per destination with its occupied seats.
+    // The receipt's own side borders close the table; inner columns are split by '|'.
+    const inner = w - 2;
+    const C_DEST = 14, C_SIEG = 5, C_TARIF = 8, C_MONTANT = 9;
+    const C_SEATS = inner - (C_DEST + C_SIEG + C_TARIF + C_MONTANT) - 4;
+    const gridSep = () => line(['-'.repeat(C_DEST), '-'.repeat(C_SIEG), '-'.repeat(C_TARIF), '-'.repeat(C_MONTANT), '-'.repeat(C_SEATS)].join('+'));
+    const centerIn = (s: string, n: number) => {
+      const t = s.slice(0, n);
+      const left = Math.floor((n - t.length) / 2);
+      return ' '.repeat(left) + t + ' '.repeat(n - t.length - left);
+    };
+    // Cut a text into pieces of at most n chars, breaking after a '-' or a space when possible
+    const wrap = (s: string, n: number): string[] => {
+      const out: string[] = [];
+      let rest = s.trim();
+      while (rest.length > n) {
+        let cut = Math.max(rest.lastIndexOf('-', n - 1), rest.lastIndexOf(' ', n - 1)) + 1;
+        if (cut <= 0) cut = n;
+        out.push(rest.slice(0, cut).trim());
+        rest = rest.slice(cut).trim();
+      }
+      out.push(rest);
+      return out;
+    };
+    const gridRow = (cells: string[]) => line(cells.join('|'));
 
-    const headerRow =
-      leftAlign('DESTINATION', C_DEST) +
-      leftAlign('SIEG', C_SIEG) +
-      rightAlign('TARIF', C_TARIF) +
-      rightAlign('MONTANT', C_MONTANT);
-    parts.push(setBold(true), ...line(headerRow.slice(0, w)), setBold(false));
-    parts.push(...separator());
+    parts.push(...gridSep());
+    parts.push(setBold(true), ...gridRow([
+      leftAlign('DESTINATION', C_DEST), centerIn('SIEG.', C_SIEG), centerIn('TARIF', C_TARIF),
+      centerIn('MONTANT', C_MONTANT), centerIn('SIEGES OCCUPES', C_SEATS),
+    ]), setBold(false));
+    parts.push(...gridSep());
 
     const groups = bord.destination_groups && bord.destination_groups.length > 0
       ? bord.destination_groups
       : [{ destination: bord.destination, seats_sold: bord.seats_sold, unit_price: bord.unit_price, amount: bord.total_ticket_amount, seat_numbers: bord.sold_seat_numbers }];
 
     for (const group of groups) {
-      const destLabel = truncate(group.destination, C_DEST);
-      const sieg = leftAlign(fmtNum(group.seats_sold), C_SIEG);
-      const tarif = rightAlign(fmtNum(group.unit_price), C_TARIF);
-      const montant = rightAlign(fmtNum(group.amount), C_MONTANT);
-      parts.push(...line(`${leftAlign(destLabel, C_DEST)}${sieg}${tarif}${montant}`));
-
+      const destLines = wrap(group.destination, C_DEST);
+      const seatLines = group.seat_numbers.length > 0 ? wrap(group.seat_numbers.join('-'), C_SEATS) : [''];
+      const n = Math.max(destLines.length, seatLines.length);
+      for (let i = 0; i < n; i++) {
+        const first = i === 0;
+        parts.push(...gridRow([
+          leftAlign(destLines[i] ?? '', C_DEST),
+          centerIn(first ? fmtNum(group.seats_sold) : '', C_SIEG),
+          rightAlign(first ? fmtNum(group.unit_price) : '', C_TARIF),
+          rightAlign(first ? fmtNum(group.amount) : '', C_MONTANT),
+          leftAlign(seatLines[i] ?? '', C_SEATS),
+        ]));
+      }
+      parts.push(...gridSep());
     }
-    parts.push(...separator());
 
-    // ── RÉCAPITULATIF FINANCIER ─────────────────────────────────────
+    // ── RÉCAPITULATIF FINANCIER (une ligne par total, séparées par un trait) ──
     const recap = (label: string, val: string, bold = false) => {
-      const v = truncate(val, w - label.length - 1);
-      const gap = Math.max(1, w - label.length - v.length);
+      const v = truncate(val, inner - label.length - 1);
+      const gap = Math.max(1, inner - label.length - v.length);
       if (bold) parts.push(setBold(true));
       parts.push(...line(`${label}${' '.repeat(gap)}${v}`));
       if (bold) parts.push(setBold(false));
     };
-    recap('MT TOTAL TICKET:', fmt(bord.total_ticket_amount), true);
-    if (bord.total_rations > 0)     recap('  RATIONS:', fmt(bord.total_rations));
-    if (bord.total_carburant > 0)   recap('  CARBURANT:', fmt(bord.total_carburant));
-    if (bord.total_peages > 0)      recap('  PEAGES:', fmt(bord.total_peages));
-    if (bord.total_autres > 0)      recap('  AUTRES:', fmt(bord.total_autres));
-    recap('MT TOTAL DEPENSES:', fmt(bord.total_charges));
-    recap('SOLDE TICKETS:', fmt(bord.solde_ticket), true);
-    recap('MT TOTAL BAGAGE:', fmt(bord.total_baggage));
+    parts.push(...line());
+    recap('MT TOTAL TICKET :', fmtNum(bord.total_ticket_amount), true);
+    parts.push(...separator());
+    recap('MT TOTAL DEPENSES (R/P.) :', fmtNum(bord.total_charges), true);
+    if (bord.total_rations > 0)     recap('   RATIONS :', fmtNum(bord.total_rations));
+    if (bord.total_carburant > 0)   recap('   CARBURANT :', fmtNum(bord.total_carburant));
+    if (bord.total_peages > 0)      recap('   PEAGES :', fmtNum(bord.total_peages));
+    if (bord.total_autres > 0)      recap('   AUTRES :', fmtNum(bord.total_autres));
+    parts.push(...separator());
+    recap('SOLDE TICKETS :', fmtNum(bord.solde_ticket), true);
+    parts.push(...separator());
+    recap('MT TOTAL BAGAGE :', fmtNum(bord.total_baggage), true);
   }
 
   parts.push(...doubleSep());
