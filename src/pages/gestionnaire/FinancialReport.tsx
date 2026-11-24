@@ -183,9 +183,12 @@ export default function FinancialReport() {
     try {
       const list = await fetchDepartures(null, dateFrom, dateTo);
       // The lines shown (all of them, or those found by the search)
-      const shownIds = new Set(routesShown.map(r => r.route_id));
+      const shownIds = new Set<string | null>(routesShown.map(r => r.route_id ?? null));
       const shownNames = new Set(routesShown.map(r => r.route_name));
-      const rows = list.filter(d => (d.routeId ? shownIds.has(d.routeId) : shownNames.has(d.route)));
+      // The direct ramassages (no line) go with the « Ramassage direct (sans ligne) » row of the report:
+      // their name differs (« Ramassage direct »), so they were left out of the file and its
+      // Ramassage column stayed at 0 (24/11/2026)
+      const rows = list.filter(d => (d.routeId ? shownIds.has(d.routeId) : (shownIds.has(null) || shownNames.has(d.route))));
       if (rows.length === 0) {
         const expected = routesShown.some(r => Number(r.trip_count) > 0);
         setExportAllMsg({ ok: false, text: expected
@@ -210,10 +213,10 @@ export default function FinancialReport() {
       // Par ligne: the detail added up, next to the line of the report
       const byLine = [...groupBy(d => d.routeId ?? d.route).values()].map(list => {
         const t = totalsOf(list);
-        const rep = routes.find(r => (list[0].routeId ? r.route_id === list[0].routeId : r.route_name === list[0].route));
+        const rep = routes.find(r => (list[0].routeId ? r.route_id === list[0].routeId : (r.route_id == null || r.route_name === list[0].route)));
         const same = !!rep && Number(rep.trip_count) === t.voyages && Math.round(Number(rep.revenue)) === Math.round(t.recette)
           && Math.round(Number(rep.total_expense ?? 0)) === Math.round(t.expenses);
-        return { 'Ligne': list[0].route, ...amounts(t), 'Recettes (détail)': t.recette,
+        return { 'Ligne': list[0].routeId ? list[0].route : (rep?.route_name ?? list[0].route), ...amounts(t), 'Recettes (détail)': t.recette,
           'Voyages (rapport)': rep ? Number(rep.trip_count) : '', 'Recettes (rapport)': rep ? Number(rep.revenue) : '',
           'Conforme au rapport': same ? 'Oui' : 'Non' };
       });

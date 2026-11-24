@@ -73,7 +73,10 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
     route: r.is_departure === false && !r.route_id ? 'Ramassage direct' : (String(r.route_name ?? '') || 'Ligne inconnue'),
     // « Ramassage direct — MAN » → « MAN » (a database not updated yet sends no name: none)
     destination: r.is_departure === false && String(r.route_name ?? '').includes('\u2014')
-      ? (String(r.route_name).split('\u2014').pop() ?? '').trim().toUpperCase() || null : null,
+      ? (String(r.route_name).split('\u2014').pop() ?? '').trim().toUpperCase() || null
+      // Convoy: its destination only (« Daloa - Abidjan » → « ABIDJAN »), not the line (24/11/2026)
+      : isConvoy ? (String(r.route_name ?? '').split(/\s+[-\u2013\u2014>]+\s+/).pop() ?? '').trim().toUpperCase() || null
+      : null,
     stationId: String(r.station_id ?? 'none'),
     station: String(r.station_name ?? '') || 'Gare inconnue',
     counter: String(r.counter_number ?? '') || '—',
