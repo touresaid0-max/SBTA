@@ -9,6 +9,8 @@ import {
 import {
   printBaggageTicket, generateBaggageNumber, type BaggageTicketData,
 } from '../../utils/printBaggageTicket';
+import PhoneInputCI from '@/components/shared/PhoneInputCI';
+import { phoneCIError } from '@/utils/phoneCI';
 
 interface StationOption {
   id: string;
@@ -83,6 +85,8 @@ export default function BagagisteBaggageSale() {
   const [selected, setSelected] = useState<DepartureRow | null>(null);
   const [form, setForm] = useState<BaggageForm>(EMPTY_FORM);
   const [processing, setProcessing] = useState(false);
+  // The phone error shows at once after a refused save, not only after leaving the field
+  const [triedSave, setTriedSave] = useState(false);
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [tpeMode, setTpeMode] = useState<'sans_guichet' | 'avec_guichet'>('sans_guichet');
   const [tpeCounterId, setTpeCounterId] = useState<string | null>(null);
@@ -255,6 +259,7 @@ export default function BagagisteBaggageSale() {
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
+    setTriedSave(false);
   };
 
   const handleSave = async () => {
@@ -268,6 +273,13 @@ export default function BagagisteBaggageSale() {
     }
     if (!form.owner_name.trim() || !form.owner_phone.trim() || !form.destination.trim()) {
       toast.error('Remplissez au minimum : propriétaire, contact et destination');
+      return;
+    }
+    // Côte d'Ivoire number of 10 digits (01, 05, 07, 21, 25, 27): « 0 » or 3 digits were accepted
+    const phoneError = phoneCIError(form.owner_phone, true);
+    if (phoneError) {
+      setTriedSave(true);
+      toast.error(`Contact : ${phoneError}`);
       return;
     }
     if (form.price <= 0) {
@@ -681,10 +693,11 @@ export default function BagagisteBaggageSale() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Contact *</label>
-                    <input
-                      type="text"
+                    <PhoneInputCI
                       value={form.owner_phone}
-                      onChange={e => setForm({ ...form, owner_phone: e.target.value })}
+                      onChange={national => setForm({ ...form, owner_phone: national })}
+                      required
+                      showError={triedSave}
                       className="w-full px-3 py-2 rounded-lg border text-sm"
                       style={inputStyle}
                     />
