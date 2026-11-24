@@ -10,6 +10,8 @@ import { localInsertParcel, localInsertTrackingEvent, localUpdateParcel } from '
 import { getReferentiel } from '@/services/courrier/referentiels'
 import { generateOfflineParcelCodes, stationAgencyCode } from '@/services/courrier/parcelCodeGenerator'
 import { useConnection } from '@/services/courrier/ConnectionContext'
+import { usePOSSession } from '@/services/pos/POSSessionContext'
+import { counterDestinationStationIds } from '@/services/courrier/counterDestinations'
 import { CourrierOfflineBanner } from '@/components/parcel/CourrierOfflineBanner'
 import { CourrierSyncQueueModal } from '@/components/parcel/CourrierSyncQueueModal'
 import { sendCourierCreatedSms } from '@/services/emisSms.service'
@@ -65,6 +67,11 @@ export default function NewParcelForm() {
   }
 
   const [stations, setStations] = useState<Station[]>([])
+  // Guichet (caisse): only the stations served by the lines assigned to the guichet. null: no
+  // filter (agent colis, or the guichet's lines not known on this device)
+  const { session: posSession } = usePOSSession()
+  const [allowedStationIds, setAllowedStationIds] = useState<Set<string> | null>(null)
+  const [noLinesAssigned, setNoLinesAssigned] = useState(false)
   const [loading, setLoading] = useState(false)
   // Phone errors shown at once after a submit attempt, otherwise when the field is left
   const [showPhoneErrors, setShowPhoneErrors] = useState(false)
@@ -114,6 +121,24 @@ export default function NewParcelForm() {
     }
     loadStations()
   }, [])
+
+  useEffect(() => {
+    if (!isPosCourrier) return
+    let cancelled = false
+    counterDestinationStationIds(posSession?.counter_id, posSession?.assigned_route_ids ?? [], courrierIsOnline())
+      .then(({ stationIds, noLines }) => {
+        if (cancelled) return
+        setAllowedStationIds(stationIds)
+        setNoLinesAssigned(noLines)
+      })
+      .catch(() => { /* lists not readable: no filter */ })
+    return () => { cancelled = true }
+  }, [isPosCourrier, posSession?.counter_id, posSession?.assigned_route_ids])
+
+  const arrivalStations = stations.filter(s =>
+    s.id !== myStation?.id && (allowedStationIds === null || allowedStationIds.has(s.id)))
+  // The guichet's lines serve no station of the platform (a destination city without a station)
+  const noArrivalStation = !noLinesAssigned && allowedStationIds !== null && stations.length > 0 && arrivalStations.length === 0
 
   function set(field: string, value: unknown) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -593,11 +618,21 @@ export default function NewParcelForm() {
                 const station = stations.find(s => s.id === stationId)
                 setForm(prev => ({ ...prev, destination_station_id: stationId, recipient_city: station?.city_name ?? '' }))
               }} required>
-                <option value="">Sélectionner une gare</option>
-                {stations.filter(s => s.id !== myStation?.id).map(s => (
+                <option value="">{noLinesAssigned ? 'Aucune ligne affectée à votre guichet' : noArrivalStation ? 'Aucune gare sur vos lignes' : 'Sélectionner une gare'}</option>
+                {arrivalStations.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
+              {noLinesAssigned && (
+                <p className="text-xs mt-1" style={{ color: 'var(--danger, #dc2626)' }}>
+                  Aucune ligne n'est affectée à votre guichet : demandez au chef de gare de vous en affecter une.
+                </p>
+              )}
+              {noArrivalStation && (
+                <p className="text-xs mt-1" style={{ color: 'var(--danger, #dc2626)' }}>
+                  Les lignes de votre guichet ne desservent aucune gare enregistrée : demandez à l'administrateur de créer la gare d'arrivée.
+                </p>
+              )}
             </div>
             <div>
               <label className={labelCls} style={labelStyle}>Ville de destination *</label>
