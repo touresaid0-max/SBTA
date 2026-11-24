@@ -198,8 +198,8 @@ export default function BagagisteBaggageSale() {
         .select(`
           id, route_name, departure_datetime, status, source, departure_number, route_number, bus_id,
           bus:bus_id(registration_number),
-          arrival_station:arrival_station_id(name),
-          counter:counter_id(counter_number)
+          counter_id,
+          arrival_station:arrival_station_id(name)
         `)
         .eq('departure_station_id', stationId)
         .gte('departure_datetime', dayStart.toISOString())
@@ -233,6 +233,14 @@ export default function BagagisteBaggageSale() {
         });
       }
 
+      // The guichet of each departure (for the departure sheets), read apart: schedules has no link
+      // declared to counters, and asking it with the departures had the whole request refused
+      const counterMap: Record<string, string> = {};
+      const counterIds = [...new Set(scheduleRows.map(s => s.counter_id).filter(Boolean))];
+      if (counterIds.length > 0) {
+        const { data: counters } = await supabase.from('counters').select('id, counter_number').in('id', counterIds);
+        (counters || []).forEach((c: any) => { if (c.counter_number) counterMap[c.id] = c.counter_number; });
+      }
       const rows: DepartureRow[] = scheduleRows.map((s: any) => {
         const busReg = busMap[s.bus_id]
           || (Array.isArray(s.bus) ? s.bus?.[0]?.registration_number : s.bus?.registration_number)
@@ -246,7 +254,7 @@ export default function BagagisteBaggageSale() {
           bus_registration: busReg,
           departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.route_number ?? s.departure_number ?? null) : null),
           source: s.source || 'chef_gare',
-          counter_number: (Array.isArray(s.counter) ? s.counter?.[0]?.counter_number : s.counter?.counter_number) || '',
+          counter_number: (s.counter_id && counterMap[s.counter_id]) || '',
         };
       });
       void saveRef(`deps:${stationId}:${date}`, rows);
