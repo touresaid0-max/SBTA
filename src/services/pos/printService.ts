@@ -1392,6 +1392,10 @@ export async function printRecettesBordereau(data: PrintRecettesData): Promise<b
 function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: PrintSettings): string {
   const { data: bord, phoneLine } = data;
   const mm = settings.width_mm;
+  // The width the printer really prints: an 80 mm roll is printed over its middle 72 mm. Laid out
+  // over 80 mm, the start and the end of each line were cut (« ICKET: », « 24/11/20 », « 127 5 »).
+  // Same widths as the bordereau des recettes.
+  const bodyWidthMm = mm === 80 ? 71 : mm - 2;
   const fmtNum = (n: number): string =>
     Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   const fmt = (n: number): string => fmtNum(n) + ' F';
@@ -1449,8 +1453,8 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   @page { size: ${mm}mm auto; margin: 0; }
   * { font-family: 'Courier New', monospace; font-size: 10px; color: #000; margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: ${mm}mm; margin: 0 auto; padding: 0; font-weight: 600; }
-  .border-box { border: 0; padding: 0 1mm; width: ${mm}mm; }
+  body { width: ${bodyWidthMm}mm; margin: 0 auto; padding: 0; font-weight: 600; }
+  .border-box { border: 0; padding: 0 1mm; width: ${bodyWidthMm}mm; }
   .hdr { text-align: center; }
   .brand { font-size: 19px; font-weight: 900; }
   .brand-logo { display: flex; justify-content: center; }
@@ -1484,7 +1488,7 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   .recap-row { display: flex; justify-content: space-between; padding: 2px 0; }
   .recap-bold { font-weight: 900; }
   .printed { text-align: center; font-size: 10px; font-weight: 700; padding: 3px 0; }
-  @media print { body { margin: 0 auto; width: ${mm}mm !important; padding: 0 !important; } .border-box { border: 0 !important; width: ${mm}mm !important; } }
+  @media print { body { margin: 0 auto; width: ${bodyWidthMm}mm !important; padding: 0 !important; } .border-box { border: 0 !important; width: ${bodyWidthMm}mm !important; } }
 </style></head><body>
   <div class="border-box">
   <div class="hdr">
