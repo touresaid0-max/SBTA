@@ -121,6 +121,8 @@ export default function BagagisteBaggageSale() {
   }, []);
 
   const stationName = stations.find(s => s.id === stationId)?.name || 'SBTA';
+  // The gares the bagagiste is assigned to (the lines offered must leave from one of them)
+  const myStationIds = stations.map(s => s.id).sort().join(',');
   const deferredTpe = tpeMode === 'avec_guichet';
 
   const loadStations = useCallback(async () => {
@@ -277,31 +279,33 @@ export default function BagagisteBaggageSale() {
     let cancelled = false;
     (async () => {
       try {
-        const { data: st } = await supabase.from('stations').select('city_id').eq('id', stationId).maybeSingle();
         const { data, error } = await supabase
           .from('routes')
-          .select('id, name, origin_city_id, destination_city:destination_city_id(name)')
+          .select('id, name, origin_station_id, destination_city:destination_city_id(name)')
           .order('name');
         if (error) throw error;
-        // Only the lines of the station chosen (one the bagagiste is assigned to): the lines of its
-        // guichets; failing that, the lines of its departures of the day, then those leaving from its
-        // city. Never every line of the company (24/11/2026).
+        // Only the lines that leave from the bagagiste's own gares (24/11/2026). The lines of the
+        // station chosen are those of its guichets and of its departures of the last 30 days, but
+        // some guichets of Yopougon also have lines of Adjamé or Abengourou, and departures were
+        // created on them: a line whose gare of origin is not one of his gares is never shown.
+        // Failing any, the lines whose gare of origin is one of his gares. Never by city (Adjamé
+        // and Yopougon are both in Abidjan), never every line of the company.
         const all = (data || []) as any[];
-        let ids = new Set<string>();
+        const myGares = new Set(myStationIds.split(',').filter(Boolean));
+        myGares.add(stationId);
+        const fromMyGares = (r: { origin_station_id?: string | null }) => !r.origin_station_id || myGares.has(String(r.origin_station_id));
+        const ids = new Set<string>();
         const { data: counters } = await supabase.from('counters').select('id').eq('station_id', stationId);
         const counterIds = ((counters || []) as any[]).map(c => c.id);
         if (counterIds.length > 0) {
           const { data: cr } = await supabase.from('counter_routes').select('route_id').in('counter_id', counterIds);
-          ids = new Set(((cr || []) as any[]).map(r => String(r.route_id)));
+          ((cr || []) as any[]).forEach(r => ids.add(String(r.route_id)));
         }
-        if (ids.size === 0) {
-          const { data: deps } = await supabase.from('schedules').select('route_id').eq('departure_station_id', stationId)
-            .gte('departure_datetime', new Date(Date.now() - 30 * 86400_000).toISOString()).limit(500);
-          ids = new Set(((deps || []) as any[]).map(d => String(d.route_id)).filter(Boolean));
-        }
-        const mine = ids.size > 0
-          ? all.filter(r => ids.has(String(r.id)))
-          : all.filter(r => st?.city_id && r.origin_city_id === st.city_id);
+        const { data: deps } = await supabase.from('schedules').select('route_id').eq('departure_station_id', stationId)
+          .gte('departure_datetime', new Date(Date.now() - 30 * 86400_000).toISOString()).limit(1000);
+        ((deps || []) as any[]).forEach(d => { if (d.route_id) ids.add(String(d.route_id)); });
+        let mine = all.filter(r => ids.has(String(r.id)) && fromMyGares(r));
+        if (mine.length === 0) mine = all.filter(r => r.origin_station_id && myGares.has(String(r.origin_station_id)));
         const list: LineOption[] = mine.map(r => ({
           id: r.id, name: r.name,
           destination: ((Array.isArray(r.destination_city) ? r.destination_city[0]?.name : r.destination_city?.name) || '').toUpperCase(),
@@ -319,7 +323,7 @@ export default function BagagisteBaggageSale() {
       }
     })();
     return () => { cancelled = true; };
-  }, [stationId, online]);
+  }, [stationId, myStationIds, online]);
 
   const loadRecentSales = useCallback(async () => {
     if (!user?.id) return;
