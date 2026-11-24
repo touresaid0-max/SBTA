@@ -4,8 +4,14 @@ import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import {
-  Luggage, Printer, RefreshCw, Bus, Clock, MapPin, Loader2, CheckCircle2,
+  Luggage, Printer, RefreshCw, Bus, Clock, MapPin, Loader2, CheckCircle2, WifiOff, FileText, ScrollText,
 } from 'lucide-react';
+import {
+  saveRef, getRef, enqueueBaggage, queuedBaggages, flushBaggages, isNetworkFailure,
+  saveProvisional, provisionalFor,
+} from '@/services/bagagiste/offlineBagages';
+import { printDepartureSheets, printEndOfDayBaggage, type DepartureSheet } from '@/utils/printBagagisteSheets';
+import { uuidV4 } from '@/utils/uuid';
 import {
   printBaggageTicket, generateBaggageNumber, type BaggageTicketData,
 } from '../../utils/printBaggageTicket';
@@ -26,7 +32,11 @@ interface DepartureRow {
   bus_registration: string;
   departure_order: number | null;
   source: string;
+  counter_number?: string;
 }
+
+/** A line of the station (offline list): its name and destination */
+interface LineOption { id: string; name: string; destination: string }
 
 interface RecentSale {
   id: string;
@@ -35,6 +45,8 @@ interface RecentSale {
   price: number;
   owner_name: string;
   created_at: string;
+  /** Kept on the device, not on the server yet */
+  pending?: boolean;
 }
 
 type BaggageMode = 'none' | 'avec_ticket' | 'avec_ticket_reporte' | 'sans_ticket';
@@ -90,6 +102,23 @@ export default function BagagisteBaggageSale() {
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [tpeMode, setTpeMode] = useState<'sans_guichet' | 'avec_guichet'>('sans_guichet');
   const [tpeCounterId, setTpeCounterId] = useState<string | null>(null);
+  // Without network: everything below is read from the device, the baggage is kept here
+  const [online, setOnline] = useState<boolean>(typeof navigator === 'undefined' ? true : navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [lines, setLines] = useState<LineOption[]>([]);
+  const [buses, setBuses] = useState<string[]>([]);
+  // The departure written on the passenger's ticket: line, number, bus
+  const [ticketLine, setTicketLine] = useState('');
+  const [ticketNumber, setTicketNumber] = useState('');
+  const [ticketBus, setTicketBus] = useState('');
+
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
 
   const stationName = stations.find(s => s.id === stationId)?.name || 'SBTA';
   const deferredTpe = tpeMode === 'avec_guichet';
@@ -97,6 +126,7 @@ export default function BagagisteBaggageSale() {
   const loadStations = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
+    const cacheKey = `stations:${user.id}`;
     try {
       const { data, error } = await supabase
         .from('station_baggage_handlers')
@@ -108,9 +138,17 @@ export default function BagagisteBaggageSale() {
         .filter(Boolean)
         .map((s: any) => ({ id: s.id, name: s.name }));
       setStations(opts);
+      void saveRef(cacheKey, opts);
       if (opts.length > 0) setStationId(prev => prev || opts[0].id);
     } catch (err: any) {
-      toast.error(err.message || 'Erreur de chargement des gares');
+      // Without network: the stations kept on the device
+      const cached = await getRef<StationOption[]>(cacheKey);
+      if (cached && cached.length > 0) {
+        setStations(cached);
+        setStationId(prev => prev || cached[0].id);
+      } else {
+        toast.error(err.message || 'Erreur de chargement des gares');
+      }
     } finally {
       setLoading(false);
     }
@@ -133,6 +171,20 @@ export default function BagagisteBaggageSale() {
       });
   }, [user?.id]);
 
+  // The provisional departures (created from a passenger's ticket) not known by the server yet
+  const withProvisional = useCallback(async (rows: DepartureRow[]): Promise<DepartureRow[]> => {
+    if (!stationId) return rows;
+    const known = new Set(rows.map(r => r.departure_order).filter(n => n != null));
+    const prov = (await provisionalFor(stationId, date))
+      .filter(p => !known.has(p.number))
+      .map<DepartureRow>(p => ({
+        id: p.key, route_name: p.route_name, destination: p.destination,
+        departure_datetime: `${p.date}T00:00:00`, status: 'planifie', bus_registration: p.bus_registration,
+        departure_order: p.number, source: 'provisoire',
+      }));
+    return [...rows, ...prov].sort((a, b) => (a.departure_order ?? 999) - (b.departure_order ?? 999));
+  }, [stationId, date]);
+
   const loadDepartures = useCallback(async () => {
     if (!stationId) { setDepartures([]); return; }
     setLoadingDepartures(true);
@@ -146,7 +198,8 @@ export default function BagagisteBaggageSale() {
         .select(`
           id, route_name, departure_datetime, status, source, departure_number, route_number, bus_id,
           bus:bus_id(registration_number),
-          arrival_station:arrival_station_id(name)
+          arrival_station:arrival_station_id(name),
+          counter:counter_id(counter_number)
         `)
         .eq('departure_station_id', stationId)
         .gte('departure_datetime', dayStart.toISOString())
@@ -180,7 +233,7 @@ export default function BagagisteBaggageSale() {
         });
       }
 
-      setDepartures(scheduleRows.map((s: any) => {
+      const rows: DepartureRow[] = scheduleRows.map((s: any) => {
         const busReg = busMap[s.bus_id]
           || (Array.isArray(s.bus) ? s.bus?.[0]?.registration_number : s.bus?.registration_number)
           || '';
@@ -193,32 +246,97 @@ export default function BagagisteBaggageSale() {
           bus_registration: busReg,
           departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.route_number ?? s.departure_number ?? null) : null),
           source: s.source || 'chef_gare',
+          counter_number: (Array.isArray(s.counter) ? s.counter?.[0]?.counter_number : s.counter?.counter_number) || '',
         };
-      }));
+      });
+      void saveRef(`deps:${stationId}:${date}`, rows);
+      setDepartures(await withProvisional(rows));
     } catch (err: any) {
-      toast.error(err.message || 'Erreur de chargement des départs');
-      setDepartures([]);
+      // Without network: the departures of that day kept on the device, and the provisional ones
+      const cached = await getRef<DepartureRow[]>(`deps:${stationId}:${date}`);
+      if (!cached && !isNetworkFailure(err)) toast.error(err.message || 'Erreur de chargement des départs');
+      setDepartures(await withProvisional(cached ?? []));
     } finally {
       setLoadingDepartures(false);
     }
-  }, [stationId, date]);
+  }, [stationId, date, withProvisional]);
 
   useEffect(() => { loadDepartures(); }, [loadDepartures]);
+
+  // Lines of the station and buses: kept on the device for the offline form
+  useEffect(() => {
+    if (!stationId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: st } = await supabase.from('stations').select('city_id').eq('id', stationId).maybeSingle();
+        const { data, error } = await supabase
+          .from('routes')
+          .select('id, name, origin_city_id, destination_city:destination_city_id(name)')
+          .order('name');
+        if (error) throw error;
+        const all = (data || []) as any[];
+        const fromHere = all.filter(r => st?.city_id && r.origin_city_id === st.city_id);
+        const list: LineOption[] = (fromHere.length > 0 ? fromHere : all).map(r => ({
+          id: r.id, name: r.name,
+          destination: ((Array.isArray(r.destination_city) ? r.destination_city[0]?.name : r.destination_city?.name) || '').toUpperCase(),
+        }));
+        const { data: busRows } = await supabase.from('buses').select('registration_number').order('registration_number');
+        const busList = ((busRows || []) as any[]).map(b => String(b.registration_number || '').trim()).filter(Boolean);
+        if (cancelled) return;
+        setLines(list); setBuses(busList);
+        void saveRef(`lines:${stationId}`, list);
+        if (busList.length > 0) void saveRef('buses', busList);
+      } catch {
+        const [l, b] = await Promise.all([getRef<LineOption[]>(`lines:${stationId}`), getRef<string[]>('buses')]);
+        if (cancelled) return;
+        setLines(l ?? []); setBuses(b ?? []);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stationId, online]);
 
   const loadRecentSales = useCallback(async () => {
     if (!user?.id) return;
     const dayStart = new Date(date + 'T00:00:00');
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
-    const { data } = await supabase
+    const cacheKey = `sales:${user.id}:${date}`;
+    let server: RecentSale[] = [];
+    const { data, error } = await supabase
       .from('baggage_tickets')
       .select('id, baggage_number, destination, price, owner_name, created_at')
       .eq('sold_by', user.id)
       .gte('created_at', dayStart.toISOString())
       .lt('created_at', dayEnd.toISOString())
       .order('created_at', { ascending: false });
-    setRecentSales((data as any) || []);
+    if (!error && data) { server = data as RecentSale[]; void saveRef(cacheKey, server); }
+    else server = (await getRef<RecentSale[]>(cacheKey)) ?? [];
+    // The baggage of that day still on the device
+    const known = new Set(server.map(r => r.id));
+    const queued = (await queuedBaggages())
+      .map(q => q.row as any)
+      .filter(r => r.sold_by === user.id && String(r.created_at ?? '').slice(0, 10) === date && !known.has(r.id))
+      .map<RecentSale>(r => ({ id: r.id, baggage_number: r.baggage_number, destination: r.destination, price: r.price, owner_name: r.owner_name, created_at: r.created_at, pending: true }));
+    setPendingCount((await queuedBaggages()).length);
+    setRecentSales([...queued, ...server]);
   }, [user?.id, date]);
+
+  // Baggage kept on the device: sent when the network is back, then every 30 s while some are left
+  useEffect(() => {
+    let stop = false;
+    const run = async () => {
+      const before = (await queuedBaggages()).length;
+      if (before > 0 && navigator.onLine) {
+        const res = await flushBaggages();
+        if (!stop && res.sent > 0) { toast.success(`${res.sent} bagage(s) enregistré(s) hors ligne envoyé(s) au serveur`); void loadRecentSales(); }
+      }
+      if (!stop) setPendingCount((await queuedBaggages()).length);
+    };
+    void run();
+    const timer = setInterval(run, 30_000);
+    return () => { stop = true; clearInterval(timer); };
+  }, [online, loadRecentSales]);
 
   useEffect(() => { loadRecentSales(); }, [loadRecentSales]);
 
@@ -256,6 +374,84 @@ export default function BagagisteBaggageSale() {
 
   const depLabel = (dep: DepartureRow) =>
     dep.departure_order != null ? `Départ ${dep.departure_order}` : 'Départ';
+
+  // The departure written on the passenger's ticket: the known departure of that number, otherwise a
+  // provisional one (kept on the device), where the next passengers of the same number go too
+  const ticketNumberValue = parseInt(ticketNumber, 10);
+  const ticketDepartureKnown = Number.isFinite(ticketNumberValue)
+    && departures.some(d => d.departure_order === ticketNumberValue);
+  const applyTicketDeparture = async () => {
+    const n = ticketNumberValue;
+    if (!Number.isFinite(n) || n <= 0) { toast.error('Saisissez le N° de départ écrit sur le ticket'); return; }
+    const found = departures.find(d => d.departure_order === n);
+    if (found) { selectDeparture(found); return; }
+    const line = lines.find(l => l.id === ticketLine);
+    if (!line) { toast.error('Choisissez la ligne écrite sur le ticket'); return; }
+    const key = `prov:${stationId}:${date}:${n}`;
+    await saveProvisional({
+      key, station_id: stationId, date, number: n, route_name: line.name,
+      destination: line.destination, bus_registration: ticketBus, created_at: new Date().toISOString(),
+    });
+    const dep: DepartureRow = {
+      id: key, route_name: line.name, destination: line.destination, departure_datetime: `${date}T00:00:00`,
+      status: 'planifie', bus_registration: ticketBus, departure_order: n, source: 'provisoire',
+    };
+    setDepartures(prev => [...prev.filter(d => d.id !== key), dep].sort((a, b) => (a.departure_order ?? 999) - (b.departure_order ?? 999)));
+    selectDeparture(dep);
+    toast.success(`Départ ${n} créé comme départ provisoire : les passagers suivants du N°${n} iront dessus`);
+  };
+
+  // One sheet per departure: the baggage of the station for that day (server + kept on the device)
+  const handleSheets = async () => {
+    type Row = { id: string; baggage_number: string; schedule_id: string | null; departure_number: number | null; bus_registration: string | null; destination: string; seat_number: string | null; owner_name: string; price: number };
+    const dayStart = new Date(date + 'T00:00:00');
+    const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+    const cacheKey = `sheet:${stationId}:${date}`;
+    let server: Row[] = [];
+    const { data, error } = await supabase
+      .from('baggage_tickets')
+      .select('id, baggage_number, schedule_id, departure_number, bus_registration, destination, seat_number, owner_name, price')
+      .eq('station_id', stationId)
+      .gte('created_at', dayStart.toISOString())
+      .lt('created_at', dayEnd.toISOString());
+    if (!error && data) { server = data as Row[]; void saveRef(cacheKey, server); }
+    else server = (await getRef<Row[]>(cacheKey)) ?? [];
+    const known = new Set(server.map(r => r.id));
+    const queued = (await queuedBaggages()).map(q => q.row as unknown as Row & { station_id: string; created_at: string })
+      .filter(r => r.station_id === stationId && String(r.created_at).slice(0, 10) === date && !known.has(r.id));
+    const all = [...server, ...queued];
+    if (all.length === 0) { toast.error('Aucun bagage pour cette date'); return; }
+    const groups = new Map<string, { dep: DepartureRow | undefined; num: number | null; rows: Row[] }>();
+    for (const r of all) {
+      const dep = departures.find(d => d.id === r.schedule_id) ?? departures.find(d => r.departure_number != null && d.departure_order === r.departure_number);
+      const key = dep?.id ?? `n:${r.departure_number ?? '?'}`;
+      const g = groups.get(key) ?? { dep, num: dep?.departure_order ?? r.departure_number, rows: [] };
+      g.rows.push(r);
+      groups.set(key, g);
+    }
+    const sheets: DepartureSheet[] = [...groups.values()]
+      .sort((a, b) => (a.num ?? 999) - (b.num ?? 999))
+      .map(g => ({
+        number: g.num,
+        route_name: g.dep?.route_name ?? '',
+        destination: g.dep?.destination ?? g.rows[0]?.destination ?? '',
+        bus_registration: g.dep?.bus_registration || g.rows.find(r => r.bus_registration)?.bus_registration || '',
+        counter_number: g.dep?.counter_number ?? '',
+        provisional: !g.dep || g.dep.source === 'provisoire',
+        baggages: g.rows.map(r => ({ baggage_number: r.baggage_number, destination: r.destination, seat_number: r.seat_number, owner_name: r.owner_name, price: Number(r.price) || 0 })),
+      }));
+    if (!printDepartureSheets({ sheets, stationName, date, bagagiste: user?.full_name ?? '' })) {
+      toast.error('Autorisez les fenêtres pop-up pour imprimer');
+    }
+  };
+
+  // End of the day: the bagagiste's baggage of that day (server + kept on the device)
+  const handleEndOfDay = () => {
+    const amount = recentSales.reduce((sum, r) => sum + (Number(r.price) || 0), 0);
+    if (!printEndOfDayBaggage({ date, bagagiste: user?.full_name ?? '', stationName, count: recentSales.length, amount })) {
+      toast.error('Autorisez les fenêtres pop-up pour imprimer');
+    }
+  };
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
@@ -299,11 +495,14 @@ export default function BagagisteBaggageSale() {
         : form.mode === 'avec_ticket_reporte' ? 'Avec ticket reporte'
         : 'Sans siege';
 
-      const { error } = await supabase
-        .from('baggage_tickets')
-        .insert({
+      // The baggage is saved on the device first when there is no network (or the server does not
+      // answer): printed at once, sent later. A provisional departure has no server id: the server
+      // links the baggage by station, day and departure number.
+      const row: Record<string, unknown> = {
+          id: uuidV4(),
+          created_at: new Date().toISOString(),
           baggage_number: baggageNumber,
-          schedule_id: selected.id,
+          schedule_id: selected.source === 'provisoire' ? null : selected.id,
           reservation_id: null,
           destination: form.destination.trim(),
           price: form.price,
@@ -318,8 +517,19 @@ export default function BagagisteBaggageSale() {
           station_id: stationId,
           sold_by: user!.id,
           payment_status: deferredTpe ? 'en_attente' : 'paye',
-        });
-      if (error) throw error;
+        };
+      let keptOnDevice = false;
+      if (navigator.onLine) {
+        const { error } = await supabase.from('baggage_tickets').insert(row);
+        if (error) {
+          if (!isNetworkFailure(error)) throw error;
+          await enqueueBaggage(row);
+          keptOnDevice = true;
+        }
+      } else {
+        await enqueueBaggage(row);
+        keptOnDevice = true;
+      }
 
       const ticketData: BaggageTicketData = {
         baggage_number: baggageNumber,
@@ -336,9 +546,11 @@ export default function BagagisteBaggageSale() {
       };
 
       printBaggageTicket(ticketData);
-      toast.success(deferredTpe
-        ? 'Bagage enregistré — paiement à confirmer au guichet'
-        : 'Ticket bagage imprimé');
+      toast.success(keptOnDevice
+        ? 'Ticket bagage imprimé — enregistré sur le poste, envoyé dès le retour d\'Internet'
+        : deferredTpe
+          ? 'Bagage enregistré — paiement à confirmer au guichet'
+          : 'Ticket bagage imprimé');
       resetForm();
       loadRecentSales();
     } catch (err: any) {
@@ -413,6 +625,22 @@ export default function BagagisteBaggageSale() {
             style={inputStyle}
           />
           <button
+            onClick={() => void handleSheets()}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-semibold"
+            style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+            title="Une feuille par départ : ses bagages classés par destination"
+          >
+            <FileText className="w-4 h-4" /> Feuilles par départ
+          </button>
+          <button
+            onClick={handleEndOfDay}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-semibold"
+            style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+            title="Nombre de bagages et montant de la journée"
+          >
+            <ScrollText className="w-4 h-4" /> Bordereau fin de caisse
+          </button>
+          <button
             onClick={() => { loadDepartures(); loadRecentSales(); }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
@@ -421,6 +649,16 @@ export default function BagagisteBaggageSale() {
           </button>
         </div>
       </div>
+
+      {(!online || pendingCount > 0) && (
+        <div role="status" className="mb-5 flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
+          style={{ backgroundColor: !online ? '#F59E0B' : 'var(--warning-light, #FEF3C7)', color: !online ? '#fff' : 'var(--warning, #B45309)' }}>
+          <WifiOff className="w-4 h-4 flex-shrink-0" />
+          {!online
+            ? `Hors ligne — les bagages sont enregistrés sur ce poste${pendingCount > 0 ? ` · ${pendingCount} bagage(s) pas encore envoyé(s), ils partiront dès le retour d'Internet` : ''}`
+            : `${pendingCount} bagage(s) enregistré(s) hors ligne en cours d'envoi au serveur`}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Departures list */}
@@ -470,6 +708,11 @@ export default function BagagisteBaggageSale() {
                             >
                               {depLabel(dep)}
                             </span>
+                            {dep.source === 'provisoire' && (
+                              <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }} title="Créé depuis le ticket d'un voyageur : relié au départ du guichet de même numéro dès que possible">
+                                PROVISOIRE
+                              </span>
+                            )}
                             <span className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
                               {dep.route_name}
                             </span>
@@ -509,7 +752,7 @@ export default function BagagisteBaggageSale() {
               <div className="flex items-center gap-2 px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
                 <CheckCircle2 className="w-5 h-5" style={{ color: 'var(--success)' }} />
                 <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Mes ventes du jour ({recentSales.length})
+                  Mes ventes du jour ({recentSales.length}) — {recentSales.reduce((sum, r) => sum + (Number(r.price) || 0), 0).toLocaleString('fr-FR')} F
                 </h2>
               </div>
               <ul className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
@@ -521,6 +764,7 @@ export default function BagagisteBaggageSale() {
                       </p>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         {format(new Date(s.created_at), 'HH:mm')} · {s.baggage_number}
+                        {s.pending && <span className="ml-1 font-semibold" style={{ color: 'var(--warning, #B45309)' }}>· sur le poste, pas encore envoyé</span>}
                       </p>
                     </div>
                     <span className="text-sm font-semibold whitespace-nowrap" style={{ color: 'var(--primary)' }}>
@@ -539,11 +783,46 @@ export default function BagagisteBaggageSale() {
             className="rounded-2xl border shadow-sm p-6"
             style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
           >
+            {/* The departure written on the passenger's ticket (also without network) */}
+            <div className="mb-5 pb-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Départ du ticket voyageur</p>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Ligne</label>
+                  <select value={ticketLine} onChange={e => setTicketLine(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" style={inputStyle}>
+                    <option value="">{lines.length > 0 ? 'Choisir la ligne…' : 'Aucune ligne gardée sur ce poste'}</option>
+                    {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>N° de départ (ticket)</label>
+                  <input type="number" min={1} inputMode="numeric" value={ticketNumber} onChange={e => setTicketNumber(e.target.value)} placeholder="Ex : 5" className="w-full px-3 py-2 rounded-lg border text-sm" style={inputStyle} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Car</label>
+                  <select value={ticketBus} onChange={e => setTicketBus(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" style={inputStyle}>
+                    <option value="">—</option>
+                    {buses.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+                <p className="text-xs font-semibold" style={{ color: ticketDepartureKnown ? 'var(--success)' : 'var(--warning, #B45309)' }}>
+                  {!Number.isFinite(ticketNumberValue) ? 'Ou cliquez sur un départ dans la liste.'
+                    : ticketDepartureKnown ? `Départ ${ticketNumberValue} trouvé.`
+                    : `Départ ${ticketNumberValue} pas encore connu : il sera créé comme départ provisoire, les passagers suivants du N°${ticketNumberValue} iront dessus.`}
+                </p>
+                <button type="button" onClick={() => void applyTicketDeparture()} className="px-4 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: 'var(--primary)' }}>
+                  Utiliser ce départ
+                </button>
+              </div>
+            </div>
+
             {!selected ? (
-              <div className="py-16 text-center">
+              <div className="py-10 text-center">
                 <MapPin className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Sélectionnez un départ planifié dans la liste pour vendre un ticket bagage.
+                  Choisissez le départ du ticket ci-dessus, ou un départ dans la liste, pour vendre un ticket bagage.
                 </p>
               </div>
             ) : (
