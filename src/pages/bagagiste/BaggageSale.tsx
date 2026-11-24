@@ -293,7 +293,18 @@ export default function BagagisteBaggageSale() {
         const all = (data || []) as any[];
         const myGares = new Set(myStationIds.split(',').filter(Boolean));
         myGares.add(stationId);
-        const fromMyGares = (r: { origin_station_id?: string | null }) => !r.origin_station_id || myGares.has(String(r.origin_station_id));
+        // Most lines of Abidjan have no gare of origin, only the city: the start of the line's name
+        // tells it (« Yop - Divo » leaves from Yopougon, « Adjame - Divo » from Adjamé)
+        const words = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+          .split(/[^a-z0-9]+/).filter(w => w.length >= 3 && w !== 'gare' && w !== 'sbta');
+        const myWords = stations.filter(st => myGares.has(st.id)).map(st => words(st.name)[0]).filter(Boolean);
+        const startsFromMyGare = (name: string) => {
+          const first = words(String(name || '').split(/\s[-\u2013\u2014]|[-\u2013\u2014]\s/)[0] || '')[0];
+          return !!first && myWords.some(w => w.startsWith(first) || first.startsWith(w));
+        };
+        const fromMyGares = (r: { origin_station_id?: string | null; name?: string }) => r.origin_station_id
+          ? myGares.has(String(r.origin_station_id))
+          : startsFromMyGare(String(r.name ?? ''));
         const ids = new Set<string>();
         const { data: counters } = await supabase.from('counters').select('id').eq('station_id', stationId);
         const counterIds = ((counters || []) as any[]).map(c => c.id);
@@ -305,7 +316,7 @@ export default function BagagisteBaggageSale() {
           .gte('departure_datetime', new Date(Date.now() - 30 * 86400_000).toISOString()).limit(1000);
         ((deps || []) as any[]).forEach(d => { if (d.route_id) ids.add(String(d.route_id)); });
         let mine = all.filter(r => ids.has(String(r.id)) && fromMyGares(r));
-        if (mine.length === 0) mine = all.filter(r => r.origin_station_id && myGares.has(String(r.origin_station_id)));
+        if (mine.length === 0) mine = all.filter(fromMyGares);
         const list: LineOption[] = mine.map(r => ({
           id: r.id, name: r.name,
           destination: ((Array.isArray(r.destination_city) ? r.destination_city[0]?.name : r.destination_city?.name) || '').toUpperCase(),
@@ -323,7 +334,7 @@ export default function BagagisteBaggageSale() {
       }
     })();
     return () => { cancelled = true; };
-  }, [stationId, myStationIds, online]);
+  }, [stationId, myStationIds, stations, online]);
 
   const loadRecentSales = useCallback(async () => {
     if (!user?.id) return;
