@@ -283,11 +283,26 @@ export default function BagagisteBaggageSale() {
           .select('id, name, origin_city_id, destination_city:destination_city_id(name)')
           .order('name');
         if (error) throw error;
-        // Every line (a passenger may hold a ticket of any line), those leaving from the station first
-        const all = ((data || []) as any[]).sort((a, b) =>
-          Number(b.origin_city_id === st?.city_id) - Number(a.origin_city_id === st?.city_id)
-          || String(a.name).localeCompare(String(b.name), 'fr'));
-        const list: LineOption[] = all.map(r => ({
+        // Only the lines of the station chosen (one the bagagiste is assigned to): the lines of its
+        // guichets; failing that, the lines of its departures of the day, then those leaving from its
+        // city. Never every line of the company (24/11/2026).
+        const all = (data || []) as any[];
+        let ids = new Set<string>();
+        const { data: counters } = await supabase.from('counters').select('id').eq('station_id', stationId);
+        const counterIds = ((counters || []) as any[]).map(c => c.id);
+        if (counterIds.length > 0) {
+          const { data: cr } = await supabase.from('counter_routes').select('route_id').in('counter_id', counterIds);
+          ids = new Set(((cr || []) as any[]).map(r => String(r.route_id)));
+        }
+        if (ids.size === 0) {
+          const { data: deps } = await supabase.from('schedules').select('route_id').eq('departure_station_id', stationId)
+            .gte('departure_datetime', new Date(Date.now() - 30 * 86400_000).toISOString()).limit(500);
+          ids = new Set(((deps || []) as any[]).map(d => String(d.route_id)).filter(Boolean));
+        }
+        const mine = ids.size > 0
+          ? all.filter(r => ids.has(String(r.id)))
+          : all.filter(r => st?.city_id && r.origin_city_id === st.city_id);
+        const list: LineOption[] = mine.map(r => ({
           id: r.id, name: r.name,
           destination: ((Array.isArray(r.destination_city) ? r.destination_city[0]?.name : r.destination_city?.name) || '').toUpperCase(),
         }));
