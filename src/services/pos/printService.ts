@@ -1400,34 +1400,23 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
     ? bord.destination_groups
     : [{ destination: bord.destination, seats_sold: bord.seats_sold, unit_price: bord.unit_price, amount: bord.total_ticket_amount, seat_numbers: bord.sold_seat_numbers }];
 
-  const rowsHtml = groups.map(g => {
-    const dest = escapeHtml(g.destination.slice(0, 22));
-    const sieg = escapeHtml(fmtNum(g.seats_sold));
-    const tarif = escapeHtml(fmtNum(g.unit_price));
-    const montant = escapeHtml(fmtNum(g.amount));
-    return `<tr>
-      <td class="l">${dest}</td>
-      <td class="l">${sieg}</td>
-      <td class="r">${tarif}</td>
-      <td class="r">${montant}</td>
-    </tr>`;
-  }).join('');
+  // Grid table like the paper model: one row per destination with its occupied seats
+  const rowsHtml = groups.map(g => `<tr>
+      <td class="dest">${escapeHtml(g.destination)}</td>
+      <td class="num">${escapeHtml(fmtNum(g.seats_sold))}</td>
+      <td class="mt">${escapeHtml(fmtNum(g.unit_price))}</td>
+      <td class="mt">${escapeHtml(fmtNum(g.amount))}</td>
+      <td class="seats">${escapeHtml(g.seat_numbers.join('-'))}</td>
+    </tr>`).join('');
 
   const convoySection = bord.is_convoy
     ? `<div class="convoy-badge">** DEPART EN CONVOI **</div>`
     : '';
 
   const salesTable = bord.is_convoy ? '' : `
-  <div class="sep"></div>
-  <table>
-    <thead>
-      <tr>
-        <th class="l">DEST</th>
-        <th class="l">SIEG</th>
-        <th class="r">TARIF</th>
-        <th class="r">MONTANT</th>
-      </tr>
-    </thead>
+  <table class="grid">
+    <colgroup><col style="width:24%"><col style="width:13%"><col style="width:17%"><col style="width:19%"><col style="width:27%"></colgroup>
+    <thead><tr><th>DESTINATION</th><th>SIEGES<br>VENDUS</th><th>TARIF</th><th>MONTANT</th><th>SIEGES<br>OCCUPES</th></tr></thead>
     <tbody>
       ${rowsHtml}
     </tbody>
@@ -1446,15 +1435,14 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
     <div class="recap-row"><span>MT TOTAL BAGAGE:</span><span>${fmt(bord.total_baggage)}</span></div>
   `
     : `
-    <div class="recap-row recap-bold"><span>MT TOTAL TICKET:</span><span>${fmt(bord.total_ticket_amount)}</span></div>
-    ${bord.total_rations > 0 ? `<div class="recap-row"><span>  RATIONS:</span><span>${fmt(bord.total_rations)}</span></div>` : ''}
-    ${bord.total_carburant > 0 ? `<div class="recap-row"><span>  CARBURANT:</span><span>${fmt(bord.total_carburant)}</span></div>` : ''}
-    ${bord.total_peages > 0 ? `<div class="recap-row"><span>  PEAGES:</span><span>${fmt(bord.total_peages)}</span></div>` : ''}
-    ${bord.total_autres > 0 ? `<div class="recap-row"><span>  AUTRES:</span><span>${fmt(bord.total_autres)}</span></div>` : ''}
-    <div class="sep"></div>
-    <div class="recap-row"><span>MT TOTAL DEPENSES:</span><span>${fmt(bord.total_charges)}</span></div>
-    <div class="recap-row recap-bold"><span>SOLDE TICKETS:</span><span>${fmt(bord.solde_ticket)}</span></div>
-    <div class="recap-row"><span>MT TOTAL BAGAGE:</span><span>${fmt(bord.total_baggage)}</span></div>
+    <div class="tot-row"><span>MT TOTAL TICKET :</span><span class="v">${fmtNum(bord.total_ticket_amount)}</span></div>
+    <div class="tot-row"><span>MT TOTAL DEPENSES (R/P.) :</span><span class="v">${fmtNum(bord.total_charges)}</span></div>
+    ${bord.total_rations > 0 ? `<div class="tot-row sub"><span>RATIONS :</span><span class="v">${fmtNum(bord.total_rations)}</span></div>` : ''}
+    ${bord.total_carburant > 0 ? `<div class="tot-row sub"><span>CARBURANT :</span><span class="v">${fmtNum(bord.total_carburant)}</span></div>` : ''}
+    ${bord.total_peages > 0 ? `<div class="tot-row sub"><span>PEAGES :</span><span class="v">${fmtNum(bord.total_peages)}</span></div>` : ''}
+    ${bord.total_autres > 0 ? `<div class="tot-row sub"><span>AUTRES :</span><span class="v">${fmtNum(bord.total_autres)}</span></div>` : ''}
+    <div class="tot-row"><span>SOLDE TICKETS :</span><span class="v">${fmtNum(bord.solde_ticket)}</span></div>
+    <div class="tot-row"><span>MT TOTAL BAGAGE :</span><span class="v">${fmtNum(bord.total_baggage)}</span></div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
@@ -1479,14 +1467,19 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   .info-big .v { margin-left: auto; text-align: right; font-size: 18px; font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; }
   .info-big .v.xl { font-size: 28px; line-height: 1; }
   .convoy-badge { text-align: center; font-size: 12px; font-weight: 900; padding: 3px 0; }
-  table { width: 100%; border-collapse: collapse; }
-  th { font-size: 9px; font-weight: 900; padding: 2px 0; border-bottom: 1px solid #000; }
-  th.l { text-align: left; }
-  th.r { text-align: right; }
-  td { font-size: 10px; padding: 2px 0; }
-  td.l { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-  td.r { text-align: right; white-space: nowrap; }
-  .seats { font-size: 9px; font-style: italic; padding: 0 0 2px 2px; color: #333; }
+  table.grid { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
+  .grid th, .grid td { border: 1px solid #000; }
+  .grid th { font-size: 8px; font-weight: 900; padding: 3px 1px; text-align: center; line-height: 1.15; }
+  .grid td { font-size: 10px; font-weight: 700; padding: 4px 2px; vertical-align: middle; }
+  .grid td.dest { text-align: left; font-size: 9.5px; overflow-wrap: anywhere; }
+  .grid td.num { text-align: center; font-size: 12px; font-weight: 900; }
+  .grid td.mt { text-align: right; white-space: nowrap; }
+  .grid td.seats { font-size: 8.5px; line-height: 1.25; overflow-wrap: anywhere; }
+  .tot { margin-top: 6px; }
+  .tot-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; padding: 5px 0 3px; border-bottom: 1px solid #000; }
+  .tot-row .v { font-size: 13px; font-weight: 900; }
+  .tot-row.sub { font-size: 10px; padding: 3px 0 2px 8px; border-bottom: 1px dotted #000; }
+  .tot-row.sub .v { font-size: 11px; }
   .recap { font-size: 11px; font-weight: 700; padding: 2px 2px; }
   .recap-row { display: flex; justify-content: space-between; padding: 2px 0; }
   .recap-bold { font-weight: 900; }
@@ -1515,12 +1508,14 @@ function buildHTMLBordereauDepart(data: PrintBordereauDepartData, settings: Prin
   <div class="info"><span>NBRE PLACE:</span><span>${fmtNum(bord.total_seats)}</span></div>
   <div class="info"><span>VENDU(S):</span><span>${fmtNum(bord.seats_sold)}</span></div>
   <div class="info"><span>RESTANT(S):</span><span>${fmtNum(bord.seats_remaining)}</span></div>
-  ${salesTable}
-  <div class="sep"></div>
+  ${bord.is_convoy ? `<div class="sep"></div>
   <div class="recap">
     ${recapHtml}
-  </div>
-  <div class="dsep"></div>
+  </div>` : `${salesTable}
+  <div class="tot">
+    ${recapHtml}
+  </div>`}
+  <div class="dsep" style="margin-top:6px"></div>
   <div class="printed">Imprime le ${escapeHtml(bord.print_date)} a ${escapeHtml(bord.print_time)}</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.close();},500);}</script>
