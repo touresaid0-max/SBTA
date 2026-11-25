@@ -74,8 +74,9 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
     // « Ramassage direct — MAN » → « MAN » (a database not updated yet sends no name: none)
     destination: r.is_departure === false && String(r.route_name ?? '').includes('\u2014')
       ? (String(r.route_name).split('\u2014').pop() ?? '').trim().toUpperCase() || null
-      // Convoy: its destination only (« Daloa - Abidjan » → « ABIDJAN »), not the line (24/11/2026)
-      : isConvoy ? (String(r.route_name ?? '').split(/\s+[-\u2013\u2014>]+\s+/).pop() ?? '').trim().toUpperCase() || null
+      // Convoy: « Convoi (its line) », or « Convoi (sans ligne) » (25/11/2026)
+      : isConvoy ? (r.route_id && String(r.route_name ?? '').trim() && String(r.route_name) !== 'Ligne inconnue'
+        ? `Convoi (${String(r.route_name).trim()})` : 'Convoi (sans ligne)')
       : null,
     stationId: String(r.station_id ?? 'none'),
     station: String(r.station_name ?? '') || 'Gare inconnue',
