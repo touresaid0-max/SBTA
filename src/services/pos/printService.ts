@@ -489,6 +489,10 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const bagNum = bagage.bagage_number ?? '';
   const seatRaw = bagage.with_ticket ? (bagage.linked_seat_number ?? '') : '';
   const seatStr = seatRaw !== '' && seatRaw !== null && seatRaw !== undefined ? String(seatRaw) : '0';
+  // Designation: the description of the baggage written by the seller (25/11/2026)
+  const designationRaw = String(bagage.description ?? '').replace(/\s+/g, ' ').trim();
+  const designation = designationRaw && designationRaw !== '__deleted__' ? designationRaw.toUpperCase() : '—';
+  const declared = Number(bagage.declared_value || 0);
   const v = (s: string | number | null | undefined) => escapeHtml(String(s ?? ''));
   // The width the printer really prints: an 80 mm roll is printed over its middle 72 mm. The ticket
   // was laid out over 84 mm, so the start and the end of each line were cut. Same widths as the
@@ -518,6 +522,9 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
     <div class="row car-row"><span class="lbl">CAR : <b>${v(car)}</b></span><span class="val"><span class="lbl">N°BAG :</span> <b>${v(bagNum)}</b></span></div>
     <div class="sep"></div>
     <div class="row"><span class="lbl">DATE : <b>${v(dDate)}</b></span><span class="val"><span class="lbl">HEURE :</span> <b>${v(dTime || ':')}</b></span></div>
+    <div class="sep"></div>
+    <div class="row single" style="white-space:normal;display:block"><span class="lbl">DESIGNATION :</span> <b>${v(designation)}</b></div>
+    ${declared > 0 ? `<div class="row"><span class="lbl">VALEUR DECLAREE :</span><span class="val"><b>${v(`${declared.toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`)}</b></span></div>` : ''}
     <div class="sep"></div>
     <div class="row single"><span class="lbl">PROPRIETAIRE : <b>${v(owner)}</b></span></div>
     <div class="row single"><span class="lbl">CONTACT : <b>${v(contact)}</b></span></div>
@@ -594,7 +601,7 @@ function buildHTMLTpeBagage(data: PrintBagageData, notice?: string | null, provi
       ${row('N°BAG :', bagageNumber)}
       <div class="separator"></div>
       ${row(`DATE : ${departureDate[0] || '—'}`, `HEURE : ${departureDate[1] || '—'}`)}
-      ${description && description !== '__deleted__' ? `<div class="single"><span>DESCRIPTION :</span> <strong>${escapeHtml(description)}</strong></div>` : ''}
+      ${description && description !== '__deleted__' ? `<div class="single"><span>DESIGNATION :</span> <strong>${escapeHtml(description.toUpperCase())}</strong></div>` : ''}
       ${Number(bagage.declared_value || 0) > 0 ? `${row('VALEUR DECLAREE :', formatMoney(Number(bagage.declared_value)))}<div class="separator"></div>` : ''}
       <div class="separator"></div>
       <div class="single">PROPRIETAIRE : <strong>${escapeHtml(owner)}</strong></div>

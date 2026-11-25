@@ -363,8 +363,24 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const bagNum = value(bagage.bagage_number);
   const seatRaw = bagage.with_ticket ? value(bagage.linked_seat_number) : '';
   const seat = seatRaw !== '' ? seatRaw : '0';
+  // Designation: the description of the baggage written by the seller (25/11/2026)
+  const designationRaw = value(bagage.description).replace(/\s+/g, ' ');
+  const designation = designationRaw && designationRaw !== '__deleted__' ? designationRaw.toUpperCase() : '—';
+  const declared = Number(bagage.declared_value || 0);
 
   const line = (s = '') => [text(s.slice(0, w)), lineFeed()];
+  // A long text goes on several lines instead of being cut at the edge of the paper
+  const wrapped = (s: string): Uint8Array[] => {
+    const out: Uint8Array[] = [];
+    let rest = s;
+    while (rest.length > w) {
+      const cut = rest.lastIndexOf(' ', w) > w / 2 ? rest.lastIndexOf(' ', w) : w;
+      out.push(...line(rest.slice(0, cut)));
+      rest = rest.slice(cut).trimStart();
+    }
+    out.push(...line(rest));
+    return out;
+  };
   const center = (s: string) => {
     const t = s.slice(0, w);
     const pad = Math.max(0, Math.floor((w - t.length) / 2));
@@ -407,6 +423,9 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
     parts.push(setBold(true), ...pairOrStack(`CAR : ${car}`, `N°BAG : ${bagNum}`), setBold(false));
     parts.push(...separator());
     parts.push(setBold(true), ...pair(`DATE : ${dDate}`, `HEURE : ${dTime || ':'}`), setBold(false));
+    parts.push(...separator());
+    parts.push(setBold(true), ...wrapped(`DESIGNATION : ${designation}`), setBold(false));
+    if (declared > 0) parts.push(setBold(true), ...pair('VALEUR DECLAREE :', `${declared.toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`), setBold(false));
     parts.push(...separator());
     parts.push(setBold(true), ...line(`PROPRIETAIRE : ${owner}`), setBold(false));
     parts.push(setBold(true), ...line(`CONTACT : ${contact}`), setBold(false));
@@ -474,7 +493,7 @@ export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSetti
     parts.push(setBold(true), ...pair(`SIEGE : ${seat}`, `PRIX : ${price}`), setBold(false), ...separator());
     parts.push(setBold(true), ...line(`CAR : ${car}`), ...line(`N°BAG : ${bagageNumber}`), setBold(false), ...separator());
     parts.push(setBold(true), ...pair(`DATE : ${dDate}`, `HEURE : ${dTime || '—'}`), setBold(false));
-    if (description && description !== '__deleted__') parts.push(...line(`DESCRIPTION : ${description}`));
+    if (description && description !== '__deleted__') parts.push(...line(`DESIGNATION : ${description.toUpperCase()}`));
     const declared = Number(bagage.declared_value || 0);
     if (declared > 0) parts.push(setBold(true), ...pair('VALEUR DECLAREE:', `${declared.toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`), setBold(false), ...separator());
     parts.push(...separator(), setBold(true), ...line(`PROPRIETAIRE : ${owner}`), ...line(`CONTACT : ${contact}`), setBold(false), ...separator());
