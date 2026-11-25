@@ -17,6 +17,7 @@ import {
 } from '../../utils/printBaggageTicket';
 import PhoneInputCI from '@/components/shared/PhoneInputCI';
 import { phoneCIError } from '@/utils/phoneCI';
+import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 
 interface StationOption {
   id: string;
@@ -113,6 +114,8 @@ export default function BagagisteBaggageSale() {
   const [ticketLine, setTicketLine] = useState('');
   const [ticketNumber, setTicketNumber] = useState('');
   const [ticketBus, setTicketBus] = useState('');
+  // The buses, searched while typing (« 383 » finds 383KA02)
+  const busOptions = useMemo(() => buses.map(b => ({ id: b, label: b, keywords: b.replace(/[\s-]/g, '') })), [buses]);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -871,10 +874,14 @@ export default function BagagisteBaggageSale() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Car</label>
-                  <select value={ticketBus} onChange={e => setTicketBus(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" style={inputStyle}>
-                    <option value="">—</option>
-                    {buses.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
+                  <AutocompleteSelect
+                    compact
+                    options={busOptions}
+                    value={ticketBus}
+                    onChange={setTicketBus}
+                    placeholder="Tapez l'immatriculation…"
+                    emptyText={buses.length > 0 ? 'Aucun car trouvé' : 'Aucun car gardé sur ce poste'}
+                  />
                 </div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
