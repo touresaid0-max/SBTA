@@ -154,6 +154,17 @@ export function stripStationLabel(s: string): string {
 }
 
 /**
+ * Departure printed on the baggage ticket (25/11/2026): the town of the gare, not the gare's name.
+ * A gare of a line is named « town-destination » (« YOP-DIVO », « ADJAME-GAGNOA »): « YOP-DIVO =>
+ * DIVO » repeated the destination. Only the town is kept, « YOP » written « YOPOUGON »:
+ * « YOP-DIVO » → « YOPOUGON », « Gare SBTA Yopougon » → « YOPOUGON », « ADJAME-GAGNOA » → « ADJAME ».
+ */
+export function baggageOriginLabel(stationName: string | null | undefined): string {
+  const town = stripStationLabel(String(stationName ?? '').toUpperCase().trim()).split(/\s*[-–—]\s*/)[0]?.trim() ?? '';
+  return town === 'YOP' ? 'YOPOUGON' : town;
+}
+
+/**
  * Lines whose passenger ticket shows the selling station then the whole route of the bus, as on
  * the baggage ticket (« ISSIA => ISSIA - YAKRO - ABIDJAN »). Asked for the line of Issia only
  * (18-19/11/2026): every other line keeps « first city of the line => passenger's destination ».
@@ -343,7 +354,7 @@ export function buildBagageESCPOS(data: PrintBagageData, settings: PrintSettings
   const departDate = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departDate.split(' ');
   const stripStationLabel = (s: string) => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
-  const originCity = stripStationLabel((stationName || depart.station_name || '').toUpperCase().trim());
+  const originCity = baggageOriginLabel(stationName || depart.station_name);
   const destCity = stripStationLabel((bagage.destination || '').toUpperCase().trim());
   const departNum = value(depart.route_number) || value(depart.departure_number);
   const owner = value(bagage.owner_name).toUpperCase();
@@ -424,7 +435,7 @@ export function buildTpeBagageESCPOS(data: PrintBagageData, settings: PrintSetti
   const departDate = formatDateTime(depart.departure_datetime || nowIso);
   const [dDate, dTime] = departDate.split(' ');
   const stripStationLabel = (s: string): string => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
-  const origin = stripStationLabel((stationName || depart.station_name || '').toUpperCase()) || '—';
+  const origin = baggageOriginLabel(stationName || depart.station_name) || '—';
   const destination = stripStationLabel(value(bagage.destination).toUpperCase()) || '—';
   const departureNumber = value(depart.route_number) || value(depart.departure_number) || '—';
   const seat = bagage.with_ticket && value(bagage.linked_seat_number) ? value(bagage.linked_seat_number) : '—';
