@@ -1,5 +1,5 @@
 import { db, type PrintSettings, type TicketRecord, type BagageRecord, type DepartRecord } from './db';
-import { ticketRouteLine, isFullRouteTicketLine, buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, buildRamassageReportESCPOS, concat, type PrintRamassageReportData, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
+import { ticketRouteLine, isFullRouteTicketLine, baggageOriginLabel, buildESCPOS, buildTicketESCPOS, buildBagageESCPOS, buildTpeBagageESCPOS, buildRecettesESCPOS, buildBordereauDepartESCPOS, buildBordereauCourrierESCPOS, buildRamassageReportESCPOS, concat, type PrintRamassageReportData, type PrintTicketData, type PrintBagageData, type PrintRecettesData, type PrintBordereauDepartData, type RasterImage } from './escpos';
 import { getPrintCustomization, type PrintCustomization } from '../printCustomization';
 import { setPrintingGuard } from '@/store/authStore';
 import { formatPhoneCI } from '@/utils/phoneCI';
@@ -480,7 +480,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const [dDate, dTime] = departFmt.split(' ');
   const price = `${Number(bagage.price || 0).toLocaleString('fr-FR').replace(/\u202f/g, ' ')} F`;
   const stripStationLabel = (s: string) => s.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
-  const originCity = stripStationLabel((stationName || depart.station_name || '').toUpperCase().trim());
+  const originCity = baggageOriginLabel(stationName || depart.station_name);
   const destCity = stripStationLabel((bagage.destination || '').toUpperCase().trim());
   const departNum = String(depart.route_number ?? depart.departure_number ?? '');
   const owner = (bagage.owner_name ?? '').toUpperCase();
@@ -571,7 +571,7 @@ function buildHTMLTpeBagage(data: PrintBagageData, notice?: string | null, provi
   const departureDate = formatDateTime(depart.departure_datetime || trustedNowIso()).split(' ');
   const printed = formatDateTime(trustedNowIso());
   const stripStationLabel = (input: string): string => input.replace(/^(?:GARE\s+SBTA\s+|GARE\s+SBTA[-–]\s*|GARE\s+|SBTA\s+)+/i, '').trim();
-  const origin = stripStationLabel((stationName || depart.station_name || '').toUpperCase()) || '—';
+  const origin = baggageOriginLabel(stationName || depart.station_name) || '—';
   const destination = stripStationLabel(value(bagage.destination).toUpperCase()) || '—';
   const departureNumber = value(depart.route_number) || value(depart.departure_number) || '—';
   const seat = bagage.with_ticket && value(bagage.linked_seat_number) ? value(bagage.linked_seat_number) : '—';
