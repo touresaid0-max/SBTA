@@ -490,7 +490,11 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   const seatRaw = bagage.with_ticket ? (bagage.linked_seat_number ?? '') : '';
   const seatStr = seatRaw !== '' && seatRaw !== null && seatRaw !== undefined ? String(seatRaw) : '0';
   const v = (s: string | number | null | undefined) => escapeHtml(String(s ?? ''));
-  const bagagePrintWidth = settings.width_mm + 4;
+  // The width the printer really prints: an 80 mm roll is printed over its middle 72 mm. The ticket
+  // was laid out over 84 mm, so the start and the end of each line were cut. Same widths as the
+  // ticket de départ and the bordereaux de départ and des recettes.
+  const mm = settings.width_mm;
+  const bodyWidthMm = mm === 80 ? 71 : mm - 2;
 
   const ticketBlock = (isSouche: boolean) => `
     ${!isSouche ? `
@@ -522,10 +526,10 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-  @page { size: ${bagagePrintWidth}mm auto; margin: 0; }
+  @page { size: ${mm}mm auto; margin: 0; }
   * { font-family: 'Helvetica Neue Condensed', 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif; font-stretch: condensed; margin: 0; padding: 0; box-sizing: border-box; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { background: #fff; }
-  body { width: ${bagagePrintWidth}mm; margin: 0; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
+  body { width: ${bodyWidthMm}mm; margin: 0 auto; padding: 0; font-size: 10.5px; font-weight: 600; line-height: 1.15; }
   .hdr { padding: 2px 0 3px; }
   .hdr-brand { text-align: center; line-height: 1.05; min-width: 0; }
   .brand-logo { display: flex; justify-content: center; }
@@ -549,7 +553,7 @@ function buildHTMLBagage(data: PrintBagageData, settings: PrintSettings): string
   .tear { display: flex; align-items: center; justify-content: center; gap: 4px; margin: 3px 0; font-size: 8.5px; font-weight: 800; letter-spacing: 2px; }
   .tear::before, .tear::after { content: ''; flex: 1 1 auto; border-top: 1px dashed #000; height: 0; }
   .ticket-frame { border: 1px solid #000; padding: 4px 5px; }
-  @media print { body { margin: 0 auto; padding: 0; background: #fff; } }
+  @media print { body { width: ${bodyWidthMm}mm !important; margin: 0 auto !important; padding: 0; background: #fff; } }
 </style></head><body>
   <div class="ticket-frame">
     ${ticketBlock(false)}
@@ -1031,6 +1035,10 @@ export interface PrintConvoyData {
 function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings): string {
   const { convoy, stationName } = data;
   const mm = settings.width_mm;
+  // The width the printer really prints: an 80 mm roll is printed over its middle 72 mm. Laid out
+  // over the whole page, the start and the end of each line were cut. Same widths as the tickets
+  // and the bordereaux de départ and des recettes.
+  const bodyWidthMm = mm === 80 ? 71 : mm - 2;
   const headerHtml = settings.header_lines.map(l => `<div class="hdr">${escapeHtml(l)}</div>`).join('');
   const footerHtml = settings.footer_lines.map(l => `<div class="ftr">${escapeHtml(l)}</div>`).join('');
 
@@ -1056,7 +1064,7 @@ function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings
   @page { size: ${mm}mm auto; margin: 0; }
   * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { background: #fff; margin: 0; padding: 0; }
-  .container { width: 100%; max-width: 480px; margin: 0 auto; padding: 10px; }
+  .container { width: ${bodyWidthMm}mm; margin: 0 auto; padding: 8px 1mm; }
   .hdr { text-align: center; font-size: 12px; }
   .brand { text-align: center; font-size: 22px; font-weight: 900; margin: 4px 0; }
   .title { text-align: center; font-size: 18px; font-weight: 900; padding: 8px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; margin: 6px 0; }
@@ -1074,7 +1082,7 @@ function buildHTMLConvoyBordereau(data: PrintConvoyData, settings: PrintSettings
   .obs { font-size: 11px; padding: 4px 2px; }
   .ftr { text-align: center; font-size: 11px; margin-top: 4px; }
   .printed { text-align: center; font-size: 10px; margin-top: 6px; }
-  @media print { body { margin: 0; padding: 0; } .container { width: 100% !important; max-width: 480px !important; } }
+  @media print { body { margin: 0; padding: 0; } .container { width: ${bodyWidthMm}mm !important; margin: 0 auto !important; } }
 </style></head><body>
   <div class="container">
     ${headerHtml}
