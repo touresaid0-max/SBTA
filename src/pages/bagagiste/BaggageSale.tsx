@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
@@ -33,6 +33,8 @@ interface DepartureRow {
   departure_order: number | null;
   source: string;
   counter_number?: string;
+  /** The line of the departure (to show only the lines of the bagagiste) */
+  route_id?: string | null;
 }
 
 /** A line of the station (offline list): its name and destination */
@@ -121,6 +123,12 @@ export default function BagagisteBaggageSale() {
   }, []);
 
   const stationName = stations.find(s => s.id === stationId)?.name || 'SBTA';
+  // The departures shown: only those of his lines (a departure without a line, or provisional, stays)
+  const shownDepartures = useMemo(() => {
+    if (lines.length === 0) return departures;
+    const ids = new Set(lines.map(l => String(l.id)));
+    return departures.filter(d => d.source === 'provisoire' || !d.route_id || ids.has(String(d.route_id)));
+  }, [departures, lines]);
   // The gares the bagagiste is assigned to (the lines offered must leave from one of them)
   const myStationIds = stations.map(s => s.id).sort().join(',');
   const deferredTpe = tpeMode === 'avec_guichet';
@@ -198,7 +206,7 @@ export default function BagagisteBaggageSale() {
       const { data, error } = await supabase
         .from('schedules')
         .select(`
-          id, route_name, departure_datetime, status, source, departure_number, route_number, bus_id,
+          id, route_id, route_name, departure_datetime, status, source, departure_number, route_number, bus_id,
           bus:bus_id(registration_number),
           counter_id,
           arrival_station:arrival_station_id(name)
@@ -257,6 +265,7 @@ export default function BagagisteBaggageSale() {
           departure_order: orderMap[s.id] ?? (s.source === 'guichet' ? (s.route_number ?? s.departure_number ?? null) : null),
           source: s.source || 'chef_gare',
           counter_number: (s.counter_id && counterMap[s.counter_id]) || '',
+          route_id: s.route_id ?? null,
         };
       });
       void saveRef(`deps:${stationId}:${date}`, rows);
@@ -305,17 +314,39 @@ export default function BagagisteBaggageSale() {
         const fromMyGares = (r: { origin_station_id?: string | null; name?: string }) => r.origin_station_id
           ? myGares.has(String(r.origin_station_id))
           : startsFromMyGare(String(r.name ?? ''));
-        const ids = new Set<string>();
-        const { data: counters } = await supabase.from('counters').select('id').eq('station_id', stationId);
-        const counterIds = ((counters || []) as any[]).map(c => c.id);
-        if (counterIds.length > 0) {
-          const { data: cr } = await supabase.from('counter_routes').select('route_id').in('counter_id', counterIds);
-          ((cr || []) as any[]).forEach(r => ids.add(String(r.route_id)));
+        // The lines of each of his gares: those of its guichets and of its departures of the last
+        // 30 days, leaving from his gares
+        const gareIds = [...myGares];
+        const linesOf = new Map<string, Set<string>>(gareIds.map(g => [g, new Set<string>()]));
+        const routeById = new Map(all.map(r => [String(r.id), r]));
+        const addLine = (gare: string, routeId: unknown) => {
+          const r = routeId ? routeById.get(String(routeId)) : null;
+          if (r && fromMyGares(r)) linesOf.get(gare)?.add(String(r.id));
+        };
+        const { data: counters } = await supabase.from('counters').select('id, station_id').in('station_id', gareIds);
+        const gareOfCounter = new Map(((counters || []) as any[]).map(c => [String(c.id), String(c.station_id)]));
+        if (gareOfCounter.size > 0) {
+          const { data: cr } = await supabase.from('counter_routes').select('counter_id, route_id').in('counter_id', [...gareOfCounter.keys()]);
+          ((cr || []) as any[]).forEach(r => addLine(gareOfCounter.get(String(r.counter_id)) ?? '', r.route_id));
         }
-        const { data: deps } = await supabase.from('schedules').select('route_id').eq('departure_station_id', stationId)
-          .gte('departure_datetime', new Date(Date.now() - 30 * 86400_000).toISOString()).limit(1000);
-        ((deps || []) as any[]).forEach(d => { if (d.route_id) ids.add(String(d.route_id)); });
-        let mine = all.filter(r => ids.has(String(r.id)) && fromMyGares(r));
+        const { data: deps } = await supabase.from('schedules').select('departure_station_id, route_id').in('departure_station_id', gareIds)
+          .gte('departure_datetime', new Date(Date.now() - 30 * 86400_000).toISOString()).limit(5000);
+        ((deps || []) as any[]).forEach(d => addLine(String(d.departure_station_id), d.route_id));
+        // Only what is assigned to him (25/11/2026): a main gare (Gare Yopougon) has the lines of all
+        // its sub-gares, including those where he is not (YOP-DALOA, YOP-SAN PEDRO…). A gare whose
+        // lines hold all those of another of his gares is such a main gare: when it is chosen, only
+        // the lines of his sub-gares are offered (YOP-BOUAKE, YOP-DIVO, YOP-SIKENSI).
+        const isMain = (g: string) => {
+          const mineG = linesOf.get(g) ?? new Set<string>();
+          return gareIds.some(o => o !== g && (linesOf.get(o)?.size ?? 0) > 0 && (linesOf.get(o)?.size ?? 0) < mineG.size
+            && [...(linesOf.get(o) ?? [])].every(id => mineG.has(id)));
+        };
+        const ids = new Set<string>();
+        if (isMain(stationId)) {
+          gareIds.filter(g => !isMain(g)).forEach(g => linesOf.get(g)?.forEach(id => ids.add(id)));
+        }
+        if (ids.size === 0) linesOf.get(stationId)?.forEach(id => ids.add(id));
+        let mine = all.filter(r => ids.has(String(r.id)));
         if (mine.length === 0) mine = all.filter(fromMyGares);
         const list: LineOption[] = mine.map(r => ({
           id: r.id, name: r.name,
@@ -419,11 +450,11 @@ export default function BagagisteBaggageSale() {
   // provisional one (kept on the device), where the next passengers of the same number go too
   const ticketNumberValue = parseInt(ticketNumber, 10);
   const ticketDepartureKnown = Number.isFinite(ticketNumberValue)
-    && departures.some(d => d.departure_order === ticketNumberValue);
+    && shownDepartures.some(d => d.departure_order === ticketNumberValue);
   const applyTicketDeparture = async () => {
     const n = ticketNumberValue;
     if (!Number.isFinite(n) || n <= 0) { toast.error('Saisissez le N° de départ écrit sur le ticket'); return; }
-    const found = departures.find(d => d.departure_order === n);
+    const found = shownDepartures.find(d => d.departure_order === n);
     if (found) { selectDeparture(found); return; }
     const line = lines.find(l => l.id === ticketLine);
     if (!line) { toast.error('Choisissez la ligne écrite sur le ticket'); return; }
@@ -710,7 +741,7 @@ export default function BagagisteBaggageSale() {
             <div className="flex items-center gap-2 px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
               <Bus className="w-5 h-5" style={{ color: 'var(--primary)' }} />
               <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                Départs planifiés ({departures.length})
+                Départs planifiés ({shownDepartures.length})
               </h2>
             </div>
 
@@ -718,7 +749,7 @@ export default function BagagisteBaggageSale() {
               <div className="py-12 flex justify-center">
                 <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--primary)' }} />
               </div>
-            ) : departures.length === 0 ? (
+            ) : shownDepartures.length === 0 ? (
               <div className="px-5 py-12 text-center">
                 <Clock className="w-9 h-9 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -727,7 +758,7 @@ export default function BagagisteBaggageSale() {
               </div>
             ) : (
               <ul className="divide-y max-h-[70vh] overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                {departures.map(dep => {
+                {shownDepartures.map(dep => {
                   const isSel = selected?.id === dep.id;
                   const st = STATUS_LABELS[dep.status] || { label: dep.status, color: 'var(--text-muted)' };
                   return (
