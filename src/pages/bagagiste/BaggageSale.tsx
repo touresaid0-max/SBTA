@@ -111,6 +111,9 @@ export default function BagagisteBaggageSale() {
   // Without network: everything below is read from the device, the baggage is kept here
   const [online, setOnline] = useState<boolean>(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
+  // The server did not answer (Internet announced but not working): works as without network
+  const [serverDown, setServerDown] = useState(false);
+  const offlineMode = !online || serverDown;
   const [lines, setLines] = useState<LineOption[]>([]);
   const [buses, setBuses] = useState<string[]>([]);
   // The departure written on the passenger's ticket: line, number, bus
@@ -273,10 +276,12 @@ export default function BagagisteBaggageSale() {
         };
       });
       void saveRef(`deps:${stationId}:${date}`, rows);
+      setServerDown(false);
       setDepartures(await withProvisional(rows));
     } catch (err: any) {
       // Without network: the departures of that day kept on the device, and the provisional ones
       const cached = await getRef<DepartureRow[]>(`deps:${stationId}:${date}`);
+      setServerDown(isNetworkFailure(err));
       if (!cached && !isNetworkFailure(err)) toast.error(err.message || 'Erreur de chargement des départs');
       setDepartures(await withProvisional(cached ?? []));
     } finally {
@@ -860,7 +865,9 @@ export default function BagagisteBaggageSale() {
             className="rounded-2xl border shadow-sm p-6"
             style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
           >
-            {/* The departure written on the passenger's ticket (also without network) */}
+            {/* The departure written on the passenger's ticket: only without network (25/11/2026).
+                Connected, the departure is chosen in the list of departures planned. */}
+            {offlineMode && (
             <div className="mb-5 pb-5 border-b" style={{ borderColor: 'var(--border)' }}>
               <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Départ du ticket voyageur</p>
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
@@ -898,12 +905,15 @@ export default function BagagisteBaggageSale() {
                 </button>
               </div>
             </div>
+            )}
 
             {!selected ? (
               <div className="py-10 text-center">
                 <MapPin className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Choisissez le départ du ticket ci-dessus, ou un départ dans la liste, pour vendre un ticket bagage.
+                  {offlineMode
+                    ? 'Choisissez le départ du ticket ci-dessus, ou un départ dans la liste, pour vendre un ticket bagage.'
+                    : 'Choisissez un départ dans la liste « Départs planifiés » pour vendre un ticket bagage.'}
                 </p>
               </div>
             ) : (
