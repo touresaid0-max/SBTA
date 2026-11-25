@@ -35,16 +35,12 @@ export interface Depart {
   tickets: number;
   baggageCount: number;
   baggage: number;
-  /** Amount of a convoy (chartered bus): shown apart from the tickets, in the balance */
-  convoi: number;
   ramassage: number;
   recette: number;
   transferred: number;
   expenses: number;
   caisse: number;
   solde: number;
-  /** Direct ramassage: the destination city typed at the guichet (« MAN »), shown in the Ligne column */
-  destination: string | null;
   /** Shared departure: this row is one station's share (its seats, tickets, baggage, expenses) */
   share: { role: 'principale' | 'partenaire'; from: number; to: number } | null;
 }
@@ -57,11 +53,7 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
   const baggage = num(r.baggage_amount);
   const ramassage = num(r.ramassage_amount);
   const expenses = num(r.exp_ration) + num(r.exp_carburant) + num(r.exp_peage) + num(r.exp_autres);
-  // Convoy: its amount in « Convoi », not in « Tickets ». Balance = tickets + convoy + ramassage −
-  // expenses; the baggage no longer counts in it (request of 19/11/2026)
-  const isConvoy = String(r.status ?? '') === 'convoi';
-  const convoi = isConvoy ? tickets : 0;
-  const caisse = (isConvoy ? 0 : tickets) + convoi + ramassage;
+  const caisse = tickets + baggage + ramassage;
   return {
     key: `${String(r.schedule_id)}-${i}`,
     scheduleId: String(r.schedule_id),
@@ -70,13 +62,7 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
     number: r.departure_number == null ? null : num(r.departure_number),
     status: String(r.status ?? ''),
     routeId: r.route_id ? String(r.route_id) : null,
-    route: r.is_departure === false && !r.route_id ? 'Ramassage direct' : (String(r.route_name ?? '') || 'Ligne inconnue'),
-    // « Ramassage direct — MAN » → « MAN » (a database not updated yet sends no name: none)
-    destination: r.is_departure === false && String(r.route_name ?? '').includes('\u2014')
-      ? (String(r.route_name).split('\u2014').pop() ?? '').trim().toUpperCase() || null
-      // Convoy: its destination only (« Daloa - Abidjan » → « ABIDJAN »), not the line (24/11/2026)
-      : isConvoy ? (String(r.route_name ?? '').split(/\s+[-\u2013\u2014>]+\s+/).pop() ?? '').trim().toUpperCase() || null
-      : null,
+    route: String(r.route_name ?? '') || 'Ligne inconnue',
     stationId: String(r.station_id ?? 'none'),
     station: String(r.station_name ?? '') || 'Gare inconnue',
     counter: String(r.counter_number ?? '') || '—',
@@ -84,10 +70,9 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
     company: String(r.company_name ?? '') || '—',
     capacity: num(r.capacity),
     seats: num(r.seats_sold),
-    tickets: isConvoy ? 0 : tickets,
+    tickets,
     baggageCount: num(r.baggage_count),
     baggage,
-    convoi,
     ramassage,
     recette: num(r.recette),
     transferred: num(r.transferred_amount),
@@ -100,14 +85,14 @@ export function toDepart(r: Record<string, unknown>, i: number): Depart {
 }
 
 export interface Totals {
-  voyages: number; seats: number; capacity: number; tickets: number; baggage: number; convoi: number; ramassage: number;
+  voyages: number; seats: number; capacity: number; tickets: number; baggage: number; ramassage: number;
   caisse: number; expenses: number; solde: number; recette: number; transferred: number;
 }
 export function totalsOf(rows: Depart[]): Totals {
-  const t: Totals = { voyages: new Set(rows.map(r => r.scheduleId)).size, seats: 0, capacity: 0, tickets: 0, baggage: 0, convoi: 0,
+  const t: Totals = { voyages: new Set(rows.map(r => r.scheduleId)).size, seats: 0, capacity: 0, tickets: 0, baggage: 0,
     ramassage: 0, caisse: 0, expenses: 0, solde: 0, recette: 0, transferred: 0 };
   for (const r of rows) {
-    t.seats += r.seats; t.capacity += r.capacity; t.tickets += r.tickets; t.baggage += r.baggage; t.convoi += r.convoi; t.ramassage += r.ramassage;
+    t.seats += r.seats; t.capacity += r.capacity; t.tickets += r.tickets; t.baggage += r.baggage; t.ramassage += r.ramassage;
     t.caisse += r.caisse; t.expenses += r.expenses; t.solde += r.solde; t.recette += r.recette; t.transferred += r.transferred;
   }
   return t;
@@ -122,10 +107,10 @@ export function departSheetRow(d: Depart): Record<string, string | number> {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return {
     'Date': dt ? format(dt, 'dd/MM/yyyy') : '', 'Heure': dt ? format(dt, 'HH:mm') : '', 'N° dép.': d.number ?? '',
-    'Ligne': d.destination ?? d.route, 'Gare': stationLabel(d), 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
+    'Ligne': d.route, 'Gare': stationLabel(d), 'Guichet': d.counter === '—' ? '' : d.counter, 'Car': d.bus === '—' ? '' : d.bus,
     'Société': d.company, 'Statut': STATUS_LABELS[d.status] ?? d.status, 'Places': d.isDeparture ? d.capacity : '',
     'Vendus': d.seats, 'Rempl. %': d.isDeparture && d.capacity > 0 ? Number(((d.seats / d.capacity) * 100).toFixed(1)) : '',
-    'Tickets': d.tickets, 'Convoi': d.convoi, 'Ramassage': d.ramassage, 'Caisse': d.caisse,
+    'Tickets': d.tickets, 'Nb bagages': d.baggageCount, 'Bagages': d.baggage, 'Ramassage': d.ramassage, 'Caisse': d.caisse,
     'Dépenses': d.expenses, 'Solde': d.solde, 'Recette (rapport)': d.recette, 'Part reversée (panne)': d.transferred,
   };
 }

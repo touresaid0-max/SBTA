@@ -6,22 +6,21 @@ import { usePagination } from '@/hooks/usePagination';
 import Pagination from '@/components/pos/Pagination';
 import { type Depart, DeparturesUnavailableError, STATUS_LABELS, departSheetRow, fetchDepartures, fileSafe, fill, fmtF, fmtN, stationLabel, totalsOf } from './departures';
 
-const HEADERS = ['Date', 'Heure', 'N° dép.', 'Ligne', 'Gare', 'Guichet', 'Car', 'Société', 'Statut', 'Places', 'Vendus', 'Rempl.', 'Tickets', 'Convoi', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'];
+const HEADERS = ['Date', 'Heure', 'N° dép.', 'Ligne', 'Gare', 'Guichet', 'Car', 'Société', 'Statut', 'Places', 'Vendus', 'Rempl.', 'Tickets', 'Bagages', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'];
 const FIRST_NUMERIC = 9;
 const cells = (d: Depart): string[] => {
   const dt = d.datetime ? new Date(d.datetime) : null;
   return [
     dt ? format(dt, 'dd/MM/yyyy') : '—', dt ? format(dt, 'HH:mm') : '—', d.number != null ? String(d.number) : '—',
-    d.destination ?? d.route, stationLabel(d), d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
+    d.route, stationLabel(d), d.counter, d.bus, d.company, STATUS_LABELS[d.status] ?? d.status,
     d.isDeparture ? fmtN(d.capacity) : '—', fmtN(d.seats), d.isDeparture ? fill(d.seats, d.capacity) : '—',
-    fmtF(d.tickets), fmtF(d.convoi),
+    fmtF(d.tickets), d.baggageCount > 0 ? `${fmtF(d.baggage)} (${d.baggageCount})` : fmtF(d.baggage),
     fmtF(d.ramassage), fmtF(d.caisse), fmtF(d.expenses), fmtF(d.solde),
   ];
 };
 
 interface Props {
-  /** The line; null: the direct ramassages (« Ramassage direct (sans ligne) ») */
-  routeId: string | null;
+  routeId: string;
   routeName: string;
   dateFrom: string;
   dateTo: string;
@@ -42,8 +41,7 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
     let cancelled = false;
     setRows(null); setError(null); setStation(null); setSearch('');
     fetchDepartures(routeId, dateFrom, dateTo)
-      // No line: the function sends every line; only the direct ramassages (no line) are kept
-      .then(list => { if (!cancelled) setRows(routeId ? list : list.filter(d => d.routeId === null)); })
+      .then(list => { if (!cancelled) setRows(list); })
       .catch(err => {
         if (cancelled) return;
         setError(err instanceof DeparturesUnavailableError
@@ -88,7 +86,7 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
   const exportExcel = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stations.map(s => ({
-      'Gare': s.name, 'Voyages': s.t.voyages, 'Vendus': s.t.seats, 'Tickets': s.t.tickets, 'Convoi': s.t.convoi,
+      'Gare': s.name, 'Voyages': s.t.voyages, 'Vendus': s.t.seats, 'Tickets': s.t.tickets, 'Bagages': s.t.baggage,
       'Ramassage': s.t.ramassage, 'Caisse': s.t.caisse, 'Dépenses': s.t.expenses, 'Solde': s.t.solde, 'Recettes (rapport)': s.t.recette,
     }))), 'Par gare');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filtered.map(departSheetRow)), 'Départs');
@@ -172,7 +170,7 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ backgroundColor: 'var(--bg-subtle)' }}>
-                  {['Gare', 'Voyages', 'Vendus', 'Rempl.', 'Tickets', 'Convoi', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'].map((h, i) => (
+                  {['Gare', 'Voyages', 'Vendus', 'Rempl.', 'Tickets', 'Bagages', 'Ramassage', 'Caisse', 'Dépenses', 'Solde'].map((h, i) => (
                     <th key={h} className={`px-3 py-2 font-semibold whitespace-nowrap ${i > 0 ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-secondary)' }}>{h}</th>
                   ))}
                 </tr>
@@ -191,7 +189,7 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
                       <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{fmtN(s.t.seats)}</td>
                       <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{fill(s.t.seats, s.t.capacity)}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{fmtF(s.t.tickets)}</td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{fmtF(s.t.convoi)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{fmtF(s.t.baggage)}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{fmtF(s.t.ramassage)}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap font-semibold" style={{ color: 'var(--text-primary)' }}>{fmtF(s.t.caisse)}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: '#DC2626' }}>{fmtF(s.t.expenses)}</td>
@@ -257,7 +255,7 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
                       <td colSpan={FIRST_NUMERIC} className="px-3 py-2 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
                         Total {station ? stationName : 'toutes gares'} · {ft.voyages} voyage{ft.voyages > 1 ? 's' : ''}
                       </td>
-                      {[fmtN(ft.capacity), fmtN(ft.seats), fill(ft.seats, ft.capacity), fmtF(ft.tickets), fmtF(ft.convoi), fmtF(ft.ramassage), fmtF(ft.caisse), fmtF(ft.expenses), fmtF(ft.solde)].map((c, i) => (
+                      {[fmtN(ft.capacity), fmtN(ft.seats), fill(ft.seats, ft.capacity), fmtF(ft.tickets), fmtF(ft.baggage), fmtF(ft.ramassage), fmtF(ft.caisse), fmtF(ft.expenses), fmtF(ft.solde)].map((c, i) => (
                         <td key={i} className="px-3 py-2 text-right whitespace-nowrap"
                           style={{ color: i === 8 ? (ft.solde >= 0 ? '#15803D' : '#DC2626') : i === 7 ? '#DC2626' : 'var(--text-primary)' }}>{c}</td>
                       ))}
@@ -275,8 +273,8 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
           </div>
 
           <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            Caisse = Tickets + Convoi + Ramassage ; Solde = Caisse − Dépenses (les bagages ne sont pas comptés)
-            {total.transferred > 0 ? `. Les recettes du rapport déduisent la part reversée à une autre société après panne (${fmtF(total.transferred)})` : ''}.
+            Caisse = Tickets + Bagages + Ramassage, comme au bordereau du guichet. Les recettes du rapport ne comptent pas les bagages
+            {total.transferred > 0 ? ` et déduisent la part reversée à une autre société après panne (${fmtF(total.transferred)})` : ''}.
             Un ramassage direct (encaissé sans départ programmé) compte pour un voyage, comme dans le rapport.
           </p>
         </>

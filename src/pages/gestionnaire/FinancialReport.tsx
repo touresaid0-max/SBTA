@@ -183,12 +183,9 @@ export default function FinancialReport() {
     try {
       const list = await fetchDepartures(null, dateFrom, dateTo);
       // The lines shown (all of them, or those found by the search)
-      const shownIds = new Set<string | null>(routesShown.map(r => r.route_id ?? null));
+      const shownIds = new Set(routesShown.map(r => r.route_id));
       const shownNames = new Set(routesShown.map(r => r.route_name));
-      // The direct ramassages (no line) go with the « Ramassage direct (sans ligne) » row of the report:
-      // their name differs (« Ramassage direct »), so they were left out of the file and its
-      // Ramassage column stayed at 0 (24/11/2026)
-      const rows = list.filter(d => (d.routeId ? shownIds.has(d.routeId) : (shownIds.has(null) || shownNames.has(d.route))));
+      const rows = list.filter(d => (d.routeId ? shownIds.has(d.routeId) : shownNames.has(d.route)));
       if (rows.length === 0) {
         const expected = routesShown.some(r => Number(r.trip_count) > 0);
         setExportAllMsg({ ok: false, text: expected
@@ -206,17 +203,17 @@ export default function FinancialReport() {
       };
       const pct = (seats: number, capacity: number) => (capacity > 0 ? Number(((seats / capacity) * 100).toFixed(1)) : '');
       const amounts = (t: ReturnType<typeof totalsOf>) => ({
-        'Voyages': t.voyages, 'Vendus': t.seats, 'Rempl. %': pct(t.seats, t.capacity), 'Tickets': t.tickets, 'Convoi': t.convoi,
+        'Voyages': t.voyages, 'Vendus': t.seats, 'Rempl. %': pct(t.seats, t.capacity), 'Tickets': t.tickets, 'Bagages': t.baggage,
         'Ramassage': t.ramassage, 'Caisse': t.caisse, 'Dépenses': t.expenses, 'Solde': t.solde,
       });
 
       // Par ligne: the detail added up, next to the line of the report
       const byLine = [...groupBy(d => d.routeId ?? d.route).values()].map(list => {
         const t = totalsOf(list);
-        const rep = routes.find(r => (list[0].routeId ? r.route_id === list[0].routeId : (r.route_id == null || r.route_name === list[0].route)));
+        const rep = routes.find(r => (list[0].routeId ? r.route_id === list[0].routeId : r.route_name === list[0].route));
         const same = !!rep && Number(rep.trip_count) === t.voyages && Math.round(Number(rep.revenue)) === Math.round(t.recette)
           && Math.round(Number(rep.total_expense ?? 0)) === Math.round(t.expenses);
-        return { 'Ligne': list[0].routeId ? list[0].route : (rep?.route_name ?? list[0].route), ...amounts(t), 'Recettes (détail)': t.recette,
+        return { 'Ligne': list[0].route, ...amounts(t), 'Recettes (détail)': t.recette,
           'Voyages (rapport)': rep ? Number(rep.trip_count) : '', 'Recettes (rapport)': rep ? Number(rep.revenue) : '',
           'Conforme au rapport': same ? 'Oui' : 'Non' };
       });
@@ -563,16 +560,14 @@ export default function FinancialReport() {
                   <tbody>
                     {pRoutes.pageItems.map((r, i) => {
                       const mp = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
-                      // The direct ramassages (no line) open too, on their own key
-                      const rowKey = r.route_id ?? '__ramassage_direct__';
-                      const open = openRouteId != null && openRouteId === rowKey;
+                      const open = openRouteId != null && openRouteId === r.route_id;
                       return (
                         <React.Fragment key={r.route_id || i}>
                         <tr className="border-t" style={{ borderColor: 'var(--border)', backgroundColor: open ? 'var(--bg-subtle)' : undefined }}>
                           <td className="px-3 py-2.5 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{r.route_name}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            {Number(r.trip_count) > 0 ? (
-                              <button type="button" onClick={() => setOpenRouteId(open ? null : rowKey)}
+                            {r.route_id && Number(r.trip_count) > 0 ? (
+                              <button type="button" onClick={() => setOpenRouteId(open ? null : r.route_id)}
                                 aria-expanded={open} title={open ? 'Masquer le détail' : 'Voir les gares et les départs'}
                                 className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold"
                                 style={{ borderColor: open ? '#10B981' : 'var(--border)', color: open ? '#047857' : 'var(--text-primary)', backgroundColor: open ? 'rgba(16,185,129,0.12)' : 'var(--surface)' }}>
@@ -596,7 +591,7 @@ export default function FinancialReport() {
                           <tr className="border-t" style={{ borderColor: 'var(--border)' }}>
                             <td colSpan={10} className="p-0">
                               <div style={{ position: 'sticky', left: 0, width: linesBoxWidth || undefined }}>
-                              <RouteDeparturesDetail routeId={r.route_id ?? null} routeName={r.route_name} dateFrom={dateFrom} dateTo={dateTo}
+                              <RouteDeparturesDetail routeId={r.route_id} routeName={r.route_name} dateFrom={dateFrom} dateTo={dateTo}
                                 expectedTrips={Number(r.trip_count)} expectedRevenue={Number(r.revenue)} expectedExpenses={Number(r.total_expense ?? 0)}
                                 onClose={() => setOpenRouteId(null)} />
                               </div>
