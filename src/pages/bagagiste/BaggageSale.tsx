@@ -17,7 +17,7 @@ import {
 } from '../../utils/printBaggageTicket';
 import PhoneInputCI from '@/components/shared/PhoneInputCI';
 import { phoneCIError } from '@/utils/phoneCI';
-import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
+import BusPlateInput from '@/components/bagagiste/BusPlateInput';
 
 interface StationOption {
   id: string;
@@ -62,6 +62,8 @@ interface BaggageForm {
   departure_number: string;
   bus_registration: string;
   description: string;
+  /** Value of the baggage, declared by its owner (F CFA), 0 when not given */
+  declared_value: number;
   owner_name: string;
   owner_phone: string;
 }
@@ -74,6 +76,7 @@ const EMPTY_FORM: BaggageForm = {
   departure_number: '',
   bus_registration: '',
   description: '',
+  declared_value: 0,
   owner_name: '',
   owner_phone: '',
 };
@@ -114,8 +117,6 @@ export default function BagagisteBaggageSale() {
   const [ticketLine, setTicketLine] = useState('');
   const [ticketNumber, setTicketNumber] = useState('');
   const [ticketBus, setTicketBus] = useState('');
-  // The buses, searched while typing (« 383 » finds 383KA02)
-  const busOptions = useMemo(() => buses.map(b => ({ id: b, label: b, keywords: b.replace(/[\s-]/g, '') })), [buses]);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -584,6 +585,7 @@ export default function BagagisteBaggageSale() {
           departure_number: departureNumber,
           bus_registration: form.bus_registration.trim() || null,
           description: form.description.trim() || null,
+          declared_value: Math.max(0, Math.round(form.declared_value || 0)),
           owner_name: form.owner_name.trim(),
           owner_phone: form.owner_phone.trim(),
           has_ticket: form.mode === 'avec_ticket' || form.mode === 'avec_ticket_reporte',
@@ -613,6 +615,7 @@ export default function BagagisteBaggageSale() {
         departure_number: departureNumber,
         bus_registration: form.bus_registration || null,
         description: form.description || null,
+        declared_value: Math.max(0, Math.round(form.declared_value || 0)),
         owner_name: form.owner_name,
         owner_phone: form.owner_phone,
         station_name: stationName,
@@ -874,14 +877,13 @@ export default function BagagisteBaggageSale() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Car</label>
-                  <AutocompleteSelect
-                    compact
-                    freeText
-                    options={busOptions}
+                  <BusPlateInput
                     value={ticketBus}
                     onChange={setTicketBus}
-                    placeholder="Tapez l'immatriculation…"
-                    emptyText={buses.length > 0 ? 'Aucun car trouvé' : 'Aucun car gardé sur ce poste'}
+                    buses={buses}
+                    placeholder="Tapez l'immatriculation"
+                    className="w-full px-3 py-2 rounded-lg border text-sm"
+                    style={inputStyle}
                   />
                 </div>
               </div>
@@ -1028,12 +1030,26 @@ export default function BagagisteBaggageSale() {
                     />
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Description du bagage</label>
                     <input
                       type="text"
                       value={form.description}
                       onChange={e => setForm({ ...form, description: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border text-sm"
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Valeur du bagage (F)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={form.declared_value || ''}
+                      onChange={e => setForm({ ...form, declared_value: Math.max(0, parseInt(e.target.value) || 0) })}
+                      placeholder="Ex : 100000"
                       className="w-full px-3 py-2 rounded-lg border text-sm"
                       style={inputStyle}
                     />
