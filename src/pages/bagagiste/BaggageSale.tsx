@@ -876,6 +876,7 @@ export default function BagagisteBaggageSale() {
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Car</label>
                   <AutocompleteSelect
                     compact
+                    freeText
                     options={busOptions}
                     value={ticketBus}
                     onChange={setTicketBus}
