@@ -10,6 +10,8 @@ export interface BaggageTicketData {
   departure_number: number | null;
   bus_registration: string | null;
   description: string | null;
+  /** Value declared by the owner (F CFA), printed when above 0 */
+  declared_value?: number;
   owner_name: string;
   owner_phone: string;
   station_name: string;
@@ -29,6 +31,7 @@ export async function printBaggageTicket(data: BaggageTicketData) {
     price: data.price,
     destination: data.destination,
     description: data.description ?? '',
+    declared_value: data.declared_value ?? 0,
     car_plate: data.bus_registration ?? '',
     owner_name: data.owner_name,
     owner_phone: data.owner_phone,

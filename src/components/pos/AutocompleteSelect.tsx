@@ -19,12 +19,6 @@ interface AutocompleteSelectProps {
   disabled?: boolean;
   /** Small field, like the other fields of a dense form */
   compact?: boolean;
-  /**
-   * What is typed comes first: the text itself on the first line (it can be chosen even if it is
-   * not in the list, written in capitals), then the options starting with it, then the others
-   * containing it. The value is then the text chosen.
-   */
-  freeText?: boolean;
 }
 
 export default function AutocompleteSelect({
@@ -37,7 +31,6 @@ export default function AutocompleteSelect({
   emptyText = 'Aucun résultat',
   disabled = false,
   compact = false,
-  freeText = false,
 }: AutocompleteSelectProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -45,27 +38,17 @@ export default function AutocompleteSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selected = useMemo(
-    () => options.find(o => o.id === value) ?? (freeText && value ? { id: value, label: value } as AutocompleteOption : undefined),
-    [options, value, freeText]);
+  const selected = useMemo(() => options.find(o => o.id === value), [options, value]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return options;
     const q = query.toLowerCase().trim();
-    const found = options.filter(o =>
+    return options.filter(o =>
       o.label.toLowerCase().includes(q) ||
       (o.sublabel?.toLowerCase().includes(q) ?? false) ||
       (o.keywords?.toLowerCase().includes(q) ?? false)
     );
-    if (!freeText) return found;
-    const flat = (t: string) => t.toLowerCase().replace(/[\s-]/g, '');
-    const fq = flat(q);
-    const rank = (o: AutocompleteOption) => flat(o.label) === fq ? 0 : flat(o.label).startsWith(fq) ? 1 : 2;
-    const sorted = [...found].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
-    if (sorted.length > 0 && rank(sorted[0]) === 0) return sorted;
-    const typed = query.trim().toUpperCase().replace(/\s+/g, '');
-    return [{ id: typed, label: typed, sublabel: 'Ce que vous avez saisi' }, ...sorted];
-  }, [options, query, freeText]);
+  }, [options, query]);
 
   useEffect(() => {
     if (highlighted >= filtered.length) setHighlighted(0);
