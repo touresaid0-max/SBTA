@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { fetchStationRouteIds } from '../../services/stationRoutes.service';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { Truck, Plus, Search, X, AlertTriangle, User, Banknote, CreditCard as Edit3, ChevronRight, RotateCcw, Receipt, FileText } from 'lucide-react';
@@ -222,12 +223,17 @@ export default function Convoys() {
         if (!stData) { toast.error('Gare introuvable'); setLoading(false); return; }
         setStation(stData);
 
+        // Lines of the station: those of its guichets and those starting from it (audit B3). A
+        // station without any: the former filter (origin station, otherwise the city).
+        const stationRouteIds = await fetchStationRouteIds(stData.id);
+        const routesQuery = supabase
+          .from('routes')
+          .select('id, name, base_price, estimated_duration_minutes, origin_city_id, destination_city_id, origin_city:origin_city_id(id,name), destination_city:destination_city_id(id,name)')
+          .eq('is_active', true);
         const [routesRes, busesRes, driversRes, stationsRes, companiesRes] = await Promise.all([
-          supabase
-            .from('routes')
-            .select('id, name, base_price, estimated_duration_minutes, origin_city_id, destination_city_id, origin_city:origin_city_id(id,name), destination_city:destination_city_id(id,name)')
-            .eq('is_active', true)
-            .or(`origin_station_id.eq.${stData.id},and(origin_station_id.is.null,origin_city_id.eq.${stData.city_id})`)
+          (stationRouteIds.length > 0
+            ? routesQuery.in('id', stationRouteIds)
+            : routesQuery.or(`origin_station_id.eq.${stData.id},and(origin_station_id.is.null,origin_city_id.eq.${stData.city_id})`))
             .order('name'),
           supabase
             .from('buses')
