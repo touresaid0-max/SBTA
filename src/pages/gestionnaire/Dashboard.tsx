@@ -325,7 +325,7 @@ export default function GestionnaireDashboard() {
           </div>
           <div className="space-y-2">
             {routes.map((r, i) => (
-              <div key={r.route_id || i} className="flex items-center gap-3 py-2">
+              <div key={`${r.route_id ?? "x"}-${i}`} className="flex items-center gap-3 py-2">
                 <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                   style={{ backgroundColor: i === 0 ? '#F59E0B' : i === 1 ? '#9CA3AF' : 'var(--primary)' }}>
                   {i + 1}

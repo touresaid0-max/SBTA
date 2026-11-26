@@ -265,7 +265,7 @@ function RouteTab({ routes, totRevenue, totTrips, totMargin }:
                              - Number(r.cc_autres ?? 0);
                 const mPct   = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
                 return (
-                  <tr key={r.route_id || i} className="border-t"
+                  <tr key={`${r.route_id ?? "x"}-${i}`} className="border-t"
                     style={{ borderColor: 'var(--border)' }}>
                     <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{r.route_name}</td>
                     <td className="px-4 py-3" style={{ color: 'var(--text-secondary)' }}>{r.trip_count}</td>

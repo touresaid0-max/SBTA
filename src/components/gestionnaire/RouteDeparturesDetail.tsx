@@ -29,10 +29,12 @@ interface Props {
   expectedTrips: number;
   expectedRevenue: number;
   expectedExpenses: number;
+  /** A row « Convoi (the line) »: only the convoys; false: the line without its convoys; absent: all */
+  convoy?: boolean;
   onClose: () => void;
 }
 
-export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, dateTo, expectedTrips, expectedRevenue, expectedExpenses, onClose }: Props) {
+export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, dateTo, expectedTrips, expectedRevenue, expectedExpenses, convoy, onClose }: Props) {
   const [rows, setRows] = useState<Depart[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [station, setStation] = useState<string | null>(null);
@@ -43,7 +45,12 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
     setRows(null); setError(null); setStation(null); setSearch('');
     fetchDepartures(routeId, dateFrom, dateTo)
       // No line: the function sends every line; only the direct ramassages (no line) are kept
-      .then(list => { if (!cancelled) setRows(routeId ? list : list.filter(d => d.routeId === null)); })
+      .then(list => {
+        if (cancelled) return;
+        const ofRow = (routeId ? list : list.filter(d => d.routeId === null))
+          .filter(d => convoy === undefined || (d.status === 'convoi') === convoy);
+        setRows(ofRow);
+      })
       .catch(err => {
         if (cancelled) return;
         setError(err instanceof DeparturesUnavailableError
@@ -51,7 +58,7 @@ export default function RouteDeparturesDetail({ routeId, routeName, dateFrom, da
           : 'Impossible de charger le détail des départs. Réessayez.');
       });
     return () => { cancelled = true; };
-  }, [routeId, dateFrom, dateTo]);
+  }, [routeId, dateFrom, dateTo, convoy]);
 
   const all = useMemo(() => rows ?? [], [rows]);
 
