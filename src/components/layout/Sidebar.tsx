@@ -185,6 +185,7 @@ const SIDEBAR_MENUS: Record<UserRole, NavEntry[]> = {
       children: [
         { label: 'Planning départs',    path: '/chef-gare/planning',     icon: <Calendar className="w-5 h-5" /> },
         { label: 'Écran d\'affichage',  path: '/chef-gare/display',      icon: <Monitor className="w-5 h-5" /> },
+        { label: 'Pannes',              path: '/chef-gare/breakdowns',   icon: <Wrench className="w-5 h-5" /> },
       ],
     },
     {

@@ -60,6 +60,8 @@ export default function ChefGareBreakdowns() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterStatus>('all');
   const [receiving, setReceiving] = useState<string | null>(null);
+  // The list could not be read (audit B4): an error, never « Aucun signalement »
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (user?.id) loadReports();
@@ -68,22 +70,34 @@ export default function ChefGareBreakdowns() {
   const loadReports = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('breakdown_reports')
-        .select(`
+      setLoadError(false);
+      const columns = (withReceivedAt: boolean) => `
           id, title, breakdown_type, severity, description,
           location, latitude, longitude, status, reported_at,
-          received_at, photo_urls, photos_urls,
+          ${withReceivedAt ? 'received_at, ' : ''}photo_urls, photos_urls,
           bus:bus_id (registration_number, manufacturer, model),
           driver:driver_id (full_name),
           reporter:reported_by (full_name)
-        `)
+        `;
+      let { data, error } = await supabase
+        .from('breakdown_reports')
+        .select(columns(true))
         .order('reported_at', { ascending: false });
+      // A database without the received_at column (migration 20261126150000 not run): the list
+      // all the same, without the time of reception
+      if (error && /received_at/.test(error.message ?? '')) {
+        ({ data, error } = await supabase
+          .from('breakdown_reports')
+          .select(columns(false))
+          .order('reported_at', { ascending: false }));
+      }
 
       if (error) throw error;
       setReports((data as unknown as BreakdownReport[]) || []);
     } catch (err: any) {
       console.error(err);
+      setReports([]);
+      setLoadError(true);
       toast.error('Erreur lors du chargement des pannes');
     } finally {
       setLoading(false);
@@ -94,26 +108,22 @@ export default function ChefGareBreakdowns() {
     if (report.status !== 'signale') return;
     try {
       setReceiving(report.id);
-      const { error } = await supabase
-        .from('breakdown_reports')
-        .update({
-          status: 'recu_garage',
-          received_at: new Date().toISOString(),
-        })
-        .eq('id', report.id);
+      // Server function (the chef de gare may not modify a breakdown otherwise): only a
+      // « signalée » breakdown of his station, with the time of reception
+      const { data: receivedAt, error } = await supabase.rpc('mark_breakdown_received', { p_id: report.id });
 
       if (error) throw error;
       toast.success('Panne marquée comme reçue');
       setReports(prev =>
         prev.map(r =>
           r.id === report.id
-            ? { ...r, status: 'recu_garage', received_at: new Date().toISOString() }
+            ? { ...r, status: 'recu_garage', received_at: (receivedAt as string | null) ?? new Date().toISOString() }
             : r
         )
       );
     } catch (err: any) {
       console.error(err);
-      toast.error('Erreur lors de la mise à jour');
+      toast.error(err?.message ? `Réception impossible : ${err.message}` : 'Erreur lors de la mise à jour');
     } finally {
       setReceiving(null);
     }
@@ -228,8 +238,24 @@ export default function ChefGareBreakdowns() {
           })}
         </div>
 
+        {loadError && (
+          <div className="rounded-2xl border p-12 text-center"
+               style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
+            <AlertTriangle className="w-12 h-12 mx-auto mb-3" style={{ color: '#DC2626' }} />
+            <p className="font-semibold" style={{ color: '#991B1B' }}>Pannes indisponibles</p>
+            <p className="text-sm mt-1" style={{ color: '#B91C1C' }}>
+              La liste n'a pas pu être chargée : ce n'est pas qu'il n'y a aucune panne.
+            </p>
+            <button onClick={loadReports}
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+              style={{ backgroundColor: '#DC2626' }}>
+              <RefreshCw className="w-4 h-4" /> Réessayer
+            </button>
+          </div>
+        )}
+
         {/* Empty state */}
-        {filtered.length === 0 && (
+        {!loadError && filtered.length === 0 && (
           <div className="rounded-2xl border p-12 text-center"
                style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
             <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-30" />
