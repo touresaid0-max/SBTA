@@ -676,7 +676,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
       })()}
 
       {/* ── TABLE ─────────────────────────────────────────────────── */}
-      <div className="px-6 xl:px-10 pt-3 pb-4 flex-1">
+      <div className="px-3 md:px-6 xl:px-10 pt-3 pb-4 flex-1">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24">
             <div className="w-14 h-14 rounded-full animate-spin mb-4"
@@ -693,7 +693,110 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
             </p>
           </div>
         ) : (
-          <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}` }}>
+          <>
+          {/* ── Phone: one card per departure, all of them (audit G4) ── */}
+          <div className="md:hidden space-y-3">
+            {sortedDepartures.map(row => {
+              const departNumber = departNumberByRow.get(row.id) || 1;
+              const status = computeEffectiveStatus(row, currentTime);
+              const cfg = STATUS_CFG[status] || STATUS_CFG.planifie;
+              const isPast = status === 'termine';
+              const isAnnule = status === 'annule';
+              const isRetard = status === 'retard';
+              const isImminent = status === 'imminent';
+              const isEmbarquement = status === 'embarquement';
+              const isActive = isImminent || isEmbarquement;
+              const unknownTime = hasUnknownTime(row.departure_datetime);
+              const fillPct = row.bus_capacity > 0 ? Math.round((row.seats_reserved / row.bus_capacity) * 100) : 0;
+              const accentColor = isImminent ? '#EAB308'
+                : isEmbarquement || isRetard ? '#F97316'
+                : isAnnule ? '#EF4444'
+                : isPast ? '#9CA3AF'
+                : 'transparent';
+              const cardBg = isImminent ? 'rgba(234,179,8,0.12)'
+                : isEmbarquement ? 'rgba(234,88,12,0.08)'
+                : isRetard ? 'rgba(249,115,22,0.07)'
+                : isAnnule ? 'rgba(239,68,68,0.05)'
+                : isPast ? T.surface2 : T.surface;
+              const timeColor = isImminent ? '#A16207' : isEmbarquement || isRetard ? '#C2410C' : isPast ? '#9CA3AF' : T.text;
+              const duration = formatDuration(row.departure_datetime, row.arrival_datetime);
+              const free = row.seats_available;
+              return (
+                <div key={row.id} onClick={() => setSelectedRow(row)}
+                  className="rounded-xl overflow-hidden cursor-pointer"
+                  style={{ backgroundColor: cardBg, border: `1px solid ${T.border}`, borderLeft: `4px solid ${accentColor}`,
+                    opacity: isPast || isAnnule ? 0.65 : 1 }}>
+                  <div className="p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-baseline gap-3 min-w-0">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: T.text3 }}>Départ</p>
+                          <p className="text-2xl font-black leading-none tabular-nums" style={{ color: isActive ? cfg.color : T.green }}>{departNumber}</p>
+                        </div>
+                        <div>
+                          <p className="text-2xl font-black tabular-nums leading-none" style={{ color: timeColor }}>{depTime(row.departure_datetime)}</p>
+                          {unknownTime && <p className="text-xs font-bold mt-0.5" style={{ color: T.text3 }}>à confirmer</p>}
+                          {isActive && !unknownTime && (
+                            <p className={`text-xs font-black mt-0.5 ${isImminent ? 'animate-pulse' : ''}`} style={{ color: timeColor }}>
+                              dans {differenceInMinutes(new Date(row.departure_datetime), currentTime)} min
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-black text-[11px] whitespace-nowrap flex-shrink-0 ${cfg.pulse ? 'animate-pulse' : ''}`}
+                        style={{ backgroundColor: cfg.bg, color: cfg.color }}>
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cfg.dot }} />
+                        {cfg.label}
+                      </span>
+                    </div>
+                    <p className="text-xl font-black mt-2 leading-tight break-words" style={{ color: T.text }}>&rarr; {row.arrival_station_name}</p>
+                    <p className="text-sm font-semibold" style={{ color: T.text2 }}>
+                      {row.route_name}
+                      {duration !== '—' && <> &middot; {duration}</>}
+                      {!unknownTime && <> &middot; arrivée {arrTime(row.departure_datetime, row.arrival_datetime)}</>}
+                    </p>
+                    {row.transit_stops.length > 0 && (
+                      <p className="text-xs mt-0.5 truncate" style={{ color: T.text3 }}>
+                        Via {row.transit_stops.map(t => t.station_name).join(', ')}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                      <span className="inline-flex items-center gap-1.5 text-sm font-black min-w-0" style={{ color: T.text }}>
+                        <Bus className="w-4 h-4 flex-shrink-0" style={{ color: T.text3 }} />
+                        <span className="truncate">{row.bus_registration}</span>
+                      </span>
+                      <span className="text-sm whitespace-nowrap" style={{ color: T.text2 }}>
+                        <b className="text-lg font-black" style={{ color: free === 0 ? '#EF4444' : fillPct >= 80 ? '#F59E0B' : T.green }}>
+                          {free}
+                        </b> {free > 1 ? 'places libres' : 'place libre'} / {row.bus_capacity}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full mt-1 overflow-hidden" style={{ backgroundColor: T.border }}>
+                      <div className="h-full rounded-full" style={{
+                        width: `${Math.min(fillPct, 100)}%`,
+                        backgroundColor: fillPct >= 90 ? '#EF4444' : fillPct >= 70 ? '#F59E0B' : T.green,
+                      }} />
+                    </div>
+                  </div>
+                  {isActive && (
+                    <p className="py-1.5 text-center font-black text-[10px] tracking-widest uppercase"
+                      style={{ backgroundColor: isImminent ? '#EAB308' : T.green, color: isImminent ? '#422006' : 'white' }}>
+                      {isImminent ? 'Départ imminent — présentez-vous au quai' : 'Embarquement en cours — montez à bord'}
+                    </p>
+                  )}
+                  {isRetard && (
+                    <p className="py-1.5 text-center font-black text-[10px] tracking-widest uppercase"
+                      style={{ backgroundColor: 'rgba(249,115,22,0.15)', color: '#C2410C', borderTop: '1px solid #F97316' }}>
+                      Départ retardé — veuillez patienter
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Larger screens: the table ── */}
+          <div className="hidden md:block rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}` }}>
             <table className="w-full table-fixed border-collapse">
               <colgroup>
                 <col style={{ width: '9%' }} />   {/* N° Départ */}
@@ -914,6 +1017,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
