@@ -4,7 +4,7 @@ import { fetchStationRouteIds, stationRoutesFirst } from '../../services/station
 import { createRefreshScheduler, runAtMostEvery } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import { format, addMinutes, isAfter, isBefore, isWithinInterval } from 'date-fns';
-import { hasUnknownTime, departureTimeLabel, timeFromDepartureLabel } from '../../utils/departureTime';
+import { hasUnknownTime, departureTimeLabel, timeFromDepartureLabel, departureArrival } from '../../utils/departureTime';
 import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import {
@@ -246,7 +246,7 @@ export default function DailyPlanning() {
     const { data, error } = await supabase
       .from('schedules')
       .select(`
-        id, route_name, departure_datetime, arrival_datetime, is_anticipated,
+        id, route_name, departure_datetime, arrival_datetime, estimated_duration_minutes, is_anticipated,
         status, seats_available, seats_reserved, fill_rate, notes, transit_stops,
         admin_reactivated_at, source, counter_id, departure_number,
         bus:bus_id(registration_number, model, capacity),
@@ -297,7 +297,8 @@ export default function DailyPlanning() {
       id: s.id,
       route_name: s.route_name || '—',
       departure_datetime: s.departure_datetime,
-      arrival_datetime: s.arrival_datetime,
+      // Arrival from the line's duration for a guichet departure saved with + 8 h (audit G3)
+      arrival_datetime: departureArrival(s.departure_datetime, s.arrival_datetime, s.estimated_duration_minutes),
       status: s.status || 'planifie',
       seats_available: s.seats_available,
       seats_reserved: s.seats_reserved ?? 0,
@@ -536,7 +537,7 @@ export default function DailyPlanning() {
     const { data } = await supabase
       .from('schedules')
       .select(`
-        id, route_name, departure_datetime, arrival_datetime, status,
+        id, route_name, departure_datetime, arrival_datetime, estimated_duration_minutes, status,
         seats_available, seats_reserved, is_ramassage,
         bus:bus_id(registration_number, capacity, total_seats),
         driver:driver_id(full_name),
@@ -567,6 +568,7 @@ export default function DailyPlanning() {
 
     const enriched = data.map((s: any) => ({
       ...s,
+      arrival_datetime: departureArrival(s.departure_datetime, s.arrival_datetime, s.estimated_duration_minutes),
       bus_registration: s.bus?.registration_number || '--',
       bus_capacity: s.bus?.capacity ?? s.bus?.total_seats ?? 0,
       driver_name: s.driver?.full_name || '--',

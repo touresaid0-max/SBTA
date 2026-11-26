@@ -19,3 +19,15 @@ export function departureTimeLabel(value: string | Date, unknown = '--:--'): str
 export function timeFromDepartureLabel(departure: string | Date, value: string | Date, unknown = '--:--'): string {
   return hasUnknownTime(departure) ? unknown : format(value instanceof Date ? value : new Date(value), 'HH:mm');
 }
+
+/**
+ * Arrival of a departure (audit G3): the guichet saved departure + 8 h whatever the line. When the
+ * gap saved is exactly 8 h and the departure holds another duration (that of its line), the
+ * arrival is departure + that duration. The server computes it so for the new departures.
+ */
+export function departureArrival(departure: string, arrival: string, durationMinutes?: number | null): string {
+  if (!departure || !arrival || !durationMinutes || durationMinutes <= 0 || durationMinutes === 480) return arrival;
+  const dep = new Date(departure).getTime();
+  if (isNaN(dep) || new Date(arrival).getTime() - dep !== 8 * 3600_000) return arrival;
+  return new Date(dep + durationMinutes * 60_000).toISOString();
+}
