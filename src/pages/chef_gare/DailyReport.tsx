@@ -32,6 +32,7 @@ interface DailyReportData {
   totalCharges: number;
   totalSolde: number;
   totalRamassage: number;
+  totalBaggage: number;
   counters: CounterSummary[];
 }
 
@@ -104,7 +105,9 @@ export default function ChefGareDailyReport() {
         c.carburant += r.total_carburant || 0;
         c.peages += r.total_peages || 0;
         c.autres += r.total_autres || 0;
-        c.solde += r.solde_ticket || 0;
+        // Net balance = tickets + baggage − expenses, as at the guichet closing (audit G9: the
+        // baggage was shown on the card but left out of the balance, solde_ticket excludes it)
+        c.solde += (r.solde_ticket || 0) + (r.total_baggage || 0);
         c.ramassage += r.ramassage_amount || 0;
         const route = `${r.origin_city} → ${r.destination_city}`;
         if (!c.routes.includes(route)) c.routes.push(route);
@@ -125,6 +128,7 @@ export default function ChefGareDailyReport() {
         totalCharges: counters.reduce((s, c) => s + c.charges, 0),
         totalSolde: counters.reduce((s, c) => s + c.solde, 0),
         totalRamassage: counters.reduce((s, c) => s + c.ramassage, 0),
+        totalBaggage: counters.reduce((s, c) => s + c.baggage, 0),
         counters,
       });
     } catch (err: any) {
@@ -200,6 +204,7 @@ export default function ChefGareDailyReport() {
                   { label: 'Billets', value: reportData.totalTickets, color: '#0369A1' },
                   { label: 'Recettes (FCFA)', value: reportData.totalRevenue.toLocaleString(), color: '#16A34A' },
                   ...(reportData.totalRamassage > 0 ? [{ label: 'Ramassage (FCFA)', value: reportData.totalRamassage.toLocaleString(), color: '#EA580C' }] : []),
+                  ...(reportData.totalBaggage > 0 ? [{ label: 'Bagages (FCFA)', value: reportData.totalBaggage.toLocaleString(), color: '#7C3AED' }] : []),
                   { label: 'Solde net (FCFA)', value: reportData.totalSolde.toLocaleString(), color: reportData.totalSolde >= 0 ? '#16A34A' : '#DC2626' },
                 ].map((k, i) => (
                   <div key={i} className="text-center">
@@ -268,6 +273,7 @@ export default function ChefGareDailyReport() {
                 { label: 'Total billets vendus', value: reportData.totalTickets },
                 { label: 'Total recettes (FCFA)', value: reportData.totalRevenue.toLocaleString() },
                 ...(reportData.totalRamassage > 0 ? [{ label: 'Total ramassage (FCFA)', value: reportData.totalRamassage.toLocaleString() }] : []),
+                ...(reportData.totalBaggage > 0 ? [{ label: 'Total bagages (FCFA)', value: reportData.totalBaggage.toLocaleString() }] : []),
                 { label: 'Solde net (FCFA)', value: reportData.totalSolde.toLocaleString() },
               ].map((col, i) => (
                 <div key={i}>
