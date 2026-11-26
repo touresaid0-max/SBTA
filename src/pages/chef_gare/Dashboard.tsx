@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabase';
 import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
@@ -84,9 +84,11 @@ export default function ChefGareDashboard() {
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
+  // Loaded once per user (audit G8): the store replaces the user object (session restored, then
+  // profile refreshed) without changing the user, which reloaded the whole page a second time
   useEffect(() => {
     if (user?.id) loadAll();
-  }, [user]);
+  }, [user?.id]);
 
   // Realtime: auto-refresh when a guichet makes a sale or modifies charges
   useEffect(() => {
@@ -105,9 +107,26 @@ export default function ChefGareDashboard() {
       refresh.cancel();
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user?.id]);
+
+  // One load at a time (audit G8): a request asked while one runs waits for it, then runs once
+  const loadRunning = useRef(false);
+  const loadAgain = useRef(false);
 
   const loadAll = async () => {
+    if (loadRunning.current) { loadAgain.current = true; return; }
+    loadRunning.current = true;
+    try {
+      do {
+        loadAgain.current = false;
+        await loadOnce();
+      } while (loadAgain.current);
+    } finally {
+      loadRunning.current = false;
+    }
+  };
+
+  const loadOnce = async () => {
     setLoading(true);
     try {
       const { data: sid } = await supabase.rpc('get_my_station_id');
