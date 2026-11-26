@@ -96,7 +96,8 @@ export default function ChefGareSalesTracking() {
   // Realtime: auto-refresh when a guichet makes a sale or modifies charges
   useEffect(() => {
     // Every sale of every guichet triggers an event: one reload every 10 s at most
-    const refresh = createRefreshScheduler(() => load());
+    // Silent: the figures stay on screen during the reload (they were hidden every 10 s)
+    const refresh = createRefreshScheduler(() => load(true));
     const channel = supabase
       .channel('chef-gare-sales-tracking-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
@@ -112,12 +113,19 @@ export default function ChefGareSalesTracking() {
     };
   }, [range?.start, range?.end]);
 
-  const load = async () => {
+  /** `silent`: automatic refresh, the figures shown stay until the new ones arrive. */
+  const load = async (silent = false) => {
     if (!range) return;
-    setLoading(true);
-    setLoadError(false);
+    if (!silent) {
+      setLoading(true);
+      setLoadError(false);
+    }
     try {
-      const { data: stationId } = await supabase.rpc('get_my_station_id');
+      // The sales are asked at once, with the station (each call is a trip to the server, far away)
+      const [{ data: stationId }, split] = await Promise.all([
+        supabase.rpc('get_my_station_id'),
+        supabase.rpc('get_station_sales_split', { p_from: range.start, p_to: range.end }),
+      ]);
       if (!stationId) { toast.error('Impossible de récupérer votre gare'); return; }
 
       const { count: chefCount } = await supabase
@@ -138,7 +146,6 @@ export default function ChefGareSalesTracking() {
         visibleCounterIds = (ownCounters || []).map((c: any) => c.id);
         if (visibleCounterIds.length === 0) { setRows([]); return; }
       }
-      const split = await supabase.rpc('get_station_sales_split', { p_from: range.start, p_to: range.end });
       // The former view only when the database has no such function yet; any other error (time
       // limit…) is shown: the view does not split the shared departures and is slower
       const missingFunction = split.error && (split.error.code === 'PGRST202' || split.error.code === '42883');
@@ -147,6 +154,7 @@ export default function ChefGareSalesTracking() {
         const all = ((split.data || []) as SaleRow[])
           .sort((a, b) => String(a.departure_datetime).localeCompare(String(b.departure_datetime)));
         setRows(visibleCounterIds ? all.filter(r => r.counter_id && visibleCounterIds!.includes(r.counter_id)) : all);
+        setLoadError(false);
         return;
       }
 
@@ -166,8 +174,11 @@ export default function ChefGareSalesTracking() {
 
       if (error) throw error;
       setRows(data || []);
+      setLoadError(false);
     } catch (err: any) {
       console.error('Ventes non chargées :', err);
+      // An automatic refresh that fails keeps the figures shown
+      if (silent) return;
       setRows([]);
       setLoadError(true);
       toast.error('Erreur de chargement des ventes');
@@ -228,7 +239,7 @@ export default function ChefGareSalesTracking() {
             onChange={(e) => setDateFilter(e.target.value)}
             className="px-3 py-2 border rounded-xl text-sm"
             style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
-          <button onClick={load}
+          <button onClick={() => load()}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
             <RefreshCw className="w-4 h-4" />
@@ -276,7 +287,7 @@ export default function ChefGareSalesTracking() {
           <AlertTriangle className="w-12 h-12 mx-auto mb-3" style={{ color: '#DC2626' }} />
           <p className="font-medium" style={{ color: '#B91C1C' }}>Ventes indisponibles : le serveur n'a pas répondu.</p>
           <p className="text-sm mt-1" style={{ color: '#B91C1C' }}>Les chiffres ne sont pas à zéro, ils n'ont pas pu être chargés.</p>
-          <button onClick={load}
+          <button onClick={() => load()}
             className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
             style={{ backgroundColor: '#DC2626' }}>
             <RefreshCw className="w-4 h-4" /> Réessayer

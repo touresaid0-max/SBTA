@@ -46,7 +46,8 @@ export default function ChefGareDailyReport() {
   // Realtime: auto-refresh when a guichet makes a sale or modifies charges
   useEffect(() => {
     // Every sale of every guichet triggers an event: one reload every 10 s at most
-    const refresh = createRefreshScheduler(() => load());
+    // Silent: the report stays on screen during the reload (it was hidden every 10 s)
+    const refresh = createRefreshScheduler(() => load(true));
     const channel = supabase
       .channel('chef-gare-daily-report-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
@@ -62,8 +63,9 @@ export default function ChefGareDailyReport() {
     };
   }, [dateFilter]);
 
-  const load = async () => {
-    setLoading(true);
+  /** `silent`: automatic refresh, the report shown stays until the new figures arrive. */
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { data: stationId } = await supabase.rpc('get_my_station_id');
       if (!stationId) { toast.error('Impossible de récupérer votre gare'); return; }
@@ -132,7 +134,8 @@ export default function ChefGareDailyReport() {
         counters,
       });
     } catch (err: any) {
-      toast.error('Erreur de chargement du rapport');
+      // An automatic refresh that fails keeps the report shown, without a message every 10 s
+      if (!silent) toast.error('Erreur de chargement du rapport');
     } finally {
       setLoading(false);
     }
@@ -164,7 +167,7 @@ export default function ChefGareDailyReport() {
             onChange={(e) => setDateFilter(e.target.value)}
             className="px-3 py-2 border rounded-xl text-sm"
             style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }} />
-          <button onClick={load}
+          <button onClick={() => load()}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
             <RefreshCw className="w-4 h-4" />
