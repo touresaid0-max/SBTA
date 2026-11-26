@@ -3,6 +3,8 @@ import { supabase } from '../../services/supabase';
 import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
+import Pagination from '../../components/pos/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 import { Monitor, TrendingUp, TicketCheck, Banknote, RefreshCw, ChevronDown, ChevronUp, MapPin, Calendar, AlertTriangle } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subDays, parseISO, isWithinInterval } from 'date-fns';
 
@@ -328,7 +330,9 @@ export default function ChefGareSalesTracking() {
                   </div>
                 </div>
 
-                {/* Rows table */}
+                {/* Rows table, by pages like the bus list */}
+                <PaginatedRows rows={counterRows} resetKey={`${range?.start}|${range?.end}`}>
+                {pageRows => (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -340,7 +344,7 @@ export default function ChefGareSalesTracking() {
                       </tr>
                     </thead>
                     <tbody>
-                      {counterRows.map(row => {
+                      {pageRows.map(row => {
                         const statusCfg = STATUS_LABELS[row.status] || { label: row.status, color: '#6B7280', bg: '#F3F4F6' };
                         const isExpanded = expandedId === row.schedule_id;
                         return (
@@ -430,11 +434,40 @@ export default function ChefGareSalesTracking() {
                     </tbody>
                   </table>
                 </div>
+                )}
+                </PaginatedRows>
               </div>
             );
           })}
         </div>
       )}
     </div>
+  );
+}
+
+/** Departures of a guichet shown by pages, with the same pagination as the bus list. */
+function PaginatedRows({ rows, resetKey, children }: {
+  rows: SaleRow[];
+  resetKey: string;
+  children: (pageRows: SaleRow[]) => React.ReactNode;
+}) {
+  const pagination = usePagination(rows, 'sbta_chef_gare_sales_page_size', resetKey);
+  return (
+    <>
+      {children(pagination.pageItems)}
+      {rows.length > 0 && (
+        <div className="border-t px-4 py-2" style={{ borderColor: 'var(--border)' }}>
+          <Pagination
+            page={pagination.page}
+            pageCount={pagination.pageCount}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            itemLabel="départs"
+          />
+        </div>
+      )}
+    </>
   );
 }
