@@ -37,6 +37,14 @@ export interface CreateDepenseParams {
   busId?: string;
   counterId?: string;
   expenseDate: string;
+  /** Modifying a recorded expense is refused unless set (never from the guichet). */
+  allowUpdate?: boolean;
+}
+
+/** Message shown when an expense of this type is already recorded for the departure. */
+export function alreadyRecordedMessage(category: string): string {
+  const feminine = category === 'autres';
+  return `${EXPENSE_CATEGORY_NAMES[category] ?? 'Cette dépense'} de ce départ est déjà enregistré${feminine ? 'e' : ''} : le guichet ne peut plus ${feminine ? 'la' : 'le'} modifier. Pour ${feminine ? 'la' : 'le'} corriger, faites une demande de modification.`;
 }
 
 /** Type of an expense as the server knows it: ration, carburant_complement, peage or autres. */
@@ -75,6 +83,8 @@ export async function saveDepense(params: CreateDepenseParams): Promise<{ depens
     const depense = await createDepense(params);
     return { depense, mode: 'created' };
   }
+  // The guichet never modifies a recorded expense: it is corrected by a change request
+  if (!params.allowUpdate) throw new Error(alreadyRecordedMessage(category));
 
   const [kept, ...former] = same;
   const unchanged = former.length === 0
@@ -116,8 +126,7 @@ export async function createDepense(params: CreateDepenseParams): Promise<Depens
 
   const category = expenseCategory(params);
   if ((await getDepensesOfCategory(params.departId, category)).length > 0) {
-    const feminine = category === 'autres';
-    throw new Error(`${EXPENSE_CATEGORY_NAMES[category]} de ce départ est déjà enregistré${feminine ? 'e' : ''} : modifiez-l${feminine ? 'a' : 'e'} au lieu d'en ajouter un${feminine ? 'e' : ''} autre.`);
+    throw new Error(alreadyRecordedMessage(category));
   }
 
   const depense = await localInsert<DepenseRecord>('depenses', {
