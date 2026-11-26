@@ -93,7 +93,8 @@ export default function ChefGareDashboard() {
   // Realtime: auto-refresh when a guichet makes a sale or modifies charges
   useEffect(() => {
     // Every sale of every guichet triggers an event: one reload every 10 s at most
-    const refresh = createRefreshScheduler(() => loadAll());
+    // Silent: the dashboard stays on screen during the reload (it was replaced by a spinner every 10 s)
+    const refresh = createRefreshScheduler(() => loadAll(true));
     const channel = supabase
       .channel('chef-gare-dashboard-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, refresh.schedule)
@@ -112,22 +113,32 @@ export default function ChefGareDashboard() {
   // One load at a time (audit G8): a request asked while one runs waits for it, then runs once
   const loadRunning = useRef(false);
   const loadAgain = useRef(false);
+  // The load waiting is silent only if every request it stands for was silent
+  const loadAgainSilent = useRef(true);
 
-  const loadAll = async () => {
-    if (loadRunning.current) { loadAgain.current = true; return; }
+  /** `silent`: automatic refresh, the figures shown stay until the new ones arrive. */
+  const loadAll = async (silent = false) => {
+    if (loadRunning.current) {
+      loadAgain.current = true;
+      loadAgainSilent.current = loadAgainSilent.current && silent;
+      return;
+    }
     loadRunning.current = true;
     try {
+      let nextSilent = silent;
       do {
         loadAgain.current = false;
-        await loadOnce();
+        loadAgainSilent.current = true;
+        await loadOnce(nextSilent);
+        nextSilent = loadAgainSilent.current;
       } while (loadAgain.current);
     } finally {
       loadRunning.current = false;
     }
   };
 
-  const loadOnce = async () => {
-    setLoading(true);
+  const loadOnce = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { data: sid } = await supabase.rpc('get_my_station_id');
       if (!sid) return;
@@ -138,7 +149,7 @@ export default function ChefGareDashboard() {
         .eq('id', sid)
         .maybeSingle();
 
-      if (stationError) { toast.error('Erreur chargement gare'); return; }
+      if (stationError) { if (!silent) toast.error('Erreur chargement gare'); return; }
       if (!stationData) return;
 
       const stationInfo: StationInfo = {
