@@ -3,7 +3,7 @@ import { supabase } from '../../services/supabase';
 import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
-import { Monitor, TrendingUp, TicketCheck, Banknote, RefreshCw, ChevronDown, ChevronUp, MapPin, Calendar } from 'lucide-react';
+import { Monitor, TrendingUp, TicketCheck, Banknote, RefreshCw, ChevronDown, ChevronUp, MapPin, Calendar, AlertTriangle } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subDays, parseISO, isWithinInterval } from 'date-fns';
 
 type Period = 'day' | 'week' | 'month' | 'year';
@@ -54,6 +54,8 @@ export default function ChefGareSalesTracking() {
   const { user } = useAuthStore();
   const [rows, setRows] = useState<SaleRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Sales not read (audit B2): « — » and a message, never 0 nor « Aucun départ »
+  const [loadError, setLoadError] = useState(false);
   const [dateFilter, setDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [period, setPeriod] = useState<Period>('day');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -105,6 +107,7 @@ export default function ChefGareSalesTracking() {
   const load = async () => {
     if (!range) return;
     setLoading(true);
+    setLoadError(false);
     try {
       const { data: stationId } = await supabase.rpc('get_my_station_id');
       if (!stationId) { toast.error('Impossible de récupérer votre gare'); return; }
@@ -128,6 +131,10 @@ export default function ChefGareSalesTracking() {
         if (visibleCounterIds.length === 0) { setRows([]); return; }
       }
       const split = await supabase.rpc('get_station_sales_split', { p_from: range.start, p_to: range.end });
+      // The former view only when the database has no such function yet; any other error (time
+      // limit…) is shown: the view does not split the shared departures and is slower
+      const missingFunction = split.error && (split.error.code === 'PGRST202' || split.error.code === '42883');
+      if (split.error && !missingFunction) throw split.error;
       if (!split.error) {
         const all = ((split.data || []) as SaleRow[])
           .sort((a, b) => String(a.departure_datetime).localeCompare(String(b.departure_datetime)));
@@ -152,6 +159,9 @@ export default function ChefGareSalesTracking() {
       if (error) throw error;
       setRows(data || []);
     } catch (err: any) {
+      console.error('Ventes non chargées :', err);
+      setRows([]);
+      setLoadError(true);
       toast.error('Erreur de chargement des ventes');
     } finally {
       setLoading(false);
@@ -241,9 +251,9 @@ export default function ChefGareSalesTracking() {
               <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{kpi.label}</span>
             </div>
             <p className="text-2xl font-bold" style={{ color: kpi.color }}>
-              {kpi.fmt(kpi.value)}
+              {loadError ? '—' : kpi.fmt(kpi.value)}
             </p>
-            {kpi.value > 999 && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.value.toLocaleString()} FCFA</p>}
+            {!loadError && kpi.value > 999 && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.value.toLocaleString()} FCFA</p>}
           </div>
         ))}
       </div>
@@ -252,6 +262,17 @@ export default function ChefGareSalesTracking() {
         <div className="flex items-center justify-center py-16">
           <div className="w-8 h-8 border-4 rounded-full animate-spin"
             style={{ borderColor: 'var(--primary)', borderTopColor: 'transparent' }} />
+        </div>
+      ) : loadError ? (
+        <div className="text-center py-16 rounded-2xl border-2" style={{ borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}>
+          <AlertTriangle className="w-12 h-12 mx-auto mb-3" style={{ color: '#DC2626' }} />
+          <p className="font-medium" style={{ color: '#B91C1C' }}>Ventes indisponibles : le serveur n'a pas répondu.</p>
+          <p className="text-sm mt-1" style={{ color: '#B91C1C' }}>Les chiffres ne sont pas à zéro, ils n'ont pas pu être chargés.</p>
+          <button onClick={load}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+            style={{ backgroundColor: '#DC2626' }}>
+            <RefreshCw className="w-4 h-4" /> Réessayer
+          </button>
         </div>
       ) : rows.length === 0 ? (
         <div className="text-center py-16 rounded-2xl border-2 border-dashed" style={{ borderColor: 'var(--border)' }}>
