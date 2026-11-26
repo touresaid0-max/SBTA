@@ -609,13 +609,13 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
         const st = computeEffectiveStatus(nextDep, currentTime);
         const cfg = STATUS_CFG[st];
         return (
-          <div className="px-6 xl:px-10 pt-4 pb-2">
+          <div className="px-3 md:px-6 xl:px-10 pt-4 pb-2">
             <div
-              className="rounded-2xl p-4 xl:p-5 flex items-center gap-5 border-2"
+              className="rounded-2xl p-4 xl:p-5 flex flex-wrap md:flex-nowrap items-center gap-3 md:gap-5 border-2"
               style={{ backgroundColor: `${T.green}12`, borderColor: T.green }}
             >
               <div
-                className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0"
+                className="w-14 h-14 rounded-xl hidden md:flex items-center justify-center flex-shrink-0"
                 style={{ backgroundColor: T.green }}
               >
                 <Navigation className="w-7 h-7 text-white" />
@@ -627,13 +627,13 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                    st === 'retard' ? 'DEPART EN RETARD' : 'PROCHAIN DEPART'}
                 </p>
                 <div className="flex items-baseline gap-3 flex-wrap">
-                  <p className="text-4xl xl:text-5xl font-black tabular-nums" style={{ color: T.text }}>
+                  <p className="text-3xl md:text-4xl xl:text-5xl font-black tabular-nums whitespace-nowrap" style={{ color: T.text }}>
                     {depTime(nextDep.departure_datetime)}
                   </p>
                   {hasUnknownTime(nextDep.departure_datetime) && (
                     <p className="text-base font-bold uppercase" style={{ color: T.text2 }}>Heure à confirmer</p>
                   )}
-                  <p className="text-2xl xl:text-3xl font-black" style={{ color: T.text }}>
+                  <p className="text-xl md:text-2xl xl:text-3xl font-black" style={{ color: T.text }}>
                     &rarr; {nextDep.arrival_station_name}
                   </p>
                   <p className="text-base font-semibold" style={{ color: T.text2 }}>
@@ -655,9 +655,9 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                   </div>
                 )}
               </div>
-              <div className="flex-shrink-0 text-right space-y-2">
+              <div className="w-full md:w-auto flex-shrink-0 flex flex-wrap md:flex-col items-center md:items-end justify-between gap-2">
                 <div
-                  className={`px-4 py-2.5 rounded-xl font-black text-base inline-flex items-center gap-2 ${cfg.pulse ? 'animate-pulse' : ''}`}
+                  className={`px-3 md:px-4 py-2 md:py-2.5 rounded-xl font-black text-sm md:text-base inline-flex items-center gap-2 ${cfg.pulse ? 'animate-pulse' : ''}`}
                   style={{ backgroundColor: cfg.bg, color: cfg.color }}
                 >
                   {cfg.icon}{cfg.label}
