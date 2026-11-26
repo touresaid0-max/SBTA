@@ -3,10 +3,10 @@ import { } from 'react-router-dom';
 import POSLayout from '@/components/pos/POSLayout';
 import { usePOSSession } from '@/services/pos/POSSessionContext';
 import { getAllDeparts, getDepartById, computeSolde, type DepartRecord } from '@/services/pos/departService';
-import { saveDepense, getDepensesForDepart, expenseCategory, EXPENSE_CATEGORY_NAMES, type DepenseRecord } from '@/services/pos/depenseService';
+import { saveDepense, getDepensesForDepart, expenseCategory, alreadyRecordedMessage, EXPENSE_CATEGORY_NAMES, type DepenseRecord } from '@/services/pos/depenseService';
 import { formatCurrency } from '@/utils/formatCurrency';
 import {
-  AlertCircle, CheckCircle, Loader2, Plus, Pencil,
+  AlertCircle, CheckCircle, Loader2, Plus, Lock,
   Receipt, Calendar,
 } from 'lucide-react';
 import ChangeRequestButton from '@/components/shared/ChangeRequestButton';
@@ -21,11 +21,6 @@ const EXPENSE_TYPES = [
   'Péages',
   'Autre',
 ];
-
-/** Entry of the Type list for an expense type (ration, carburant_complement, peage, autres). */
-function typeOfCategory(category: string): string {
-  return EXPENSE_TYPES.find(t => expenseCategory({ type: t }) === category) ?? 'Autre';
-}
 
 export default function POSDepenses() {
   const { session } = usePOSSession();
@@ -111,11 +106,11 @@ export default function POSDepenses() {
 
   const handleAdd = async () => {
     if (!selectedDepartId) { setError('Veuillez sélectionner un départ'); return; }
+    // A recorded expense is never modified at the guichet (change request instead)
+    if (editing) { setError(alreadyRecordedMessage(expenseCategory({ type }))); return; }
     if (amount <= 0) { setError('Montant invalide'); return; }
     // Typing slip on the amount (audit m5): refused above the maximum, confirmed when unusual
-    const amountCheck = editing && amount === recordedAmount
-      ? { ok: true as const }
-      : checkAmounts([{ value: amount, rule: AMOUNT_RULES.expense }]);
+    const amountCheck = checkAmounts([{ value: amount, rule: AMOUNT_RULES.expense }]);
     if (!amountCheck.ok) { if ('error' in amountCheck && amountCheck.error) setError(amountCheck.error); return; }
     if (!cleanText(label)) { setError('Veuillez saisir un libellé'); return; }
     const dateError = expenseDateError(expenseDate);
@@ -146,11 +141,7 @@ export default function POSDepenses() {
       setDepenses(visible);
       setLiveTotDepense(visible.reduce((sum, x) => sum + x.amount, 0));
 
-      setSuccess(mode === 'created'
-        ? 'Dépense enregistrée'
-        : mode === 'updated'
-          ? 'Dépense modifiée : le nouveau montant remplace l\'ancien'
-          : 'Aucune modification');
+      setSuccess(mode === 'created' ? 'Dépense enregistrée' : 'Aucune modification');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
       setError(err?.message ?? 'Erreur');
@@ -251,12 +242,12 @@ export default function POSDepenses() {
           {/* Form */}
           <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h3 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-              {editing ? <><Pencil className="w-4 h-4" /> Modifier la dépense</> : <><Plus className="w-4 h-4" /> Nouvelle dépense</>}
+              {editing ? <><Lock className="w-4 h-4" /> Dépense déjà enregistrée</> : <><Plus className="w-4 h-4" /> Nouvelle dépense</>}
             </h3>
             {editing && (
               <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                 {EXPENSE_CATEGORY_NAMES[expenseCategory({ type })]} de ce départ est déjà enregistré{expenseCategory({ type }) === 'autres' ? 'e' : ''} ({formatCurrency(recordedAmount)}).
-                {' '}Une seule dépense de chaque type par départ : le montant saisi <strong>remplace</strong> l'ancien, il ne s'y ajoute pas.
+                {' '}Le guichet ne peut plus {expenseCategory({ type }) === 'autres' ? 'la' : 'le'} modifier : pour {expenseCategory({ type }) === 'autres' ? 'la' : 'le'} corriger, faites une <strong>demande de modification</strong> dans la liste.
               </div>
             )}
             <div className="space-y-3">
@@ -268,33 +259,33 @@ export default function POSDepenses() {
               </div>
               <div>
                 <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Libellé</label>
-                <input type="text" value={label} maxLength={TEXT_LIMITS.label} onChange={e => setLabel(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Ex: Carburant trajet" />
+                <input type="text" value={label} maxLength={TEXT_LIMITS.label} onChange={e => setLabel(e.target.value)} disabled={!!editing} className={`${fieldInput} disabled:opacity-60`} style={fieldStyle} placeholder="Ex: Carburant trajet" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Montant</label>
                   <div className="relative">
-                    <input type="number" min={0} value={amount || ''} onChange={e => setAmount(parseInt(e.target.value) || 0)} className={fieldInput} style={fieldStyle} placeholder="0" />
+                    <input type="number" min={0} value={amount || ''} onChange={e => setAmount(parseInt(e.target.value) || 0)} disabled={!!editing} className={`${fieldInput} disabled:opacity-60`} style={fieldStyle} placeholder="0" />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--text-muted)' }}>FCFA</span>
                   </div>
                 </div>
                 <div>
                   <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Date</label>
-                  <input type="date" value={expenseDate} min={expenseDateBounds().min} max={expenseDateBounds().max} onChange={e => setExpenseDate(e.target.value)} className={fieldInput} style={fieldStyle} />
+                  <input type="date" value={expenseDate} min={expenseDateBounds().min} max={expenseDateBounds().max} onChange={e => setExpenseDate(e.target.value)} disabled={!!editing} className={`${fieldInput} disabled:opacity-60`} style={fieldStyle} />
                 </div>
               </div>
               <div>
                 <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>Description (optionnel)</label>
-                <input type="text" value={description} maxLength={TEXT_LIMITS.description} onChange={e => setDescription(e.target.value)} className={fieldInput} style={fieldStyle} placeholder="Détails..." />
+                <input type="text" value={description} maxLength={TEXT_LIMITS.description} onChange={e => setDescription(e.target.value)} disabled={!!editing} className={`${fieldInput} disabled:opacity-60`} style={fieldStyle} placeholder="Détails..." />
               </div>
               <button
                 onClick={handleAdd}
-                disabled={saving || !selectedDepartId || amount <= 0 || !label.trim()}
+                disabled={saving || !!editing || !selectedDepartId || amount <= 0 || !label.trim()}
                 className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-60 flex items-center justify-center gap-2"
                 style={{ backgroundColor: 'var(--primary)' }}
               >
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : editing ? <Pencil className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                {editing ? 'Enregistrer la modification' : 'Enregistrer la dépense'}
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : editing ? <Lock className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                {editing ? 'Non modifiable au guichet' : 'Enregistrer la dépense'}
               </button>
             </div>
           </div>
@@ -326,16 +317,6 @@ export default function POSDepenses() {
                         <td className="px-2 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{d.type}</td>
                         <td className="px-2 py-2 text-xs text-right font-bold" style={{ color: 'var(--danger)' }}>{formatCurrency(d.amount)}</td>
                         <td className="px-2 py-2 text-center whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setType(typeOfCategory(expenseCategory(d)))}
-                            disabled={!!selectedDepart?.cloture}
-                            className="inline-flex items-center gap-1 px-2 py-1 mr-1 rounded-md text-xs font-bold disabled:opacity-50"
-                            style={{ border: '1px solid var(--border)', color: 'var(--primary)' }}
-                            title="Modifier cette dépense"
-                          >
-                            <Pencil className="w-3 h-3" /> Modifier
-                          </button>
                           <ChangeRequestButton
                             compact
                             operationType={d.type.toLowerCase().includes('carburant') ? 'carburant' : d.type.toLowerCase().includes('péage') || d.type.toLowerCase().includes('peage') ? 'peage' : d.type.toLowerCase().includes('ration') ? 'ration' : 'autres_depense'}

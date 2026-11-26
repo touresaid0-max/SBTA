@@ -72,26 +72,22 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
 
   const recorded = useMemo(() => recordedAmounts(depenses), [depenses]);
   const totalRecorded = depenses.reduce((total, depense) => total + depense.amount, 0);
-  const changed = EXPENSES.filter(({ field }) => values[field] !== (recorded[field] !== null ? String(recorded[field]) : ''));
+  // A recorded expense is read-only for the guichet: only the types not recorded yet are entered
+  const changed = EXPENSES.filter(({ field }) => recorded[field] === null && values[field] !== '');
 
   const updateValue = (field: ExpenseField, value: string) => {
+    if (recorded[field] !== null) return;
     setValues(previous => ({ ...previous, [field]: value.replace(/[^0-9]/g, '') }));
     setError('');
     setSuccess('');
   };
 
   const handleSave = async () => {
-    // A recorded expense is modified, never emptied here (an expense is cancelled by a change request)
-    const emptied = changed.find(({ field }) => recorded[field] !== null && !(Number(values[field]) > 0));
-    if (emptied) {
-      setError(`Le montant « ${emptied.label} » ne peut pas être vide ou nul. Pour annuler cette dépense, faites une demande de modification.`);
-      return;
-    }
     const entries = changed
       .map(expense => ({ ...expense, amount: Number(values[expense.field]) || 0 }))
       .filter(expense => expense.amount > 0);
     if (entries.length === 0) {
-      setError('Aucun montant modifié.');
+      setError('Aucun montant saisi.');
       return;
     }
     // Typing slip on an amount (audit m5): refused above the maximum, confirmed when unusual
@@ -106,7 +102,6 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
     setSuccess('');
     try {
       let created = 0;
-      let updated = 0;
       for (const expense of entries) {
         const { mode } = await saveDepense({
           departId: depart.id,
@@ -120,13 +115,10 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
           expenseDate: depart.departure_date,
         });
         if (mode === 'created') created++;
-        if (mode === 'updated') updated++;
       }
       await load();
       await onSaved();
-      setSuccess(updated > 0
-        ? `${created > 0 ? `${created} dépense(s) enregistrée(s), ` : ''}${updated} dépense(s) modifiée(s) : le nouveau montant remplace l'ancien.`
-        : 'Dépenses enregistrées.');
+      setSuccess(`${created} dépense(s) enregistrée(s).`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de l’enregistrement.');
     } finally {
@@ -190,7 +182,7 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
               {EXPENSES.map(expense => (
                 <label key={expense.field} className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>
                   {expense.label}
-                  {recorded[expense.field] !== null && <span className="ml-1 font-normal" style={{ color: 'var(--text-muted)' }}>(à modifier)</span>}
+                  {recorded[expense.field] !== null && <span className="ml-1 font-normal" style={{ color: 'var(--text-muted)' }}>(enregistré, non modifiable)</span>}
                   <div className="relative mt-1">
                     <input
                       type="number"
@@ -199,9 +191,15 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
                       inputMode="numeric"
                       value={values[expense.field]}
                       onChange={event => updateValue(expense.field, event.target.value)}
+                      readOnly={recorded[expense.field] !== null}
+                      disabled={recorded[expense.field] !== null}
                       placeholder="0"
-                      className="w-full rounded-lg border px-3 py-2.5 pr-16 text-sm outline-none"
-                      style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)' }}
+                      className="w-full rounded-lg border px-3 py-2.5 pr-16 text-sm outline-none disabled:cursor-not-allowed"
+                      style={{
+                        borderColor: 'var(--border)',
+                        backgroundColor: recorded[expense.field] !== null ? 'var(--surface-raised)' : 'var(--surface)',
+                        color: recorded[expense.field] !== null ? 'var(--text-muted)' : 'var(--text-primary)',
+                      }}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--text-muted)' }}>FCFA</span>
                   </div>
@@ -211,8 +209,8 @@ export default function DepartExpensesModal({ depart, stationId, counterId, onCl
           </div>
 
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Une seule dépense de chaque type par départ. Une dépense déjà enregistrée se modifie : le montant saisi remplace l'ancien, il ne s'y ajoute pas.
-            Une dépense déjà validée repasse « en attente » si son montant change.
+            Une seule dépense de chaque type par départ. Une dépense déjà enregistrée ne peut plus être modifiée au guichet :
+            pour la corriger, faites une demande de modification.
           </p>
 
           <div className="flex gap-3">
