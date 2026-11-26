@@ -175,7 +175,7 @@ export default function ChefGareDashboard() {
 
     let summaryQuery = supabase
       .from('schedule_receipt_summary')
-      .select('counter_id, counter_number, bus_id, seats_sold, seats_remaining, total_ticket_amount, total_charges, solde_ticket')
+      .select('counter_id, counter_number, bus_id, seats_sold, seats_remaining, total_ticket_amount, total_charges, solde_ticket, total_baggage')
       .eq('station_id', stationId)
       .eq('departure_date', today);
     if (restrictManagerId) {
@@ -217,7 +217,8 @@ export default function ChefGareDashboard() {
         counterMap[key].tickets += r.seats_sold || 0;
         counterMap[key].revenue += r.total_ticket_amount || 0;
         counterMap[key].charges += r.total_charges || 0;
-        counterMap[key].solde += r.solde_ticket || 0;
+        // Net balance with the baggage, as at the guichet closing and in the daily report (audit G9)
+        counterMap[key].solde += (r.solde_ticket || 0) + (r.total_baggage || 0);
 
         if (!seenBusPerCounter[key]) seenBusPerCounter[key] = new Set();
         const busId = r.bus_id;
