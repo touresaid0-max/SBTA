@@ -168,12 +168,18 @@ export default function ChefGareCounters() {
         shiftsMap[s.counter_id].push({ id: s.id, started_at: s.started_at, ended_at: s.ended_at });
       });
 
-      // Build sessions map: user_id -> latest session info
+      // Sessions of the day per user (audit G7): the FIRST connection and the LAST disconnection
+      // of the day, like the time worked that adds up all the day's services. It showed the
+      // latest session only (« Connexion 14h44 » for a day started at 08h50).
       const userSessionMap: Record<string, SessionInfo> = {};
       const onlineUserIds = new Set<string>();
       (sessionsRes.data || []).forEach((s: any) => {
-        if (!userSessionMap[s.user_id]) {
+        const known = userSessionMap[s.user_id];
+        if (!known) {
           userSessionMap[s.user_id] = { logged_in_at: s.logged_in_at, logged_out_at: s.logged_out_at };
+        } else {
+          if (s.logged_in_at < known.logged_in_at) known.logged_in_at = s.logged_in_at;
+          if (s.logged_out_at && (!known.logged_out_at || s.logged_out_at > known.logged_out_at)) known.logged_out_at = s.logged_out_at;
         }
         if (!s.logged_out_at) onlineUserIds.add(s.user_id);
       });
@@ -294,17 +300,22 @@ export default function ChefGareCounters() {
       totalWorkedMs += end - start;
     }
 
+    // First connection and last disconnection of the day: the earliest start and the latest end,
+    // of the services as of the sessions (audit G7)
     const session = counter.userSession;
-    const firstStart = shifts.length > 0 ? shifts[0].started_at : session?.logged_in_at || '';
-    const lastShift = shifts.length > 0 ? shifts[shifts.length - 1] : null;
+    const starts = [...shifts.map(s => s.started_at), session?.logged_in_at].filter(Boolean) as string[];
+    const ends = [...shifts.map(s => s.ended_at), session?.logged_out_at].filter(Boolean) as string[];
+    const byTime = (a: string, b: string) => new Date(a).getTime() - new Date(b).getTime();
+    const firstStart = starts.sort(byTime)[0] || '';
+    const lastEnd = ends.sort(byTime)[ends.length - 1] || null;
 
     return {
       firstStart,
       isActive: counter.isUserOnline,
-      lastEnd: lastShift?.ended_at || session?.logged_out_at || null,
+      lastEnd,
       totalWorkedMs,
-      loginTime: session?.logged_in_at || null,
-      logoutTime: session?.logged_out_at || null,
+      loginTime: firstStart || null,
+      logoutTime: lastEnd,
     };
   };
 
@@ -432,15 +443,15 @@ export default function ChefGareCounters() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-                          <LogIn className="w-3 h-3" /> Connexion
+                          <LogIn className="w-3 h-3" /> Première connexion
                         </span>
                         <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
-                          {format(new Date(shift.loginTime || shift.firstStart), 'dd/MM/yyyy', { locale: fr })} a {format(new Date(shift.loginTime || shift.firstStart), "HH'h'mm")}
+                          {format(new Date(shift.loginTime || shift.firstStart), 'dd/MM/yyyy', { locale: fr })} à {format(new Date(shift.loginTime || shift.firstStart), "HH'h'mm")}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-xs flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-                          <LogOut className="w-3 h-3" /> Deconnexion
+                          <LogOut className="w-3 h-3" /> Dernière déconnexion
                         </span>
                         {counter.isUserOnline ? (
                           <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
@@ -456,7 +467,7 @@ export default function ChefGareCounters() {
                       </div>
                       <div className="flex items-center justify-between pt-1 mt-1 border-t" style={{ borderColor: 'var(--border)' }}>
                         <span className="text-xs flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-                          <Timer className="w-3 h-3" /> Temps travaille
+                          <Timer className="w-3 h-3" /> Temps travaillé (total du jour)
                         </span>
                         <span className="text-sm font-black" style={{ color: counter.isUserOnline ? '#16A34A' : 'var(--primary)' }}>
                           {formatDuration(shift.totalWorkedMs)}
