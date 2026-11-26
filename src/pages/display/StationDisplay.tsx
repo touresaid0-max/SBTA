@@ -74,6 +74,30 @@ const REFRESH_MS = 30_000;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * A departure saved without a time (guichet, before 26/11/2026) is at 00:00 exactly (Abidjan is
+ * UTC+0): its time is unknown, it is not a departure at midnight (audit chef de gare G1).
+ */
+function hasUnknownTime(iso: string): boolean {
+  const d = new Date(iso);
+  return !isNaN(d.getTime()) && d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
+}
+
+/** Departure time as shown: « --:-- » for a departure whose time is unknown. */
+function depTime(iso: string): string {
+  return hasUnknownTime(iso) ? '--:--' : format(new Date(iso), 'HH:mm');
+}
+
+/** Departure time in a sentence (alert, print): « heure à confirmer » when unknown. */
+function depTimeText(iso: string): string {
+  return hasUnknownTime(iso) ? 'Heure à confirmer' : format(new Date(iso), 'HH:mm');
+}
+
+/** Arrival time: unknown when the departure time is (it was counted from 00:00). */
+function arrTime(dep: string, arr: string): string {
+  return hasUnknownTime(dep) ? '--:--' : format(new Date(arr), 'HH:mm');
+}
+
 function computeEffectiveStatus(row: ScheduleRow, now: Date): StatusKey {
   const dep = new Date(row.departure_datetime);
   const minsUntil = differenceInMinutes(dep, now);
@@ -83,6 +107,12 @@ function computeEffectiveStatus(row: ScheduleRow, now: Date): StatusKey {
   if (row.status === 'annule') return 'annule';
   if (row.status === 'termine') return 'termine';
   if (row.status === 'retard') return 'retard';
+
+  // Time unknown (00:00): the status recorded, never « Parti » deduced from the time
+  if (hasUnknownTime(row.departure_datetime)) {
+    if (capacity > 0 && row.seats_available === 0) return 'complet';
+    return row.status === 'en_cours' ? 'en_cours' : 'planifie';
+  }
 
   // Bus full
   if (capacity > 0 && row.seats_available === 0 && minsUntil > 0) return 'complet';
@@ -128,7 +158,7 @@ function DetailModal({ row, now, theme, onClose }: {
           <div>
             <p className="text-xs font-black uppercase tracking-widest mb-1" style={{ color: theme.text3 }}>DÉTAIL DU VOYAGE</p>
             <h2 className="text-2xl font-black" style={{ color: theme.text }}>
-              {format(new Date(row.departure_datetime), 'HH:mm')} &rarr; {row.arrival_station_name}
+              {depTimeText(row.departure_datetime)} &rarr; {row.arrival_station_name}
             </h2>
             <p className="text-sm mt-0.5 font-medium" style={{ color: theme.text2 }}>{row.route_name}</p>
           </div>
@@ -151,14 +181,17 @@ function DetailModal({ row, now, theme, onClose }: {
             <div className="rounded-xl p-4" style={{ backgroundColor: theme.surface2, border: `1px solid ${theme.border}` }}>
               <p className="text-xs font-black uppercase tracking-wider mb-1" style={{ color: theme.text3 }}>DÉPART</p>
               <p className="text-3xl font-black tabular-nums" style={{ color: theme.green }}>
-                {format(new Date(row.departure_datetime), 'HH:mm')}
+                {depTime(row.departure_datetime)}
               </p>
+              {hasUnknownTime(row.departure_datetime) && (
+                <p className="text-xs font-bold uppercase" style={{ color: theme.text3 }}>Heure à confirmer</p>
+              )}
               <p className="text-sm font-medium mt-0.5" style={{ color: theme.text2 }}>{row.departure_station_name}</p>
             </div>
             <div className="rounded-xl p-4" style={{ backgroundColor: theme.surface2, border: `1px solid ${theme.border}` }}>
               <p className="text-xs font-black uppercase tracking-wider mb-1" style={{ color: theme.text3 }}>ARRIVÉE PRÉVUE</p>
               <p className="text-3xl font-black tabular-nums" style={{ color: theme.text }}>
-                {format(new Date(row.arrival_datetime), 'HH:mm')}
+                {arrTime(row.departure_datetime, row.arrival_datetime)}
               </p>
               <p className="text-sm font-medium mt-0.5" style={{ color: theme.text2 }}>
                 {row.arrival_station_name} &bull; {formatDuration(row.departure_datetime, row.arrival_datetime)}
@@ -228,7 +261,7 @@ function DetailModal({ row, now, theme, onClose }: {
                     <MapPin className="w-3.5 h-3.5 flex-shrink-0" style={{ color: theme.text3 }} />
                     <span className="text-sm font-semibold" style={{ color: theme.text }}>{t.station_name}</span>
                     <span className="text-sm font-black tabular-nums" style={{ color: theme.green }}>
-                      {format(addMinutes(new Date(row.departure_datetime), t.arrival_offset_minutes), 'HH:mm')}
+                      {hasUnknownTime(row.departure_datetime) ? '--:--' : format(addMinutes(new Date(row.departure_datetime), t.arrival_offset_minutes), 'HH:mm')}
                     </span>
                   </div>
                 ))}
@@ -278,7 +311,7 @@ function printDepartures(rows: ScheduleRow[], stationName: string, now: Date) {
           const st = computeEffectiveStatus(r, now);
           const cfg = STATUS_CFG[st];
           return `<tr>
-            <td><strong>${format(new Date(r.departure_datetime), 'HH:mm')}</strong></td>
+            <td><strong>${depTimeText(r.departure_datetime)}</strong></td>
             <td>${r.arrival_station_name}</td>
             <td>${r.route_name}</td>
             <td>${r.departure_station_name}</td>
@@ -432,6 +465,10 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
 
   // ── Derived ──
   const sortedDepartures = [...departures].sort((a, b) => {
+    // Departures whose time is unknown (00:00) after those with a time
+    const unknownA = hasUnknownTime(a.departure_datetime);
+    const unknownB = hasUnknownTime(b.departure_datetime);
+    if (unknownA !== unknownB) return unknownA ? 1 : -1;
     const timeA = new Date(a.departure_datetime).getTime();
     const timeB = new Date(b.departure_datetime).getTime();
     if (timeA !== timeB) return timeA - timeB;
@@ -522,7 +559,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                   </p>
                   <p className="text-sm font-bold mt-0.5" style={{ color: alertCfg.color }}>
                     {boardingNow.map(b =>
-                      `${format(new Date(b.departure_datetime), 'HH:mm')} → ${b.arrival_station_name}`
+                      `${depTimeText(b.departure_datetime)} → ${b.arrival_station_name}`
                     ).join('  ·  ')}
                   </p>
                 </div>
@@ -599,8 +636,11 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                 </p>
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <p className="text-4xl xl:text-5xl font-black tabular-nums" style={{ color: T.text }}>
-                    {format(new Date(nextDep.departure_datetime), 'HH:mm')}
+                    {depTime(nextDep.departure_datetime)}
                   </p>
+                  {hasUnknownTime(nextDep.departure_datetime) && (
+                    <p className="text-base font-bold uppercase" style={{ color: T.text2 }}>Heure à confirmer</p>
+                  )}
                   <p className="text-2xl xl:text-3xl font-black" style={{ color: T.text }}>
                     &rarr; {nextDep.arrival_station_name}
                   </p>
@@ -757,9 +797,12 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                             className="text-xl xl:text-2xl font-black tabular-nums leading-none block"
                             style={{ color: isImminent ? '#A16207' : isEmbarquement ? '#C2410C' : isRetard ? '#C2410C' : isPast ? '#9CA3AF' : T.text }}
                           >
-                            {format(new Date(row.departure_datetime), 'HH:mm')}
+                            {depTime(row.departure_datetime)}
                           </span>
-                          {(isImminent || isEmbarquement) && (() => {
+                          {hasUnknownTime(row.departure_datetime) && (
+                            <span className="text-xs font-bold mt-0.5 block" style={{ color: T.text3 }}>à confirmer</span>
+                          )}
+                          {(isImminent || isEmbarquement) && !hasUnknownTime(row.departure_datetime) && (() => {
                             const m = differenceInMinutes(new Date(row.departure_datetime), currentTime);
                             return (
                               <span className={`text-xs font-black mt-0.5 block ${isImminent ? 'animate-pulse' : ''}`}
