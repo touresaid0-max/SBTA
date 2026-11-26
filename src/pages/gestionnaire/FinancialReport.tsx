@@ -44,6 +44,8 @@ interface RouteRow {
   route_id: string; route_name: string; trip_count: number; revenue: number;
   cc_carburant: number; cc_ration: number; cc_peage: number; cc_autres: number;
   total_expense: number; margin: number;
+  /** The convoys of a line, on their own row « Convoi (the line) » (absent from an older server) */
+  is_convoy?: boolean | null;
 }
 interface DriverRow {
   driver_id: string; first_name: string; last_name: string; employee_id: string;
@@ -211,12 +213,17 @@ export default function FinancialReport() {
       });
 
       // Par ligne: the detail added up, next to the line of the report
-      const byLine = [...groupBy(d => d.routeId ?? d.route).values()].map(list => {
+      // The convoys are on their own row of the report (« Convoi (the line) ») when the server sends it
+      const convoyRows = routes.some(r => r.is_convoy != null);
+      const isConv = (d: Depart) => convoyRows && d.status === 'convoi';
+      const byLine = [...groupBy(d => `${d.routeId ?? d.route}|${isConv(d)}`).values()].map(list => {
         const t = totalsOf(list);
-        const rep = routes.find(r => (list[0].routeId ? r.route_id === list[0].routeId : (r.route_id == null || r.route_name === list[0].route)));
+        const conv = isConv(list[0]);
+        const rep = routes.find(r => (!convoyRows || !!r.is_convoy === conv)
+          && (list[0].routeId ? r.route_id === list[0].routeId : (r.route_id == null || r.route_name === list[0].route)));
         const same = !!rep && Number(rep.trip_count) === t.voyages && Math.round(Number(rep.revenue)) === Math.round(t.recette)
           && Math.round(Number(rep.total_expense ?? 0)) === Math.round(t.expenses);
-        return { 'Ligne': list[0].routeId ? list[0].route : (rep?.route_name ?? list[0].route), ...amounts(t), 'Recettes (détail)': t.recette,
+        return { 'Ligne': conv ? (rep?.route_name ?? `Convoi (${list[0].route})`) : list[0].routeId ? list[0].route : (rep?.route_name ?? list[0].route), ...amounts(t), 'Recettes (détail)': t.recette,
           'Voyages (rapport)': rep ? Number(rep.trip_count) : '', 'Recettes (rapport)': rep ? Number(rep.revenue) : '',
           'Conforme au rapport': same ? 'Oui' : 'Non' };
       });
@@ -564,10 +571,10 @@ export default function FinancialReport() {
                     {pRoutes.pageItems.map((r, i) => {
                       const mp = r.revenue > 0 ? (r.margin / r.revenue * 100) : 0;
                       // The direct ramassages (no line) open too, on their own key
-                      const rowKey = r.route_id ?? '__ramassage_direct__';
+                      const rowKey = `${r.route_id ?? '__ramassage_direct__'}${r.is_convoy ? '|convoi' : ''}`;
                       const open = openRouteId != null && openRouteId === rowKey;
                       return (
-                        <React.Fragment key={r.route_id || i}>
+                        <React.Fragment key={rowKey || i}>
                         <tr className="border-t" style={{ borderColor: 'var(--border)', backgroundColor: open ? 'var(--bg-subtle)' : undefined }}>
                           <td className="px-3 py-2.5 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{r.route_name}</td>
                           <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -597,6 +604,7 @@ export default function FinancialReport() {
                             <td colSpan={10} className="p-0">
                               <div style={{ position: 'sticky', left: 0, width: linesBoxWidth || undefined }}>
                               <RouteDeparturesDetail routeId={r.route_id ?? null} routeName={r.route_name} dateFrom={dateFrom} dateTo={dateTo}
+                                convoy={r.is_convoy ?? undefined}
                                 expectedTrips={Number(r.trip_count)} expectedRevenue={Number(r.revenue)} expectedExpenses={Number(r.total_expense ?? 0)}
                                 onClose={() => setOpenRouteId(null)} />
                               </div>
