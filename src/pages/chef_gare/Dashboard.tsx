@@ -79,6 +79,8 @@ export default function ChefGareDashboard() {
   const [completionAlerts, setCompletionAlerts] = useState<CompletionAlert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  // The day's figures could not be read (audit B1): « — » and a message, never 0
+  const [statsError, setStatsError] = useState(false);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -166,7 +168,13 @@ export default function ChefGareDashboard() {
       }
       summaryQuery = summaryQuery.in('counter_id', visibleIds);
     }
-    const { data: summaryRows } = await summaryQuery;
+    const { data: summaryRows, error: summaryError } = await summaryQuery;
+    if (summaryError) {
+      console.error('Chiffres du jour non chargés :', summaryError);
+      setStatsError(true);
+      return;
+    }
+    setStatsError(false);
 
     const counterMap: Record<string, CounterRow> = {};
 
@@ -371,13 +379,28 @@ export default function ChefGareDashboard() {
         </div>
       </div>
 
+      {statsError && (
+        <div className="flex items-center gap-3 rounded-2xl border px-5 py-4 flex-wrap"
+          style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          <p className="flex-1 text-sm font-medium">
+            Chiffres du jour indisponibles : le serveur n'a pas répondu. Les départs, billets et recettes ne sont pas à zéro, ils n'ont pas pu être chargés.
+          </p>
+          <button onClick={() => loadAll()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+            style={{ backgroundColor: '#DC2626' }}>
+            <RefreshCw className="w-4 h-4" /> Réessayer
+          </button>
+        </div>
+      )}
+
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: "Départs aujourd'hui", value: totalDepartures, icon: <Calendar className="w-5 h-5" />, color: 'var(--primary)', bg: 'var(--primary-light)' },
-          { label: 'Billets vendus', value: totalTickets, icon: <TicketCheck className="w-5 h-5" />, color: '#0369A1', bg: '#E0F2FE' },
-          { label: 'Recettes (FCFA)', value: totalRevenue.toLocaleString(), icon: <Banknote className="w-5 h-5" />, color: '#16A34A', bg: '#DCFCE7' },
-          { label: 'Solde net (FCFA)', value: totalSolde.toLocaleString(), icon: <TrendingUp className="w-5 h-5" />, color: totalSolde >= 0 ? '#16A34A' : '#DC2626', bg: totalSolde >= 0 ? '#DCFCE7' : '#FEE2E2' },
+          { label: "Départs aujourd'hui", value: statsError ? '—' : totalDepartures, icon: <Calendar className="w-5 h-5" />, color: 'var(--primary)', bg: 'var(--primary-light)' },
+          { label: 'Billets vendus', value: statsError ? '—' : totalTickets, icon: <TicketCheck className="w-5 h-5" />, color: '#0369A1', bg: '#E0F2FE' },
+          { label: 'Recettes (FCFA)', value: statsError ? '—' : totalRevenue.toLocaleString(), icon: <Banknote className="w-5 h-5" />, color: '#16A34A', bg: '#DCFCE7' },
+          { label: 'Solde net (FCFA)', value: statsError ? '—' : totalSolde.toLocaleString(), icon: <TrendingUp className="w-5 h-5" />, color: totalSolde >= 0 ? '#16A34A' : '#DC2626', bg: totalSolde >= 0 ? '#DCFCE7' : '#FEE2E2' },
         ].map((kpi, i) => (
           <div key={i} className="rounded-2xl p-5 border shadow-sm"
             style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -415,7 +438,12 @@ export default function ChefGareDashboard() {
           </Link>
         </div>
 
-        {counterRows.length === 0 ? (
+        {statsError ? (
+          <div className="text-center py-12" style={{ color: '#B91C1C' }}>
+            <AlertTriangle className="w-10 h-10 mx-auto mb-2 opacity-60" />
+            <p>Chiffres des guichets indisponibles pour le moment</p>
+          </div>
+        ) : counterRows.length === 0 ? (
           <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
             <Monitor className="w-10 h-10 mx-auto mb-2 opacity-40" />
             <p>Aucun guichet configuré pour cette gare</p>
