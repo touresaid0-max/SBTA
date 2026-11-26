@@ -903,14 +903,14 @@ export default function DailyPlanning() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+    <div className="p-4 md:p-6 space-y-6">
+      {/* Header: on a phone the buttons go under the title and wrap (audit G6: they ran off the screen) */}
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
+          <h1 className="text-2xl md:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
             {selectedDate === format(new Date(), 'yyyy-MM-dd') ? 'Planning du jour' : 'Planning'}
           </h1>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <div className="flex items-center gap-x-3 gap-y-1 mt-1 flex-wrap">
             <span className="flex items-center gap-1 text-sm font-medium" style={{ color: 'var(--primary)' }}>
               <MapPin className="w-4 h-4" />
               {station.name}
@@ -927,12 +927,12 @@ export default function DailyPlanning() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="ml-2 px-3 py-1.5 rounded-lg border text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1"
+              className="md:ml-2 px-3 py-1.5 rounded-lg border text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1"
               style={{ borderColor: 'var(--primary)', color: 'var(--primary)', backgroundColor: 'var(--surface)', focusRingColor: 'var(--primary)' }}
             />
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -974,7 +974,7 @@ export default function DailyPlanning() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border"
             style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}>
             <Layers className="w-4 h-4" />
-            Planning groupe
+            Planning groupé
           </Link>
           <Link to="/chef-gare/schedules/new"
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white"
@@ -1029,17 +1029,18 @@ export default function DailyPlanning() {
 
       {/* Next departure highlight */}
       {nextSched && (
-        <div className="rounded-2xl p-5 border-2 flex items-center gap-6"
+        // Phone (audit G6): no icon, the text on the whole width, status and passengers below
+        <div className="rounded-2xl p-4 md:p-5 border-2 flex flex-wrap md:flex-nowrap items-center gap-3 md:gap-6"
           style={{ backgroundColor: 'var(--primary-light)', borderColor: 'var(--primary)' }}>
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+          <div className="w-12 h-12 rounded-xl hidden md:flex items-center justify-center flex-shrink-0"
             style={{ backgroundColor: 'var(--primary)' }}>
             <Navigation className="w-6 h-6 text-white" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-xs font-bold uppercase tracking-wider mb-0.5" style={{ color: 'var(--primary)' }}>
               Prochain départ
             </p>
-            <p className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>
+            <p className="text-xl md:text-2xl font-black" style={{ color: 'var(--text-primary)' }}>
               {departureTimeLabel(nextSched.departure_datetime, 'Heure à confirmer')}
               <span className="text-lg font-semibold ml-2" style={{ color: 'var(--text-secondary)' }}>
                 → {nextSched.arrival_station_name}
@@ -1049,8 +1050,8 @@ export default function DailyPlanning() {
               {nextSched.route_name} · Bus {nextSched.bus_registration} · {nextSched.driver_name}
             </p>
           </div>
-          <div className="text-right flex-shrink-0">
-            <div className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm"
+          <div className="w-full md:w-auto flex-shrink-0 flex md:block items-center justify-between gap-2 md:text-right">
+            <div className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-xl font-semibold text-sm"
               style={{
                 backgroundColor: STATUS_CONFIG[nextSched.status]?.bg,
                 color: STATUS_CONFIG[nextSched.status]?.color,
@@ -1059,7 +1060,7 @@ export default function DailyPlanning() {
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_CONFIG[nextSched.status]?.dot }} />
               {STATUS_CONFIG[nextSched.status]?.label}
             </div>
-            <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs md:mt-1.5" style={{ color: 'var(--text-muted)' }}>
               {nextSched.reservations_count} passager{nextSched.reservations_count !== 1 ? 's' : ''}
             </p>
           </div>
