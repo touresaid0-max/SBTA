@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { format, addMinutes, differenceInMinutes } from 'date-fns';
+import { hasUnknownTime } from '../../utils/departureTime';
 import { fr } from 'date-fns/locale';
 import {
   Clock, Wifi, WifiOff, Bus, User, Navigation, AlertTriangle,
@@ -73,15 +74,6 @@ const PAGE_MS = 9000;
 const REFRESH_MS = 30_000;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * A departure saved without a time (guichet, before 26/11/2026) is at 00:00 exactly (Abidjan is
- * UTC+0): its time is unknown, it is not a departure at midnight (audit chef de gare G1).
- */
-function hasUnknownTime(iso: string): boolean {
-  const d = new Date(iso);
-  return !isNaN(d.getTime()) && d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
-}
 
 /** Departure time as shown: « --:-- » for a departure whose time is unknown. */
 function depTime(iso: string): string {
