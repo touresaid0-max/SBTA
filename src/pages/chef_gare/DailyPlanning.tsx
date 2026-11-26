@@ -4,6 +4,7 @@ import { fetchStationRouteIds, stationRoutesFirst } from '../../services/station
 import { createRefreshScheduler, runAtMostEvery } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import { format, addMinutes, isAfter, isBefore, isWithinInterval } from 'date-fns';
+import { hasUnknownTime, departureTimeLabel, timeFromDepartureLabel } from '../../utils/departureTime';
 import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import {
@@ -485,7 +486,7 @@ export default function DailyPlanning() {
         departure_number: summary.departure_number || 0,
         route_name: summary.route_name || sched.route_name,
         departure_date: format(depDate, 'dd/MM/yyyy'),
-        departure_time: format(depDate, 'HH:mm'),
+        departure_time: departureTimeLabel(depDate),
         registration_number: summary.registration_number || sched.bus_registration,
         driver_name: summary.driver_name || sched.driver_name,
         total_seats: summary.capacity || sched.bus_capacity || 0,
@@ -867,8 +868,15 @@ export default function DailyPlanning() {
     totalPassengers: schedules.reduce((sum, s) => sum + s.seats_reserved, 0),
   };
 
+  // Next departure (audit G2): the first one still to come with a time; otherwise a departure whose
+  // time is unknown (00:00), shown « heure à confirmer »; never a time already past
   const getNextSchedule = () => {
-    return schedules.find(s => s.status === 'planifie' || s.status === 'en_cours');
+    const open = schedules.filter(s => s.status === 'planifie' || s.status === 'en_cours');
+    const now = currentTime.getTime();
+    const upcoming = open
+      .filter(s => !hasUnknownTime(s.departure_datetime) && new Date(s.departure_datetime).getTime() >= now)
+      .sort((a, b) => new Date(a.departure_datetime).getTime() - new Date(b.departure_datetime).getTime());
+    return upcoming[0] ?? open.find(s => hasUnknownTime(s.departure_datetime));
   };
 
   const nextSched = getNextSchedule();
@@ -1030,7 +1038,7 @@ export default function DailyPlanning() {
               Prochain départ
             </p>
             <p className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>
-              {format(new Date(nextSched.departure_datetime), 'HH:mm')}
+              {departureTimeLabel(nextSched.departure_datetime, 'Heure à confirmer')}
               <span className="text-lg font-semibold ml-2" style={{ color: 'var(--text-secondary)' }}>
                 → {nextSched.arrival_station_name}
               </span>
@@ -1153,7 +1161,7 @@ export default function DailyPlanning() {
                     ) : (
                       <>
                         <p className="text-2xl font-black tabular-nums" style={{ color: isActive ? 'var(--primary)' : 'var(--text-primary)' }}>
-                          {format(depDate, 'HH:mm')}
+                          {departureTimeLabel(depDate)}
                         </p>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>départ</p>
                       </>
@@ -1183,7 +1191,7 @@ export default function DailyPlanning() {
                             {i > 0 && <span className="mx-0.5">·</span>}
                             {t.station_name}
                             <span className="ml-1 font-medium">
-                              {format(addMinutes(depDate, t.arrival_offset_minutes), 'HH:mm')}
+                              {timeFromDepartureLabel(depDate, addMinutes(depDate, t.arrival_offset_minutes))}
                             </span>
                           </span>
                         ))}
@@ -1323,7 +1331,7 @@ export default function DailyPlanning() {
                             <div>
                               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Départ :</span>
                               <span className="ml-1.5 font-bold" style={{ color: 'var(--text-primary)' }}>
-                                {format(depDate, 'HH:mm')}
+                                {departureTimeLabel(depDate)}
                               </span>
                             </div>
                           </div>
@@ -1332,7 +1340,7 @@ export default function DailyPlanning() {
                             <div>
                               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Arrivée :</span>
                               <span className="ml-1.5 font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                                {format(arrDate, 'HH:mm')}
+                                {timeFromDepartureLabel(depDate, arrDate)}
                               </span>
                             </div>
                           </div>
@@ -1485,7 +1493,7 @@ export default function DailyPlanning() {
                               {station.name}
                             </p>
                             <p className="text-xs font-mono font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>
-                              {format(depDate, 'HH:mm')}
+                              {departureTimeLabel(depDate)}
                             </p>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Départ</p>
                           </div>
@@ -1501,7 +1509,7 @@ export default function DailyPlanning() {
                                   {stop.station_name}
                                 </p>
                                 <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                                  {format(addMinutes(depDate, stop.arrival_offset_minutes), 'HH:mm')}
+                                  {timeFromDepartureLabel(depDate, addMinutes(depDate, stop.arrival_offset_minutes))}
                                 </p>
                                 {stop.price > 0 && (
                                   <p className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
@@ -1523,7 +1531,7 @@ export default function DailyPlanning() {
                               {sched.arrival_station_name}
                             </p>
                             <p className="text-xs font-mono font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>
-                              {format(arrDate, 'HH:mm')}
+                              {timeFromDepartureLabel(depDate, arrDate)}
                             </p>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Arrivée</p>
                           </div>
@@ -1777,7 +1785,7 @@ export default function DailyPlanning() {
                 <div className="flex items-center gap-4 px-5 py-4">
                   <div className="w-20 flex-shrink-0 text-center">
                     <p className="text-2xl font-black tabular-nums" style={{ color: '#EA580C' }}>
-                      {format(depDate, 'HH:mm')}
+                      {departureTimeLabel(depDate)}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>départ</p>
                   </div>
@@ -1879,7 +1887,7 @@ export default function DailyPlanning() {
                     {ramassageModalSched.ramassage_collection ? 'Modifier le montant' : 'Montant ramassage'}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {format(new Date(ramassageModalSched.departure_datetime), 'HH:mm')} — {ramassageModalSched.route_name}
+                    {departureTimeLabel(ramassageModalSched.departure_datetime)} — {ramassageModalSched.route_name}
                   </p>
                 </div>
               </div>
@@ -1999,7 +2007,7 @@ export default function DailyPlanning() {
                     Enregistrer un convoi
                   </p>
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {format(new Date(convoySchedule.departure_datetime), 'HH:mm')} — {convoySchedule.route_name}
+                    {departureTimeLabel(convoySchedule.departure_datetime)} — {convoySchedule.route_name}
                   </p>
                 </div>
               </div>
@@ -2139,7 +2147,7 @@ export default function DailyPlanning() {
                     Signaler une panne
                   </p>
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {format(new Date(breakdownSchedule.departure_datetime), 'HH:mm')} — {breakdownSchedule.route_name}
+                    {departureTimeLabel(breakdownSchedule.departure_datetime)} — {breakdownSchedule.route_name}
                   </p>
                 </div>
               </div>
@@ -2255,7 +2263,7 @@ export default function DailyPlanning() {
                     {assignModalSchedule.counter_number != null ? 'Modifier l\'assignation' : 'Assigner à un guichet'}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {format(new Date(assignModalSchedule.departure_datetime), 'HH:mm')} → {assignModalSchedule.arrival_station_name}
+                    {departureTimeLabel(assignModalSchedule.departure_datetime)} → {assignModalSchedule.arrival_station_name}
                   </p>
                 </div>
               </div>
