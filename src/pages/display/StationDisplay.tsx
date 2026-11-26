@@ -798,16 +798,19 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
           {/* ── Larger screens: the table ── */}
           <div className="hidden md:block rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}` }}>
             <table className="w-full table-fixed border-collapse">
+              {/* Under 1280 px (chef de gare view with its menu, small computers) the « Gare départ »
+                  (the station of this screen) and « Gare arrivée » (the destination) columns are
+                  hidden, and the headers may wrap: they overlapped (audit G5) */}
               <colgroup>
                 <col style={{ width: '9%' }} />   {/* N° Départ */}
-                <col style={{ width: '7%' }} />   {/* Heure */}
+                <col style={{ width: '8%' }} />   {/* Heure */}
                 <col style={{ width: '14%' }} />  {/* Destination */}
-                <col style={{ width: '12%' }} />  {/* Ligne */}
-                <col style={{ width: '12%' }} />  {/* Gare départ */}
-                <col style={{ width: '12%' }} />  {/* Gare arrivée */}
-                <col style={{ width: '10%' }} />  {/* Plaque */}
+                <col style={{ width: '11%' }} />  {/* Ligne */}
+                <col className="hidden xl:table-column" style={{ width: '11%' }} />  {/* Gare départ */}
+                <col className="hidden xl:table-column" style={{ width: '11%' }} />  {/* Gare arrivée */}
+                <col style={{ width: '15%' }} />  {/* Plaque */}
                 <col style={{ width: '9%' }} />   {/* Places */}
-                <col style={{ width: '15%' }} />  {/* Statut */}
+                <col style={{ width: '13%' }} />  {/* Statut */}
               </colgroup>
               <thead>
                 <tr style={{ backgroundColor: T.green, color: 'white' }}>
@@ -816,14 +819,14 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                     { icon: <Clock className="w-3.5 h-3.5" />, label: 'HEURE' },
                     { icon: <Navigation className="w-3.5 h-3.5" />, label: 'DESTINATION' },
                     { icon: null, label: 'LIGNE' },
-                    { icon: <MapPin className="w-3.5 h-3.5" />, label: 'GARE DÉPART' },
-                    { icon: <MapPin className="w-3.5 h-3.5" />, label: 'GARE ARRIVÉE' },
+                    { icon: <MapPin className="w-3.5 h-3.5" />, label: 'GARE DÉPART', wide: true },
+                    { icon: <MapPin className="w-3.5 h-3.5" />, label: 'GARE ARRIVÉE', wide: true },
                     { icon: <Bus className="w-3.5 h-3.5" />, label: 'PLAQUE' },
                     { icon: <Users className="w-3.5 h-3.5" />, label: 'PLACES' },
                     { icon: null, label: 'STATUT', center: true },
-                  ].map(({ icon, label, center }) => (
+                  ].map(({ icon, label, center, wide }) => (
                     <th key={label}
-                      className={`px-3 py-3 text-xs font-black tracking-widest uppercase whitespace-nowrap ${center ? 'text-center' : 'text-left'}`}>
+                      className={`px-3 py-3 text-xs font-black tracking-wide leading-tight uppercase ${wide ? 'hidden xl:table-cell' : ''} ${center ? 'text-center' : 'text-left'}`}>
                       <span className="inline-flex items-center gap-1">
                         {icon}{label}
                       </span>
@@ -934,7 +937,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                         </td>
 
                         {/* ── Gare départ ── */}
-                        <td className="px-3 py-4 align-middle">
+                        <td className="hidden xl:table-cell px-3 py-4 align-middle">
                           <p className="text-sm font-semibold leading-snug" style={{ color: T.text2,
                             overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                             {row.departure_station_name}
@@ -942,7 +945,7 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                         </td>
 
                         {/* ── Gare arrivée ── */}
-                        <td className="px-3 py-4 align-middle">
+                        <td className="hidden xl:table-cell px-3 py-4 align-middle">
                           <p className="text-sm font-semibold leading-snug" style={{ color: T.text2,
                             overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                             {row.arrival_station_name}
@@ -953,7 +956,8 @@ export default function StationDisplay({ stationId: propId }: { stationId?: stri
                         <td className="px-3 py-4 align-middle">
                           <div className="flex items-center gap-1.5">
                             <Bus className="w-4 h-4 flex-shrink-0" style={{ color: T.text3 }} />
-                            <span className="text-base font-black" style={{ color: T.text, wordBreak: 'break-all' }}>
+                            {/* A plate wraps only at a dash or a space, never inside (audit G5) */}
+                            <span className="text-base font-black" style={{ color: T.text, overflowWrap: 'anywhere', wordBreak: 'normal' }}>
                               {row.bus_registration}
                             </span>
                           </div>
