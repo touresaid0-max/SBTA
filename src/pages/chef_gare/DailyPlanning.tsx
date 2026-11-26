@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabase';
+import { fetchStationRouteIds, stationRoutesFirst } from '../../services/stationRoutes.service';
 import { createRefreshScheduler, runAtMostEvery } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import { format, addMinutes, isAfter, isBefore, isWithinInterval } from 'date-fns';
@@ -367,13 +368,17 @@ export default function DailyPlanning() {
       .maybeSingle();
     if (!stationData) return;
 
+    // Lines that can be given to a guichet: the lines of its city and those of the station (its
+    // guichets' and those starting from it, audit B3), the station's lines first
+    const stationRouteIds = await fetchStationRouteIds(stationId);
     const { data: routes } = await supabase
       .from('routes')
       .select('id, name')
-      .eq('origin_city_id', stationData.city_id)
       .eq('is_active', true)
+      .or([`origin_city_id.eq.${stationData.city_id}`, `origin_station_id.eq.${stationId}`,
+        ...(stationRouteIds.length > 0 ? [`id.in.(${stationRouteIds.join(',')})`] : [])].join(','))
       .order('name');
-    setAvailableRoutes(routes || []);
+    setAvailableRoutes(stationRoutesFirst(routes || [], stationRouteIds));
   };
 
   const loadCounterRoutes = async (stationId: string) => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { fetchStationRouteIds } from '../../services/stationRoutes.service';
 import toast from 'react-hot-toast';
 import { addMinutes, format } from 'date-fns';
 import {
@@ -114,7 +115,12 @@ export default function GroupedPlanning() {
           stops:route_stops(id, station_id, position, offset_minutes, cumulative_distance_km, station:station_id(id, name, city_id))`)
         .eq('is_active', true);
 
-      if (cityId) {
+      // Lines of the station: those of its guichets and those starting from it (audit B3). A
+      // station without any: the former filter (origin station, otherwise the city).
+      const stationRouteIds = await fetchStationRouteIds(stationId);
+      if (stationRouteIds.length > 0) {
+        query = query.in('id', stationRouteIds);
+      } else if (cityId) {
         query = query.or(`origin_station_id.eq.${stationId},and(origin_station_id.is.null,origin_city_id.eq.${cityId})`);
       } else {
         query = query.eq('origin_station_id', stationId);
@@ -398,10 +404,12 @@ export default function GroupedPlanning() {
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <input type="checkbox" checked={selected} readOnly className="w-4 h-4 rounded accent-current" style={{ accentColor: 'var(--primary)' }} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{route.origin_city?.name || '--'}</span>
-                      <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                      <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{route.destination_city?.name || '--'}</span>
+                    {/* The line name first: « Adjame - Divo » and « Yop - Divo » share the same cities (audit B3) */}
+                    <p className="font-bold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{route.name?.trim() || '--'}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      <span>{route.origin_city?.name || '--'}</span>
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                      <span>{route.destination_city?.name || '--'}</span>
                     </div>
                     <div className="flex gap-3 mt-1 text-xs flex-wrap" style={{ color: 'var(--text-secondary)' }}>
                       <span>{route.distance_km} km</span>

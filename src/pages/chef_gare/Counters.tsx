@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
+import { fetchStationRouteIds } from '../../services/stationRoutes.service';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -50,6 +51,10 @@ export default function ChefGareCounters() {
   const [loading, setLoading] = useState(true);
   const [stationId, setStationId] = useState<string | null>(null);
   const [allRoutes, setAllRoutes] = useState<RouteInfo[]>([]);
+  // Lines of the station (its guichets' and those starting from it, audit B3): shown first in
+  // the lines window, the other lines of the company only on demand
+  const [stationRouteIds, setStationRouteIds] = useState<string[]>([]);
+  const [showOtherRoutes, setShowOtherRoutes] = useState(false);
   const [routeModal, setRouteModal] = useState<Counter | null>(null);
   const [selectedRouteIds, setSelectedRouteIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -59,6 +64,42 @@ export default function ChefGareCounters() {
     const timer = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(timer);
   }, []);
+
+  const renderRouteChoice = (route: RouteInfo) => {
+    const selected = selectedRouteIds.has(route.id);
+    return (
+      <button key={route.id} onClick={() => toggleRoute(route.id)}
+        className="w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all"
+        style={{
+          borderColor: selected ? 'var(--primary)' : 'var(--border)',
+          backgroundColor: selected ? 'var(--primary-light)' : 'transparent',
+        }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{
+            backgroundColor: selected ? 'var(--primary)' : 'var(--bg-subtle)',
+            color: selected ? 'white' : 'var(--text-muted)',
+          }}>
+          {selected ? <CheckCircle className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+        </div>
+        <span className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>
+          {route.name}
+        </span>
+      </button>
+    );
+  };
+
+  // Lines window: the lines already ticked for the guichet first, then the station's lines;
+  // the other lines of the company apart. The order is fixed when the window opens.
+  const { ownModalRoutes, otherModalRoutes } = useMemo(() => {
+    if (!routeModal) return { ownModalRoutes: [] as RouteInfo[], otherModalRoutes: [] as RouteInfo[] };
+    const ticked = new Set(routeModal.routes.map(r => r.id));
+    const station = new Set(stationRouteIds);
+    const byName = (a: RouteInfo, b: RouteInfo) => a.name.trim().localeCompare(b.name.trim(), 'fr');
+    const own = allRoutes.filter(r => ticked.has(r.id) || station.has(r.id))
+      .sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id)) || byName(a, b));
+    const others = allRoutes.filter(r => !ticked.has(r.id) && !station.has(r.id)).sort(byName);
+    return { ownModalRoutes: own, otherModalRoutes: others };
+  }, [routeModal, allRoutes, stationRouteIds]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,7 +123,7 @@ export default function ChefGareCounters() {
         .order('counter_number');
       if (restrictManagerId) countersQuery = countersQuery.eq('manager_id', restrictManagerId);
 
-      const [countersRes, routesRes, crRes, shiftsRes, sessionsRes] = await Promise.all([
+      const [countersRes, routesRes, crRes, shiftsRes, sessionsRes, ownRouteIds] = await Promise.all([
         countersQuery,
         supabase
           .from('routes')
@@ -104,12 +145,14 @@ export default function ChefGareCounters() {
           .eq('station_id', sid)
           .eq('session_date', today)
           .order('logged_in_at', { ascending: false }),
+        fetchStationRouteIds(sid),
       ]);
 
       if (countersRes.error) throw countersRes.error;
 
       const stationRoutes: RouteInfo[] = (routesRes.data || []) as RouteInfo[];
       setAllRoutes(stationRoutes);
+      setStationRouteIds(ownRouteIds);
 
       const crMap: Record<string, RouteInfo[]> = {};
       (crRes.data || []).forEach((cr: any) => {
@@ -192,6 +235,7 @@ export default function ChefGareCounters() {
   const openRouteModal = (counter: Counter) => {
     setRouteModal(counter);
     setSelectedRouteIds(new Set(counter.routes.map(r => r.id)));
+    setShowOtherRoutes(false);
   };
 
   const toggleRoute = (routeId: string) => {
@@ -542,32 +586,27 @@ export default function ChefGareCounters() {
               </p>
               {allRoutes.length === 0 ? (
                 <p className="text-sm italic py-4 text-center" style={{ color: 'var(--text-muted)' }}>
-                  Aucune ligne ne part de cette gare
+                  Aucune ligne active
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {allRoutes.map(route => {
-                    const selected = selectedRouteIds.has(route.id);
-                    return (
-                      <button key={route.id} onClick={() => toggleRoute(route.id)}
-                        className="w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all"
-                        style={{
-                          borderColor: selected ? 'var(--primary)' : 'var(--border)',
-                          backgroundColor: selected ? 'var(--primary-light)' : 'transparent',
-                        }}>
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{
-                            backgroundColor: selected ? 'var(--primary)' : 'var(--bg-subtle)',
-                            color: selected ? 'white' : 'var(--text-muted)',
-                          }}>
-                          {selected ? <CheckCircle className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                        </div>
-                        <span className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>
-                          {route.name}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                    Lignes de la gare
+                  </p>
+                  {ownModalRoutes.length === 0 && (
+                    <p className="text-sm italic py-2" style={{ color: 'var(--text-muted)' }}>
+                      Aucune ligne n'est encore rattachée à cette gare : choisissez-la dans les autres lignes.
+                    </p>
+                  )}
+                  {ownModalRoutes.map(route => renderRouteChoice(route))}
+                  {otherModalRoutes.length > 0 && (
+                    <button type="button" onClick={() => setShowOtherRoutes(v => !v)}
+                      className="w-full mt-3 px-3 py-2 rounded-xl border text-xs font-semibold text-left"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                      {showOtherRoutes ? 'Masquer' : 'Afficher'} les autres lignes de la société ({otherModalRoutes.length})
+                    </button>
+                  )}
+                  {showOtherRoutes && otherModalRoutes.map(route => renderRouteChoice(route))}
                 </div>
               )}
             </div>

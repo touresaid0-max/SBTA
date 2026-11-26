@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { fetchStationRouteIds } from '../../services/stationRoutes.service';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, MapPin, Bus, User, AlertTriangle, CheckCircle,
@@ -152,8 +153,12 @@ export default function ChefGareNewSchedule() {
       `)
       .eq('is_active', true);
 
-    // Filter by origin_station_id if set, otherwise fall back to origin_city_id
-    if (cityId) {
+    // Lines of the station: those of its guichets and those starting from it (audit B3). A
+    // station without any: the former filter (origin station, otherwise the city).
+    const stationRouteIds = await fetchStationRouteIds(stationId);
+    if (stationRouteIds.length > 0) {
+      query = query.in('id', stationRouteIds);
+    } else if (cityId) {
       query = query.or(`origin_station_id.eq.${stationId},and(origin_station_id.is.null,origin_city_id.eq.${cityId})`);
     } else {
       query = query.eq('origin_station_id', stationId);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { X, Bus, User, MapPin, Clock, Loader2, AlertTriangle, CheckCircle2, Search, Printer } from 'lucide-react'
 import { supabase } from '../../services/supabase'
+import { fetchStationRouteIds } from '../../services/stationRoutes.service'
 import toast from 'react-hot-toast'
 import { generateBookingReference } from '../../utils/generateBookingReference'
 
@@ -113,11 +114,20 @@ export default function EditScheduleModal({ schedule, stationId, userId, onClose
       .eq('id', stationId)
       .maybeSingle()
 
-    const { data: routesData } = await supabase
+    // Lines of the station (audit B3: every line of the company was listed): those of its
+    // guichets and those starting from it, otherwise the lines of its city. The departure's own
+    // line always stays in the list.
+    const stationRouteIds = await fetchStationRouteIds(stationId)
+    let routesQuery = supabase
       .from('routes')
       .select('id, name, estimated_duration_minutes')
       .eq('is_active', true)
-      .order('name')
+    if (stationRouteIds.length > 0) {
+      routesQuery = routesQuery.in('id', [...new Set([...stationRouteIds, ...(sched.route_id ? [sched.route_id] : [])])])
+    } else if (stationData?.city_id) {
+      routesQuery = routesQuery.or(`origin_station_id.eq.${stationId},origin_city_id.eq.${stationData.city_id}${sched.route_id ? `,id.eq.${sched.route_id}` : ''}`)
+    }
+    const { data: routesData } = await routesQuery.order('name')
 
     setRoutes(routesData || [])
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase } from '@/services/supabase';
+import { fetchStationRouteIds } from '@/services/stationRoutes.service';
 import { Download, Printer, Bus, RefreshCw, Filter, FileText, WifiOff } from 'lucide-react';
 import { isOnline } from '@/services/pos/syncEngine';
 import { getLignes } from '@/services/pos/departService';
@@ -87,7 +88,13 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
   const { from: dateFrom, to: dateTo } = getRange(periodId, customFrom, customTo);
 
   useEffect(() => {
-    supabase.from('routes').select('id, name').order('name').then(({ data }) => {
+    // « Ligne » filter: the lines of the station (its guichets' and those starting from it, audit
+    // B3), every line when the station has none
+    (async () => {
+      const own = stationId ? await fetchStationRouteIds(stationId).catch(() => [] as string[]) : [];
+      const q = supabase.from('routes').select('id, name');
+      return (own.length > 0 ? q.in('id', own) : q).order('name');
+    })().then(({ data }) => {
       if (data) setRoutes(data as { id: string; name: string }[]);
       // Without network on the guichet: the lines kept on the device
       else if (withDevice) getLignes().then(lines => setRoutes(lines.map(l => ({ id: l.id, name: l.name })))).catch(() => {});
@@ -101,7 +108,7 @@ export default function RamassageReportView({ stationId, stationName, title = 'R
         ));
       }
     }, () => { /* offline: the city is already in the label of a ramassage direct */ });
-  }, [withDevice]);
+  }, [withDevice, stationId]);
 
   const load = useCallback(async (silent = false) => {
     if (!stationId) return;
