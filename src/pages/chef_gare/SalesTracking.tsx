@@ -27,6 +27,7 @@ interface SaleRow {
   total_ticket_amount: number;
   total_charges: number;
   solde_ticket: number;
+  total_baggage?: number | null;
   /** Shared departure: this station's share only (seats, tickets, baggage, its part of the bus
    *  expenses). share_with: the other station(s) of the bus. */
   share_role?: 'principale' | 'partenaire' | null;
@@ -49,6 +50,11 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: 'month', label: 'Mois' },
   { key: 'year', label: 'Année' },
 ];
+
+/** Net balance of a departure: tickets + baggage − expenses, as at the guichet closing (audit G9). */
+function soldeOf(r: SaleRow): number {
+  return (r.solde_ticket || 0) + (r.total_baggage || 0);
+}
 
 export default function ChefGareSalesTracking() {
   const { user } = useAuthStore();
@@ -173,7 +179,7 @@ export default function ChefGareSalesTracking() {
     tickets: acc.tickets + (r.seats_sold || 0),
     revenue: acc.revenue + (r.total_ticket_amount || 0),
     charges: acc.charges + (r.total_charges || 0),
-    solde: acc.solde + (r.solde_ticket || 0),
+    solde: acc.solde + soldeOf(r),
   }), { departures: 0, tickets: 0, revenue: 0, charges: 0, solde: 0 });
 
   const byCounter: Record<string, SaleRow[]> = {};
@@ -289,7 +295,7 @@ export default function ChefGareSalesTracking() {
               tickets: acc.tickets + (r.seats_sold || 0),
               revenue: acc.revenue + (r.total_ticket_amount || 0),
               charges: acc.charges + (r.total_charges || 0),
-              solde: acc.solde + (r.solde_ticket || 0),
+              solde: acc.solde + soldeOf(r),
             }), { departures: 0, tickets: 0, revenue: 0, charges: 0, solde: 0 });
 
             return (
@@ -381,8 +387,8 @@ export default function ChefGareSalesTracking() {
                                 {(row.total_charges || 0).toLocaleString()}
                               </td>
                               <td className="px-4 py-3 font-bold"
-                                style={{ color: (row.solde_ticket || 0) >= 0 ? '#16A34A' : '#DC2626' }}>
-                                {(row.solde_ticket || 0).toLocaleString()}
+                                style={{ color: soldeOf(row) >= 0 ? '#16A34A' : '#DC2626' }}>
+                                {soldeOf(row).toLocaleString()}
                               </td>
                               <td className="px-4 py-3">
                                 <button onClick={() => setExpandedId(isExpanded ? null : row.schedule_id)}
