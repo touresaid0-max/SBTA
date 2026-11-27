@@ -97,6 +97,7 @@ const GestionnaireDriversReport = lazyPage(() => import('./pages/gestionnaire/Dr
 const GestionnaireDrivers = lazyPage(() => import('./pages/gestionnaire/Drivers'));
 const GestionnaireFinancialReport = lazyPage(() => import('./pages/gestionnaire/FinancialReport'));
 const GestionnaireBreakdowns = lazyPage(() => import('./pages/gestionnaire/Breakdowns'));
+const GestionnaireVoyageReport = lazyPage(() => import('./pages/gestionnaire/VoyageReport'));
 const BreakdownRevenueReport = lazyPage(() => import('./pages/reports/BreakdownRevenueReport'));
 const BreakdownDistributions = lazyPage(() => import('./pages/daf/BreakdownDistributions'));
 const ChauffeurDashboard = lazyPage(() => import('./pages/chauffeur/Dashboard'));
@@ -441,6 +442,7 @@ function App() {
             <Route path="gestionnaire/financial-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireFinancialReport /></ProtectedRoute>} />
             <Route path="gestionnaire/bus-performance" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBusPerformance /></ProtectedRoute>} />
             <Route path="gestionnaire/bus-activity" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBusActivity /></ProtectedRoute>} />
+            <Route path="gestionnaire/voyage-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireVoyageReport /></ProtectedRoute>} />
             <Route path="gestionnaire/drivers" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDrivers /></ProtectedRoute>} />
             <Route path="gestionnaire/drivers-report" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireDriversReport /></ProtectedRoute>} />
             <Route path="gestionnaire/breakdowns" element={<ProtectedRoute roles={['gestionnaire']}><GestionnaireBreakdowns /></ProtectedRoute>} />

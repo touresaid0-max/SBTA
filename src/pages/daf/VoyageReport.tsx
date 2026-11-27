@@ -176,12 +176,22 @@ function groupBy(rows: Depart[], key: (d: Depart) => string, label: (d: Depart) 
   return [...map.values()].sort((a, b) => b.caisse - a.caisse || a.label.localeCompare(b.label));
 }
 
+/**
+ * Who reads the report: the DAF (every company), or the gestionnaire (his company and its
+ * subsidiaries, chosen by the server: get_gestionnaire_voyage_report, 27/11/2026).
+ */
+export type VoyageReportScope = 'daf' | 'gestionnaire';
+const REPORT_RPC: Record<VoyageReportScope, string> = {
+  daf: 'get_daf_voyage_report',
+  gestionnaire: 'get_gestionnaire_voyage_report',
+};
+
 // The server answers 1 000 rows at most per request: read page by page
-async function fetchDeparts(from: string, to: string): Promise<Depart[]> {
+async function fetchDeparts(from: string, to: string, scope: VoyageReportScope): Promise<Depart[]> {
   const all: Depart[] = [];
   for (;;) {
     const { data, error } = await supabase
-      .rpc('get_daf_voyage_report', { p_from: from, p_to: to })
+      .rpc(REPORT_RPC[scope], { p_from: from, p_to: to })
       .range(all.length, all.length + 999);
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
@@ -215,7 +225,10 @@ const departCells = (d: Depart): string[] => {
 };
 
 // ─── Page ───────────────────────────────────────────────────────────────────
-export default function DAFVoyageReport() {
+export default function DAFVoyageReport({ scope = 'daf' }: { scope?: VoyageReportScope }) {
+  // The gestionnaire sees his company only: no list of every line, counter or connected station
+  // (those of the other companies), only those of his departures
+  const allCompanies = scope === 'daf';
   const [periodId, setPeriodId] = useState<PeriodId>('mois');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -237,7 +250,7 @@ export default function DAFVoyageReport() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setDeparts(await fetchDeparts(from, to));
+      setDeparts(await fetchDeparts(from, to, scope));
     } catch (e) {
       console.error(e);
       toast.error((e as { message?: string }).message || 'Erreur de chargement du rapport');
@@ -245,21 +258,23 @@ export default function DAFVoyageReport() {
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, scope]);
   useEffect(() => { load(); }, [load]);
 
   // A station that logged in but whose sales have not reached the server yet (counter offline)
   // used to be missing from the list. Server not updated yet: only the stations with departures.
   useEffect(() => {
+    if (!allCompanies) return;
     let cancelled = false;
     supabase.rpc('get_daf_active_stations', { p_from: from, p_to: to }).then(({ data, error }) => {
       if (!cancelled) setLoggedStations(error ? [] : ((data ?? []) as typeof loggedStations));
     });
     return () => { cancelled = true; };
-  }, [from, to]);
+  }, [from, to, allCompanies]);
 
   // Every line and every counter, also those without a departure in the period
   useEffect(() => {
+    if (!allCompanies) return;
     supabase.from('routes').select('id, name, origin_station_id').order('name').then(({ data, error }) => {
       if (!error && data) { setAllRoutes(data as typeof allRoutes); return; }
       // A database without routes.origin_station_id: the lines without their station
@@ -270,7 +285,7 @@ export default function DAFVoyageReport() {
     supabase.from('counters').select('id, counter_number, station_id').order('counter_number').then(({ data }) => {
       if (data) setAllCounters(data as typeof allCounters);
     });
-  }, []);
+  }, [allCompanies]);
 
   // ── Filter options ──
   // A station chosen: only its counters, and only its lines (those leaving from it, or with a
@@ -563,7 +578,7 @@ export default function DAFVoyageReport() {
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Rapports détaillés voyage</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            Données consolidées de toutes les gares · {periodLabel}
+            {allCompanies ? 'Données consolidées de toutes les gares' : 'Données de votre société'} · {periodLabel}
           </p>
         </div>
         <div className="flex items-center gap-2">
