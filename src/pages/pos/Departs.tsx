@@ -49,6 +49,11 @@ import {
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
 import { getTicketPhoneLine, cachedTicketPhoneLine } from '@/services/ticketPhones.service';
 
+/** Name of a line without the extra spaces (start, end, doubled), as the line filter compares it. */
+function lineKey(name: string | null | undefined): string {
+  return (name ?? '').trim().replace(/\s+/g, ' ');
+}
+
 type SortKey = 'departure_datetime' | 'departure_number' | 'route_number' | 'route_name' | 'bus_plate' | 'bus_name' | 'driver_name' | 'seats_total' | 'seats_libres' | 'seats_sold' | 'cloture' | 'mt_ticket' | 'mt_bagage' | 'tot_depense' | 'solde' | 'caisse';
 type SortDir = 'asc' | 'desc';
 
@@ -473,13 +478,15 @@ export default function POSDeparts() {
     return list.filter(d => !d.cancelled);
   }, [departs, range.from, range.to]);
 
+  // Line names compared without the extra spaces: « Adjame - Sikensi » and « Adjame - Sikensi␣ »
+  // (a departure saved before the line names were cleaned, 26/11/2026) are one line in the filter
   const routeOptions = useMemo(() => {
-    return Array.from(new Set(filterBaseDeparts.map(d => d.route_name).filter((name): name is string => Boolean(name)))).sort((a, b) => a.localeCompare(b));
+    return Array.from(new Set(filterBaseDeparts.map(d => lineKey(d.route_name)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   }, [filterBaseDeparts]);
 
   const departureOptions = useMemo(() => {
     return filterBaseDeparts
-      .filter(d => !routeFilter || d.route_name === routeFilter)
+      .filter(d => !routeFilter || lineKey(d.route_name) === routeFilter)
       .sort((a, b) => (a.route_number ?? a.departure_number ?? 0) - (b.route_number ?? b.departure_number ?? 0));
   }, [filterBaseDeparts, routeFilter]);
 
@@ -515,7 +522,7 @@ export default function POSDeparts() {
 
   const visibleDeparts = useMemo(() => {
     let list = filterBaseDeparts.filter(d =>
-      (!routeFilter || d.route_name === routeFilter) &&
+      (!routeFilter || lineKey(d.route_name) === routeFilter) &&
       (!departureFilter || d.id === departureFilter),
     );
     list = [...list].sort((a, b) => {
