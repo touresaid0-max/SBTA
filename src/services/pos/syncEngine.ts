@@ -622,6 +622,11 @@ async function executeInsert(
     delete payload[col];
     ({ error } = await supabase.from(table).insert(payload));
   }
+  if (error && !isAlreadyReceived(error) && store === 'departs' && error.code === '42501') {
+    // Refused by the access rules: a guichetier creates departures of his own station only. The
+    // server does not say which station was sent: the refusal now does (26-27/11/2026)
+    throw new RefusedByServer(await departRefusalReason(record));
+  }
   if (error && !isAlreadyReceived(error)) {
     // Baggage number collision: another guichet generated the same number.
     // Regenerate a unique number and retry.
@@ -640,6 +645,17 @@ async function executeInsert(
     }
     throw error;
   }
+}
+
+/** Why the server refused a departure: its station, and the guichetier's now. */
+async function departRefusalReason(record: Record<string, unknown>): Promise<string> {
+  const departStation = String(record.station_name ?? '') || String(record.station_id ?? '') || 'aucune';
+  const session = (await db.session.toArray().catch(() => []))[0];
+  const mine = session?.station_name || session?.station_id || '';
+  const sameStation = !!record.station_id && session?.station_id === record.station_id;
+  return sameStation
+    ? `Départ refusé par le serveur (règle d'accès) : gare « ${departStation} », celle de ce poste. Le compte connecté au serveur n'a pas cette gare : déconnectez-vous puis reconnectez-vous avec Internet`
+    : `Départ refusé par le serveur (règle d'accès) : il est enregistré pour la gare « ${departStation} »${mine ? `, alors que ce guichet est à la gare « ${mine} »` : ''}. Le compte n'a pas le droit de créer un départ pour cette gare`;
 }
 
 async function generateUniqueBagageNumber(): Promise<string> {
@@ -912,6 +928,88 @@ async function retryRefusedReinserts(): Promise<void> {
   } catch { /* sent again at the next flush */ }
 }
 
+// ── Sales of a departure the server does not have ──
+// A departure refused by the server (access rules) stayed on the device, while its tickets,
+// baggage and expenses were sent again every 10 minutes, without end, each one refused (« Key is
+// not present in table schedules »): 1 446 refusals in 17 h for one guichet (26-27/11/2026). These
+// sales now wait for their departure, listed with it among the refused operations; once the
+// departure reaches the server (« Réessayer »), they are sent.
+
+/** Operations that refer to a departure (their payload's depart_id). */
+const SALE_STORES = new Set<string>(['tickets', 'bagages', 'depenses']);
+
+/** Reason given to a sale held because its departure is not on the server. */
+export const HELD_FOR_DEPART = 'En attente de son départ, refusé par le serveur : réessayez ou traitez d\'abord le départ';
+const DEPART_MISSING = 'Départ introuvable sur le poste et sur le serveur : vente à traiter';
+
+function isDepartCreation(item: Pick<SyncQueueItem, 'entity' | 'op'>): boolean {
+  return item.entity === 'departs' && item.op === 'insert';
+}
+
+function departOf(item: Pick<SyncQueueItem, 'entity' | 'op' | 'payload'>): string {
+  return SALE_STORES.has(item.entity) && item.op === 'insert' ? String(item.payload?.depart_id ?? '') : '';
+}
+
+/** « Key is not present in table schedules »: the departure of the sale is not on the server. */
+function isMissingDepartError(message: string | undefined): boolean {
+  return /schedule_id_fkey|not present in table "schedules"/i.test(message ?? '');
+}
+
+/** Departures whose creation the server refused, or that a guichetier gave up. */
+async function unsendableDeparts(): Promise<Set<string>> {
+  const items = await db.sync_queue.where('entity').equals('departs')
+    .filter(i => i.op === 'insert' && (i.status === 'failed' || i.status === 'abandoned'))
+    .toArray();
+  return new Set(items.map(i => String(i.payload?.id ?? '')).filter(Boolean));
+}
+
+/** Sales held for a departure that has now reached the server: sent at the next sending. */
+async function releaseHeldSales(departId: string): Promise<void> {
+  if (!departId) return;
+  await db.sync_queue.where('status').equals('failed')
+    .filter(i => i.last_error === HELD_FOR_DEPART && departOf(i) === departId)
+    .modify({ status: 'pending', tries: 0, sending_since: undefined, last_error: undefined });
+}
+
+/**
+ * Sales refused because their departure is missing on the server, with no operation of that
+ * departure left on the device (lost, or recorded by an older version): the departure saved on
+ * the device is queued again, ahead of them; without one, the sale is listed as refused.
+ */
+const departsRequeued = new Set<string>();
+async function requeueMissingDeparts(): Promise<void> {
+  try {
+    const orphans = await db.sync_queue.where('status').anyOf(['error', 'pending'])
+      .filter(i => departOf(i) !== '' && isMissingDepartError(i.last_error))
+      .toArray();
+    if (orphans.length === 0) return;
+    const departIds = [...new Set(orphans.map(departOf))].filter(id => !departsRequeued.has(id));
+    if (departIds.length === 0) return;
+    const queued = new Set((await db.sync_queue.where('entity').equals('departs').toArray())
+      .map(i => String(i.payload?.id ?? '')));
+    const toCheck = departIds.filter(id => !queued.has(id));
+    if (toCheck.length === 0) return;
+    const { data, error } = await supabase.from('schedules').select('id').in('id', toCheck);
+    if (error) return; // checked again at the next sending
+    const onServer = new Set((data ?? []).map((r: { id: string }) => r.id));
+    for (const id of toCheck) {
+      departsRequeued.add(id);
+      if (onServer.has(id)) continue; // it arrived meanwhile: the sales go at the next sending
+      const local = await db.departs.get(id);
+      if (local) {
+        await db.sync_queue.add({
+          entity: 'departs', op: 'insert', payload: local as unknown as Record<string, unknown>,
+          created_at: String(local.created_at ?? nowIso()), tries: 0, status: 'pending',
+        });
+      } else {
+        await db.sync_queue.where('status').anyOf(['error', 'pending'])
+          .filter(i => departOf(i) === id && isMissingDepartError(i.last_error))
+          .modify({ status: 'failed', last_error: DEPART_MISSING });
+      }
+    }
+  } catch { /* checked again at the next sending */ }
+}
+
 export async function flushSyncQueue(): Promise<FlushResult> {
   if (flushing) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
   if (!isOnline()) return { processed: 0, succeeded: 0, failed: 0, waitingOtherUser: 0 };
@@ -925,6 +1023,7 @@ export async function flushSyncQueue(): Promise<FlushResult> {
   try {
     await retryRefusedRamassages();
     await retryRefusedReinserts();
+    await requeueMissingDeparts();
     const serverUserId = await serverSessionUserId();
     const waiting = (await db.sync_queue.where('status').anyOf(NOT_SENT_STATUSES).toArray())
       .filter(isWaitingToSend);
@@ -943,6 +1042,22 @@ export async function flushSyncQueue(): Promise<FlushResult> {
     waitingOtherUser = waiting.filter(item => !sentBy(item, serverUserId)).length;
     // Sort by created_at to preserve operation order
     pending.sort(byQueueOrder);
+    // Departures first: a departure queued after its sales (sent again after a recovery) had them
+    // refused for want of their departure (« not present in table schedules »)
+    pending.sort((a, b) => Number(isDepartCreation(b)) - Number(isDepartCreation(a)));
+
+    // Sales of a departure the server refused: held with it, not sent (refused every 10 minutes)
+    const blockedDeparts = await unsendableDeparts();
+    if (blockedDeparts.size > 0) {
+      const held = pending.filter(i => blockedDeparts.has(departOf(i)));
+      if (held.length > 0) {
+        await db.sync_queue.where(':id').anyOf(held.map(i => i.id!).filter(Boolean))
+          .modify({ status: 'failed', last_error: HELD_FOR_DEPART, sending_since: undefined });
+        failed += held.length;
+        const heldSet = new Set(held);
+        pending.splice(0, pending.length, ...pending.filter(i => !heldSet.has(i)));
+      }
+    }
 
     const sent: Array<[StoreName, string]> = [];
 
@@ -1062,10 +1177,26 @@ export async function flushSyncQueue(): Promise<FlushResult> {
         await db.sync_queue.delete(item.id);
         if (item.op !== 'delete') sent.push([item.entity as StoreName, String(item.payload.id ?? '')]);
         succeeded++;
+        // Its sales held while it was refused go at the next sending
+        if (isDepartCreation(item)) await releaseHeldSales(String(item.payload.id ?? ''));
       } catch (err: any) {
         // Refused by the server: kept, no longer sent by itself (it would be refused again)
-        await db.sync_queue.update(item.id, failureState(err));
+        const state = failureState(err);
+        await db.sync_queue.update(item.id, state);
         failed++;
+        // A departure refused now: its sales still to send in this sending wait with it
+        if (isDepartCreation(item) && state.status === 'failed') {
+          const departId = String(item.payload.id ?? '');
+          blockedDeparts.add(departId);
+          const later = toSend.slice(index);
+          const held = later.filter(i => departOf(i) === departId);
+          if (held.length > 0) {
+            await db.sync_queue.where(':id').anyOf(held.map(i => i.id!).filter(Boolean))
+              .modify({ status: 'failed', last_error: HELD_FOR_DEPART, sending_since: undefined });
+            failed += held.length;
+            toSend.splice(index, later.length, ...later.filter(i => departOf(i) !== departId));
+          }
+        }
         // If network drops mid-flush, stop processing
         if (!isOnline()) break;
       }
