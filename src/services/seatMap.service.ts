@@ -113,6 +113,70 @@ export interface FetchSeatMapOptions {
    * station sells on its own départ even when the bus is shared.
    */
   ownScheduleOnly?: boolean
+  /**
+   * POS guichet: the departure as saved on the device. A departure not yet sent to the server
+   * (offline, or waiting while the server session is another account's) has no row there: its
+   * plan is then built from its bus, and its sales are those of the device (27/11/2026).
+   */
+  localDepart?: LocalDepartSeatInfo
+}
+
+export interface LocalDepartSeatInfo {
+  bus_id: string
+  bus_plate?: string
+  /** First seat sold (bus setting « vendu à partir de ») */
+  seats_from: number
+  /** Last seat number */
+  seats_last: number
+}
+
+const BUS_SEAT_COLUMNS = 'id, registration_number, class, total_seats, bus_deck_type, seat_config_id, lower_deck_config_id, upper_deck_config_id, seats_sold_from'
+
+/** Bus of a departure the server does not know yet: read on the server, else from the device. */
+async function busOfLocalDepart(local: LocalDepartSeatInfo): Promise<any | null> {
+  if (!local.bus_id) return null
+  try {
+    const { data } = await supabase.from('buses').select(BUS_SEAT_COLUMNS).eq('id', local.bus_id).maybeSingle()
+    if (data) return data
+  } catch {
+    // Offline: the bus as known on the device
+  }
+  return {
+    id: local.bus_id,
+    registration_number: local.bus_plate ?? '',
+    class: 'standard',
+    total_seats: local.seats_last,
+    bus_deck_type: 'simple',
+    seat_config_id: null,
+    lower_deck_config_id: null,
+    upper_deck_config_id: null,
+    seats_sold_from: local.seats_from,
+  }
+}
+
+type OccupiedSeat = { reservation_id: string; passenger_name: string; status: string; client_id: string }
+
+/**
+ * Seats held on the departure (sales, locks, mobile bookings). A departure not on the server has
+ * none there: its sales are those of the device, shown by the guichet itself.
+ */
+async function loadSeatOccupancy(scheduleId: string, ownScheduleOnly: boolean | undefined, onServer: boolean) {
+  const currentUser = await supabase.auth.getSession().then(r => r.data?.session?.user ?? null).catch(() => null)
+  const occupiedMap: Record<string, OccupiedSeat> = {}
+  if (!onServer) {
+    return { currentUser, occupiedMap, resError: null as Error | null, lockMap: {} as Record<string, { locked_by: string; expires_at: string }>, onlineMap: {} as Record<string, OnlineReservationInfo> }
+  }
+  const siblingIds = ownScheduleOnly ? [scheduleId] : await getSiblingScheduleIds(scheduleId)
+  const { data: reservations, error: resError } = await fetchSeatHolders(siblingIds)
+  const lockMap = await fetchActiveSeatLocksForSchedules(siblingIds)
+  const onlineMap = await fetchOnlineReservedSeats(siblingIds)
+  for (const res of reservations ?? []) {
+    const seats: string[] = Array.isArray(res.seat_numbers) ? res.seat_numbers : []
+    for (const seatNum of seats) {
+      occupiedMap[seatNum] = { reservation_id: res.id, passenger_name: res.passenger_name, status: res.status, client_id: res.customer_id ?? '' }
+    }
+  }
+  return { currentUser, occupiedMap, resError, lockMap, onlineMap }
 }
 
 export async function fetchScheduleSeatMap(
@@ -143,13 +207,18 @@ export async function fetchScheduleSeatMap(
       )
     `)
     .eq('id', scheduleId)
-    .single()
+    .maybeSingle()
 
-  if (scheduleError || !schedule) {
-    throw new Error(`Voyage introuvable : ${scheduleError?.message}`)
+  // Not on the server (not sent yet, or no network): the departure saved on the device, if given.
+  // .single() refused a missing row with « Cannot coerce the result to a single JSON object ».
+  const onServer = !!schedule
+  if (!schedule && !options.localDepart) {
+    throw new Error(scheduleError
+      ? `Voyage introuvable : ${scheduleError.message}`
+      : 'Voyage introuvable sur le serveur')
   }
 
-  const bus = schedule.buses as any
+  const bus = schedule ? schedule.buses as any : await busOfLocalDepart(options.localDepart!)
 
   // Anticipated departure with no bus assigned — no seat map available
   if (!bus) {
@@ -168,8 +237,8 @@ export async function fetchScheduleSeatMap(
     rawConfig = await loadSeatConfig(bus.seat_config_id)
   }
 
-  const route = schedule.routes as any
-  const schedulePrice: number = (schedule as any).price ?? route?.base_price ?? 0
+  const route = schedule?.routes as any
+  const schedulePrice: number = (schedule as any)?.price ?? route?.base_price ?? 0
   const vipPrice: number = schedulePrice * 1.5
 
   if (!rawConfig) {
@@ -195,26 +264,7 @@ export async function fetchScheduleSeatMap(
       seat_layout: generatedLayout,
     }
 
-    const siblingIds = options.ownScheduleOnly ? [scheduleId] : await getSiblingScheduleIds(scheduleId)
-
-    const [
-      { data: reservations },
-      currentUser,
-    ] = await Promise.all([
-      fetchSeatHolders(siblingIds),
-      supabase.auth.getSession().then(r => r.data?.session?.user ?? null).catch(() => null),
-    ])
-
-    const lockMap = await fetchActiveSeatLocksForSchedules(siblingIds)
-    const onlineMap = await fetchOnlineReservedSeats(siblingIds)
-
-    const occupiedMap: Record<string, { reservation_id: string; passenger_name: string; status: string; client_id: string }> = {}
-    for (const res of reservations ?? []) {
-      const seats: string[] = Array.isArray(res.seat_numbers) ? res.seat_numbers : []
-      for (const seatNum of seats) {
-        occupiedMap[seatNum] = { reservation_id: res.id, passenger_name: res.passenger_name, status: res.status, client_id: res.customer_id ?? '' }
-      }
-    }
+    const { currentUser, occupiedMap, lockMap, onlineMap } = await loadSeatOccupancy(scheduleId, options.ownScheduleOnly, onServer)
 
     const enrichedLayout: EnrichedRow[] = generatedLayout.map(row => ({
       row: row.row,
@@ -313,28 +363,9 @@ export async function fetchScheduleSeatMap(
     seat_layout: normalizedLayout,
   }
 
-  const siblingIds = options.ownScheduleOnly ? [scheduleId] : await getSiblingScheduleIds(scheduleId)
-
-  const [
-    { data: reservations, error: resError },
-    currentUser,
-  ] = await Promise.all([
-    fetchSeatHolders(siblingIds),
-    supabase.auth.getSession().then(r => r.data?.session?.user ?? null).catch(() => null),
-  ])
+  const { currentUser, occupiedMap, resError, lockMap, onlineMap } = await loadSeatOccupancy(scheduleId, options.ownScheduleOnly, onServer)
 
   if (resError) throw new Error(`Erreur chargement réservations : ${resError.message}`)
-
-  const lockMap = await fetchActiveSeatLocksForSchedules(siblingIds)
-  const onlineMap = await fetchOnlineReservedSeats(siblingIds)
-
-  const occupiedMap: Record<string, { reservation_id: string; passenger_name: string; status: string; client_id: string }> = {}
-  for (const res of reservations ?? []) {
-    const seats: string[] = Array.isArray(res.seat_numbers) ? res.seat_numbers : []
-    for (const seatNum of seats) {
-      occupiedMap[seatNum] = { reservation_id: res.id, passenger_name: res.passenger_name, status: res.status, client_id: res.customer_id ?? '' }
-    }
-  }
 
   const enrichedLayout: EnrichedRow[] = normalizedLayout.map((row) => ({
     row: row.row,

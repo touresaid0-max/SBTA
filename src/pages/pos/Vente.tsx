@@ -41,6 +41,15 @@ import { checkAmounts, AMOUNT_RULES } from '@/utils/amountLimits';
 // only shows the sales of this départ, never those of the other stations.
 const POS_SEAT_MAP_OPTIONS = { ownScheduleOnly: true };
 
+/** Message of a seat map that could not be loaded, in the guichetier's words. */
+function seatMapErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : '';
+  if (msg === '__NO_BUS__') return 'Aucun bus assigné à ce départ — structure indisponible';
+  console.warn('[POS] Structure du car :', err);
+  if (/fetch|network|réseau/i.test(msg)) return 'Structure du car indisponible sans connexion — vendez sans structure ou réessayez';
+  return 'Structure du car indisponible — vendez sans structure ou réessayez';
+}
+
 export default function POSVente() {
   const { id: departId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -85,6 +94,17 @@ export default function POSVente() {
   const [ticketPhoneLine, setTicketPhoneLine] = useState<string | undefined>(undefined);
   // Reprints authorized by the admin from "Gestion des sièges"
   const [reprintAuths, setReprintAuths] = useState<TicketReprintAuthorization[]>([]);
+
+  // The departure as saved on the device: its plan is built from it while the server does not
+  // know it yet (« Voyage introuvable : Cannot coerce… » before, 27/11/2026)
+  const departLoaded = !!depart;
+  const localBusId = depart?.bus_id ?? '';
+  const localBusPlate = depart?.bus_plate;
+  const localSeatsFrom = depart?.seats_from ?? 1;
+  const localSeatsLast = depart?.seats_total ?? 0;
+  const seatMapOptions = useMemo(() => (localBusId
+    ? { ...POS_SEAT_MAP_OPTIONS, localDepart: { bus_id: localBusId, bus_plate: localBusPlate, seats_from: localSeatsFrom, seats_last: localSeatsLast } }
+    : POS_SEAT_MAP_OPTIONS), [localBusId, localBusPlate, localSeatsFrom, localSeatsLast]);
 
   // Vente avec structure — shows the real bus seat layout
   const [structureMode, setStructureMode] = useState(false);
@@ -224,22 +244,19 @@ export default function POSVente() {
       if (!bagStructureMode) { setSeatMap(null); setSeatMapError(''); }
       return;
     }
+    // Wait for the departure saved on the device (its bus gives the plan when the server has none)
+    if (!departLoaded) return;
     let cancelled = false;
     setSeatMapError('');
-    fetchScheduleSeatMap(departId, 'simple', POS_SEAT_MAP_OPTIONS)
+    fetchScheduleSeatMap(departId, 'simple', seatMapOptions)
       .then(data => { if (!cancelled) setSeatMap(data); })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const msg = err instanceof Error ? err.message : 'Erreur';
-        if (msg === '__NO_BUS__') {
-          setSeatMapError('Aucun bus assigné à ce départ — structure indisponible');
-        } else {
-          setSeatMapError(msg);
-        }
+        setSeatMapError(seatMapErrorMessage(err));
         setSeatMap(null);
       })
     return () => { cancelled = true; };
-  }, [structureMode, departId]); // lastSyncedAt removed — prevents periodic re-fetch that resets bagage seat selection
+  }, [structureMode, departId, departLoaded, seatMapOptions]); // lastSyncedAt removed — prevents periodic re-fetch that resets bagage seat selection
 
   // Sync structure-selected seats → existing selectedSeats (number[])
   // Never a new empty list when it is already empty: this effect depends on the list, so each new
@@ -403,17 +420,17 @@ export default function POSVente() {
   useEffect(() => {
     if (!bagStructureMode || !departId) { return; }
     if (seatMap || seatMapError) return; // already loaded by ticket structureMode
+    if (!departLoaded) return;
     let cancelled = false;
-    fetchScheduleSeatMap(departId, 'simple', POS_SEAT_MAP_OPTIONS)
+    fetchScheduleSeatMap(departId, 'simple', seatMapOptions)
       .then(data => { if (!cancelled) setSeatMap(data); })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const msg = err instanceof Error ? err.message : 'Erreur';
-        setSeatMapError(msg === '__NO_BUS__' ? 'Aucun bus assigné à ce départ — structure indisponible' : msg);
+        setSeatMapError(seatMapErrorMessage(err));
         setSeatMap(null);
       });
     return () => { cancelled = true; };
-  }, [bagStructureMode, departId, seatMap, seatMapError]);
+  }, [bagStructureMode, departId, departLoaded, seatMap, seatMapError, seatMapOptions]);
 
   const toggleBagStructSeat = (seat: StructSeat) => {
     const n = parseInt(seat.label, 10);
@@ -427,14 +444,14 @@ export default function POSVente() {
   const refreshBagSeatMap = useCallback(() => {
     if (!departId) return;
     setBagSeatMapRefreshing(true);
-    fetchScheduleSeatMap(departId, 'simple', POS_SEAT_MAP_OPTIONS)
+    fetchScheduleSeatMap(departId, 'simple', seatMapOptions)
       .then(data => { setSeatMap(data); setSeatMapError(''); })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Erreur';
-        if (msg !== '__NO_BUS__') setSeatMapError(msg);
+        if (msg !== '__NO_BUS__') setSeatMapError(seatMapErrorMessage(err));
       })
       .finally(() => setBagSeatMapRefreshing(false));
-  }, [departId]);
+  }, [departId, seatMapOptions]);
 
   const allowedSeatRange = useMemo(() => {
     if (!depart || !session?.station_id) return null;
