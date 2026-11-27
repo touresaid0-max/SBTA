@@ -4,7 +4,7 @@ import { fetchStationRouteIds, stationRoutesFirst } from '../../services/station
 import { createRefreshScheduler, runAtMostEvery } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import { format, addMinutes, isAfter, isBefore, isWithinInterval } from 'date-fns';
-import { hasUnknownTime, departureTimeLabel, timeFromDepartureLabel, departureArrival } from '../../utils/departureTime';
+import { hasUnknownTime, departureTimeLabel, timeFromDepartureLabel, departureArrival, withCreationTime } from '../../utils/departureTime';
 import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import {
@@ -55,6 +55,8 @@ interface ScheduleRow {
   source: string;
   schedule_counter_id: string | null;
   schedule_departure_number: number | null;
+  /** Time not typed at the guichet: the time of creation is shown, marked « auto » */
+  auto_time?: boolean;
 }
 
 interface CounterOption {
@@ -247,7 +249,7 @@ export default function DailyPlanning() {
       .from('schedules')
       .select(`
         id, route_name, departure_datetime, arrival_datetime, estimated_duration_minutes, is_anticipated,
-        status, seats_available, seats_reserved, fill_rate, notes, transit_stops,
+        created_at, status, seats_available, seats_reserved, fill_rate, notes, transit_stops,
         admin_reactivated_at, source, counter_id, departure_number,
         bus:bus_id(registration_number, model, capacity),
         driver:driver_id(full_name, phone),
@@ -293,7 +295,7 @@ export default function DailyPlanning() {
       });
     }
 
-    const rows: ScheduleRow[] = (data || []).map((s: any) => ({
+    const rows: ScheduleRow[] = (data || []).map((s: any) => withCreationTime({
       id: s.id,
       route_name: s.route_name || '—',
       departure_datetime: s.departure_datetime,
@@ -322,7 +324,8 @@ export default function DailyPlanning() {
       source: s.source || 'chef_gare',
       schedule_counter_id: s.counter_id ?? null,
       schedule_departure_number: s.departure_number ?? null,
-    }));
+    // Saved at the guichet without a time: its time of creation, marked « auto » (chef de gare only)
+    }, s.source === 'guichet' ? s.created_at : null, s.estimated_duration_minutes));
 
     rows.sort((a, b) => {
       const timeA = new Date(a.departure_datetime).getTime();
@@ -1042,6 +1045,9 @@ export default function DailyPlanning() {
             </p>
             <p className="text-xl md:text-2xl font-black" style={{ color: 'var(--text-primary)' }}>
               {departureTimeLabel(nextSched.departure_datetime, 'Heure à confirmer')}
+              {nextSched.auto_time && (
+                <span className="text-xs font-semibold ml-1.5 align-middle" style={{ color: 'var(--text-muted)' }}>(auto)</span>
+              )}
               <span className="text-lg font-semibold ml-2" style={{ color: 'var(--text-secondary)' }}>
                 → {nextSched.arrival_station_name}
               </span>
@@ -1166,7 +1172,9 @@ export default function DailyPlanning() {
                         <p className="text-2xl font-black tabular-nums" style={{ color: isActive ? 'var(--primary)' : 'var(--text-primary)' }}>
                           {departureTimeLabel(depDate)}
                         </p>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>départ</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {sched.auto_time ? 'heure auto' : 'départ'}
+                        </p>
                       </>
                     )}
                   </div>

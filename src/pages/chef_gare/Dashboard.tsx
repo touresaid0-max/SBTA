@@ -3,6 +3,7 @@ import { supabase } from '../../services/supabase';
 import { createRefreshScheduler } from '../../utils/realtimeRefresh';
 import { useAuthStore } from '../../store/authStore';
 import { format } from 'date-fns';
+import { withCreationTime } from '../../utils/departureTime';
 import { fr } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import {
@@ -60,6 +61,8 @@ interface TodaySchedule {
   driver_name?: string;
   arrival_station_name?: string;
   counter_number?: number | null;
+  /** Time not typed at the guichet: the time of creation is shown, marked « auto » */
+  auto_time?: boolean;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
@@ -263,7 +266,7 @@ export default function ChefGareDashboard() {
     const { data, error } = await supabase
       .from('schedules')
       .select(`
-        id, route_name, departure_datetime, status, seats_reserved,
+        id, route_name, departure_datetime, status, seats_reserved, source, created_at,
         bus:bus_id(registration_number),
         driver:driver_id(full_name),
         arrival_station:arrival_station_id(name)
@@ -289,7 +292,8 @@ export default function ChefGareDashboard() {
     }
 
     setTodaySchedules(
-      (data || []).map((s: any) => ({
+      // Saved at the guichet without a time: its time of creation, marked « auto » (chef de gare only)
+      (data || []).map((s: any) => withCreationTime({
         id: s.id,
         route_name: s.route_name || '',
         departure_datetime: s.departure_datetime,
@@ -299,7 +303,8 @@ export default function ChefGareDashboard() {
         driver_name: s.driver?.full_name,
         arrival_station_name: s.arrival_station?.name,
         counter_number: depSeqMap[s.id] ?? null,
-      }))
+      }, s.source === 'guichet' ? s.created_at : null))
+        .sort((a: TodaySchedule, b: TodaySchedule) => a.departure_datetime.localeCompare(b.departure_datetime))
     );
   };
 
@@ -679,6 +684,9 @@ export default function ChefGareDashboard() {
                     <p className="text-xl font-black tabular-nums" style={{ color: 'var(--text-primary)' }}>
                       {format(new Date(sched.departure_datetime), 'HH:mm')}
                     </p>
+                    {sched.auto_time && (
+                      <p className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>heure auto</p>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
