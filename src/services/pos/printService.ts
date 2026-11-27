@@ -308,13 +308,14 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
   const ticketNum  = escapeHtml(ticket.ticket_number);
   const depNum     = String(depart.route_number ?? '1');
 
-  let dateStr = '—', timeStr = '—';
+  // Date of the departure only: the time is no longer printed on the ticket (27/11/2026, it was
+  // 00:00 for a departure saved without a time)
+  let dateStr = '—';
   try {
     const rawDate = depart.departure_datetime ?? `${depart.departure_date}T${depart.departure_time ?? '00:00'}`;
     const d = new Date(rawDate);
     if (!isNaN(d.getTime())) {
       dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-      timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     }
   } catch { /* leave defaults */ }
 
@@ -366,7 +367,6 @@ function buildHTMLTicketContainer(data: PrintTicketData, customization: PrintCus
   <div class="section">
     <div class="line">
       <span class="lbl">DATE :&nbsp;&nbsp;<b>${escapeHtml(dateStr)}</b></span>
-      <span class="val">HEURE:&nbsp;&nbsp;<b>${escapeHtml(timeStr)}</b></span>
     </div>
   </div>
   ${reducedBadge}${reportedBadge}${duplicateBadge}
