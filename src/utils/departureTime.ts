@@ -32,6 +32,54 @@ export function departureArrival(departure: string, arrival: string, durationMin
   return new Date(dep + durationMinutes * 60_000).toISOString();
 }
 
+// ── Closing of late departures (27/11/2026) ──
+// A departure is closed the night after its day (00h05). A late one, from fromHour on (20h), stays
+// open at least minHours (5 h) so that every guichet can sell it: one of 22h is closed at 03h00 at
+// the earliest. Its time: the one entered, otherwise its time of creation at the guichet when it was
+// created the same day (most guichetiers enter no time). The server applies the same rule
+// (schedule_earliest_closure, migration 20261127200000).
+
+export interface LateClosureRule {
+  /** Hour of the day (0-23) from which a departure is late */
+  fromHour: number;
+  /** Hours a late departure stays open at least */
+  minHours: number;
+}
+
+export const DEFAULT_LATE_CLOSURE: LateClosureRule = { fromHour: 20, minHours: 5 };
+
+/** A date written without its time zone (« 2026-11-27T22:00:00 ») is taken in UTC (Abidjan's time). */
+function parseUtc(value: string | Date): Date {
+  if (value instanceof Date) return value;
+  return new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`);
+}
+
+/** Time from which the 5 hours are counted: the time entered, else the creation time of the same day. */
+export function closureReferenceTime(departure: string | Date, createdAt?: string | null): Date | null {
+  const dep = parseUtc(departure);
+  if (isNaN(dep.getTime())) return null;
+  if (!(dep.getUTCHours() === 0 && dep.getUTCMinutes() === 0)) return dep;
+  if (!createdAt) return null;
+  const created = parseUtc(createdAt);
+  if (isNaN(created.getTime())) return null;
+  return created.toISOString().slice(0, 10) === dep.toISOString().slice(0, 10) ? created : null;
+}
+
+/** When the departure may be closed: midnight after its day, later for a late departure. */
+export function earliestClosureTime(departure: string | Date, createdAt?: string | null, rule: LateClosureRule = DEFAULT_LATE_CLOSURE): Date {
+  const dep = parseUtc(departure);
+  const dayEnd = new Date(Date.UTC(dep.getUTCFullYear(), dep.getUTCMonth(), dep.getUTCDate() + 1));
+  const ref = closureReferenceTime(departure, createdAt);
+  if (!ref || ref.getUTCHours() < rule.fromHour) return dayEnd;
+  return new Date(Math.max(dayEnd.getTime(), ref.getTime() + rule.minHours * 3600_000));
+}
+
+/** The departure's selling time is over: it is closed by the next closing (guichet, night). */
+export function isDepartureOver(departure: string | Date, createdAt?: string | null, now: Date = new Date(), rule: LateClosureRule = DEFAULT_LATE_CLOSURE): boolean {
+  if (isNaN(parseUtc(departure).getTime())) return false;
+  return now.getTime() >= earliestClosureTime(departure, createdAt, rule).getTime();
+}
+
 /**
  * Chef de gare only (27/11/2026): a departure saved at the guichet without a time is at 00:00; its
  * time of creation at the guichet (created_at) is shown instead, marked « auto ». The guichet and
