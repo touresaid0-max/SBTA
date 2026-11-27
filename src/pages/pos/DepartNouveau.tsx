@@ -21,11 +21,6 @@ import { AlertCircle, CheckCircle, Loader2, X, Plus, Trash2, Armchair, Lock, Inf
 import AutocompleteSelect from '@/components/pos/AutocompleteSelect';
 import { trustedNowIso } from '@/services/offline/deviceClock';
 
-/** Current time HH:MM in Abidjan (UTC+0, no daylight saving), from the clock checked with the server. */
-function currentTime(): string {
-  return trustedNowIso().slice(11, 16);
-}
-
 export default function POSDepartNouveau({ forceRamassage = false }: { forceRamassage?: boolean }) {
   const navigate = useNavigate();
   const { session } = usePOSSession();
@@ -40,15 +35,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
   const [noLinesAssigned, setNoLinesAssigned] = useState(false);
 
   const [departureDate, setDepartureDate] = useState('');
-  // Prefilled with the current time (a time left empty was saved as 00:00): followed minute by
-  // minute until the guichetier changes it
-  const [departureTime, setDepartureTime] = useState(currentTime);
-  const [timeEdited, setTimeEdited] = useState(false);
-  useEffect(() => {
-    if (timeEdited) return;
-    const timer = setInterval(() => setDepartureTime(currentTime()), 30_000);
-    return () => clearInterval(timer);
-  }, [timeEdited]);
+  const [departureTime, setDepartureTime] = useState('');
   const [ligneId, setLigneId] = useState('');
 
   const [busId, setBusId] = useState('');
@@ -274,8 +261,6 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         allAllocations.push(...sortedAllocs);
       }
 
-      // Time chosen by the guichetier, or the time of creation (never 00:00 by default)
-      const time = timeEdited && departureTime ? departureTime : currentTime();
       const newDepart = await createDepart({
         route_id: ligneId,
         route_name: ligne?.name ?? '',
@@ -286,9 +271,9 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
         driver_name: driver?.full_name ?? '',
         convoyeur_id: convoyeurId || undefined,
         convoyeur_name: convoyeur?.full_name || undefined,
-        departure_datetime: `${departureDate}T${time}:00`,
+        departure_datetime: `${departureDate}T${departureTime || '00:00'}:00`,
         departure_date: departureDate,
-        departure_time: time,
+        departure_time: departureTime || '',
         status: isRamassage ? 'ramassage' : 'planned',
         is_ramassage: isRamassage,
         is_ac: false,
@@ -374,7 +359,7 @@ export default function POSDepartNouveau({ forceRamassage = false }: { forceRama
               <label className={fieldLabel} style={{ color: 'var(--text-secondary)' }}>
                 Heure {isLinked && <Lock className="w-3 h-3 inline ml-1" style={{ color: 'var(--text-muted)' }} />}
               </label>
-              <input type="time" value={departureTime} disabled={isLinked} onChange={e => { setDepartureTime(e.target.value); setTimeEdited(true); }} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
+              <input type="time" value={departureTime} disabled={isLinked} onChange={e => setDepartureTime(e.target.value)} className={fieldInput} style={{ ...fieldStyle, cursor: isLinked ? 'not-allowed' : 'text', opacity: isLinked ? 0.7 : 1 }} onFocus={e => e.currentTarget.style.borderColor = 'var(--primary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'} />
             </div>
 
             {/* Ligne */}

@@ -31,3 +31,26 @@ export function departureArrival(departure: string, arrival: string, durationMin
   if (isNaN(dep) || new Date(arrival).getTime() - dep !== 8 * 3600_000) return arrival;
   return new Date(dep + durationMinutes * 60_000).toISOString();
 }
+
+/**
+ * Chef de gare only (27/11/2026): a departure saved at the guichet without a time is at 00:00; its
+ * time of creation at the guichet (created_at) is shown instead, marked « auto ». The guichet and
+ * the ticket never show it. `durationMinutes` (the line's) gives the arrival.
+ */
+export function withCreationTime<T extends { departure_datetime: string; arrival_datetime?: string | null }>(
+  row: T,
+  createdAt?: string | null,
+  durationMinutes?: number | null,
+): T & { auto_time: boolean } {
+  if (!createdAt || !hasUnknownTime(row.departure_datetime)) return { ...row, auto_time: false };
+  const dep = new Date(row.departure_datetime);
+  const created = new Date(createdAt);
+  if (isNaN(dep.getTime()) || isNaN(created.getTime())) return { ...row, auto_time: false };
+  // Created another day (the day before, for the next day): its time says nothing of the departure
+  if (created.toISOString().slice(0, 10) !== dep.toISOString().slice(0, 10)) return { ...row, auto_time: false };
+  dep.setUTCHours(created.getUTCHours(), created.getUTCMinutes(), 0, 0);
+  const arrival = durationMinutes && durationMinutes > 0
+    ? new Date(dep.getTime() + durationMinutes * 60_000).toISOString()
+    : row.arrival_datetime;
+  return { ...row, departure_datetime: dep.toISOString(), arrival_datetime: arrival, auto_time: true };
+}
