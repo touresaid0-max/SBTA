@@ -3,6 +3,7 @@ import { supabase } from '@/services/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { enqueueInsert, enqueueUpdate, enqueueDelete, isOnline, getPendingCount, normalizeExpenseType } from './syncEngine';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { isDepartSaleOver, refreshLateClosureRule } from './closureRule';
 import { uuidV4 } from '@/utils/uuid';
 
 function uuid(): string {
@@ -184,6 +185,8 @@ function mapRemoteScheduleToLocal(s: Record<string, unknown>): Record<string, un
     departure_datetime: depIso,
     departure_date: depDate,
     departure_time: depTime,
+    // Its creation at the guichet: the time of a late departure entered without one (27/11/2026)
+    ...(s.created_at ? { created_at: s.created_at } : {}),
     status: s.status ?? 'planifie',
     seats_total: seatsCount > 0 ? seatsSoldFrom + seatsCount - 1 : 0,
     seats_from: seatsSoldFrom,
@@ -269,7 +272,7 @@ const HISTORY_DAYS = 7;
 // Departures re-opened by the admin within these days are pulled whatever their date
 const REOPENED_DAYS = 60;
 
-const SCHEDULE_COLUMNS = 'id, route_id, route_name, bus_id, driver_id, departure_datetime, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, admin_reactivated_at, buses:bus_id(seats_sold_from)';
+const SCHEDULE_COLUMNS = 'id, route_id, route_name, bus_id, driver_id, departure_datetime, created_at, status, seats_total, seats_available, seats_reserved, departure_station_id, counter_id, is_ramassage, departure_number, route_number, fill_rate, admin_reactivated_at, buses:bus_id(seats_sold_from)';
 const HISTORY_SYNC_KEY = 'sbta_history_sync_day';
 
 function historySyncDoneToday(stationId: string | undefined, todayStr: string): boolean {
@@ -534,11 +537,14 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
     // The server RPC already closed them in Supabase, but local IndexedDB may
     // still have stale rows with cloture=false. We only pull today+ schedules
     // below, so past-day rows would never get their cloture flag updated.
+    // A late departure (from 20h) stays open at least 5 h, as on the server (27/11/2026).
+    await refreshLateClosureRule();
     try {
       const allLocal = await (db.departs as any).toArray();
       const toClose = allLocal.filter(
         (d: Record<string, unknown>) =>
           (d as any).departure_date < todayStr &&
+          isDepartSaleOver(d as { departure_datetime: string; created_at?: string | null }) &&
           !(d as any).cloture &&
           !(d as any).cancelled &&
           !(d as { reopened_at?: string | null }).reopened_at,
@@ -797,7 +803,9 @@ export async function syncDepartsAndTicketsFromServer(stationId?: string, sinceD
             bus_plate: plate ?? '',
             bus_name: plate ?? '',
             driver_name: driverName ?? '',
-            created_at: trustedNowIso(),
+            // The server's creation time (that of the guichet that made it): the time of pulling
+            // made a departure of another guichet look created now (closing of late departures)
+            created_at: (localRecord.created_at as string | undefined) ?? trustedNowIso(),
             updated_at: trustedNowIso(),
             synced: true,
           });

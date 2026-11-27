@@ -47,6 +47,7 @@ import {
   FileText, FileSpreadsheet, Copy, Clock, ScrollText, ListChecks, Receipt, CalendarRange, RefreshCw,
 } from 'lucide-react';
 import { trustedNow, trustedNowIso } from '@/services/offline/deviceClock';
+import { isDepartSaleOver } from '@/services/pos/closureRule';
 import { getTicketPhoneLine, cachedTicketPhoneLine } from '@/services/ticketPhones.service';
 
 /** Name of a line without the extra spaces (start, end, doubled), as the line filter compares it. */
@@ -472,11 +473,13 @@ export default function POSDeparts() {
 
   const filterBaseDeparts = useMemo(() => {
     const list = departs.filter(d =>
-      (!range.from || d.departure_date >= range.from) &&
-      (!range.to || d.departure_date <= range.to),
+      ((!range.from || d.departure_date >= range.from) &&
+       (!range.to || d.departure_date <= range.to)) ||
+      // « Aujourd'hui » after midnight: a late departure of yesterday still on sale (27/11/2026)
+      (period === 'today' && !d.cloture && d.departure_date < todayStr && !isDepartSaleOver(d)),
     );
     return list.filter(d => !d.cancelled);
-  }, [departs, range.from, range.to]);
+  }, [departs, range.from, range.to, period, todayStr]);
 
   // Line names compared without the extra spaces: « Adjame - Sikensi » and « Adjame - Sikensi␣ »
   // (a departure saved before the line names were cleaned, 26/11/2026) are one line in the filter
